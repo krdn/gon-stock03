@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "repo": "krdn/gon-stock03",
+  "files": {
+    ".github/ISSUE_TEMPLATE/task.yml": "f498ab7fd40361979c6a7bcfd9d03564dfa57761451a50f9254d7717b293516d",
+    ".github/project-management.md": "379b5adabc7ea67d5da07aa18b9d484c737b24f130b343c28f4a7b00e3232125",
+    ".github/pull_request_template.md": "974e44a3e096bb0086da9339b45f36fc0b2ede95100e3bcf1da3b8aab92ed461",
+    ".github/workflows/workflow-config.yml": "11f1a58ef54314cf976cbd289ee53cdf08c2dc9cf272be8eeb744ddd9750aba2",
+    "AGENTS.md": "9a5263b4adc4ac99ca8c2f947369841617d241c8fd9648b2ce9fb4ce1bfc5216",
+    "CLAUDE.md": "336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49",
+    "docs/INFISICAL.md": "b47b6cbcfa80f450cf412b9fa0d4b2650bb31350f45003bbf149382bc186abcd",
+    "docs/WORKFLOW.md": "aa07d402961b8827a1670066deb45f32b5887a360da66adb62827e9aaf0bb8c9",
+    "docs/tasks/TEMPLATE.md": "81f56e7eab8c67aa8a6dc34e2c35f02474646d5f9635956de1b00bc6f74be6ff"
+  },
+  "seed_files": [
+    ".github/dependabot.yml",
+    ".gitignore",
+    ".infisical.yaml",
+    "README.md",
+    "docs/STATE.md",
+    "docs/start-context.json"
+  ]
+}

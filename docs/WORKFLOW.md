@@ -1,0 +1,86 @@
+# GitHub 개발 운영
+
+기준 저장소: https://github.com/krdn/gon-stock03
+표준 원본: https://github.com/krdn/gon-github-workflow
+
+## 시작
+
+`gon-workflow start . --repo krdn/gon-stock03`는 중앙 main을 갱신하고 원본 버전을 조회한다.
+변경 후보가 있으면 중앙 저장소에서 `upgrade`, 영향 검토, 테스트, 독립 리뷰 기록(record-review), PR CI·merge를 먼저 완료한다.
+인터넷 오류는 최신 확인 성공이 아니다. 오류를 해결한 뒤 다시 실행한다.
+
+start가 Git 초기화, 원격 저장소, 첫 이슈·Milestone·Project 연결, 구성 커밋·푸시를 수행한다.
+새 저장소는 기본 public이며 필요할 때 `--visibility private`을 지정할 수 있다. 기존 공개 범위는 보존한다.
+`gon-workflow ready .`로 원격 커밋과 연결을 확인한다. URL은 `.github/project-setup.json`에 있다.
+
+AI 조사·계획·구현은 구성 완료 후 이 프로젝트에서 별도로 요청한다.
+그때 `docs/start-context.json`에 목표, 공식 출처와 확인 내용, 기술 선택, 실제 checked_at을 기록한다.
+status를 reviewed로 바꾸고 `gon-workflow implementation-ready .`로 24시간 이내 조사 기록을 확인한다.
+이 검사는 출처의 진실성·기술 호환성·AI 실행 성공을 증명하지 않는다.
+첫 이슈의 목표를 구체화하고, 큰 작업은 하위 이슈와 의존 관계를 사용한다.
+이슈에는 type:feature·type:bug·type:docs·type:research·type:maintenance 중 맞는 종류를 붙인다.
+필요할 때 priority:high·status:blocked·needs:input·workflow:ai를 추가한다. 일반 진행 상태는 Project에서 관리한다.
+새 공개 저장소의 main은 PR·configuration 검사·리뷰 대화 해결을 요구하며 강제 푸시·삭제를 차단한다.
+
+## 비밀정보와 인프라 접근
+
+기본 플랫폼은 **Infisical**이다. 앱·AI 키는 Secrets Management, 인증서는 Certificate Management, 권한 접근은 PAM을 사용한다.
+[연결과 운영](INFISICAL.md)에 따라 인스턴스·프로젝트를 연결하고 최소 권한·환경 분리·OIDC를 적용한다.
+생성된 `.infisical.yaml`은 연결 전 설정이며 기존 YAML/JSON과 사용자 수정은 보존한다. `ready`는 Infisical 실연결을 검사하지 않는다.
+
+## 작업
+
+1. 이슈: 목표·수용 기준·범위·검증 방법을 기록한다.
+2. 큰 기능: `docs/`에 명세와 계획을 쓰고 이슈에서 연결한다.
+3. 버그: 재현 → 원인 → 수정 → 원래 증상 재검증을 구분한다.
+4. 작업 브랜치와 PR에서 구현하고 CI·필요한 리뷰를 확인한다.
+5. 배포: 프로젝트의 실제 Actions·Environment·Release 경로를 사용한다.
+6. 마무리: 변경 SHA, 검사 결과, 이슈/PR/배포 링크와 다음 행동을 요약한다.
+
+작은 수정에 전체 명세 절차를 강제하지 않는다. 앱 검증·배포 명령은 실제 스택에 맞게 구성한다.
+동작하지 않은 배포 workflow나 빈 성공 job을 완료 증거로 삼지 않는다.
+
+## 세션별 작업과 재개
+
+큰 요청은 검증·전달이 가능한 작업으로 나누고, 작업별 완료 조건과 선행 의존관계를 이슈에 기록한다.
+작업마다 [양식](tasks/TEMPLATE.md)을 복사해 `docs/tasks/<이슈번호>-<짧은이름>.md`를 만든다.
+동등한 작업 기록이 이미 있으면 재사용한다. 사소한 수정은 STATE의 짧은 기록만으로 충분하다.
+구성만 요청받은 start 단계에서는 실제 개발 작업·사용자 결정을 만들어내지 않는다.
+
+`docs/STATE.md`는 목표·공통 결정·현재 작업 파일·다음 작업·차단 사유를 안내하는 목차다.
+약 2,000자를 목표로 하고 12,000자를 넘기지 않는다. 완료 이력과 상세 근거는 작업 파일·이슈·PR로 연결한다.
+작업 파일은 범위·완료 조건·필수 읽기 목록·브랜치/SHA·검증/미검증·실패·다음 행동을 짧게 유지한다.
+로그·대화·전체 코드 복사를 피하고, 필요한 파일의 절·심볼과 검증 결과 링크를 남긴다.
+
+새 세션은 다음 순서로 재개한다.
+
+1. 적용되는 AGENTS와 STATE를 읽고 사용자가 지정한 작업 또는 STATE의 현재 작업을 고른다.
+2. 그 작업 파일과 필수 읽기 목록만 먼저 읽는다. 지난 작업 파일·전체 이슈 목록·과거 대화를 일괄 읽지 않는다.
+3. 현재 브랜치·미커밋 변경·관련 이슈·PR·CI를 조회해 기록된 SHA와 대조한다. 차이가 있는 부분만 추가 확인한다.
+4. 확인한 미완료 행동부터 진행한다. 요약만으로 검증 성공·승인·소유권 이전을 추정하지 않는다.
+
+작업 완료, 검증/리뷰 차단, 다른 작업으로 전환할 때 기록을 갱신한다.
+재개 가능한 코드·작업 파일·STATE를 커밋·푸시하고 원격 SHA를 확인한다. 미완성 작업은 초안 PR로 전달한다.
+커밋하지 못한 변경이 있으면 파일·보존 위치와 원인을 명시하고 다른 환경에서 재개 가능하다고 표시하지 않는다.
+`gon-workflow handoff . --issue https://github.com/krdn/gon-stock03/issues/N`으로 STATE의 링크를 이슈에 전달하고 댓글을 확인한다.
+마지막에는 현재 상태·남은 행동·새 세션 시작 문구만 짧게 전달한다. 세션 전환 자체가 작업 완료는 아니다.
+
+새 세션 시작 문구: “docs/STATE.md의 현재 작업 파일과 필수 읽기 목록, 관련 이슈·PR·CI만 먼저 확인하고 다음 행동부터 이어가줘.”
+세션 자동 생성·전환을 지원한다고 가정하지 않는다. 사용자의 전체 요청 범위를 임의로 줄이지 않는다.
+현재 세션에서 계속해야 해도 같은 작업 분할·선택적 읽기 규칙을 적용한다.
+
+## 업데이트와 복구
+
+다음 신규 시작 또는 명시적인 표준 갱신 때 `start`를 다시 실행한다.
+사용자가 수정한 관리 파일이 있으면 전체 적용을 중단한다. diff를 검토해 별도 PR에서 통합한다.
+`workflow-state.json`의 해시만 고쳐 충돌을 숨기지 않는다.
+이전 버전 복구는 적용 PR을 revert하고 해당 중앙 revision과 lock을 함께 복구한다.
+오래된 원본을 사용하는 예외는 근거와 만료 조건을 이슈에 기록하며, 최신 확인으로 표시하지 않는다.
+
+## 협업과 GitHub 기능
+
+Buzz 에이전트: `ggw-<project>-<role>`, 채널: `ggw-<project>-<topic>`.
+역할: coordinator, researcher, implementer, reviewer. 동일 파일 소유권을 겹치지 않는다.
+설계 탐색은 Discussions, 확정 결정은 docs, 실행은 Issues, 상태는 Projects, 통합은 PR로 연결한다.
+Buzz 응답은 이슈로 옮기고 생성 초안과 실제 저장·응답 확인을 구분한다.
+Packages·Pages·배포는 제품에 해당할 때 구성하고, 미적용 사유는 `.github/project-management.md`에 남긴다.

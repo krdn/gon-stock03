@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+.secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+.local/
+__pycache__/
