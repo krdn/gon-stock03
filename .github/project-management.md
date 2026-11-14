@@ -17,3 +17,10 @@
 | Insights | 실제 이슈/PR/CI 결과 기반 현황 확인 |
 
 설정 파일 존재와 기능 적용은 다르다. URL·검증 결과는 docs/STATE.md 또는 이슈에 기록한다.
+
+## 이번 구현의 적용
+
+- #1을 상위 요구로 재사용하고 #3(화면), #2(기능)를 본문 링크로 연결했다. native sub-issue/dependency 구성은 아직 미확인이다.
+- application workflow에서 실제 Node24 단위·계약·SQLite·TypeScript·빌드·Playwright 검사를 실행한다. 구성 CI와 분리한다.
+- 단일 PC 로컬 실행이므로 Pages·Packages·Release·외부 Deployments는 현재 사용하지 않는다. Discussions/Wiki 대신 docs와 이슈를 사용한다.
+- 기존 Project #25와 Milestone을 재사용한다. 사용자 결과 수용·실제 KIS 주문 검증 전 Done/이슈 종료를 하지 않는다.
