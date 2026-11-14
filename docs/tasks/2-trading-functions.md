@@ -11,4 +11,5 @@
 - 실패·조치: HTTP Host 위조 테스트에서 fetch가 Host를 덮어써 잘못된 요청이 발생. node:http로 실제 위조 Host를 전송해 차단 검증. 낮춘 잔고 테스트의 손실 기준도 해당 fixture 자산으로 맞춤.
 - 다음: 공식 모의 정정취소 지원 확인 → 원장 수동 복구 → 장중 소량 모의 주문/체결/취소·연속 자동매매 실증. 현재 작업을 전체 완료로 종료하지 않는다.
 - 리뷰/검사: Claude Opus 5.5/high 원 리뷰·수정분 확인 완료. P1 3건 수정, 단위/계약/저장 23개·브라우저 9개·빌드 통과. 최종 후속 수정은 직접 회귀 검사.
-- 원격 PR/CI: 초안 PR 생성 후 아래에 갱신.
+- 원격: [초안 PR #4](https://github.com/krdn/gon-stock03/pull/4). 구현 커밋 `4f9ba30918f6b3f77062b2a560ab934049785298`. 최종 head와 검사 결과는 PR Checks에서 재조회한다.
+- CI: [구성 검사](https://github.com/krdn/gon-stock03/actions/runs/43607696475) 통과. [앱 검사](https://github.com/krdn/gon-stock03/actions/runs/43607696508)는 최초 기록 시 브라우저 설치/검사 진행 중이었다. 최종 결과는 PR·이슈 전달 기록을 따른다.
