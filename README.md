@@ -19,3 +19,5 @@ KIS 모의 계좌는 `infisical secrets-manager run --env dev --path /kis -- npm
 15개 화면, 로컬 주문·취소·전략 자동 재생·백테스트·한도·일지·관심목록을 구현했습니다. 실제 KIS 모의 인증·잔고·현재가·최근 100일봉·당일 주문 조회를 확인했습니다. KIS 주문 접수·대조 코드는 네트워크 fixture로 검증했으며 실제 주문 전송·체결은 아직 검증하지 않았습니다. 웹 정정취소·WebSocket 연속 자동매매·불명 주문 수동 해제는 남아 있습니다. 실전 주문은 지원하지 않습니다.
 
 [초안 PR #4](https://github.com/krdn/gon-stock03/pull/4) · [현재 작업](docs/STATE.md) · [공식 조사](docs/research/kis-2026-11.md) · [시스템 설계](docs/architecture/workbench.md) · [검증 기록](docs/verification/2026-11-14.md) · [상위 이슈](https://github.com/krdn/gon-stock03/issues/1)
+
+화면별로 이어서 개발하려면 [세션 계획과 전체 이슈 지도](docs/plans/interface-sessions-2026-11.md)를 먼저 확인하세요. [GitHub Project #25](https://github.com/users/krdn/projects/25)의 다음 세션 보기에서 Ready 작업 하나를 선택합니다. 첫 작업은 [기준선 확정 #5](https://github.com/krdn/gon-stock03/issues/5)입니다. 기존 기능은 보존하고 각 이슈의 남은 범위만 구현합니다.
