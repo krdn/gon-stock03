@@ -3,11 +3,11 @@ import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { ZodError } from 'zod';
-import { backtestInput, codeSchema, haltInput, idInput, journalInput, orderInput, riskInput, storageErrorMessage, strategyInput } from '../shared/contracts.ts';
+import { backtestInput, codeSchema, haltInput, idInput, journalInput, orderInput, paperRecoveryInput, riskInput, storageErrorMessage, strategyInput } from '../shared/contracts.ts';
 import { advanceTick, backtest, cancelOrder, halt, placeOrder, record } from './engine.ts';
 import { KisClient } from './kis.ts';
 import { Store } from './store.ts';
-import { PaperBroker } from './paper.ts';
+import { PaperBroker, paperCapabilities } from './paper.ts';
 import type { StateSnapshot } from '../shared/model.ts';
 import { emptyStatus } from '../shared/status.ts';
 import { createExperiment, replayExperiment } from './backtest.ts';
@@ -38,6 +38,11 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         json(res, 200, snapshot); return;
       }
       if (path === '/api/kis/ledger' && req.method === 'GET') { json(res, 200, { orders: store.paperOrders() }); return; }
+      if (path === '/api/kis/capabilities' && req.method === 'GET') { json(res, 200, paperCapabilities); return; }
+      if (path === '/api/kis/audit' && req.method === 'GET') {
+        const id = idInput.parse({ id: new URL(req.url!, 'http://127.0.0.1').searchParams.get('requestId') }).id;
+        json(res, 200, { audit: store.paperAudit(id) }); return;
+      }
       if (path === '/api/data/master' && req.method === 'GET') { json(res, 200, store.masterData()); return; }
       if (path === '/api/data/daily' && req.method === 'GET') { json(res, 200, { runs: store.dailyRuns() }); return; }
       if (path.startsWith('/api/data/daily/') && req.method === 'GET') {
@@ -68,6 +73,11 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
           json(res, 200, { quote, bars, message: 'KIS 현재가와 최근 일봉을 조회했습니다. 수신 시각과 거래일을 구분하세요.' }); return;
         }
         if (path === '/api/kis/orders') { json(res, 200, { ...await paper.refresh(), message: 'KIS 모의 계좌와 당일 주문을 조회했습니다.' }); return; }
+        if (path === '/api/kis/cancel' || path === '/api/kis/revise') { idInput.parse(input); json(res, 409, { error: paperCapabilities.changeOrders.reason, code: 'vts-change-blocked' }); return; }
+        if (path === '/api/kis/recovery/inspect') { json(res, 200, await paper.inspectRecovery(idInput.parse(input).id)); return; }
+        if (path === '/api/kis/recovery/confirm') {
+          const order = await paper.confirmRecovery(paperRecoveryInput.parse(input)); json(res, 200, { order, message: order.message }); return;
+        }
         if (path === '/api/kis/order') {
           const order = await paper.submit(orderInput.parse(input)); json(res, 200, { order, message: order.message, warning: order.status === 'unknown' || order.status === 'rejected' }); return;
         }
@@ -126,7 +136,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       const type = ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' } as Record<string, string>)[extname(file)] ?? 'application/octet-stream';
       res.writeHead(200, { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' }); res.end(req.method === 'HEAD' ? undefined : bytes);
     } catch (error) {
-      if ((path === '/api/watchlist' || path === '/api/journal' || path.startsWith('/api/backtest/')) && error instanceof Error && 'code' in error && error.code === 'ERR_SQLITE_ERROR') { json(res, 500, { error: storageErrorMessage }); return; }
+      if ((path === '/api/watchlist' || path === '/api/journal' || path.startsWith('/api/backtest/') || path.startsWith('/api/kis/')) && error instanceof Error && 'code' in error && error.code === 'ERR_SQLITE_ERROR') { json(res, 500, { error: storageErrorMessage }); return; }
       const message = error instanceof ZodError ? '입력값을 확인하세요. 범위·필수 항목 또는 단기/장기 기간이 올바르지 않습니다.' : error instanceof Error ? error.message : '요청 처리에 실패했습니다.';
       if (path === '/api/orders') {
         try { store.update(state => record(state, '주문 요청 차단', message, 'warning')); }

@@ -4,32 +4,281 @@ import { randomUUID } from 'node:crypto';
 import { KisClient, koreaDate } from '../server/kis.ts';
 import { PaperBroker } from '../server/paper.ts';
 import { Store } from '../server/store.ts';
+import { once } from 'node:events';
+import { makeServer } from '../server/http.ts';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
-function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only') {
+function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only', spacing = 0) {
   let submits = 0;
-  const response = { cash: '10000000', totalEquity: '10000000', rows: [] as Record<string, string>[] };
-  const transport: typeof fetch = async url => {
+  const response = { cash: '10000000', totalEquity: '10000000', nonCreditCash: '10000000', rows: [] as Record<string, string>[], before: async (_path: string) => {}, receipt: { rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } } as unknown };
+  const requests: { url: URL; init: RequestInit | undefined; startedAt: number }[] = [];
+  const transport: typeof fetch = async (url, init) => {
+    requests.push({ url: new URL(String(url)), init, startedAt: performance.now() });
     const path = new URL(String(url)).pathname;
+    await response.before(path);
     if (path.endsWith('/tokenP')) return Response.json({ access_token: 'test-token', expires_in: 86400 });
     if (path.endsWith('/inquire-balance')) return Response.json({ rt_cd: '0', output1: [], output2: [{ dnca_tot_amt: response.cash, tot_evlu_amt: response.totalEquity }] });
     if (path.endsWith('/inquire-price')) return Response.json({ rt_cd: '0', output: { stck_prpr: '70000', prdy_ctrt: '1.0', stck_mxpr: '91000', stck_llam: '49000', aspr_unit: '100', temp_stop_yn: 'N' } });
-    if (path.endsWith('/inquire-psbl-order')) return Response.json({ rt_cd: '0', output: { nrcvb_buy_qty: '100', ord_psbl_cash: '10000000' } });
-    if (path.endsWith('/inquire-daily-ccld')) return Response.json({ rt_cd: '0', output1: response.rows });
+    if (path.endsWith('/inquire-psbl-order')) return Response.json({ rt_cd: '0', output: { nrcvb_buy_qty: '100', nrcvb_buy_amt: response.nonCreditCash, ord_psbl_cash: '10000000' } });
+    if (path.endsWith('/inquire-daily-ccld')) return Response.json({ rt_cd: '0', output1: response.rows.filter(row => row.ord_dt === new URL(String(url)).searchParams.get('INQR_STRT_DT')) });
     if (path.endsWith('/order-cash')) {
       submits += 1;
       if (mode === 'unauthorized') return new Response('fixture-secret', { status: 401 });
       if (mode === 'timeout') throw new Error('network timeout after broker accepted');
       if (mode === 'reject') return Response.json({ rt_cd: '1', msg_cd: 'TEST_REJECT', msg1: 'secret upstream text' });
       if (mode === 'error-code-only') return Response.json({ error_code: 'EGW00103', error_description: 'secret upstream text' });
-      return Response.json({ rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } });
+      return Response.json(response.receipt);
     }
     assert.fail(`unexpected endpoint: ${path}`);
   };
   const store = new Store(':memory:');
-  const client = new KisClient({ key: 'key', secret: 'secret', account: '00000000', product: '01' }, transport, 0);
-  return { store, broker: new PaperBroker(store, client), count: () => submits, response };
+  const client = new KisClient({ key: 'key', secret: 'secret', account: '00000000', product: '01' }, transport, spacing);
+  return { store, client, broker: new PaperBroker(store, client), count: () => submits, response, requests };
 }
 const input = () => ({ code: '005930', side: 'buy' as const, qty: 1, price: 70000, requestId: randomUUID() });
+const brokerRow = (overrides: Record<string, string> = {}) => ({ odno: '0000000001', ord_dt: koreaDate(), pdno: '005930', prdt_name: '삼성전자', sll_buy_dvsn_cd: '02', ord_qty: '1', ord_unpr: '70000', tot_ccld_qty: '0', rmn_qty: '1', cncl_yn: 'N', ord_gno_brno: '12345', ...overrides });
+const deferred = () => { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; };
+
+test('external refresh waits for the complete submit preflight without internal refresh deadlock', { timeout: 3000 }, async () => {
+  const f = fixture('success', 20);
+  const quoteEntered = deferred(), releaseQuote = deferred();
+  f.response.before = async path => { if (path.endsWith('/inquire-price')) { quoteEntered.resolve(); await releaseQuote.promise; } };
+  try {
+    const submission = f.broker.submit(input()); await quoteEntered.promise;
+    const refresh = f.broker.refresh(); releaseQuote.resolve();
+    await Promise.all([submission, refresh]);
+    const paths = f.requests.map(r => r.url.pathname.split('/').at(-1));
+    const post = paths.indexOf('order-cash');
+    assert.ok(paths.lastIndexOf('inquire-daily-ccld') > post, `external refresh interleaved: ${paths.join(',')}`);
+    assert.equal(f.count(), 1);
+    for (let i = 1; i < f.requests.length; i++) assert.ok(f.requests[i].startedAt - f.requests[i - 1].startedAt >= 20, 'submit/refresh transport spacing');
+  } finally { releaseQuote.resolve(); f.store.close(); }
+});
+
+test('paced unknown recovery preserves request spacing and never resends the order', async () => {
+  const f = fixture('timeout', 20);
+  try {
+    const order = input();
+    assert.equal((await f.broker.submit(order)).status, 'unknown');
+    assert.equal((await f.broker.submit(order)).status, 'unknown');
+    f.response.rows = [brokerRow()];
+    const preview = await f.broker.inspectRecovery(order.requestId);
+    const confirm = { id: order.requestId, evidenceId: preview.evidenceId, brokerId: '001', organization: '12345', confirmed: true as const };
+    f.response.rows = [brokerRow({ tot_ccld_qty: '1', rmn_qty: '0' })];
+    const recovered = await Promise.all([f.broker.confirmRecovery(confirm), f.broker.confirmRecovery(confirm)]);
+    assert.deepEqual(recovered.map(row => row.status), ['filled', 'filled']);
+    assert.equal(f.count(), 1);
+    assert.equal(f.store.paperAudit(order.requestId).filter(row => row.action === 'recovery-confirm').length, 1);
+    for (let i = 1; i < f.requests.length; i++) assert.ok(f.requests[i].startedAt - f.requests[i - 1].startedAt >= 20, 'recovery transport spacing');
+  } finally { f.store.close(); }
+});
+
+test('a receipt without success code or a valid broker identity stays unknown and is never resent', async () => {
+  for (const receipt of [{ output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } }, { rt_cd: '0', output: { ODNO: '0', KRX_FWDG_ORD_ORGNO: '12345' } }, { rt_cd: '0', output: { ODNO: 'fixture-secret', KRX_FWDG_ORD_ORGNO: '12345' } }]) {
+    const f = fixture('success'); try {
+      f.response.receipt = receipt; const order = input();
+      assert.equal((await f.broker.submit(order)).status, 'unknown');
+      assert.equal((await f.broker.submit(order)).status, 'unknown'); assert.equal(f.count(), 1);
+    } finally { f.store.close(); }
+  }
+});
+
+test('non-credit buying power uses the documented quantity query and lower available cash', async () => {
+  const f = fixture('success'); try {
+    f.response.nonCreditCash = '60000';
+    await assert.rejects(f.broker.submit(input()), /미수 없는/); assert.equal(f.count(), 0);
+    const query = f.requests.find(row => row.url.pathname.endsWith('/inquire-psbl-order'))!.url.searchParams;
+    assert.equal(query.get('ORD_DVSN'), '01'); assert.equal(query.get('CMA_EVLU_AMT_ICLD_YN'), 'N'); assert.equal(query.get('OVRS_ICLD_YN'), 'N');
+  } finally { f.store.close(); }
+});
+
+test('partial fills and contradictory cancellation snapshots cannot regress confirmed fills', async () => {
+  const f = fixture('success'); try {
+    await f.broker.submit({ ...input(), qty: 3 });
+    f.response.rows = [brokerRow({ ord_qty: '3', tot_ccld_qty: '1', rmn_qty: '2' })];
+    assert.equal((await f.broker.refresh()).orders[0].status, 'partial');
+    f.response.rows = [brokerRow({ ord_qty: '3', rmn_qty: '3' })];
+    let order = (await f.broker.refresh()).orders[0]; assert.equal(order.status, 'unknown'); assert.equal(order.filled, 1);
+    f.response.rows = [brokerRow({ ord_qty: '3', tot_ccld_qty: '1', rmn_qty: '2', cncl_yn: 'Y' })];
+    assert.equal((await f.broker.refresh()).orders[0].status, 'unknown');
+    f.response.rows = [brokerRow({ ord_qty: '3', tot_ccld_qty: '2', rmn_qty: '0', cncl_yn: 'Y' })];
+    order = (await f.broker.refresh()).orders[0]; assert.equal(order.status, 'cancelled'); assert.equal(order.filled, 2); assert.equal(f.count(), 1);
+    const audited = f.store.paperAudit(order.requestId).filter(row => row.action === 'reconcile');
+    assert.deepEqual(audited.map(row => row.after), ['partial', 'unknown', 'cancelled']);
+  } finally { f.store.close(); }
+});
+
+test('reconciliation rejects a reused broker ID with different price or organization', async () => {
+  for (const mismatch of [{ ord_unpr: '70100' }, { ord_gno_brno: '54321' }] as Record<string, string>[]) {
+    const f = fixture('success'); try {
+      await f.broker.submit(input()); f.response.rows = [brokerRow(mismatch)];
+      assert.equal((await f.broker.refresh()).orders[0].status, 'unknown');
+      await assert.rejects(f.broker.submit(input()), /불명/); assert.equal(f.count(), 1);
+    } finally { f.store.close(); }
+  }
+});
+
+test('impossible fill quantities and duplicate broker rows cannot release an unknown order', async () => {
+  for (const rows of [[brokerRow({ tot_ccld_qty: '2', rmn_qty: '0' })], [brokerRow(), brokerRow()]]) {
+    const f = fixture('success'); try {
+      const order = await f.broker.submit(input()); f.store.savePaper({ ...order, status: 'unknown' }); f.response.rows = rows;
+      await assert.rejects(f.broker.refresh(), /계약|중복|수량/);
+      assert.equal(f.store.paperOrders()[0].status, 'unknown');
+    } finally { f.store.close(); }
+  }
+});
+
+test('next trading day reconciles the original order date and never infers cancellation from absence', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-13T02:00:00Z') });
+  const f = fixture('success'); try {
+    const order = await f.broker.submit(input());
+    t.mock.timers.tick(3 * 86400000);
+    assert.equal((await f.broker.refresh()).orders[0].status, 'unknown');
+    assert.ok(f.requests.some(r => r.url.searchParams.get('INQR_STRT_DT') === '20261113'));
+    assert.ok(f.requests.some(r => r.url.searchParams.get('INQR_STRT_DT') === '20261116'));
+    f.response.rows = [brokerRow({ ord_dt: order.tradeDate, rmn_qty: '0', cncl_yn: 'Y' })];
+    assert.equal((await f.broker.refresh()).orders[0].status, 'cancelled'); assert.equal(f.count(), 1);
+  } finally { f.store.close(); }
+});
+
+let apiPort = 4349;
+async function apiFixture(run: (f: ReturnType<typeof fixture>, post: (path: string, body: unknown) => Promise<Response>, get: (path: string) => Promise<Response>) => Promise<void>) {
+  const f = fixture('timeout'); const port = apiPort++;
+  const server = makeServer(f.store, f.client, [port]); server.listen(port, '127.0.0.1'); await once(server, 'listening');
+  const post = (path: string, body: unknown) => fetch(`http://127.0.0.1:${port}/api/kis/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(body) });
+  try { await run(f, post, path => fetch(`http://127.0.0.1:${port}/api/kis/${path}`)); }
+  finally { server.closeAllConnections(); server.close(); await once(server, 'close'); f.store.close(); }
+}
+
+test('unsupported VTS cancel and revise fail closed without authentication or broker traffic', async () => {
+  await apiFixture(async (f, post, get) => {
+    const capabilities = await get('capabilities'); assert.equal(capabilities.status, 200);
+    assert.equal((await capabilities.json()).changeOrders.status, 'blocked');
+    const order = { ...input(), status: 'partial' as const, filled: 1, qty: 3, remaining: 2, brokerId: '001', organization: '12345', tradeDate: koreaDate(), createdAt: new Date().toISOString(), message: '부분체결' }; f.store.savePaper(order);
+    for (const action of ['cancel', 'revise']) {
+      const responses = await Promise.all([post(action, { id: order.requestId }), post(action, { id: order.requestId })]);
+      assert.deepEqual(responses.map(r => r.status), [409, 409]);
+      for (const response of responses) assert.match((await response.json()).error, /모의.*미지원/);
+    }
+    assert.equal(f.requests.length, 0); assert.deepEqual(f.store.paperOrders()[0], order);
+  });
+});
+
+test('blocked duplicate cancellation racing with a fill only changes the ledger through REST evidence', async () => {
+  await apiFixture(async (f, post) => {
+    const order = { ...input(), status: 'partial' as const, filled: 1, qty: 3, remaining: 2, brokerId: '001', organization: '12345', tradeDate: koreaDate(), createdAt: new Date().toISOString(), message: '부분체결' }; f.store.savePaper(order);
+    f.response.rows = [brokerRow({ ord_qty: '3', tot_ccld_qty: '3', rmn_qty: '0' })];
+    const responses = await Promise.all([post('orders', {}), post('cancel', { id: order.requestId }), post('cancel', { id: order.requestId })]);
+    assert.deepEqual(responses.map(r => r.status), [200, 409, 409]);
+    assert.equal(f.store.paperOrders()[0].status, 'filled'); assert.equal(f.store.paperOrders()[0].filled, 3);
+    assert.equal(f.store.paperAudit(order.requestId).at(-1)!.action, 'reconcile');
+    assert.equal(f.requests.filter(row => row.init!.method === 'POST' && !row.url.pathname.endsWith('/tokenP')).length, 0);
+  });
+});
+
+test('numberless unknown recovery requires recorded inspection and explicit fresh confirmation; duplicates are idempotent', async () => {
+  await apiFixture(async (f, post, get) => {
+    const order = input(); assert.equal((await f.broker.submit(order)).status, 'unknown');
+    f.response.rows = [brokerRow()];
+    await f.broker.refresh(); assert.equal(f.store.paperOrders()[0].status, 'unknown');
+    const response = await post('recovery/inspect', { id: order.requestId }); assert.equal(response.status, 200);
+    const preview = await response.json(); assert.equal(preview.candidates.length, 1); assert.equal(preview.order.status, 'unknown');
+    const confirm = { id: order.requestId, evidenceId: preview.evidenceId, brokerId: '001', organization: '12345', confirmed: true };
+    assert.equal((await post('recovery/confirm', { ...confirm, confirmed: false })).status, 400);
+    f.response.rows = [brokerRow({ tot_ccld_qty: '1', rmn_qty: '0' })];
+    const responses = await Promise.all([post('recovery/confirm', confirm), post('recovery/confirm', confirm)]);
+    assert.deepEqual(responses.map(r => r.status), [200, 200]);
+    assert.equal(f.store.paperOrders()[0].status, 'filled'); assert.equal(f.count(), 1);
+    assert.equal((await post('recovery/confirm', { ...confirm, brokerId: '002' })).status, 400);
+    const audit = (await (await get(`audit?requestId=${order.requestId}`)).json()).audit;
+    const recovered = audit.filter((row: { action: string }) => row.action === 'recovery-confirm');
+    assert.equal(recovered.length, 1); assert.equal(recovered[0].actor, 'local-user'); assert.ok(Date.parse(recovered[0].at));
+    assert.equal(recovered[0].before, 'unknown'); assert.equal(recovered[0].after, 'filled');
+    assert.equal(recovered[0].evidence.orders[0].filled, 1); assert.equal(recovered[0].evidence.balance.totalEquity, 10000000);
+    assert.equal(recovered[0].recovery.evidenceId, preview.evidenceId);
+    assert.ok(!JSON.stringify(audit).includes('test-token'));
+  });
+});
+
+test('empty, ambiguous or changed recovery evidence leaves unknown and sends nothing', async () => {
+  await apiFixture(async (f, post) => {
+    const order = input(); await f.broker.submit(order);
+    for (const rows of [[], [brokerRow(), brokerRow({ odno: '002' })]]) {
+      f.response.rows = rows;
+      const response = await post('recovery/inspect', { id: order.requestId }); assert.equal(response.status, 200);
+      const preview = await response.json();
+      assert.equal((await post('recovery/confirm', { id: order.requestId, evidenceId: preview.evidenceId, brokerId: '001', organization: '12345', confirmed: true })).status, 400);
+      assert.equal(f.store.paperOrders()[0].status, 'unknown');
+    }
+    f.response.rows = [brokerRow()];
+    const preview = await (await post('recovery/inspect', { id: order.requestId })).json();
+    f.response.rows = [brokerRow({ ord_unpr: '71000' })];
+    assert.equal((await post('recovery/confirm', { id: order.requestId, evidenceId: preview.evidenceId, brokerId: '001', organization: '12345', confirmed: true })).status, 400);
+    assert.equal(f.store.paperOrders()[0].status, 'unknown'); assert.equal(f.count(), 1);
+  });
+});
+
+test('recovery evidence expires, cannot bind another local order, and never clears on a read failure', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-16T02:00:00Z') });
+  const f = fixture('timeout'); try {
+    const order = await f.broker.submit(input()); f.response.rows = [brokerRow()];
+    const inspect = await f.broker.inspectRecovery(order.requestId);
+    const confirm = { id: order.requestId, evidenceId: inspect.evidenceId, brokerId: '001', organization: '12345', confirmed: true as const };
+    t.mock.timers.tick(300001); await assert.rejects(f.broker.confirmRecovery(confirm), /유효기간/);
+    const next = await f.broker.inspectRecovery(order.requestId);
+    f.store.savePaper({ ...order, requestId: randomUUID(), status: 'accepted', brokerId: '1', organization: '12345' });
+    await assert.rejects(f.broker.confirmRecovery({ ...confirm, evidenceId: next.evidenceId }), /다른 로컬 주문/);
+    f.response.before = async path => { if (path.endsWith('/inquire-daily-ccld')) throw new Error('fixture-secret'); };
+    await assert.rejects(f.broker.confirmRecovery({ ...confirm, evidenceId: next.evidenceId }), /통신/);
+    assert.equal(f.store.paperOrders().find(row => row.requestId === order.requestId)!.status, 'unknown');
+    assert.equal(f.count(), 1); assert.equal(f.store.paperAudit(order.requestId).filter(row => row.action === 'recovery-confirm').length, 0);
+  } finally { f.store.close(); }
+});
+
+test('restart persists recovery evidence and atomic audit, and audit failure rolls back the recovery', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stock03-recovery-')); const path = join(directory, 'state.sqlite');
+  const f = fixture('success'); let store = new Store(path); let db: DatabaseSync | undefined;
+  try {
+    const inputOrder = input();
+    store.savePaper({ ...inputOrder, status: 'sending', tradeDate: koreaDate(), createdAt: new Date().toISOString(), filled: 0, remaining: 1, message: '전송 중' });
+    store.close(); store = new Store(path);
+    assert.equal(store.paperOrders()[0].status, 'unknown'); assert.equal(f.requests.length, 0);
+    assert.equal(store.paperAudit(inputOrder.requestId)[0].action, 'restart');
+    f.response.rows = [brokerRow()]; let broker = new PaperBroker(store, f.client);
+    const preview = await broker.inspectRecovery(inputOrder.requestId);
+    store.close(); store = new Store(path); broker = new PaperBroker(store, f.client);
+    assert.equal(store.paperAudit(inputOrder.requestId).filter(row => row.action === 'restart').length, 1);
+    db = new DatabaseSync(path); db.exec("CREATE TRIGGER fail_audit BEFORE INSERT ON paper_audit BEGIN SELECT RAISE(FAIL, 'audit full'); END;");
+    const confirm = { id: inputOrder.requestId, evidenceId: preview.evidenceId, brokerId: '001', organization: '12345', confirmed: true as const };
+    await assert.rejects(broker.confirmRecovery(confirm), /audit full/);
+    assert.equal(store.paperOrders()[0].status, 'unknown'); assert.equal(store.paperAudit(inputOrder.requestId).length, 2);
+    db.exec('DROP TRIGGER fail_audit');
+    const recovered = await broker.confirmRecovery(confirm); assert.equal(recovered.status, 'accepted');
+    store.close(); store = new Store(path);
+    assert.equal(store.paperOrders()[0].brokerId, '0000000001'); assert.equal(store.paperAudit(inputOrder.requestId).at(-1)!.action, 'recovery-confirm');
+    assert.equal(f.count(), 0);
+  } finally { db?.close(); store.close(); f.store.close(); rmSync(directory, { recursive: true }); }
+});
+
+test('paper order, queries and recovery only use the documented mock domain and TR IDs without fallback', async () => {
+  const f = fixture('timeout'); try {
+    const order = await f.broker.submit(input()); f.response.rows = [brokerRow()];
+    const preview = await f.broker.inspectRecovery(order.requestId);
+    await f.broker.confirmRecovery({ id: order.requestId, evidenceId: preview.evidenceId, brokerId: '001', organization: '12345', confirmed: true });
+    const allowed = new Map([['inquire-balance', 'VTTC8434R'], ['inquire-daily-ccld', 'VTTC0081R'], ['inquire-price', 'FHKST01010100'], ['inquire-psbl-order', 'VTTC8908R'], ['order-cash', 'VTTC0012U']]);
+    for (const request of f.requests) {
+      assert.equal(request.url.origin, 'https://openapivts.koreainvestment.com:29443'); assert.equal(request.init!.redirect, 'error');
+      const endpoint = request.url.pathname.split('/').at(-1)!;
+      if (endpoint !== 'tokenP') assert.equal(new Headers(request.init!.headers).get('tr_id'), allowed.get(endpoint));
+    }
+    const sends = f.requests.filter(row => row.url.pathname.endsWith('/order-cash')); assert.equal(sends.length, 1);
+    const body = JSON.parse(String(sends[0].init!.body)); assert.equal(body.EXCG_ID_DVSN_CD, 'KRX'); assert.equal(body.ORD_DVSN, '00');
+    assert.equal(body.ORD_QTY, '1'); assert.equal(body.ORD_UNPR, '70000');
+  } finally { f.store.close(); }
+});
 test('paper order retries and concurrent duplicate requests send once and persist receipt', async () => {
   const f = fixture('success'); try {
     const order = input(); const [first, second] = await Promise.all([f.broker.submit(order), f.broker.submit(order)]);

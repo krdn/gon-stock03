@@ -1,0 +1,13 @@
+{
+  "server/kis.ts": "9b0ff3b07a5515e87b15be31c566222bad38ecba4753c16187f069394654a681",
+  "server/paper.ts": "a33276e8ec9271f90318009f19bc47c7908da48e5e313c4972757a83075874be",
+  "server/store.ts": "6e6b608271f62b806c18f54593259cd5ed267ad5c3b50319051d420c5bac8b50",
+  "server/http.ts": "d3edd4a1e9fe5b623168001bcbb3ffee9fa86327b69cd9ffdfd9afb1f1e79d1f",
+  "shared/contracts.ts": "063f06413ed4cdefefdef55cd257c8fcd6efdca489c93856e553ddc4bd97dc70",
+  "shared/model.ts": "dedb846c2e3981d570aea52c72c37473922bd6f12a2b1dde40335219b7d3bbd8",
+  "tests/kis.test.ts": "9ee42e29638db86013fff84d99a105bd1a2d76bed12140a85c09b143e63be349",
+  "tests/paper.test.ts": "b39f19e4d037e289bc91d3fa376babfe4c6df991c77da8889fba394f79bfc5ab",
+  "docs/STATE.md": "edda8ec08ae82b90efc3113d361bd1c4f50540bf98fcfaf4a00fe9c728fb6951",
+  "docs/start-context.json": "c3bbd26d04c4e99ecf131d1d3a0f48f61d51dc009f32c7c772be7a0785e6f866",
+  "docs/tasks/50-branch-integration.md": "558486ff8f7cff54108978e915341cf96f09737721fc68ae51c58647870ffce9"
+}

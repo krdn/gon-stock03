@@ -6,6 +6,8 @@ import { dailyInput, marketDate, type DailyInput, type DailyPrice } from '../sha
 
 const BASE = 'https://openapivts.koreainvestment.com:29443';
 const amount = z.string().regex(/^\d+(\.\d+)?$/).transform(Number).refine(Number.isFinite);
+const brokerId = z.string().regex(/^\d{1,10}$/).refine(value => Number(value) > 0);
+const organizationId = z.string().regex(/^\d{1,5}$/).refine(value => Number(value) > 0);
 const balanceSchema = z.object({
   rt_cd: z.literal('0'),
   output1: z.array(z.object({ pdno: z.string(), prdt_name: z.string(), hldg_qty: amount, pchs_avg_pric: amount, prpr: z.union([amount, z.literal(''), z.null()]).optional().transform(value => typeof value === 'number' && value > 0 ? value : null) })),
@@ -154,18 +156,23 @@ export class KisClient {
     });
   }
   async buyingPower(code: string, price: number) {
-    const { data } = await this.request('/uapi/domestic-stock/v1/trading/inquire-psbl-order', 'VTTC8908R', { ...this.accountParams(), PDNO: code, ORD_UNPR: String(price), ORD_DVSN: '00', CMA_EVLU_AMT_ICLD_YN: 'N', OVRS_ICLD_YN: 'N' });
-    const parsed = z.object({ output: z.object({ nrcvb_buy_qty: amount, ord_psbl_cash: amount }) }).safeParse(data);
+    const { data } = await this.request('/uapi/domestic-stock/v1/trading/inquire-psbl-order', 'VTTC8908R', { ...this.accountParams(), PDNO: code, ORD_UNPR: String(price), ORD_DVSN: '01', CMA_EVLU_AMT_ICLD_YN: 'N', OVRS_ICLD_YN: 'N' });
+    const parsed = z.object({ rt_cd: z.literal('0'), output: z.object({ nrcvb_buy_qty: amount.refine(Number.isSafeInteger), nrcvb_buy_amt: amount, ord_psbl_cash: amount }) }).safeParse(data);
     if (!parsed.success) throw new Error('KIS 미수 없는 주문 가능 수량을 확인하지 못했습니다.');
-    return { qty: parsed.data.output.nrcvb_buy_qty, cash: parsed.data.output.ord_psbl_cash };
+    return { qty: parsed.data.output.nrcvb_buy_qty, cash: Math.min(parsed.data.output.nrcvb_buy_amt, parsed.data.output.ord_psbl_cash) };
   }
   async dailyOrders(date = koreaDate()): Promise<BrokerOrder[]> {
+    marketDate.parse(date);
     let fk = '', nk = ''; const seen = new Set<string>(); const rows: BrokerOrder[] = [];
     for (let page = 0; page < 50; page++) {
       const { response, data } = await this.request('/uapi/domestic-stock/v1/trading/inquire-daily-ccld', 'VTTC0081R', { ...this.accountParams(), INQR_STRT_DT: date, INQR_END_DT: date, SLL_BUY_DVSN_CD: '00', PDNO: '', CCLD_DVSN: '00', INQR_DVSN: '00', INQR_DVSN_3: '00', ORD_GNO_BRNO: '', ODNO: '', INQR_DVSN_1: '', CTX_AREA_FK100: fk, CTX_AREA_NK100: nk, EXCG_ID_DVSN_CD: 'KRX' }, false, page ? 'N' : '');
-      const parsed = z.object({ output1: z.array(z.object({ odno: z.string(), ord_dt: z.string(), pdno: z.string(), prdt_name: z.string(), sll_buy_dvsn_cd: z.enum(['01', '02']), ord_qty: amount, ord_unpr: amount, tot_ccld_qty: amount, rmn_qty: amount, cncl_yn: z.string(), ord_gno_brno: z.string() })), ctx_area_fk100: z.string().optional(), ctx_area_nk100: z.string().optional() }).safeParse(data);
+      const parsed = z.object({ rt_cd: z.literal('0'), output1: z.array(z.object({ odno: brokerId, ord_dt: marketDate, pdno: z.string().regex(/^\d{6}$/), prdt_name: z.string(), sll_buy_dvsn_cd: z.enum(['01', '02']), ord_qty: amount, ord_unpr: amount, tot_ccld_qty: amount, rmn_qty: amount, cncl_yn: z.enum(['Y', 'N']), ord_gno_brno: organizationId })), ctx_area_fk100: z.string().optional(), ctx_area_nk100: z.string().optional() }).safeParse(data);
       if (!parsed.success) throw new Error('KIS 주문 조회 응답 계약이 일치하지 않습니다.');
-      rows.push(...parsed.data.output1.map(o => ({ brokerId: o.odno, date: o.ord_dt, code: o.pdno, name: o.prdt_name, side: (o.sll_buy_dvsn_cd === '02' ? 'buy' : 'sell') as 'buy' | 'sell', qty: o.ord_qty, price: o.ord_unpr, filled: o.tot_ccld_qty, remaining: o.rmn_qty, cancelled: o.cncl_yn === 'Y', organization: o.ord_gno_brno })));
+      for (const o of parsed.data.output1) {
+        if (![o.ord_qty, o.ord_unpr, o.tot_ccld_qty, o.rmn_qty].every(Number.isSafeInteger) || o.ord_qty <= 0 || o.tot_ccld_qty + o.rmn_qty > o.ord_qty) throw new Error('KIS 주문 조회 수량 계약이 일치하지 않습니다.');
+        if (rows.some(row => row.date === o.ord_dt && row.organization.replace(/^0+(?=\d)/, '') === o.ord_gno_brno.replace(/^0+(?=\d)/, '') && row.brokerId.replace(/^0+(?=\d)/, '') === o.odno.replace(/^0+(?=\d)/, ''))) throw new Error('KIS 주문 조회에 중복 주문번호가 있습니다.');
+        rows.push({ brokerId: o.odno, date: o.ord_dt, code: o.pdno, name: o.prdt_name, side: o.sll_buy_dvsn_cd === '02' ? 'buy' : 'sell', qty: o.ord_qty, price: o.ord_unpr, filled: o.tot_ccld_qty, remaining: o.rmn_qty, cancelled: o.cncl_yn === 'Y', organization: o.ord_gno_brno });
+      }
       if (!['M', 'F'].includes(response.headers.get('tr_cont') ?? '')) return rows;
       fk = parsed.data.ctx_area_fk100?.trim() ?? ''; nk = parsed.data.ctx_area_nk100?.trim() ?? '';
       const cursor = `${fk}|${nk}`;
@@ -176,7 +183,7 @@ export class KisClient {
   }
   async submit(input: OrderInput, beforeSend?: () => void) {
     const { data } = await this.request('/uapi/domestic-stock/v1/trading/order-cash', input.side === 'buy' ? 'VTTC0012U' : 'VTTC0011U', { ...this.accountParams(), PDNO: input.code, ORD_DVSN: '00', ORD_QTY: String(input.qty), ORD_UNPR: String(input.price), EXCG_ID_DVSN_CD: 'KRX', SLL_TYPE: input.side === 'sell' ? '01' : '', CNDT_PRIC: '' }, true, '', beforeSend);
-    const parsed = z.object({ output: z.object({ ODNO: z.string().min(1), KRX_FWDG_ORD_ORGNO: z.string().min(1) }) }).safeParse(data);
+    const parsed = z.object({ rt_cd: z.literal('0'), output: z.object({ ODNO: brokerId, KRX_FWDG_ORD_ORGNO: organizationId }) }).safeParse(data);
     if (!parsed.success) throw new Error('주문 응답을 확정할 수 없습니다. 자동 재전송하지 않습니다.');
     return { brokerId: parsed.data.output.ODNO, organization: parsed.data.output.KRX_FWDG_ORD_ORGNO };
   }

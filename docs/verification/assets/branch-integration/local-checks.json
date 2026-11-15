@@ -1,0 +1,83 @@
+{
+  "unit_api": {
+    "command": "npm test",
+    "passed": 99,
+    "failed": 0
+  },
+  "build": {
+    "command": "npm run build",
+    "result": "PASS",
+    "warning": "existing chunk exceeds 500 kB"
+  },
+  "browser": {
+    "command": "npm run test:e2e",
+    "passed": 67,
+    "failed": 0
+  },
+  "implementation_ready": "PASS",
+  "relative_links": {
+    "checked": 31,
+    "missing": 0
+  },
+  "ste_lint": "NOT RUN: missing docs/conventions/ste100-writing.md",
+  "live_kis_calls": false,
+  "logs": {
+    "tests": {
+      "sha256": "1b37b02db86160d1aaa109259a374073e40ce9512ba35db15aafe21658e23398",
+      "tail": [
+        "✔ missing or zero prices do not turn into zero valuation or fabricated loss (0.331435ms)",
+        "✔ zero assets have no percentage and cash-only assets are 100 percent cash (0.205695ms)",
+        "✔ snapshot accepts an explicitly unavailable price and rejects invalid prices (5.452771ms)",
+        "✔ SQLite transaction rolls back and restart preserves data while stopping strategies (226.364645ms)",
+        "ℹ tests 99",
+        "ℹ suites 0",
+        "ℹ pass 99",
+        "ℹ fail 0",
+        "ℹ cancelled 0",
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 1147.884633"
+      ]
+    },
+    "build": {
+      "sha256": "eb9544d70cdc7ad07069f935adc5ad91587f39492b00553739545b39b456bc63",
+      "tail": [
+        "rendering chunks...",
+        "computing gzip size...",
+        "dist/index.html                   0.47 kB │ gzip:   0.35 kB",
+        "dist/assets/index-Ca41wSB_.css   34.13 kB │ gzip:   7.89 kB",
+        "dist/assets/index-B84rmX4i.js   515.78 kB │ gzip: 155.72 kB",
+        "",
+        "[plugin builtin:vite-reporter] ",
+        "(!) Some chunks are larger than 500 kB after minification. Consider:",
+        "- Using dynamic import() to code-split the application",
+        "- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting",
+        "- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.",
+        "✓ built in 432ms"
+      ]
+    },
+    "e2e": {
+      "sha256": "d6f86185c39f2dd49b6033a55fae500daf55c1256947261e95bbea696cb3c79e",
+      "tail": [
+        "  ✓  58 tests/browser/workbench.spec.ts:115:1 › journal separates first empty state from no search results and searches body/code (266ms)",
+        "  ✓  59 tests/browser/workbench.spec.ts:130:1 › journal save failure retains draft and never reports success; retry persists safely on mobile (422ms)",
+        "  ✓  60 tests/browser/workbench.spec.ts:152:1 › journal keeps new typing while an earlier save response is pending (319ms)",
+        "  ✓  61 tests/browser/workbench.spec.ts:171:1 › design connects every screen to its issue, stage, contract and implementation evidence (1.7s)",
+        "  ✓  62 tests/browser/workbench.spec.ts:202:1 › design supports keyboard selection and mobile navigation across every topic (1.2s)",
+        "  ✓  63 tests/browser/workbench.spec.ts:227:1 › design malformed topic and fractional step links remain navigable (458ms)",
+        "  ✓  64 tests/browser/workbench.spec.ts:238:1 › project map local drafts never send requests or approve execution, including blocked storage (272ms)",
+        "  ✓  65 tests/browser/workbench.spec.ts:255:1 › project map selects a stable node, restores draft and downloads request without AI transmission (318ms)",
+        "  ✓  66 tests/browser/workbench.spec.ts:270:1 › stored daily backtest is separate from DEMO and replays a persisted experiment after reload (1.7s)",
+        "  ✓  67 tests/browser/workbench.spec.ts:315:1 › backtest empty storage and list failures never fall back to synthetic data (274ms)",
+        "",
+        "  67 passed (45.6s)"
+      ]
+    },
+    "ste": {
+      "sha256": "0ad6bb58d827553d104e2e63805ce018e0c6257575ad95d2f53a726f370ec078",
+      "tail": [
+        "evolve docs ste-lint: read the standard: open /tmp/gon-stock03-all-branches-20261116/docs/conventions/ste100-writing.md: no such file or directory"
+      ]
+    }
+  }
+}

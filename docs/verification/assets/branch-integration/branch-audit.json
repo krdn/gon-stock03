@@ -1,0 +1,523 @@
+{
+  "base": "034f7e766d67b0ecfe3dab8477078939c255412e",
+  "refs": [
+    {
+      "ref": "docs/15-data-status-integration",
+      "sha": "a01bcecc0e076aebda173a772f4525fa01d91541",
+      "ancestor_of_start_main": false,
+      "pr": 40,
+      "pr_state": "MERGED",
+      "merge_sha": "f50e08040dc883f5577579221cea433d3054c40e",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "docs/16-portfolio-integration",
+      "sha": "75da607725c3a6ed2a5e2cad7dcebed89da21d4a",
+      "ancestor_of_start_main": false,
+      "pr": 38,
+      "pr_state": "MERGED",
+      "merge_sha": "0ea629604c8e75acb0a253e5bcb4a6fbe77ae088",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "docs/20-integration-handoff",
+      "sha": "c13dada0267f70154baa9c20bd4cb5e5c30ce7fd",
+      "ancestor_of_start_main": false,
+      "pr": 36,
+      "pr_state": "MERGED",
+      "merge_sha": "daa01baa65f94cb5c9e1497a28fa8c2ff71938e9",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "docs/21-integrated-handoff",
+      "sha": "eaf1e79e6f34a186410dfab1f0466ff4bcd36975",
+      "ancestor_of_start_main": false,
+      "pr": 42,
+      "pr_state": "MERGED",
+      "merge_sha": "71e5d6d2631676f30267d3acea4ccee3ec90c8da",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "docs/23-journal-integration",
+      "sha": "9eda7f2ca220678e16fee1f2c110a8cf5356bc85",
+      "ancestor_of_start_main": false,
+      "pr": 44,
+      "pr_state": "MERGED",
+      "merge_sha": "f621a145172cb4c764f2d6e6315f3ff2520efdf6",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "docs/24-integration",
+      "sha": "3c4352713de6216ef2e30ce33494d79d960a14ff",
+      "ancestor_of_start_main": true,
+      "pr": 46,
+      "pr_state": "MERGED",
+      "merge_sha": "034f7e766d67b0ecfe3dab8477078939c255412e",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "docs/6-integration-complete",
+      "sha": "3ef864b2c17f74ddee076393dea11c74e05754f1",
+      "ancestor_of_start_main": true,
+      "pr": 28,
+      "pr_state": "MERGED",
+      "merge_sha": "d898eec1998d1d30eef11d45366a55184102876d",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "docs/7-market-data-integration",
+      "sha": "0144cfe2db0c2107ac9d78396ee4f68ccd7f80a8",
+      "ancestor_of_start_main": true,
+      "pr": 30,
+      "pr_state": "MERGED",
+      "merge_sha": "78f96ec3647cf9ef8c8ebf8562136eb1494b76d9",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "docs/8-settings-integration",
+      "sha": "ec7df13d02ed3ab78d31e6cfbb0333b035826637",
+      "ancestor_of_start_main": true,
+      "pr": 32,
+      "pr_state": "MERGED",
+      "merge_sha": "73fa8d1b4fe53a0ac579b611d764f658011631f8",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "docs/baseline-5-accepted",
+      "sha": "958209ac2a997c606578b6eba716cc585f9239c8",
+      "ancestor_of_start_main": true,
+      "pr": 26,
+      "pr_state": "MERGED",
+      "merge_sha": "e15d3073cf29ef62dde964f1f41ab186e611ec88",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "feat/10-market-explorer",
+      "sha": "c8da358b1c1a4521ba0bf6da3808c7d758bfca9e",
+      "ancestor_of_start_main": true,
+      "pr": 33,
+      "pr_state": "MERGED",
+      "merge_sha": "3211548b782c1fdc5c54ad13383eedde1d2d60f5",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "feat/15-data-status",
+      "sha": "6db7e259a0c0a692007dd5ad81b674ec317acaf9",
+      "ancestor_of_start_main": false,
+      "pr": 39,
+      "pr_state": "MERGED",
+      "merge_sha": "ab5e16f4ca0d141308c98f2b4e96dad8dc01c97a",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "feat/16-portfolio",
+      "sha": "78980f326c7b93d43f77fb5c1d164e3b46a99661",
+      "ancestor_of_start_main": false,
+      "pr": 37,
+      "pr_state": "MERGED",
+      "merge_sha": "c54061266d7124f498307bde4c54a394ca92f19a",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "feat/20-watchlist",
+      "sha": "73468867375b541fcab95de19a90cf70cd5cfbb9",
+      "ancestor_of_start_main": false,
+      "pr": 35,
+      "pr_state": "MERGED",
+      "merge_sha": "e6aa5f7b7e5c3d0489a18ffb466ecbb0d332ddc6",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "feat/21-backtest",
+      "sha": "fd6350425b3c07834bd721d9b9873dd70372c23e",
+      "ancestor_of_start_main": false,
+      "pr": 41,
+      "pr_state": "MERGED",
+      "merge_sha": "fa0e1e0096dd9e55e824ea6320f6862698a889cb",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "feat/23-journal",
+      "sha": "1379930aea00f5ba01ddd81e889543609ddfc2dd",
+      "ancestor_of_start_main": false,
+      "pr": 43,
+      "pr_state": "MERGED",
+      "merge_sha": "7543db068b30add25221d091f000f1dbcca2231c",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "feat/24-design",
+      "sha": "fe9541805dc1345f826abb71bc7cb20794add2c7",
+      "ancestor_of_start_main": true,
+      "pr": 45,
+      "pr_state": "MERGED",
+      "merge_sha": "2ffa67c97beb1c5d5727b56504ba1a02c546b36b",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "feat/6-common-state",
+      "sha": "e37d7f8ec32c9d2cc634d8e1392fbd3650b7f8cd",
+      "ancestor_of_start_main": true,
+      "pr": 27,
+      "pr_state": "MERGED",
+      "merge_sha": "8b280229671bb8452c66ecc4939e87fda569c697",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "feat/7-market-data",
+      "sha": "4fc807be8e5080f314759153acc589280a8eee09",
+      "ancestor_of_start_main": true,
+      "pr": 29,
+      "pr_state": "MERGED",
+      "merge_sha": "bc813848bc2059f91c99f028b01d91bf0b3ee9f3",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "feat/8-connection-settings",
+      "sha": "f05d5ae90f0b70179e521a9199ffcf4bd6ae4617",
+      "ancestor_of_start_main": true,
+      "pr": 31,
+      "pr_state": "MERGED",
+      "merge_sha": "21ca53a0f7850bc072777e293b4ca14b419e52aa",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "feat/9-kis-orders-recovery",
+      "sha": "7fac5aac71702e1a56a61173b1b556ee703f35d9",
+      "ancestor_of_start_main": false,
+      "pr": 47,
+      "pr_state": "OPEN",
+      "classification": "pending"
+    },
+    {
+      "ref": "feat/trading-workbench",
+      "sha": "6e0bf0cfd4ce84b2c4bf966deec7c66ec5dea78d",
+      "ancestor_of_start_main": true,
+      "pr": 4,
+      "pr_state": "MERGED",
+      "merge_sha": "9b4b361fa4b476f296cdaf60e27ba915c3d521a7",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "fix/48-kis-pacing",
+      "sha": "0526d0fa1a68cb843ea91521a95d024016297a6a",
+      "ancestor_of_start_main": false,
+      "pr": 49,
+      "pr_state": "OPEN",
+      "classification": "pending"
+    },
+    {
+      "ref": "main",
+      "sha": "034f7e766d67b0ecfe3dab8477078939c255412e",
+      "ancestor_of_start_main": true,
+      "pr": null,
+      "pr_state": null,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin",
+      "sha": "034f7e766d67b0ecfe3dab8477078939c255412e",
+      "ancestor_of_start_main": true,
+      "pr": null,
+      "pr_state": null,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/docs/15-data-status-integration",
+      "sha": "a01bcecc0e076aebda173a772f4525fa01d91541",
+      "ancestor_of_start_main": false,
+      "pr": 40,
+      "pr_state": "MERGED",
+      "merge_sha": "f50e08040dc883f5577579221cea433d3054c40e",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/docs/16-portfolio-integration",
+      "sha": "75da607725c3a6ed2a5e2cad7dcebed89da21d4a",
+      "ancestor_of_start_main": false,
+      "pr": 38,
+      "pr_state": "MERGED",
+      "merge_sha": "0ea629604c8e75acb0a253e5bcb4a6fbe77ae088",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/docs/20-integration-handoff",
+      "sha": "c13dada0267f70154baa9c20bd4cb5e5c30ce7fd",
+      "ancestor_of_start_main": false,
+      "pr": 36,
+      "pr_state": "MERGED",
+      "merge_sha": "daa01baa65f94cb5c9e1497a28fa8c2ff71938e9",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/docs/21-integrated-handoff",
+      "sha": "eaf1e79e6f34a186410dfab1f0466ff4bcd36975",
+      "ancestor_of_start_main": false,
+      "pr": 42,
+      "pr_state": "MERGED",
+      "merge_sha": "71e5d6d2631676f30267d3acea4ccee3ec90c8da",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/docs/23-journal-integration",
+      "sha": "9eda7f2ca220678e16fee1f2c110a8cf5356bc85",
+      "ancestor_of_start_main": false,
+      "pr": 44,
+      "pr_state": "MERGED",
+      "merge_sha": "f621a145172cb4c764f2d6e6315f3ff2520efdf6",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/docs/24-integration",
+      "sha": "3c4352713de6216ef2e30ce33494d79d960a14ff",
+      "ancestor_of_start_main": true,
+      "pr": 46,
+      "pr_state": "MERGED",
+      "merge_sha": "034f7e766d67b0ecfe3dab8477078939c255412e",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/docs/6-integration-complete",
+      "sha": "3ef864b2c17f74ddee076393dea11c74e05754f1",
+      "ancestor_of_start_main": true,
+      "pr": 28,
+      "pr_state": "MERGED",
+      "merge_sha": "d898eec1998d1d30eef11d45366a55184102876d",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/docs/7-market-data-integration",
+      "sha": "0144cfe2db0c2107ac9d78396ee4f68ccd7f80a8",
+      "ancestor_of_start_main": true,
+      "pr": 30,
+      "pr_state": "MERGED",
+      "merge_sha": "78f96ec3647cf9ef8c8ebf8562136eb1494b76d9",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/docs/8-settings-integration",
+      "sha": "ec7df13d02ed3ab78d31e6cfbb0333b035826637",
+      "ancestor_of_start_main": true,
+      "pr": 32,
+      "pr_state": "MERGED",
+      "merge_sha": "73fa8d1b4fe53a0ac579b611d764f658011631f8",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/docs/baseline-5-accepted",
+      "sha": "958209ac2a997c606578b6eba716cc585f9239c8",
+      "ancestor_of_start_main": true,
+      "pr": 26,
+      "pr_state": "MERGED",
+      "merge_sha": "e15d3073cf29ef62dde964f1f41ab186e611ec88",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/feat/10-market-explorer",
+      "sha": "c8da358b1c1a4521ba0bf6da3808c7d758bfca9e",
+      "ancestor_of_start_main": true,
+      "pr": 33,
+      "pr_state": "MERGED",
+      "merge_sha": "3211548b782c1fdc5c54ad13383eedde1d2d60f5",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/feat/15-data-status",
+      "sha": "6db7e259a0c0a692007dd5ad81b674ec317acaf9",
+      "ancestor_of_start_main": false,
+      "pr": 39,
+      "pr_state": "MERGED",
+      "merge_sha": "ab5e16f4ca0d141308c98f2b4e96dad8dc01c97a",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/feat/16-portfolio",
+      "sha": "78980f326c7b93d43f77fb5c1d164e3b46a99661",
+      "ancestor_of_start_main": false,
+      "pr": 37,
+      "pr_state": "MERGED",
+      "merge_sha": "c54061266d7124f498307bde4c54a394ca92f19a",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/feat/20-watchlist",
+      "sha": "73468867375b541fcab95de19a90cf70cd5cfbb9",
+      "ancestor_of_start_main": false,
+      "pr": 35,
+      "pr_state": "MERGED",
+      "merge_sha": "e6aa5f7b7e5c3d0489a18ffb466ecbb0d332ddc6",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/feat/21-backtest",
+      "sha": "fd6350425b3c07834bd721d9b9873dd70372c23e",
+      "ancestor_of_start_main": false,
+      "pr": 41,
+      "pr_state": "MERGED",
+      "merge_sha": "fa0e1e0096dd9e55e824ea6320f6862698a889cb",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/feat/23-journal",
+      "sha": "1379930aea00f5ba01ddd81e889543609ddfc2dd",
+      "ancestor_of_start_main": false,
+      "pr": 43,
+      "pr_state": "MERGED",
+      "merge_sha": "7543db068b30add25221d091f000f1dbcca2231c",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/feat/24-design",
+      "sha": "fe9541805dc1345f826abb71bc7cb20794add2c7",
+      "ancestor_of_start_main": true,
+      "pr": 45,
+      "pr_state": "MERGED",
+      "merge_sha": "2ffa67c97beb1c5d5727b56504ba1a02c546b36b",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/feat/6-common-state",
+      "sha": "e37d7f8ec32c9d2cc634d8e1392fbd3650b7f8cd",
+      "ancestor_of_start_main": true,
+      "pr": 27,
+      "pr_state": "MERGED",
+      "merge_sha": "8b280229671bb8452c66ecc4939e87fda569c697",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/feat/7-market-data",
+      "sha": "4fc807be8e5080f314759153acc589280a8eee09",
+      "ancestor_of_start_main": true,
+      "pr": 29,
+      "pr_state": "MERGED",
+      "merge_sha": "bc813848bc2059f91c99f028b01d91bf0b3ee9f3",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/feat/8-connection-settings",
+      "sha": "f05d5ae90f0b70179e521a9199ffcf4bd6ae4617",
+      "ancestor_of_start_main": true,
+      "pr": 31,
+      "pr_state": "MERGED",
+      "merge_sha": "21ca53a0f7850bc072777e293b4ca14b419e52aa",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/feat/9-kis-orders-recovery",
+      "sha": "7fac5aac71702e1a56a61173b1b556ee703f35d9",
+      "ancestor_of_start_main": false,
+      "pr": 47,
+      "pr_state": "OPEN",
+      "classification": "pending"
+    },
+    {
+      "ref": "origin/feat/trading-workbench",
+      "sha": "6e0bf0cfd4ce84b2c4bf966deec7c66ec5dea78d",
+      "ancestor_of_start_main": true,
+      "pr": 4,
+      "pr_state": "MERGED",
+      "merge_sha": "9b4b361fa4b476f296cdaf60e27ba915c3d521a7",
+      "head_tree_equals_merged_tree": true,
+      "merge_in_main": true,
+      "classification": "already_integrated"
+    },
+    {
+      "ref": "origin/fix/48-kis-pacing",
+      "sha": "0526d0fa1a68cb843ea91521a95d024016297a6a",
+      "ancestor_of_start_main": false,
+      "pr": 49,
+      "pr_state": "OPEN",
+      "classification": "pending"
+    },
+    {
+      "ref": "origin/main",
+      "sha": "034f7e766d67b0ecfe3dab8477078939c255412e",
+      "ancestor_of_start_main": true,
+      "pr": null,
+      "pr_state": null,
+      "classification": "already_integrated"
+    }
+  ]
+}

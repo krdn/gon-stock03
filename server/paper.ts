@@ -1,29 +1,83 @@
-import type { OrderInput } from '../shared/contracts.ts';
-import type { PaperOrder } from '../shared/model.ts';
+import { paperRecoveryInput, type OrderInput, type PaperRecoveryInput } from '../shared/contracts.ts';
+import type { PaperOrder, BrokerOrder, PaperEvidence, ConnectionState } from '../shared/model.ts';
 import { KisClient, KisRejected, KisNotSent, koreaDate } from './kis.ts';
 import { Store } from './store.ts';
 import { record } from './engine.ts';
 
+export const paperCapabilities = {
+  changeOrders: { status: 'blocked', reason: '정정취소 전 필수 가능수량 조회는 모의투자 미지원입니다. KIS 모의 앱에서 수동 처리 후 주문을 대조하세요.', source: 'https://apiportal.koreainvestment.com/apiservice-apiservice?/uapi/domestic-stock/v1/trading/inquire-psbl-rvsecncl' },
+} as const;
+const normalizeId = (id: string) => id.replace(/^0+(?=\d)/, '');
+const sameId = (a: string, b: string) => normalizeId(a) === normalizeId(b);
+const matches = (local: PaperOrder, row: BrokerOrder) => row.date === local.tradeDate && row.code === local.code && row.side === local.side && row.qty === local.qty && row.price === local.price;
+const reconciled = (local: PaperOrder, row: BrokerOrder): PaperOrder => ({ ...local, brokerId: row.brokerId, organization: row.organization, filled: row.filled, remaining: row.remaining,
+  status: row.filled === local.qty ? 'filled' : row.remaining === 0 ? 'cancelled' : row.filled > 0 ? 'partial' : 'accepted', message: 'KIS 주문 조회와 대조했습니다.' });
+const evidence = (tradeDate: string, orders: BrokerOrder[], connection: ConnectionState): PaperEvidence => ({ observedAt: new Date().toISOString(), tradeDate, orders,
+  balance: { cash: connection.balance!.cash, totalEquity: connection.balance!.totalEquity, positions: connection.balance!.positions.map(({ code, qty }) => ({ code, qty })) } });
+
 export class PaperBroker {
   private queue: Promise<unknown> = Promise.resolve();
   constructor(private store: Store, private kis: KisClient) {}
-  async refresh(freshBalance = false) {
+  private enqueue<T>(run: () => Promise<T>): Promise<T> {
+    const job = this.queue.catch(() => {}).then(run); this.queue = job; return job;
+  }
+  refresh(freshBalance = false) { return this.enqueue(() => this.refreshInsideQueue(freshBalance)); }
+  private async refreshInsideQueue(freshBalance = false) {
     const connection = await this.kis.balance(freshBalance); const orders = await this.kis.dailyOrders();
     const byDay = new Map([[koreaDate(), orders]]);
-    for (const local of this.store.paperOrders()) {
-      if (!local.brokerId || ['filled', 'cancelled', 'rejected'].includes(local.status)) continue;
+    const pending = this.store.paperOrders().filter(local => local.brokerId && !['filled', 'cancelled', 'rejected'].includes(local.status));
+    for (const local of pending) {
       if (!byDay.has(local.tradeDate)) byDay.set(local.tradeDate, await this.kis.dailyOrders(local.tradeDate));
-      const normalizeId = (id: string) => id.replace(/^0+(?=\d)/, '');
-      const row = byDay.get(local.tradeDate)!.find(o => normalizeId(o.brokerId) === normalizeId(local.brokerId!) && o.code === local.code && o.date === local.tradeDate && o.side === local.side && o.qty === local.qty);
-      if (!row) { this.store.savePaper({ ...local, status: 'unknown', message: '저장한 주문번호가 KIS 조회에서 확인되지 않습니다. 추가 주문을 차단합니다.' }); continue; }
-      local.filled = row.filled; local.remaining = row.remaining;
-      local.status = row.filled >= local.qty ? 'filled' : row.cancelled || row.remaining === 0 ? 'cancelled' : row.filled > 0 ? 'partial' : 'accepted';
-      local.message = 'KIS 주문 조회와 대조했습니다.'; this.store.savePaper(local);
+    }
+    for (const local of pending) {
+      const rows = byDay.get(local.tradeDate)!;
+      const found = rows.filter(row => sameId(row.brokerId, local.brokerId!) && (!local.organization || sameId(row.organization, local.organization)) && matches(local, row));
+      const row = found.length === 1 ? found[0] : undefined;
+      const next: PaperOrder = row && row.filled >= local.filled && !(row.cancelled && row.remaining > 0) ? reconciled(local, row) : { ...local, status: 'unknown', message: '저장한 주문과 KIS 조회가 일치하지 않습니다. 추가 주문을 차단합니다.' };
+      if (next.status !== local.status || next.filled !== local.filled || next.remaining !== local.remaining) this.store.savePaper(next, { actor: 'system', action: 'reconcile', before: local.status, evidence: evidence(local.tradeDate, rows, connection) });
     }
     return { connection, brokerOrders: orders, orders: this.store.paperOrders() };
   }
+  inspectRecovery(id: string) {
+    return this.enqueue(async () => {
+      const order = this.numberlessUnknown(id);
+      const connection = await this.kis.balance(true); const rows = await this.kis.dailyOrders(order.tradeDate);
+      const snapshot = evidence(order.tradeDate, rows, connection);
+      const audit = this.store.appendPaperAudit({ requestId: id, actor: 'local-user', action: 'recovery-inspect', before: 'unknown', after: 'unknown', evidence: snapshot });
+      return { order, evidenceId: audit.id, evidence: snapshot, candidates: rows.filter(row => matches(order, row)), message: '주문번호·거래일·종목·방향·수량·가격을 확인하세요. 조회에 없다는 이유로 불명을 해제하지 않습니다.' };
+    });
+  }
+  confirmRecovery(raw: PaperRecoveryInput) {
+    const input = paperRecoveryInput.parse(raw);
+    return this.enqueue(async () => {
+      const audit = this.store.paperAudit(input.id);
+      const prior = audit.find(row => row.action === 'recovery-confirm' && row.recovery?.evidenceId === input.evidenceId);
+      if (prior) {
+        if (!sameId(prior.recovery!.brokerId, input.brokerId) || !sameId(prior.recovery!.organization, input.organization)) throw new Error('동일 복구 근거의 주문번호·조직번호가 다릅니다.');
+        return this.store.paperOrders().find(order => order.requestId === input.id)!;
+      }
+      const order = this.numberlessUnknown(input.id);
+      const inspected = audit.find(row => row.id === input.evidenceId && row.action === 'recovery-inspect');
+      if (!inspected?.evidence || Date.now() - Date.parse(inspected.at) > 300000 || Date.now() < Date.parse(inspected.at)) throw new Error('복구 근거가 없거나 5분 유효기간이 지났습니다. 다시 조회하세요.');
+      const selected = inspected.evidence.orders.filter(row => matches(order, row));
+      if (selected.length !== 1 || !sameId(selected[0].brokerId, input.brokerId) || !sameId(selected[0].organization, input.organization)) throw new Error('일치하는 복구 후보가 유일하지 않거나 선택한 주문이 다릅니다. 불명을 유지합니다.');
+      const connection = await this.kis.balance(true); const rows = await this.kis.dailyOrders(order.tradeDate);
+      const candidates = rows.filter(row => matches(order, row));
+      const row = candidates.length === 1 ? candidates[0] : undefined;
+      if (!row || !sameId(row.brokerId, input.brokerId) || !sameId(row.organization, input.organization) || row.filled < selected[0].filled || row.filled < order.filled || (row.cancelled && row.remaining > 0)) throw new Error('최신 조회가 복구 근거와 일치하지 않습니다. 불명을 유지합니다.');
+      if (this.store.paperOrders().some(other => other.requestId !== input.id && other.tradeDate === row.date && other.brokerId && sameId(other.brokerId, row.brokerId) && (!other.organization || sameId(other.organization, row.organization)))) throw new Error('이미 다른 로컬 주문에 연결된 주문번호입니다.');
+      const next = reconciled(order, row);
+      this.store.savePaper(next, { actor: 'local-user', action: 'recovery-confirm', before: 'unknown', evidence: evidence(order.tradeDate, rows, connection), recovery: { evidenceId: input.evidenceId, brokerId: row.brokerId, organization: row.organization } });
+      return next;
+    });
+  }
+  private numberlessUnknown(id: string) {
+    const order = this.store.paperOrders().find(row => row.requestId === id);
+    if (!order || order.status !== 'unknown' || order.brokerId) throw new Error('주문번호 없는 응답 불명 주문만 명시적 복구할 수 있습니다.');
+    return order;
+  }
   async submit(input: OrderInput): Promise<PaperOrder> {
-    const job = this.queue.catch(() => {}).then(async () => {
+    return this.enqueue(async () => {
       const existing = this.store.paperOrders().find(o => o.requestId === input.requestId);
       if (existing) {
         if (existing.code !== input.code || existing.side !== input.side || existing.qty !== input.qty || existing.price !== input.price) throw new Error('동일 요청 ID의 주문 내용이 다릅니다.');
@@ -31,7 +85,7 @@ export class PaperBroker {
       }
       if (this.store.paperOrders().some(o => ['unknown', 'sending'].includes(o.status))) throw new Error('응답 불명 주문이 있습니다. KIS 계좌 대조 전 추가 주문을 차단합니다.');
       if (this.store.paperOrders().length >= 1000) throw new Error('KIS 주문 기록 한도에 도달했습니다.');
-      const { connection, brokerOrders } = await this.refresh(true); const balance = connection.balance!;
+      const { connection, brokerOrders } = await this.refreshInsideQueue(true); const balance = connection.balance!;
       if (this.store.paperOrders().some(o => o.status === 'unknown')) throw new Error('계좌 대조 중 응답 불명 주문이 확인되었습니다.');
       const quote = await this.kis.quote(input.code, true);
       const risk = this.store.read().risk;
@@ -55,7 +109,7 @@ export class PaperBroker {
       const latestRisk = this.store.read().risk;
       if (latestRisk.halted || JSON.stringify(risk) !== JSON.stringify(latestRisk)) throw new Error('검증 중 위험 설정이 바뀌었습니다. 다시 확인하세요.');
       const local: PaperOrder = { ...input, createdAt: new Date().toISOString(), tradeDate: koreaDate(), status: 'sending', filled: 0, remaining: input.qty, message: 'KIS 모의 전송 중' };
-      this.store.savePaper(local);
+      this.store.savePaper(local, { actor: 'system', action: 'sending', before: null });
       try {
         const receipt = await this.kis.submit(input, () => {
           const currentRisk = this.store.read().risk;
@@ -66,10 +120,9 @@ export class PaperBroker {
         local.status = error instanceof KisRejected || error instanceof KisNotSent ? 'rejected' : 'unknown';
         local.message = error instanceof Error ? error.message : '주문 응답 불명';
       }
-      this.store.savePaper(local);
+      this.store.savePaper(local, { actor: 'system', action: 'response', before: 'sending' });
       this.store.update(state => record(state, `KIS 모의 주문 ${local.status}`, local.message, local.status === 'accepted' ? 'info' : 'warning'));
       return local;
     });
-    this.queue = job; return job;
   }
 }
