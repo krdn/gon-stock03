@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Check, Database, Link2, LockKeyhole, ShieldCheck, Square } from 'lucide-react';
+import { AlertTriangle, Check, Link2, LockKeyhole, ShieldCheck, Square } from 'lucide-react';
 import { useWorkbench } from '../context';
 import { Badge, Empty, Panel, Stat } from '../components/ui';
 import { equity, won, type ConnectionFailure } from '../../shared/model';
@@ -24,10 +24,7 @@ export function Alerts() {
   const { state, act, available, busy } = useWorkbench(); const [filter, setFilter] = useState('all'); const rows = state.events.filter(e => filter === 'all' || e.level === filter);
   return <Panel title="워크스페이스 이벤트" action={<button className="button secondary" disabled={!available || busy} onClick={() => void act('events/read').catch(() => {})}><Check size={16} />모두 읽음</button>}><div className="toolbar"><div className="tabs">{[['all', '전체'], ['info', '안내'], ['warning', '주의'], ['error', '오류']].map(([id, label]) => <button key={id} className={filter === id ? 'active' : ''} onClick={() => setFilter(id)}>{label}</button>)}</div><span className="muted">앱 내부 기록 · 외부 발송 없음</span></div>{rows.length ? rows.map(e => <article className={`event ${e.read ? 'read' : ''}`} key={e.id}><span className={`event-icon ${e.level}`}><AlertTriangle size={18} /></span><div><h3>{e.title}{!e.read && <span className="unread-dot" />}</h3><p>{e.detail}</p><time>{new Date(e.time).toLocaleString('ko-KR')}</time></div><Badge>{e.level === 'info' ? '안내' : e.level === 'warning' ? '주의' : '오류'}</Badge></article>) : <Empty title="해당 이벤트가 없습니다">주문·전략·위험관리 동작이 이곳에 기록됩니다.</Empty>}</Panel>;
 }
-export function DataStatus() {
-  const { state } = useWorkbench();
-  return <><div className="stats-grid three"><Stat label="현재 데이터 출처" value="합성 시나리오" sub="실제 시장 데이터 아님" /><Stat label="예시 종목" value={`${state.instruments.length}개`} sub="전체 종목 마스터 미수집" /><Stat label="재생한 봉" value={`${state.tick}개`} sub="기본 120봉 + 수동 재생" /></div><Panel title="데이터 인벤토리" action={<Database size={19} />}><div className="table-scroll"><table><thead><tr><th>종목</th><th>출처</th><th>봉 수</th><th>실제 거래일</th><th>수정주가</th><th>상태</th></tr></thead><tbody>{state.instruments.map(s => <tr key={s.code}><td><strong>{s.name}</strong><small className="cell-small">{s.code}</small></td><td>합성</td><td>{s.history.length}</td><td>미부여</td><td>해당 없음</td><td><Badge>기능 검증용</Badge></td></tr>)}</tbody></table></div></Panel><div className="two-columns top-gap"><Panel title="실제 데이터 연결 순서"><ol className="plain-list"><li>종목 마스터로 시장·거래 가능 종목 확정</li><li>기간별 일봉을 100건 제한에 맞게 분할 수집</li><li>시간·중복·누락·수정주가 정책 검사</li><li>검사를 통과한 데이터만 백테스트에 사용</li></ol></Panel><Panel title="분봉 데이터의 경계"><p className="prose">KIS 당일 분봉 API는 전일 데이터를 제공하지 않습니다. 장기 분봉 백테스트에는 별도 이력 수집 경로가 필요합니다. 일봉·분봉의 수집 성공은 시세 정확성 검증과 별도입니다.</p><Link className="text-link" to="/design?tab=sources">공식 근거와 제약 보기 ↗</Link></Panel></div></>;
-}
+export { DataStatus } from './DataInventory';
 const connectionRecovery: Record<ConnectionFailure['kind'], { label: string; action: string }> = {
   missing: { label: '미주입', action: 'Infisical의 dev /kis에 필수 값을 확인하고 서버를 다시 실행하세요. 아래 안전한 연결 안내를 따르세요.' },
   invalid: { label: '설정 형식 오류', action: 'Infisical에서 계좌번호 앞 8자리와 상품코드 2자리를 확인하고 서버를 다시 실행하세요.' },

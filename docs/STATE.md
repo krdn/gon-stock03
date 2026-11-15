@@ -2,9 +2,10 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매. 해외·실전·다중 사용자는 범위 밖.
 
-- 현재 완료: [#16 포트폴리오](tasks/16-portfolio.md). 이번 계속 진행 지시와 Argon 검증에 따라 [PR #37](https://github.com/krdn/gon-stock03/pull/37)을 `c540612`로 통합했다. main 앱43707224025·구성43707223572 SUCCESS이며 [수용 형태·경계](verification/2026-11-15-portfolio.md#이번-계속-진행-지시와-수용통합)를 기록했다.
-- 다음 작업: [#15 데이터 상태](https://github.com/krdn/gon-stock03/issues/15), Ready. native 선행 #6·#7 completed·통합 확인. 새 세션에서 계획 S12와 필수 파일만 읽고 TEMPLATE로 작업 파일을 만든다. 실제/합성 출처·수집 범위·누락·최종 성공 상태 표시이며 주문 실행은 포함하지 않는다.
-- 기준 main: `c54061266d7124f498307bde4c54a394ca92f19a`. 기록 PR 통합 후 최종 main SHA·CI 및 실제 Herdr 탭 연결을 확인하고 #15에 구현 소유권을 넘긴다. 기존 `.codex/config.toml`은 미추적 사용자 설정으로 보존한다.
+- 현재 작업: [#15 데이터 상태](tasks/15-data-status.md), In Progress. 실제 수집 범위·거래일·수정주가·누락·중복·마지막 성공 표시를 구현한다. C01/C02 저장·서비스를 재사용한다.
+- 기준 main: `0ea629604c8e75acb0a253e5bcb4a6fbe77ae088`. PR #37·#38 통합, 앱43707747091·구성43707747046 SUCCESS. #16 completed/Done. #15 native 선행 #6·#7 completed·통합 재확인.
+- 현재 소유: Herdr terminal t6y, session `01a1dee2-7db7-7dd0-8f32-595cb38802f7`, `/home/gon/llm-projects/gon-stock03`. 부모 t6x의 소유권 인계 후 이 세션만 수정한다.
+- 다음 행동: #15 단위·브라우저·조회 검증, 지정 Argon 리뷰, PR·CI와 화면 수용 형태·대상 SHA 기록, 원격 인계. 직접 육안·장중 수용은 미실시다.
 - 선행 기록: [기준선 #5](tasks/5-baseline.md), [공통 상태 #6](tasks/6-common-state.md), [마스터·일봉 #7](tasks/7-market-data.md), [연결·설정 #8](tasks/8-connection-settings.md). 완료 이력·세부 근거는 해당 파일을 읽는다.
 - 후속: #9는 Ready이지만 실제 모의접수 승인·장중 실증은 별도다. #12는 #9·#11 미완료로 Blocked다. 다음 구현은 선택된 이슈의 native 선행과 Project 상태를 다시 확인한 뒤 별도로 진행한다.
 - 필수 읽기: 현재 작업 파일 → 선택한 이슈 → [세션 계획](plans/interface-sessions-2026-11.md)의 해당 행·운영 규칙 → 필수 파일·관련 PR/CI. 전체 대화·과거 작업을 반복 읽지 않는다.

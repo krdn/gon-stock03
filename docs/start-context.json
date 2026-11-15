@@ -76,22 +76,22 @@
   "decisions": "React/TypeScript+Vite SPA. 개인 PC 단일 사용자이므로 Node24+SQLite로 런타임 하나와 로컬 파일 DB를 사용한다. Rust/PostgreSQL 기본안은 서버·다중 사용자 요구 때 재평가. 데모와 KIS 모의 환경을 분리하고 실전 주문 미지원. 비밀값은 서버 Infisical 주입.",
   "status": "reviewed",
   "task_context": {
-    "issue": "https://github.com/krdn/gon-stock03/issues/16",
-    "checked_at": "2026-11-15T10:22:16.601393+00:00",
+    "issue": "https://github.com/krdn/gon-stock03/issues/15",
+    "checked_at": "2026-11-15T11:18:11.057203+00:00",
     "sources": [
       {
-        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_balance/inquire_balance.py",
-        "finding": "모의 VTTC8434R, 종목별 조회 02, 모의 최대20건 이후 연속조회와 0수량 잔고를 공식 예제에서 재확인했다."
+        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_daily_itemchartprice/inquire_daily_itemchartprice.py",
+        "finding": "공식 예제에서 실전/모의 최대100건, J=KRX, D=일봉, 0=수정주가/1=원주가를 재확인했다."
       },
       {
-        "url": "https://react.dev/reference/react/useEffect",
-        "finding": "외부 시스템 동기화가 필요 없으면 Effect가 필요하지 않다. 환경 선택은 로컬 상태, 조회는 기존 공통 상태와 명시 버튼을 사용한다."
+        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_time_itemchartprice/inquire_time_itemchartprice.py",
+        "finding": "당일분봉 최대30건·전일분봉 미제공을 재확인했다. 장기 분봉 수집은 이번 화면 범위 밖이다."
       },
       {
-        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_balance/chk_inquire_balance.py",
-        "finding": "공식 필드 매핑에서 예수금총금액(dnca_tot_amt), 현재가(prpr), 총평가금액(tot_evlu_amt), 순자산·정산금액이 별도임을 확인했다. 화면 계산 합계와 KIS 제공 총평가액을 같은 정의라고 가정하지 않는다."
+        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/stocks_info/kis_kospi_code_mst.py",
+        "finding": "공개 마스터 URL, CP949와 고정폭 파싱을 재확인했다. 공식 기준 거래일은 수집시각으로 추정하지 않는다. 예제의 TLS 해제는 사용하지 않는다."
       }
     ],
-    "decisions": "기존 C01 잔고 페이지·토큰·호출제한·이전 전체 성공값 보존을 재사용한다. 포트폴리오는 DEMO와 KIS 모의를 선택해 분리 표시한다. 현재가 누락/0은 평가 불가, 총자산 0은 비중 없음. 화면 평가 합계는 예수금+수량×현재가이며 KIS 계좌 총평가액은 별도 참고값이다. 주문 경로·기술 스택 변경 없음."
+    "decisions": "C01 상태와 C02 SQLite 및 GET API를 재사용하는 조회 화면. DEMO·공개 마스터·KIS 모의 일봉을 분리하고 수집 완료/달력 대조/신선도를 구분한다. 실제 수집 조작·주문·전략·WebSocket 변경 없음. 입력 달력의 출처 진위는 인증하지 않는다."
   }
 }
