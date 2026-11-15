@@ -2,10 +2,11 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매.
 
-- 현재: [#23 매매일지](tasks/23-journal.md) 구현·로컬 검증 완료, PR/CI 준비. 단독 구현 소유자는 새 Herdr t71/session `01a1df4e-234e-7a32-b0c4-6361d4af93f0`이다. 실제 탭·cwd·Ready 일치를 확인한 착수 지시를 받았다.
+- 현재: [#23 매매일지](tasks/23-journal.md) [PR #43](https://github.com/krdn/gon-stock03/pull/43) 구현·검증 인계, OPEN/In Review. 단독 구현 소유자는 새 Herdr t71/session `01a1df4e-234e-7a32-b0c4-6361d4af93f0`이다. 실제 탭·cwd·Ready 일치를 확인한 착수 지시를 받았다.
 - 기준: #21 PR41·기록 PR42 통합 후 main `71e5d6d2631676f30267d3acea4ccee3ec90c8da`. 앱43717111201·구성43717111285 SUCCESS를 재조회했다.
+- 제품 대상 SHA: `25a20d1263dad917620948dc62375040751aa4cc`. push·PR 앱/구성 CI 모두 SUCCESS. 최종 기록 SHA/CI는 #23 인계 댓글을 확인한다.
 - 검증: #23 단위/API79·브라우저63·빌드·지정 Argon/high PASS. [재현·화면·리뷰·한계](verification/2026-11-15-journal.md). #23 사용자 수용 답변·통합은 아직 없다. #21의 위임 수용과 사용자 직접 육안·장중 수용을 구분한다.
-- 다음: #23 검증·지정 Argon/high 리뷰·PR/CI·원격 인계 후 해당 SHA의 화면 수용·통합 판단. native 선행 #5 completed·통합과 Project Ready를 재확인하고 In Progress로 변경했다.
+- 다음: #23의 PR 최신 CI·인계 댓글·고정 제품 SHA로 화면 수용·통합 판단. native 선행 #5 completed·통합을 재확인했다. 수용 전 다른 이슈 구현은 시작하지 않는다.
 - #23 범위: 기존 일지의 빈/공백 입력·저장 실패·검색 결과 없음·안전한 본문 렌더링·새로고침/서버 재시작 보존. 첨부·편집·주문 기능 추가는 제외한다.
 - 필수 읽기: #23 → [계획 S10·운영 규칙](plans/interface-sessions-2026-11.md) → `Operations.tsx`·일지 API/엔진/저장·`src/specs.ts`·관련 테스트의 필요한 심볼. 신규 초기화·전체 과거 대화 재독 없음.
 - 세션 경계: t6z·t6x·t6y 저장소 수정 중단. 재위임·추가 에이전트 없이 이 세션에서 #23만 수행한다.
