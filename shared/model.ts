@@ -11,7 +11,13 @@ export interface BacktestInput { code: string; fast: number; slow: number; capit
 export interface BacktestResult { equity: number[]; trades: { bar: number; side: string; price: number; qty: number; fee: number }[]; returnPct: number; maxDrawdown: number; finalEquity: number; fees: number; source: string }
 export interface Connection { configured: boolean; mode: 'paper'; connected: boolean; checkedAt?: string; message: string; balance?: { cash: number; totalEquity: number; positions: { code: string; name: string; qty: number; average: number; price: number }[] } }
 export interface DataStatus { environment: 'demo' | 'kis-paper'; source: 'synthetic' | 'kis-rest'; phase: 'disconnected' | 'loading' | 'ready' | 'stale' | 'partial' | 'error'; observedAt: string | null; lastSuccessAt: string | null; staleAfterMs: number; complete: boolean; error: string | null; pages: number }
-export interface ConnectionState extends Connection { status: DataStatus }
+export interface ConnectionFailure { kind: 'missing' | 'invalid' | 'expired' | 'permission' | 'rate-limit' | 'network' | 'upstream' | 'contract' | 'rejected'; message: string }
+export interface ConnectionState extends Connection {
+  status: DataStatus;
+  injection: { phase: 'unverified' | 'missing' | 'invalid' | 'present'; missing: ('KIS_APP_KEY' | 'KIS_APP_SECRET' | 'KIS_CANO' | 'KIS_ACNT_PRDT_CD')[] };
+  authentication: { phase: 'unverified' | 'loading' | 'ready' | 'expired' | 'error'; lastSuccessAt: string | null; validUntil: string | null; retryAt: string | null; failure: ConnectionFailure | null };
+  failure: ConnectionFailure | null;
+}
 export interface StateSnapshot extends State { instanceId: string; status: DataStatus; connection: ConnectionState }
 export interface KisQuote { code: string; price: number; change: number; upper: number; lower: number; tickSize: number; stopped: boolean; receivedAt: string }
 export interface KisBar { date: string; close: number }

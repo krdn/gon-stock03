@@ -6,6 +6,121 @@ import { randomUUID } from 'node:crypto';
 
 const credentials = { key: 'fixture-key', secret: 'fixture-secret', account: '00000000', product: '01' };
 const empty = { rt_cd: '0', output1: [], output2: [{ dnca_tot_amt: '1000000', tot_evlu_amt: '1071000' }] };
+test('settings distinguishes missing and invalid injection without treating presence as authentication', async () => {
+  let calls = 0;
+  const transport: typeof fetch = async () => { calls++; throw new Error('must not send'); };
+  const missing = new KisClient({ ...credentials, key: '' }, transport, 0);
+  assert.equal(missing.connection().injection?.phase, 'missing');
+  assert.deepEqual(missing.connection().injection?.missing, ['KIS_APP_KEY']);
+  await assert.rejects(missing.balance(), /환경변수/);
+  assert.equal(missing.connection().failure?.kind, 'missing');
+  assert.equal(missing.connection().authentication?.phase, 'unverified');
+  const invalid = new KisClient({ ...credentials, account: 'bad' }, transport, 0);
+  assert.equal(invalid.connection().injection?.phase, 'invalid');
+  await assert.rejects(invalid.balance()); assert.equal(invalid.connection().failure?.kind, 'invalid');
+  const present = new KisClient(credentials, transport, 0).connection();
+  assert.equal(present.injection?.phase, 'present'); assert.equal(present.authentication?.phase, 'unverified');
+  assert.equal(present.connected, false); assert.equal(calls, 0);
+});
+
+test('settings shows authentication only after its response and balance only after every page', async () => {
+  let releaseToken!: (response: Response) => void, releasePage!: (response: Response) => void, pages = 0;
+  const token = new Promise<Response>(resolve => { releaseToken = resolve; }), secondPage = new Promise<Response>(resolve => { releasePage = resolve; });
+  const client = new KisClient(credentials, async url => {
+    if (String(url).endsWith('/tokenP')) return token;
+    if (++pages === 1) return Response.json({ ...empty, ctx_area_fk100: 'next', ctx_area_nk100: 'one' }, { headers: { tr_cont: 'M' } });
+    return secondPage;
+  }, 0);
+  const pending = client.balance();
+  assert.equal(client.connection().authentication?.phase, 'loading');
+  assert.equal(client.connection().connected, false); assert.equal(client.connection().balance, undefined);
+  releaseToken(Response.json({ access_token: 'fixture-token', expires_in: 86400 }));
+  await new Promise(resolve => setImmediate(resolve));
+  const middle = client.connection(); assert.equal(middle.authentication?.phase, 'ready');
+  assert.equal(middle.status.phase, 'loading'); assert.equal(middle.status.pages, 1); assert.equal(middle.balance, undefined);
+  assert.equal(middle.connected, false); assert.ok(middle.authentication?.lastSuccessAt);
+  releasePage(Response.json(empty));
+  const result = await pending; assert.equal(result.connected, true); assert.equal(result.status.pages, 2);
+});
+
+test('settings classifies authentication and account failures without echoing upstream fields', async () => {
+  const cases = [
+    { response: () => Response.json({ error_code: 'EGW00103', error_description: 'fixture-secret' }), kind: 'permission' },
+    { response: () => new Response('fixture-secret', { status: 403 }), kind: 'permission' },
+    { response: () => new Response('fixture-token', { status: 429 }), kind: 'rate-limit' },
+    { response: () => Response.json({ error_code: 'EGW00133', error_description: 'fixture-secret' }, { status: 403 }), kind: 'rate-limit' },
+    { response: () => Response.json({ rt_cd: '1', msg_cd: 'EGW00201', msg1: 'fixture-secret' }, { status: 500 }), kind: 'rate-limit' },
+    { response: () => { throw new Error('fixture-key fixture-token'); }, kind: 'network' },
+    { response: () => new Response('fixture-key', { status: 503 }), kind: 'upstream' },
+    { response: () => new Response('fixture-secret'), kind: 'contract' },
+    { response: () => Response.json({ rt_cd: '1', msg_cd: credentials.account, msg1: 'fixture-secret' }), kind: 'rejected' },
+  ];
+  for (const stage of ['authentication', 'balance']) for (const row of cases) {
+    const client = new KisClient(credentials, async url => stage === 'balance' && String(url).endsWith('/tokenP') ? Response.json({ access_token: 'fixture-token', expires_in: 86400 }) : row.response(), 0);
+    await assert.rejects(client.balance()); const state = client.connection();
+    assert.equal(state.failure?.kind, row.kind, `${stage}: ${row.kind}`);
+    assert.equal(state.authentication?.phase, stage === 'authentication' ? 'error' : 'ready');
+    assert.equal(state.connected, false); assert.equal(state.balance, undefined);
+    for (const value of ['fixture-key', 'fixture-secret', 'fixture-token', credentials.account]) assert.ok(!JSON.stringify(state).includes(value));
+  }
+});
+
+test('settings exposes expiration and issuance cooldown then recovers with a new actual response', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_800_000_000_000 }); let expired = false, tokens = 0;
+  const client = new KisClient(credentials, async url => {
+    if (String(url).endsWith('/tokenP')) { tokens++; return Response.json({ access_token: 'fixture-token', expires_in: 120 }); }
+    return expired ? Response.json({ rt_cd: '1', msg_cd: 'EGW00123' }, { status: 500 }) : Response.json(empty);
+  }, 0);
+  await client.balance(); expired = true; t.mock.timers.tick(1);
+  await assert.rejects(client.balance());
+  assert.equal(client.connection().authentication?.phase, 'expired');
+  assert.equal(client.connection().failure?.kind, 'expired');
+  assert.ok(client.connection().authentication?.retryAt); assert.equal(tokens, 1);
+  expired = false; t.mock.timers.tick(60_000);
+  const recovered = await client.balance(); assert.equal(tokens, 2);
+  assert.equal(recovered.authentication?.phase, 'ready'); assert.equal(recovered.failure, null);
+  assert.equal(recovered.authentication?.retryAt, null);
+  t.mock.timers.tick(60_001); assert.equal(client.connection().authentication?.phase, 'expired');
+});
+
+test('invalid token validity cannot be cached or turn a later balance check into success', async () => {
+  let balanceReads = 0;
+  const client = new KisClient(credentials, async url => {
+    if (String(url).endsWith('/tokenP')) return Response.json({ access_token: 'fixture-token', expires_in: 1e20 });
+    balanceReads++; return Response.json(empty);
+  }, 0);
+  await assert.rejects(client.balance());
+  await assert.rejects(client.balance());
+  assert.equal(client.connection().failure?.kind, 'contract');
+  assert.equal(client.connection().authentication.phase, 'error');
+  assert.equal(client.connection().connected, false); assert.equal(balanceReads, 0);
+});
+
+test('an old queued request expiring after renewal cannot overwrite the new authentication success', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_800_000_000_000 });
+  let expired = false, tokens = 0, scheduled = false, second!: Promise<unknown>, trigger!: () => void;
+  const triggered = new Promise<void>(resolve => { trigger = resolve; }); const events: string[] = [];
+  const client = new KisClient(credentials, async (url, init) => {
+    if (String(url).endsWith('/tokenP')) { events.push(`token-${++tokens}`); return Response.json({ access_token: `token-${tokens}`, expires_in: 86400 }); }
+    const token = new Headers(init?.headers).get('authorization');
+    if (expired && token === 'Bearer token-1') {
+      events.push('old-token-expired');
+      if (!scheduled) {
+        scheduled = true; let microtasks = 3;
+        const startConcurrentRead = () => { if (microtasks-- > 0) queueMicrotask(startConcurrentRead); else { second = client.quote('005930'); trigger(); } };
+        queueMicrotask(startConcurrentRead);
+      }
+      return new Response('', { status: 401 });
+    }
+    return Response.json(String(url).includes('inquire-balance') ? empty : { rt_cd: '0', output: { stck_prpr: '70000', prdy_ctrt: '1', stck_mxpr: '91000', stck_llam: '49000', aspr_unit: '100', temp_stop_yn: 'N' } });
+  }, 0);
+  await client.balance(); t.mock.timers.tick(60_001); expired = true;
+  const first = client.balance(); await triggered; await Promise.all([first, second]);
+  assert.ok(events.lastIndexOf('old-token-expired') > events.indexOf('token-2'));
+  assert.equal(tokens, 2); assert.equal(client.connection().authentication.phase, 'ready');
+  assert.equal(client.connection().authentication.failure, null); assert.equal(client.connection().status.phase, 'ready');
+});
+
 test('KIS uses only VTS, caches token, paginates, removes zero holdings, never exposes credentials', async () => {
   const calls: { url: string; init?: RequestInit }[] = []; let page = 0;
   const transport: typeof fetch = async (url, init) => {

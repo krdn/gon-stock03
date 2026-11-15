@@ -20,9 +20,13 @@ export const dataStatusSchema = z.object({
   observedAt: z.iso.datetime().nullable(), lastSuccessAt: z.iso.datetime().nullable(),
   staleAfterMs: z.number().positive(), complete: z.boolean(), error: z.string().nullable(), pages: z.number().int().nonnegative(),
 });
+const connectionFailureSchema = z.object({ kind: z.enum(['missing', 'invalid', 'expired', 'permission', 'rate-limit', 'network', 'upstream', 'contract', 'rejected']), message: z.string() });
 export const connectionSchema = z.object({
   configured: z.boolean(), mode: z.literal('paper'), connected: z.boolean(), checkedAt: z.iso.datetime().optional(), message: z.string(),
   status: dataStatusSchema.extend({ environment: z.literal('kis-paper'), source: z.literal('kis-rest') }),
+  injection: z.object({ phase: z.enum(['unverified', 'missing', 'invalid', 'present']), missing: z.array(z.enum(['KIS_APP_KEY', 'KIS_APP_SECRET', 'KIS_CANO', 'KIS_ACNT_PRDT_CD'])) }),
+  authentication: z.object({ phase: z.enum(['unverified', 'loading', 'ready', 'expired', 'error']), lastSuccessAt: z.iso.datetime().nullable(), validUntil: z.iso.datetime().nullable(), retryAt: z.iso.datetime().nullable(), failure: connectionFailureSchema.nullable() }),
+  failure: connectionFailureSchema.nullable(),
   balance: z.object({ cash: z.number().nonnegative(), totalEquity: z.number().nonnegative(), positions: z.array(z.object({ code: z.string(), name: z.string(), qty: z.number().nonnegative(), average: z.number().nonnegative(), price: z.number().nonnegative() })) }).optional(),
 });
 export const stateSnapshotSchema = z.object({
