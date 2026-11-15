@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { Store } from '../server/store.ts';
 import { KisClient } from '../server/kis.ts';
 import { makeServer } from '../server/http.ts';
@@ -81,4 +82,29 @@ test('market HTTP reads only a requested master code, shares quote cache, persis
     assert.equal((await post('watchlist', { code: '00088K' })).status, 400);
     assert.deepEqual(calls, ['005930']);
   } finally { server.closeAllConnections(); server.close(); await once(server, 'close'); store.close(); }
+});
+
+
+test('watchlist HTTP survives a server/store restart, prevents duplicates and rolls back a failed disk write', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'stock03-watchlist-')); const path = join(directory, 'data.sqlite');
+  let store = new Store(path); store.saveMasters([master('00088K')]);
+  let server = makeServer(store, new KisClient(credentials), [4327]);
+  const start = async () => { server.listen(4327, '127.0.0.1'); await once(server, 'listening'); };
+  const stop = async () => { server.closeAllConnections(); server.close(); await once(server, 'close'); store.close(); };
+  const toggle = () => fetch('http://127.0.0.1:4327/api/watchlist', { method: 'POST', headers: { 'Connection': 'close', 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify({ code: '00088K' }) });
+  await start();
+  try {
+    for (let i = 0; i < 3; i++) { assert.equal((await toggle()).status, 200); assert.ok(store.read().watchlist.filter(code => code === '00088K').length <= 1); }
+    assert.equal(store.read().watchlist.filter(code => code === '00088K').length, 1);
+    await stop(); store = new Store(path); server = makeServer(store, new KisClient(credentials), [4327]); await start();
+    const saved = stateSnapshotSchema.parse(await (await fetch('http://127.0.0.1:4327/api/state', { headers: { Connection: 'close' } })).json());
+    assert.equal(saved.watchlist.filter(code => code === '00088K').length, 1); assert.equal(store.masterData().instruments[0].code, '00088K');
+    const db = new DatabaseSync(path);
+    db.exec("CREATE TRIGGER reject_watchlist BEFORE UPDATE ON workspace BEGIN SELECT RAISE(ABORT, 'fixture disk failure'); END");
+    try {
+      const response = await toggle(); assert.equal(response.status, 500); assert.match((await response.json()).error, /저장/);
+      assert.deepEqual(store.read().watchlist, saved.watchlist); assert.equal(store.read().revision, saved.revision);
+    } finally { db.exec('DROP TRIGGER reject_watchlist'); db.close(); }
+    assert.equal((await toggle()).status, 200); assert.ok(!store.read().watchlist.includes('00088K'));
+  } finally { await stop(); rmSync(directory, { recursive: true }); }
 });

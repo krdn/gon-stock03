@@ -12,8 +12,8 @@ const instruments = [
 const removed = [{ ...instruments[0], code: '999999', name: '이전 종목', removedAt: '2026-11-14T00:00:00.000Z' }];
 const master = () => ({ instruments, removed, sources: ['KOSPI', 'KOSDAQ'].map(exchange => ({ exchange, source: 'https://example.test/master', phase: 'ready', observedAt: new Date().toISOString(), lastSuccessAt: new Date().toISOString(), sha256: 'fixture', count: 6, error: null })) });
 const quote = (code: string) => ({ code, price: 70000, change: -1.25, upper: 91000, lower: 49000, tickSize: 100, stopped: false, volume: 123456, sector: '전기전자', liquidation: false, receivedAt: new Date().toISOString() });
-async function setup(page: Page) {
-  const state = snapshot(); const calls: string[] = [];
+async function setup(page: Page, state = snapshot()) {
+  const calls: string[] = [];
   await page.route('**/api/state', route => route.fulfill({ json: state }));
   await page.route('**/api/data/master', route => route.fulfill({ json: master() }));
   await page.route('**/api/market/quote', async route => {
@@ -65,14 +65,15 @@ test('empty combined filters and unavailable masters never imply the searched co
   await expect(page.getByText('현재 마스터에 없는 코드입니다.', { exact: false })).toHaveCount(0);
 });
 
-test('DEMO watchlist explains saved master-only entries and returns focus after closing market details', async ({ page }) => {
+test('watchlist shares saved master entries with market and returns focus after closing details', async ({ page }) => {
   await setup(page); await page.goto('/market');
   await page.getByRole('button', { name: '한화우 관심 등록', exact: true }).click();
   await page.getByRole('button', { name: '한화우 상세', exact: true }).click();
   await expect(page.getByRole('region', { name: '종목 상세' })).toBeFocused();
   await page.getByRole('button', { name: '상세 닫기', exact: true }).click();
   await expect(page.getByRole('button', { name: '한화우 상세', exact: true })).toBeFocused();
-  await page.goto('/watchlist'); await expect(page.getByText('실제 마스터 관심종목 1개', { exact: false })).toBeVisible();
+  await page.goto('/watchlist'); await expect(page.getByRole('button', { name: '한화우 관심 해제', exact: true })).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: '한화우' })).toContainText('수신');
   await expect(page.getByText('마스터 전체 목록은 KIS 수집 단계에서 연결', { exact: false })).toHaveCount(0);
 });
 
@@ -136,4 +137,73 @@ test('market preserves previous master on refresh failure and provides an empty 
   await page.route('**/api/data/master', route => route.fulfill({ status: 503, body: 'not json' })); await page.reload();
   await expect(page.getByText('종목 마스터를 불러오지 못했습니다.', { exact: false })).toBeVisible();
   await expect(page.getByRole('button', { name: '마스터 갱신', exact: true })).toBeEnabled(); await expect(page.locator('tbody tr')).toHaveCount(0);
+});
+
+
+test('watchlist persists shared selections, shows received time and navigates with the exact code without ordering', async ({ page }, testInfo) => {
+  const state = snapshot(); state.watchlist = ['00088K', '005930']; const calls = await setup(page, state);
+  const orders: string[] = []; page.on('request', request => { if (/\/api\/(kis\/order|orders)$/.test(request.url())) orders.push(request.url()); });
+  await page.goto('/watchlist'); await expect(page.locator('tbody tr')).toHaveCount(2);
+  await expect(page.locator('header.topbar')).toContainText('공식 마스터 · KIS 모의 시세');
+  await expect.poll(() => calls.length).toBe(2); expect(calls).toEqual(['00088K', '005930']);
+  const row = page.getByRole('row').filter({ hasText: '한화우' });
+  await expect(row).toContainText('수신 완료'); await expect(row).toContainText('수신 ');
+  await page.screenshot({ path: testInfo.outputPath('watchlist-desktop.png'), fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: testInfo.outputPath('watchlist-mobile.png'), fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.reload(); await expect(page.locator('tbody tr')).toHaveCount(2);
+  await page.getByRole('link', { name: '한화우 KIS 주문 화면', exact: true }).click();
+  await expect(page).toHaveURL(/paper\?code=00088K/); await expect(page.getByLabel('KIS 종목코드')).toHaveValue('00088K');
+  await expect(page.getByRole('button', { name: 'KIS 모의 주문 확인', exact: true })).toBeDisabled();
+  await expect(page.getByText('현재 주문 화면은 숫자 6자리 종목만 지원합니다.', { exact: false })).toBeVisible();
+  expect(orders).toEqual([]);
+  await page.goto('/watchlist'); await page.getByRole('button', { name: '한화우 관심 해제', exact: true }).click();
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await page.goto('/market'); await expect(page.getByRole('button', { name: '한화우 관심 등록', exact: true })).toBeVisible();
+});
+
+test('watchlist retains the saved list on write failure and offers exploration when empty', async ({ page }) => {
+  const state = snapshot(); state.watchlist = ['00088K']; await setup(page, state);
+  await page.route('**/api/watchlist', route => route.fulfill({ status: 500, json: { error: '저장 실패' } }));
+  await page.goto('/watchlist'); await page.getByRole('button', { name: '한화우 관심 해제', exact: true }).click();
+  await expect(page.getByRole('alert').filter({ hasText: '관심목록 저장 실패' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '한화우 관심 해제', exact: true })).toBeVisible();
+  await page.reload(); await expect(page.locator('tbody tr')).toHaveCount(1);
+  state.watchlist = []; state.revision++; await page.reload();
+  await expect(page.getByText('관심종목이 없습니다', { exact: true })).toBeVisible();
+  await page.getByRole('link', { name: '시장 탐색에서 추가', exact: true }).click(); await expect(page).toHaveURL(/market/);
+});
+
+test('watchlist keeps unknown and removed saved codes visible without quoting them', async ({ page }) => {
+  const state = snapshot(); state.watchlist = ['888888', '999999']; const calls = await setup(page, state);
+  await page.goto('/watchlist'); await expect(page.locator('tbody tr')).toHaveCount(2);
+  await expect(page.getByRole('row').filter({ hasText: '888888' })).toContainText('마스터 미확인');
+  await expect(page.getByRole('row').filter({ hasText: '999999' })).toContainText('마스터 제외');
+  expect(calls).toEqual([]);
+  await page.getByRole('button', { name: '888888 관심 해제', exact: true }).click(); await expect(page.locator('tbody tr')).toHaveCount(1);
+  await page.route('**/api/data/master', route => route.fulfill({ status: 503, body: 'unavailable' })); await page.reload();
+  await expect(page.getByRole('row').filter({ hasText: '999999' })).toContainText('마스터 미확인');
+  await expect(page.getByText('종목 마스터를 불러오지 못했습니다.', { exact: false })).toBeVisible(); expect(calls).toEqual([]);
+});
+
+test('watchlist quotes only the visible page, stops on leave and keeps filters focused while polling', async ({ page }) => {
+  const state = snapshot(); state.watchlist = instruments.map(row => row.code); const calls = await setup(page, state);
+  await page.goto('/watchlist'); await expect.poll(() => calls.length).toBe(8);
+  await page.getByRole('button', { name: '다음 페이지', exact: true }).click(); await expect.poll(() => calls.length).toBe(12);
+  await page.clock.install(); const search = page.getByRole('textbox', { name: '종목명 또는 코드 검색' }); await search.fill('00088');
+  await page.clock.runFor(400); await expect(page.locator('tbody tr')).toHaveCount(1); await expect(search).toBeFocused();
+  const polled = page.waitForResponse('**/api/state'); await page.clock.fastForward(3500); await polled;
+  await expect(search).toHaveValue('00088'); await expect(search).toBeFocused();
+  await page.setViewportSize({ width: 390, height: 844 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.getByRole('link', { name: '한화우 KIS 주문 화면', exact: true }).click();
+  await expect(page).toHaveURL(/paper\?code=00088K/); await expect(page.getByLabel('KIS 종목코드')).toHaveValue('00088K'); const count = calls.length;
+  await page.clock.fastForward(20000); expect(calls.length).toBe(count);
+});
+
+
+test('watchlist distinguishes an unsaved master code from a market filter mismatch', async ({ page }) => {
+  const state = snapshot(); state.watchlist = ['005930']; await setup(page, state);
+  await page.goto('/watchlist'); await page.getByRole('textbox', { name: '종목명 또는 코드 검색' }).fill('00088K');
+  await expect(page.getByText('관심목록에 없는 종목입니다.', { exact: false })).toBeVisible();
+  await expect(page.getByText('다른 시장 필터에 있는 종목입니다.', { exact: false })).toHaveCount(0);
 });

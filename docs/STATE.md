@@ -2,16 +2,12 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매. 해외·실전·다중 사용자는 범위 밖.
 
-- 기준선: [#5 수용·통합 기록](tasks/5-baseline.md). 사용자 조건부 승인과 실제 Claude Opus 5.5 PASS에 따라 [PR #4](https://github.com/krdn/gon-stock03/pull/4)를 병합했다. 기준선 SHA `9b4b361fa4b476f296cdaf60e27ba915c3d521a7`, main 앱·구성 CI 통과.
-- 선행 완료: [공통 상태 계약 #6](tasks/6-common-state.md), PR #27·#28 통합, completed/Done. 통합 전 main `d898eec`의 앱·구성 CI 성공을 재확인했다.
-- 현재 작업 완료: [국내 종목 마스터·일봉 수집 #7](tasks/7-market-data.md), completed/Done. 사용자의 새 세션 진행 지시에 따라 [PR #29](https://github.com/krdn/gon-stock03/pull/29)를 `bc81384`로 통합했다. main 앱·구성 CI, 단위51·브라우저21·빌드 성공. 실제 공개 마스터3962종목 검증과 Opus 수정분 PASS 이후 간격 보완의 직접 검증 범위를 보존한다.
-- 미검증: 실제 KIS 기간별 일봉·공식 달력 대조, STE 기준 파일·graphify 환경 부재. 별도 사용자 수용 발언이나 장중 실증 성공을 만들지 않는다.
-- 현재 완료: [연결·설정 #8](tasks/8-connection-settings.md), completed/Done. 사용자 위임과 Gemini4 Argon 지정 검증 PASS에 따라 [PR #31](https://github.com/krdn/gon-stock03/pull/31)을 `21ca53a`로 통합했다. main 앱·구성 CI와 ready 통과. Fable 한도 오류, Argon 서버 모델·effort 독립 확인 한계, 사용자 직접 화면 확인과의 구분은 [검증 기록](verification/2026-11-15-settings.md#위임된-수용과-통합)에 남겼다.
-- 현재 완료: [시장 탐색 #10](tasks/10-market-explorer.md), completed/Done. 이번 사용자 진행 지시와 새 Gemini4 Argon 검증 PASS에 따라 [PR #33](https://github.com/krdn/gon-stock03/pull/33)을 `3211548`로 통합했다. main 앱·구성 CI, 단위62·브라우저40·빌드 성공. 실제 마스터3962·VTS 현재가3종목, 사용자 직접 화면 확인과의 구분 및 모델 확인 한계는 [검증 기록](verification/2026-11-15-market.md#이번-진행-지시와-수용-판단)에 남겼다.
-- 다음 작업: [#20 관심종목](https://github.com/krdn/gon-stock03/issues/20), Ready. 선행 #10 completed·main 통합을 원격 확인했다. 새 세션에서 이슈·계획 S03·필수 파일만 읽고 한 이슈를 진행한다. #12는 #9·#11 미완료로 Blocked다. 기술 스택 추천 문서는 별도 리팩터링 실행 지시가 아니다.
-- 후속 상태: 2026-11-15 #8 완료 후 #9·#16의 선행 완료·통합을 확인하고 Ready로 갱신했다. #15·#23·#24도 Ready다. #21은 #15 미완료, #14는 #11·#13 미완료로 Blocked다. Ready는 실제 주문 승인이나 장중 실증 완료가 아니다.
-- 필수 읽기: 선택한 이슈 → [세션 계획](plans/interface-sessions-2026-11.md)의 해당 행·운영 규칙 → 그 이슈의 필수 파일·관련 PR/CI. 전체 과거 기록은 읽지 않는다.
-- 리뷰 후속: [Opus 검증 기록](verification/2026-11-15-baseline.md). 비차단 P2를 #9·#11·#18·#6·#2에 이관했다. #6의 비JSON·revision 두 항목은 재현·수정했고 나머지는 해당 작업에서 검증한다.
-- 기존 구현: [화면 묶음 #3](tasks/3-screen-blueprint.md), [공통 기능 묶음 #2](tasks/2-trading-functions.md). #1/#2/#3은 OPEN이며 실제 KIS 주문·체결·취소·연속 운영·최종 장중 수용은 남아 있다.
-- 시각화: 앱 `/design`, 프로젝트 지도 `/project-map.html`. 초기 화면 기준선의 채택이 화면별 상세 기능이나 전체 제품 완료를 뜻하지 않는다.
-- 중요: 실제 API 조회 성공 ≠ 실제 주문·체결 성공. 데모 백테스트 ≠ 투자 성과. 주문 전송은 해당 작업에서 승인 범위와 실행 조건을 별도로 확인한다.
+- 현재: [#20 관심종목](tasks/20-watchlist.md), 구현·검증 완료 후 PR/CI 인계 준비. 기존 SQLite·관심목록 API·최대8종목 조회·공통 캐시를 재사용한다. [검증·화면](verification/2026-11-15-watchlist.md). 사용자 직접 수용·대상 SHA·통합은 완료 처리 전에 확인한다.
+- 소유권: 확인된 Herdr t6v/세션 `01a1ddd3-7728-7041-bf37-7adee6dfc4cc`가 #20을 단독 소유한다. 기존 `.codex/config.toml`은 미추적 사용자 설정으로 보존한다.
+- 기준 main: `865c3007e99620e9fa5821e7496246869ff04dec`. [#10](tasks/10-market-explorer.md) completed/Done, [PR #33](https://github.com/krdn/gon-stock03/pull/33) `3211548` 및 [기록 PR #34](https://github.com/krdn/gon-stock03/pull/34) 통합. 앱43684112604·구성43684112485 SUCCESS와 #20 native 선행 완료를 재확인했다.
+- 선행 기록: [기준선 #5](tasks/5-baseline.md), [공통 상태 #6](tasks/6-common-state.md), [마스터·일봉 #7](tasks/7-market-data.md), [연결·설정 #8](tasks/8-connection-settings.md). 완료 이력·세부 근거는 해당 파일을 읽는다.
+- 다음: #20 PR/CI·수용·통합을 먼저 확인한다. #12는 #9·#11 미완료로 Blocked다. 다음 구현은 선택된 이슈의 native 선행과 Project 상태를 다시 확인한 뒤 별도로 진행한다.
+- 필수 읽기: 현재 작업 파일 → 선택한 이슈 → [세션 계획](plans/interface-sessions-2026-11.md)의 해당 행·운영 규칙 → 필수 파일·관련 PR/CI. 전체 대화·과거 작업을 반복 읽지 않는다.
+- 미검증: #7 실제 공개 마스터3962종목과 실제 KIS 기간별 일봉·공식 달력 대조 미검증을 구분한다. STE 기준 파일·graphify 환경 부재를 유지한다. Argon 요청/초기화 ID 확인과 서버 모델·effort 독립 확인 한계, #8 Fable 한도 오류는 각 검증 기록을 따른다.
+- 수용 경계: #8/#10은 사용자 진행 지시와 지정 모델 검증에 따른 통합이며 사용자 직접 육안 확인·장중 전체 수용이 아니다. [공통 기능 #2](tasks/2-trading-functions.md)·[화면 묶음 #3](tasks/3-screen-blueprint.md)와 #1은 OPEN이다. 실제 KIS 주문·체결·취소·연속 운영·V01 장중 수용은 남아 있다.
+- 기존 기술 스택 추천 문서는 별도 리팩터링 지시가 아니다. 실제 조회 성공은 주문·체결 성공이 아니며 이 인계에는 주문·취소·전략 실행 승인이 없다.

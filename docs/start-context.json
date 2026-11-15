@@ -76,26 +76,18 @@
   "decisions": "React/TypeScript+Vite SPA. 개인 PC 단일 사용자이므로 Node24+SQLite로 런타임 하나와 로컬 파일 DB를 사용한다. Rust/PostgreSQL 기본안은 서버·다중 사용자 요구 때 재평가. 데모와 KIS 모의 환경을 분리하고 실전 주문 미지원. 비밀값은 서버 Infisical 주입.",
   "status": "reviewed",
   "task_context": {
-    "issue": "https://github.com/krdn/gon-stock03/issues/10",
-    "checked_at": "2026-11-15T05:27:37.119073+00:00",
+    "issue": "https://github.com/krdn/gon-stock03/issues/20",
+    "checked_at": "2026-11-15T06:13:50.975187+00:00",
     "sources": [
       {
         "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_price/inquire_price.py",
-        "finding": "실전/모의 현재가 TR FHKST01010100, J는 KRX, 종목코드는 문자열. REST는 스냅샷이며 실시간은 WebSocket 별도다."
+        "finding": "실전/모의 현재가 FHKST01010100, J=KRX, 문자열 종목코드. REST 현재가와 WebSocket 실시간은 별도다."
       },
       {
-        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_price/chk_inquire_price.py",
-        "finding": "acml_vol 누적거래량, bstp_kor_isnm 업종, temp_stop_yn 임시정지, sltr_yn 정리매매. 현재가 수신시각은 체결시각이나 상장폐지 확인이 아니다."
-      },
-      {
-        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/stocks_info/kis_kospi_code_mst.py",
-        "finding": "단축코드·표준코드·명칭과 고정폭 227자 필드. 거래정지·정리매매 필드를 제공한다. 기존 TLS 검증을 유지한다."
-      },
-      {
-        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/stocks_info/kis_kosdaq_code_mst.py",
-        "finding": "고정폭 221자이며 KOSPI와 거래정지·정리매매 오프셋이 다르다. 마스터 미포함은 상장폐지 확정이 아니다."
+        "url": "https://nodejs.org/download/release/v24.11.0/docs/api/sqlite.html",
+        "finding": "DatabaseSync는 파일 경로로 영속 DB를 열며 동기 API를 제공한다. 기존 Store의 SQLite 트랜잭션·저장 구조를 재사용한다."
       }
     ],
-    "decisions": "기존 Node/React/SQLite 및 마스터·KisClient 재사용. 페이지 8종목 순차 REST, 완료 후 15초 간격·숨김 중단. 가격·거래량 미수신은 0으로 채우지 않는다. 실패/30초 경과는 이전 수신값으로 표시. 마스터 제외를 보존하되 상장폐지 확정으로 오인하지 않는다. 주문·취소 제외; #10 화면 수용은 별도 답변과 SHA 필요."
+    "decisions": "#20은 기존 관심목록 API/SQLite와 MarketExplorer의 최대8종목 순차 조회·15초 간격·숨김 중단 및 서버 캐시를 재사용한다. /paper에 선택코드만 전달하며 자동 조회·주문을 실행하지 않는다. 숫자 외 코드의 주문 지원을 확대하지 않는다. 기술 스택 변경 없음."
   }
 }
