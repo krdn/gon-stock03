@@ -46,6 +46,14 @@
 
 clean clone에서 기준 main ready와 작업 브랜치 handoff dry-run이 통과했다. ready를 작업 브랜치에서 실행한 최초 시도는 기본 브랜치 SHA 불일치로 실패했다. 단일 브랜치 clone의 main fetch refspec을 추가한 뒤 main에서 재확인했다. 원래 저장소의 사용자 설정은 변경하지 않았다. GitHub 연결 도구의 PR·이슈 쓰기 403은 중복 확인 후 기존 인증된 gh로 처리했다.
 
-이번 지시는 #15 구현·검증·PR/CI·원격 인계까지다. 대상 제품 SHA에 대한 사용자 직접 화면 수용 답변은 아직 없다. 직접 육안·장중 수용이나 통합 완료로 표현하지 않는다. CI·지정 모델 결과를 근거로 검토 가능한 PR을 전달하고 #15는 In Review로 둔다.
+구현 세션의 지시는 #15 구현·검증·PR/CI·원격 인계까지였으며 당시 In Review로 전달했다. 대상 제품 SHA에 대한 사용자 직접 화면 수용 답변은 아직 없다. 이후 계속 진행 지시에 따른 통합은 아래에 구분해 기록한다.
 
 실제 KIS 기간별 일봉·공식 달력 대조는 미검증이다. #7 공개 마스터3962 검증과 구분한다. #8 Fable 한도 오류, STE 기준 파일·graphify 부재를 유지한다. WebSocket은 C04, 장중 통합·주문/체결/취소/불명 복구·연속 전략은 V01 및 관련 이슈의 별도 범위다. 이 작업에는 해당 실행 승인이 없다.
+
+## 계속 진행에 따른 통합
+
+사용자는 컨텍스트·다음 작업을 확인하고 필요하면 새 Herdr 탭·세션에서 진행하라고 다시 지시했다. 이에 따라 제품 `b8645701b6ec0ec65e94c4897812304fbbc9424f`의 지정 Argon 검증과 최종 PR HEAD `6db7e259a0c0a692007dd5ad81b674ec317acaf9`의 앱·구성 CI SUCCESS를 근거로 통합했다. 제품 이후 변경은 기록 3개뿐이며 미해결 리뷰 대화는 없었다. 직접 육안 확인·장중 수용을 받았다는 뜻은 아니다.
+
+PR #39 통합 main은 `ab5e16f4ca0d141308c98f2b4e96dad8dc01c97a`다. [main 앱43712041000](https://github.com/krdn/gon-stock03/actions/runs/43712041000)·[main 구성43712040993](https://github.com/krdn/gon-stock03/actions/runs/43712040993) SUCCESS 및 #15 completed/Project Done을 확인했다. GitHub 연결 도구의 병합 403은 기존 인증된 gh에서 동일 HEAD를 고정해 처리했다.
+
+다음 #21은 native 선행 #7·#15 completed·main 통합 후 Ready로 갱신하고 재조회했다. Herdr `#21 백테스트` 탭 `tb766ba6581aee3980145dbaeef65968bf`, terminal `t6z`, session `01a1df18-deae-7de3-be21-7c073e8e82c1`에서 `/home/gon/llm-projects/gon-stock03`와 Ready 입력창 렌더링을 확인했다. #15 세션은 수정 중단을 확인했다. 기록 PR 최종 main CI와 인계를 확인한 뒤 #21 구현 소유권을 넘긴다.
