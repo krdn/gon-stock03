@@ -20,10 +20,18 @@ KIS 모의와 로컬 DEMO를 선택해 표시한다. 기존 C01 잔고 조회·�
 | 구현 준비 | 공식 자료 갱신 후 `gon-workflow implementation-ready` PASS |
 | 단위 | `npm test`: 70/70 PASS. 실제 공통 서비스의 여러 페이지 합산·현금 중복 방지·0수량·가격 누락·오류 시 이전 잔고 보존, 계산식·비중·총자산0 검사 |
 | 빌드 | `npm run build` PASS |
-| 브라우저 | `npm run test:e2e`: 49/49 PASS. 최초 신규4개로 환경 분리·수동 조회·로딩/부분실패/오래됨/복구·평가불가/0자산·상세 이동·390px 레이아웃 검사. 후속 소수 평균가 회귀 추가 후 포트폴리오5/5·빌드 PASS |
+| 브라우저 | `npm run test:e2e`: 49/49 PASS. 최초 신규4개로 환경 분리·수동 조회·로딩/부분실패/오래됨/복구·평가불가/0자산·상세 이동·390px 레이아웃 검사. 후속 소수 평균가 회귀 추가 후 포트폴리오5/5·빌드 PASS. 제품 최종 SHA `ac099ef`의 원격 CI에서 전체50/50 PASS |
 | 실제 조회 | 2026-11-15 19:21 KST. Infisical `dev /kis` 주입, 메모리 DB의 별도 서버4316에서 UI 버튼으로 `/api/kis/check` 1회. 전체1페이지·보유0건·요약 표시, 브라우저 오류0. POST는 조회 경로만 관측 |
 | 화면 | 에이전트가 1440px·390px 렌더링을 확인했다. [데스크톱](assets/16-portfolio-desktop.png)·[모바일](assets/16-portfolio-mobile.png)은 합성 테스트 데이터다. 실제 계좌 화면은 공개 저장소에 게시하지 않는다 |
-| 문서 | `git diff --check` PASS. 상대 링크11개 누락0. STE strict는 기준 파일 `docs/conventions/ste100-writing.md` 부재로 exit2, 통과가 아니다. graphify 환경 부재 미검증 유지 |
+| 문서 | `git diff --check` PASS. 상대 링크12개 누락0. STE strict는 기준 파일 `docs/conventions/ste100-writing.md` 부재로 exit2, 통과가 아니다. graphify 환경 부재 미검증 유지 |
+
+## 원격 전달과 수용 대상
+
+- [PR #37](https://github.com/krdn/gon-stock03/pull/37), 제품 수용 대상 `ac099efe3a9164e03c070bedbe939905277d59aa`. 이후 기록 커밋은 제품 코드를 바꾸지 않는다.
+- 제품 SHA의 [PR 앱 CI](https://github.com/krdn/gon-stock03/actions/runs/43704203859)·[구성 CI](https://github.com/krdn/gon-stock03/actions/runs/43704203812) SUCCESS. 브랜치 push 앱43704200865·구성43704200916도 SUCCESS.
+- 기존 `.codex/` 때문에 루트 handoff는 미커밋 변경으로 차단됐다. 사용자 설정을 보존하고 원격 브랜치의 깨끗한 복제본에서 handoff dry-run을 통과했다.
+- `ready`는 HEAD와 원격 기본 브랜치의 동일성을 요구한다. 미통합 작업 브랜치에서의 불일치 오류와 기준 main `daa01ba`에서의 PASS를 구분한다. 최종 인계 댓글은 PR HEAD 기록 커밋을 기준으로 게시한다.
+- #16은 OPEN·Project In Review. 화면 수용 답변과 통합은 대기다.
 
 ## 실패와 보완
 
