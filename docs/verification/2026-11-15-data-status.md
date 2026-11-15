@@ -1,6 +1,6 @@
 # #15 데이터 상태 검증
 
-기준: [이슈 #15](https://github.com/krdn/gon-stock03/issues/15), main `0ea629604c8e75acb0a253e5bcb4a6fbe77ae088`. 제품 SHA·PR·최종 CI는 아래 원격 기록에 추가한다.
+기준: [이슈 #15](https://github.com/krdn/gon-stock03/issues/15), main `0ea629604c8e75acb0a253e5bcb4a6fbe77ae088`. 제품 SHA `b8645701b6ec0ec65e94c4897812304fbbc9424f`, [PR #39](https://github.com/krdn/gon-stock03/pull/39).
 
 ## 구현과 근거
 
@@ -41,6 +41,10 @@
 최초 CLI 요청은 timeout 단위 누락과 `-p` 인자 누락으로 실행 전 실패(exit2)했다. 실행기와 같은 stream-json 입력 및 `180s`로 고쳤다. 이 실패를 모델 응답으로 취급하지 않는다. 최초 리뷰 입력 SHA256: `b978e3f9b3127302c843d78f41bbdad7a074398e70ee6dd3fe06afbddbb334b1`.
 
 ## 이번 화면 수용 형태와 원격 기록
+
+제품 SHA `b8645701b6ec0ec65e94c4897812304fbbc9424f`의 CI: [PR 앱43709329404](https://github.com/krdn/gon-stock03/actions/runs/43709329404), [PR 구성43709329397](https://github.com/krdn/gon-stock03/actions/runs/43709329397), [push 앱43709274587](https://github.com/krdn/gon-stock03/actions/runs/43709274587), [push 구성43709274900](https://github.com/krdn/gon-stock03/actions/runs/43709274900) 모두 SUCCESS. 최종 문서 HEAD의 CI와 인계 댓글은 PR checks·이슈에서 확인한다.
+
+clean clone에서 기준 main ready와 작업 브랜치 handoff dry-run이 통과했다. ready를 작업 브랜치에서 실행한 최초 시도는 기본 브랜치 SHA 불일치로 실패했다. 단일 브랜치 clone의 main fetch refspec을 추가한 뒤 main에서 재확인했다. 원래 저장소의 사용자 설정은 변경하지 않았다. GitHub 연결 도구의 PR·이슈 쓰기 403은 중복 확인 후 기존 인증된 gh로 처리했다.
 
 이번 지시는 #15 구현·검증·PR/CI·원격 인계까지다. 대상 제품 SHA에 대한 사용자 직접 화면 수용 답변은 아직 없다. 직접 육안·장중 수용이나 통합 완료로 표현하지 않는다. CI·지정 모델 결과를 근거로 검토 가능한 PR을 전달하고 #15는 In Review로 둔다.
 
