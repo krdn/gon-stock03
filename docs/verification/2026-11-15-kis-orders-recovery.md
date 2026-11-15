@@ -1,6 +1,6 @@
 # #9 주문·복구 검증
 
-기준: main `034f7e766d67b0ecfe3dab8477078939c255412e`. 구현 브랜치 `feat/9-kis-orders-recovery`. [작업](../tasks/9-kis-orders-recovery.md) · [공식 계약](../research/kis-order-recovery-2026-11.md) · [미승인 실행안](../operations/kis-minimum-paper-run.md).
+기준: main `034f7e766d67b0ecfe3dab8477078939c255412e`. 구현 브랜치 `feat/9-kis-orders-recovery`, 제품 `c2dd987870203f29391ef721e473115f1f12ace6`. [작업](../tasks/9-kis-orders-recovery.md) · [공식 계약](../research/kis-order-recovery-2026-11.md) · [미승인 실행안](../operations/kis-minimum-paper-run.md).
 
 ## 재현과 수정
 
@@ -22,7 +22,7 @@
 - `git diff --check`: PASS. 변경 문서의 로컬 링크 11건 PASS.
 - `evolve docs ste-lint --strict --changed refs/remotes/origin/main --added`: **실패**. 기존 `docs/conventions/ste100-writing.md`가 없다. graphify도 설치되지 않았다. 통과로 대체하지 않는다.
 - [지정 Argon 리뷰](assets/kis-orders-recovery/argon-review.json): 제한된 전달·초안 PR 범위 PASS, P0/P1/P2 0건. 요청/init `gemini-4-argon-high`, CLI effort `high`, 182.46초. 서버 모델·effort는 독립 확인되지 않았다. P3 2건 중 실행안 문구를 보완했고, 0값 식별자는 검증된 후보와 일치할 수 없어 코드 변경 없이 유지했다. 문구 수정에 반복 리뷰는 붙이지 않았다.
-- PR·최종 SHA·원격 CI: 작성 전.
+- [초안 PR47](https://github.com/krdn/gon-stock03/pull/47): 제품 SHA 푸시·원격 일치 확인. 최종 기록 SHA와 해당 head의 PR/push CI·clean clone handoff 결과는 #9 인계 댓글에서 확인한다. GitHub 앱 PR 생성은 403으로 실패해 기존 인증 `gh`로 생성했다.
 
 ## 수용 범위
 

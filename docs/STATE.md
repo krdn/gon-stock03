@@ -2,7 +2,7 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매.
 
-- 현재: [#9 KIS 주문·복구](tasks/9-kis-orders-recovery.md) Blocked. 독립 구현·검증·지정 리뷰 완료, 초안 PR 준비. 기준 main `034f7e766d67b0ecfe3dab8477078939c255412e`. #6/#8 completed·PR27/31 main 포함·Project Ready 재확인. 실제 주문 승인 없음.
+- 현재: [#9 KIS 주문·복구](tasks/9-kis-orders-recovery.md) Blocked. 독립 구현·검증·지정 리뷰 완료, [초안 PR47](https://github.com/krdn/gon-stock03/pull/47) 제출. 제품 `c2dd987870203f29391ef721e473115f1f12ace6`. 최종 기록 SHA·CI·handoff는 #9 인계 댓글에서 확인한다. 기준 main `034f7e766d67b0ecfe3dab8477078939c255412e`. #6/#8 completed·PR27/31 main 포함·Project Ready 재확인. 실제 주문 승인 없음.
 - 범위: 공통 주문 큐·명시적 불명 복구·감사·fixture 검증·최소 모의 실행안. UI는 S15/#14 소유. 웹 정정취소의 필수 가능수량 조회가 모의 미지원이므로 해당 전송은 차단한다.
 - 선행 완료: [#24 설계실](tasks/24-design.md) completed/Done, PR45/46 통합. 최종 main 앱43724416483·구성43724416509 SUCCESS. [최종 인계](https://github.com/krdn/gon-stock03/issues/24#issuecomment-6896090609). 직접 육안·장중 수용과 구분한다.
 - 필수 읽기: #9 작업 파일의 목록과 관련 원격 이슈·PR·CI만 읽는다. 신규 초기화·전체 과거 대화 재독 없음.
