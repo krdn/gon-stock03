@@ -1,0 +1,58 @@
+# 관심종목 검증
+
+[#20](https://github.com/krdn/gon-stock03/issues/20)은 실제 마스터 관심목록의 저장·화면 연결 작업이다. 기준 main은 `865c3007e99620e9fa5821e7496246869ff04dec`, 제품 SHA는 `d53bb90f7b8aaf4a55fbc835b985ca8af4b240cc`다. [PR #35](https://github.com/krdn/gon-stock03/pull/35)에서 전달한다. 사용자 지시는 구현·검증·PR/CI·원격 인계까지이며, 직접 화면 수용이나 장중 통합 수용을 대신하지 않는다.
+
+## 변경과 확인 방법
+
+- `/watchlist`는 `/market`의 컴포넌트, 관심목록 API, SQLite Store, 시세 캐시를 재사용한다. 별도 저장소·폴링 엔진을 만들지 않았다.
+- 실제 마스터·미확인·제외 코드를 표시한다. 확인되지 않은 코드의 가격을 합성값으로 채우지 않는다. 대시보드에서도 기존 DEMO 밖의 저장 코드를 관심목록 링크로 표시한다.
+- 페이지당 최대8종목 순차 조회, 완료 후15초 간격, 숨김·이탈 중단을 유지한다. 저장 실패 안내와 DB 롤백, 빈 목록의 탐색 이동을 확인한다.
+- `/paper?code=...`는 선택코드만 전달한다. 자동 시세/일봉 조회·주문 전송은 없다. 영문 포함 코드는 보존하되 기존 숫자6자리 주문 지원 제한을 표시한다.
+- 저장하지 않은 마스터 코드를 검색하면 관심목록에 없다고 안내한다. 다른 시장 필터 오류로 오인하지 않는다. `src/specs.ts`를 같은 변경에서 갱신했다.
+
+## 자동 검사
+
+| 검사 | 결과·증거 |
+| --- | --- |
+| 재현 | 기존 화면의 `00088K` 누락, SQLite 저장 오류의400응답, 미등록 관심코드의 잘못된 필터 안내를 각각 실패 assertion으로 확인 후 수정 |
+| 단위 | `npm test`: 63개 통과. 파일 DB·HTTP 서버 재시작, 중복 방지, SQLite 트리거로 주입한 실제 쓰기 실패·목록/revision 롤백 포함 |
+| 브라우저 | `npm run test:e2e`: 45개 통과. 목록 공유·수신시각·실패·빈 목록·마스터 미확인/제외·페이지 제한·이탈·코드 전달 포함 |
+| 원격 CI | 제품 `d53bb90`의 [앱43685541428](https://github.com/krdn/gon-stock03/actions/runs/43685541428)·[구성43685541355](https://github.com/krdn/gon-stock03/actions/runs/43685541355) SUCCESS. 최종 문서 인계 SHA의 CI는 PR 체크와 고정 인계 댓글에서 확인 |
+| 빌드 | `npm run build`: TypeScript·Vite 통과 |
+| 문서 | `git diff --check` 통과. 변경 문서의 상대 링크13개 확인(누락0). STE strict는 `docs/conventions/ste100-writing.md` 부재로 exit2; 통과가 아님. graphify 환경 부재 미검증 유지 |
+| 경계 리뷰 | 새 Gemini4 Argon High PASS(P1/P2 없음). 상단 배지의 표현 개선 의견 반영 후 수정분1회 재확인도 PASS. 이전 #10 PASS를 재사용하지 않음 |
+
+초기 검사 도구의 재시작 연결 재사용 오류와 준비되지 않은 fixture credentials를 수정했다. 이탈 검사는 목적지 렌더링을 기다린 뒤 가상 시간을 진행하도록 고쳤다. 최종 통과는 이 조건에서 다시 확인한 결과다.
+
+## 실제 조회·화면
+
+2026-11-15 15:19–15:26 KST, Infisical `dev /kis`의 기존4개 값을 프로세스에 주입하고 임시 파일 DB에서 검증했다. 사용자 DB는 변경하지 않았다. 공개 마스터3962종목(KOSPI2128, KOSDAQ1834)을 수집했다.
+
+| 코드 | VTS 현재가 | 앱 수신 시각(KST) |
+| --- | --- | --- |
+| 000660 | 1,233,000원 | 15:25:41 |
+| 005930 | 209,000원 | 15:25:42 |
+| 069500 | 83,115원 | 15:25:43 |
+
+브라우저에서3개 행·수신 완료, 새로고침 보존, `000660`의 주문 화면 전달, 주문 확인 비활성 상태를 확인했다. 주문 요청0건·페이지 오류0건이다. 서버 프로세스를 종료하고 같은 DB로 새 프로세스를 시작해 instance 변경과 같은 목록을 확인했다. 검증 브라우저·임시 서버는 종료했다.
+
+[데스크톱](assets/2026-11-15-watchlist-desktop.png)·[모바일390px](assets/2026-11-15-watchlist-mobile.png) 최종 배지 수정 후15:25에 다시 캡처하고 에이전트가 확인했다. 모바일 표는 내부 가로 스크롤을 사용하며 문서 가로 넘침이 없다. 이는 비장중 REST 응답·에이전트 화면 점검이다. 사용자 직접 육안 수용·장중 최신성·주문·체결·취소·연속 전략 성공이 아니다.
+
+## 공식 출처·경계
+
+- [KIS 공식 현재가 샘플](https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_price/inquire_price.py): KRX 문자열 코드와 모의 REST 현재가. 실시간 WebSocket과 구분한다.
+- [Node24 SQLite](https://nodejs.org/download/release/v24.11.0/docs/api/sqlite.html): 파일 DB·동기 API. 기존 Store 트랜잭션을 유지한다.
+- `docs/start-context.json`의 #20 확인시각·출처를 갱신하고 `gon-workflow ready .`, `implementation-ready .`를 통과했다. 이 검사가 실제 주문 성공을 뜻하지 않는다.
+- #7의 실제 KIS 기간별 일봉·공식 달력 대조 미검증은 유지한다. 기술 스택 추천과 미추적 `.codex/config.toml`은 변경하지 않았다.
+
+## 지정 모델 확인
+
+중앙 `review-models.json`의 Claude는 Opus5.5/high, Gemini는 Flash였다. `review-llm --dry-run`으로 확인했으며 기본 리뷰를 호출하지 않았다. `agy models`에서 지원 ID를 조회하고 `--model gemini-4-argon-high --effort high`를 명시했다.
+
+새 conversation `b345a515-479b-443c-a79a-648299f64642`의 init model은 요청 ID와 같고 result는 `SUCCESS`, 본문은 PASS(P1/P2 없음)였다. 도구 호출 없이 제공된 코드·검사 근거만 검토했다. 서버가 실제 실행한 모델·effort를 독립 확인할 반환 필드는 없으므로 요청/초기화 일치 이상의 확인으로 주장하지 않는다. 이전 #8 Fable 한도 오류와 #10 리뷰를 이번 PASS로 대체하지 않는다.
+
+리뷰어는 상단 배지의 데모 문구 개선을 제안했다. 실제 시세를 표시하는 `/watchlist`의 배지를 시장 탐색과 맞추고 재현 assertion을 추가했다. 업종 미수신 표현의 선택적 통일은 기존 상태 설명과 모순이 없어 변경하지 않았다. 리뷰어가 화면 이미지를 직접 보았다고 기록하지 않는다. 수정분 리뷰 뒤 브라우저 실행에서 `header` 선택자가2개 요소를 잡는 테스트 오류를 확인했다. `header.topbar`로 특정하고, 기존 문구의 assertion 실패와 수정 후 통과를 다시 검사했다. 이 선택자 오류를 외부 리뷰가 발견했다고 주장하지 않는다.
+
+## 인계
+
+구현 대상 SHA·PR/CI와 새 리뷰 결과를 작업 파일에 고정한다. #20은 화면 수용 형태·대상 SHA와 통합까지 확인한 뒤 completed/Done으로 바꾼다. 이번 검증을 사용자 직접 수용 발언으로 기록하지 않는다. 롤백은 이 PR revert로 가능하며 기존 DB 구조는 변경하지 않았다.
