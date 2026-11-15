@@ -2,7 +2,7 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매. 해외·실전·다중 사용자는 범위 밖.
 
-- 현재: [#20 관심종목](tasks/20-watchlist.md), 구현·검증 완료 후 PR/CI 인계 준비. 기존 SQLite·관심목록 API·최대8종목 조회·공통 캐시를 재사용한다. [검증·화면](verification/2026-11-15-watchlist.md). 사용자 직접 수용·대상 SHA·통합은 완료 처리 전에 확인한다.
+- 현재: [#20 관심종목](tasks/20-watchlist.md), [PR #35](https://github.com/krdn/gon-stock03/pull/35) OPEN·In Review. 제품 SHA `d53bb90`, 단위63·브라우저45·빌드·새Argon/수정분 및 제품 PR CI PASS. 기존 SQLite·관심목록 API·최대8종목 조회·공통 캐시를 재사용한다. [검증·화면](verification/2026-11-15-watchlist.md). 사용자 직접 수용·대상 SHA·통합은 완료 처리 전에 확인한다.
 - 소유권: 확인된 Herdr t6v/세션 `01a1ddd3-7728-7041-bf37-7adee6dfc4cc`가 #20을 단독 소유한다. 기존 `.codex/config.toml`은 미추적 사용자 설정으로 보존한다.
 - 기준 main: `865c3007e99620e9fa5821e7496246869ff04dec`. [#10](tasks/10-market-explorer.md) completed/Done, [PR #33](https://github.com/krdn/gon-stock03/pull/33) `3211548` 및 [기록 PR #34](https://github.com/krdn/gon-stock03/pull/34) 통합. 앱43684112604·구성43684112485 SUCCESS와 #20 native 선행 완료를 재확인했다.
 - 선행 기록: [기준선 #5](tasks/5-baseline.md), [공통 상태 #6](tasks/6-common-state.md), [마스터·일봉 #7](tasks/7-market-data.md), [연결·설정 #8](tasks/8-connection-settings.md). 완료 이력·세부 근거는 해당 파일을 읽는다.

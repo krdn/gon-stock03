@@ -6,8 +6,8 @@
 - 목표·완료 조건: 실제 마스터 관심종목의 화면 간 공유, 새로고침/재시작 보존·중복 방지, 저장 실패·빈 목록, 수신 시각, 선택코드 주문 화면 이동.
 - 허용된 작업·제외 범위: 기존 저장·조회·공통 캐시 재사용. 실제 KIS 주문·취소·전략 실행과 스택 리팩터링 제외.
 - 선행 작업·의존관계: #10 completed 및 PR #33/#34 통합 확인. 기준 main `865c3007e99620e9fa5821e7496246869ff04dec`, 앱43684112604·구성43684112485 SUCCESS.
-- 이슈 / PR: #20 / 생성 전
-- 작업 브랜치 / 마지막 확인 SHA: `feat/20-watchlist` / 위 기준 main
+- 이슈 / PR: [#20](https://github.com/krdn/gon-stock03/issues/20) / [PR #35](https://github.com/krdn/gon-stock03/pull/35), OPEN·Project In Review
+- 작업 브랜치 / 제품 SHA: `feat/20-watchlist` / `d53bb90f7b8aaf4a55fbc835b985ca8af4b240cc` (원격 일치). 이후 문서 인계 커밋의 최종 SHA·CI는 PR과 이슈 인계 댓글에서 확인한다.
 
 ## 먼저 읽을 자료
 
@@ -20,7 +20,9 @@
 
 - 완료한 변경: 실제 마스터 관심목록·화면 공유·미확인/제외 코드 보존·실패/빈 상태·수신시각·선택코드 /paper 이동. 기존 저장·시세 캐시 재사용. SQLite 저장 오류는 안전한500응답으로 구분한다. `src/specs.ts`와 상단 데이터 배지를 갱신했다.
 - 검사: `gon-workflow ready .`, `implementation-ready .`, 단위63·브라우저45·빌드 통과. 새 Argon 및 상단 문구 수정분 PASS. 실제 공개마스터3962/VTS현재가3, 새로고침·프로세스재시작 보존·코드전달·주문요청0 확인. [검증 기록](../verification/2026-11-15-watchlist.md).
-- 미검증·남은 작업: PR/CI 원격 확인·인계, 사용자 직접 화면 수용·대상 SHA와 main 통합. 실제 주문·체결·취소·장중 실증 제외.
+- 원격 확인: 제품 SHA의 PR 앱43685541428·구성43685541355 및 push 앱43685499002·구성43685499077 SUCCESS. 최종 문서 커밋도 CI 확인 후 인계한다.
+- 미검증·남은 작업: 최종 PR/CI 원격 확인·인계, 사용자 직접 화면 수용·대상 SHA와 main 통합. 실제 주문·체결·취소·장중 실증 제외.
+- 전달 경로: 원본 체크아웃의 미추적 `.codex/` 때문에 handoff가 중단된다. 설정을 건드리지 않고 같은 원격 브랜치의 임시 clean clone에서 ready/handoff를 검증한다. GitHub 연결 도구 PR 생성403 후 중복 확인·기존 `gh` 인증으로 PR35 생성.
 - 보존: 미추적 `.codex/config.toml`, `docs/architecture/tech-stack-review.md`. #7 실제 마스터3962종목 검증과 실제 일봉·달력 미검증, STE/graphify 환경 부재를 구분한다.
 - 소유권: 사용자 확인된 Herdr t6v/세션 `01a1ddd3-7728-7041-bf37-7adee6dfc4cc`가 단독 소유한다.
 

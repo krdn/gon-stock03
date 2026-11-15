@@ -1,6 +1,6 @@
 # 관심종목 검증
 
-[#20](https://github.com/krdn/gon-stock03/issues/20)은 실제 마스터 관심목록의 저장·화면 연결 작업이다. 기준 main은 `865c3007e99620e9fa5821e7496246869ff04dec`다. 사용자 지시는 구현·검증·PR/CI·원격 인계까지이며, 직접 화면 수용이나 장중 통합 수용을 대신하지 않는다.
+[#20](https://github.com/krdn/gon-stock03/issues/20)은 실제 마스터 관심목록의 저장·화면 연결 작업이다. 기준 main은 `865c3007e99620e9fa5821e7496246869ff04dec`, 제품 SHA는 `d53bb90f7b8aaf4a55fbc835b985ca8af4b240cc`다. [PR #35](https://github.com/krdn/gon-stock03/pull/35)에서 전달한다. 사용자 지시는 구현·검증·PR/CI·원격 인계까지이며, 직접 화면 수용이나 장중 통합 수용을 대신하지 않는다.
 
 ## 변경과 확인 방법
 
@@ -17,6 +17,7 @@
 | 재현 | 기존 화면의 `00088K` 누락, SQLite 저장 오류의400응답, 미등록 관심코드의 잘못된 필터 안내를 각각 실패 assertion으로 확인 후 수정 |
 | 단위 | `npm test`: 63개 통과. 파일 DB·HTTP 서버 재시작, 중복 방지, SQLite 트리거로 주입한 실제 쓰기 실패·목록/revision 롤백 포함 |
 | 브라우저 | `npm run test:e2e`: 45개 통과. 목록 공유·수신시각·실패·빈 목록·마스터 미확인/제외·페이지 제한·이탈·코드 전달 포함 |
+| 원격 CI | 제품 `d53bb90`의 [앱43685541428](https://github.com/krdn/gon-stock03/actions/runs/43685541428)·[구성43685541355](https://github.com/krdn/gon-stock03/actions/runs/43685541355) SUCCESS. 최종 문서 인계 SHA의 CI는 PR 체크와 고정 인계 댓글에서 확인 |
 | 빌드 | `npm run build`: TypeScript·Vite 통과 |
 | 문서 | `git diff --check` 통과. 변경 문서의 상대 링크13개 확인(누락0). STE strict는 `docs/conventions/ste100-writing.md` 부재로 exit2; 통과가 아님. graphify 환경 부재 미검증 유지 |
 | 경계 리뷰 | 새 Gemini4 Argon High PASS(P1/P2 없음). 상단 배지의 표현 개선 의견 반영 후 수정분1회 재확인도 PASS. 이전 #10 PASS를 재사용하지 않음 |
