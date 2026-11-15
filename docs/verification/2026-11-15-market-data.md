@@ -28,7 +28,7 @@
 
 현재 세션의 KIS 필수 환경변수는 미구성이다. 새 기간별 일봉의 실제 계좌 호출과 실제 달력 대조는 수행하지 않았다. 일봉 테스트는 네트워크 응답 fixture를 사용하고 실제 파서·서비스·SQLite·HTTP 경로를 실행했다. fixture ZIP은 테스트용 한국어·주식·ETF·제외 그룹을 담은 합성 파일이다.
 
-사용자 수용·main 통합·실제 주문·체결·취소·전략·장중 실증은 이 검증 결과에 포함하지 않는다.
+사용자 수용·실제 주문·체결·취소·전략·장중 실증은 이 로컬 검증 결과에 포함하지 않는다. main 통합 검증은 아래 원격 확인에 별도로 기록한다.
 
 ## 외부 리뷰
 
@@ -48,4 +48,8 @@
 
 [PR #29](https://github.com/krdn/gon-stock03/pull/29), 구현 SHA `1aeca9b0430aabb5ab779c339a94cafcbc52ef52`를 origin에 저장하고 SHA 일치를 확인했다. 해당 SHA의 PR [Application checks](https://github.com/krdn/gon-stock03/actions/runs/43674283668)와 [Workflow configuration](https://github.com/krdn/gon-stock03/actions/runs/43674283728)은 SUCCESS다. 원격 앱 검사에는 단위·빌드·브라우저 검사가 모두 포함됐다.
 
-이슈 #7은 OPEN / Project In Review다. 이 기록의 후속 문서 커밋은 PR 최신 CI와 이슈 인계 댓글에서 별도로 확인한다. main 병합과 사용자 수용을 수행했다고 기록하지 않는다.
+2026-11-15 최종 PR head `4fc807be8e5080f314759153acc589280a8eee09`의 앱·구성 CI 성공, 리뷰 제출·미해결 대화 없음, native #6 completed·main 포함을 재확인했다. 사용자의 새 세션 진행 지시에 따라 정상 병합했으며, [통합 근거](https://github.com/krdn/gon-stock03/pull/29#issuecomment-6888957047)를 남겼다. 별도 사용자 수용 발언은 만들지 않았다.
+
+병합 SHA `bc813848bc2059f91c99f028b01d91bf0b3ee9f3`와 PR head의 tree는 `c9e4c208617be51ada06e1237a23bd20913b3128`로 동일하다. main [Application checks](https://github.com/krdn/gon-stock03/actions/runs/43675380668)·[Workflow configuration](https://github.com/krdn/gon-stock03/actions/runs/43675380680)은 SUCCESS다. main 로그에서 단위51/51·실패0, 브라우저21/21, `tsc --noEmit && vite build` 성공을 확인했다.
+
+이슈 #7은 해당 계약·회귀·저장 범위에서 closed/completed·Project Done이다. 후속 #10·#15는 native #6/#7 completed 확인 후 Ready로 갱신했다. #21은 #15 미완료로 Blocked다. 새 구현·KIS 주문·취소·전략은 시작하지 않았으며 위 실제 일봉·달력·STE·graphify 미검증은 그대로 유지한다.
