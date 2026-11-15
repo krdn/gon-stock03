@@ -70,7 +70,7 @@ test('manual order is confirmed, filled later, and reflected in portfolio; watch
   await page.getByRole('button', { name: '데모 주문 접수', exact: true }).click(); await expect(page.getByRole('dialog')).not.toBeVisible();
   await page.goto('/orders'); await expect(page.getByText('접수 · 미체결', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '다음 데모 봉 재생' }).click(); await expect(page.getByRole('cell', { name: '체결', exact: true })).toBeVisible();
-  await page.goto('/portfolio'); await expect(page.getByRole('row').filter({ hasText: '삼성전자' })).toContainText('31주');
+  await page.goto('/portfolio'); await page.getByRole('button', { name: '로컬 DEMO', exact: true }).click(); await expect(page.getByRole('row').filter({ hasText: '삼성전자' })).toContainText('31주');
   await page.goto('/watchlist'); await page.getByRole('button', { name: 'NAVER 관심 해제', exact: true }).click();
   await page.reload(); await expect(page.getByRole('button', { name: 'NAVER 관심 해제', exact: true })).toHaveCount(0);
   const saved = await (await page.request.get('/api/state')).json(); expect(saved.watchlist).not.toContain('035420');

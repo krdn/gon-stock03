@@ -8,7 +8,7 @@ const BASE = 'https://openapivts.koreainvestment.com:29443';
 const amount = z.string().regex(/^\d+(\.\d+)?$/).transform(Number).refine(Number.isFinite);
 const balanceSchema = z.object({
   rt_cd: z.literal('0'),
-  output1: z.array(z.object({ pdno: z.string(), prdt_name: z.string(), hldg_qty: amount, pchs_avg_pric: amount, prpr: amount })),
+  output1: z.array(z.object({ pdno: z.string(), prdt_name: z.string(), hldg_qty: amount, pchs_avg_pric: amount, prpr: z.union([amount, z.literal(''), z.null()]).optional().transform(value => typeof value === 'number' && value > 0 ? value : null) })),
   output2: z.array(z.object({ dnca_tot_amt: amount, tot_evlu_amt: amount })).min(1),
   ctx_area_fk100: z.string().optional(), ctx_area_nk100: z.string().optional(),
 });

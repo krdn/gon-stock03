@@ -1,3 +1,4 @@
+import { portfolioValue } from '../shared/portfolio.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KisClient } from '../server/kis.ts';
@@ -382,4 +383,42 @@ test('failed renewal retains its latest safe failure rather than an older unauth
   }, 0);
   await client.balance(); t.mock.timers.tick(60_001); expired = true;
   await assert.rejects(client.balance(), /503/); await assert.rejects(client.balance(), /503/); assert.equal(tokens, 2);
+});
+
+test('portfolio balance keeps every page once and represents missing or zero prices as unavailable', async () => {
+  let page = 0;
+  const client = new KisClient(credentials, async url => {
+    if (String(url).endsWith('/tokenP')) return Response.json({ access_token: 'token', expires_in: 86400 });
+    page++;
+    const row = (code: string, qty: string, price?: string | null) => ({ pdno: code, prdt_name: code, hldg_qty: qty, pchs_avg_pric: '100', prpr: price });
+    return Response.json({ ...empty, output1: page === 1 ? [row('005930', '2', '110'), row('000660', '0', '0')] : [row('069500', '3'), row('035420', '1', ''), row('035720', '1', null), row('005380', '1', '0')], ctx_area_fk100: 'next', ctx_area_nk100: 'page' }, { headers: { tr_cont: page === 1 ? 'M' : '' } });
+  }, 0);
+  const result = await client.balance();
+  assert.equal(result.status.pages, 2); assert.equal(result.status.complete, true);
+  assert.deepEqual(result.balance?.positions.map(p => [p.code, p.qty, p.price]), [['005930', 2, 110], ['069500', 3, null], ['035420', 1, null], ['035720', 1, null], ['005380', 1, null]]);
+  assert.equal(result.balance?.cash, 1000000);
+});
+
+test('portfolio sums priced holdings from all pages without duplicating account cash', async () => {
+  let page = 0;
+  const client = new KisClient(credentials, async url => {
+    if (String(url).endsWith('/tokenP')) return Response.json({ access_token: 'token', expires_in: 86400 });
+    page++;
+    return Response.json({ rt_cd: '0', output2: [{ dnca_tot_amt: '1000', tot_evlu_amt: '2000' }], output1: [{ pdno: page === 1 ? '005930' : '000660', prdt_name: '종목', hldg_qty: page === 1 ? '2' : '4', pchs_avg_pric: page === 1 ? '100' : '200', prpr: page === 1 ? '150' : '175' }], ctx_area_fk100: 'next', ctx_area_nk100: 'page' }, { headers: { tr_cont: page === 1 ? 'M' : '' } });
+  }, 0);
+  const { balance, status } = await client.balance();
+  assert.equal(status.pages, 2); assert.equal(balance!.positions.length, 2);
+  const p = portfolioValue(balance!.cash, balance!.positions);
+  assert.equal(p.total, 2000); assert.equal(p.invested, 1000); assert.equal(p.profit, 0); assert.equal(p.cashWeight, 50);
+});
+
+test('malformed balance prices still reject the response and preserve the last complete balance', async () => {
+  let price = '150';
+  const client = new KisClient(credentials, async url => String(url).endsWith('/tokenP') ? Response.json({ access_token: 'token', expires_in: 86400 }) : Response.json({ ...empty, output1: [{ pdno: '005930', prdt_name: '삼성전자', hldg_qty: '1', pchs_avg_pric: '100', prpr: price }] }), 0);
+  await client.balance();
+  for (price of ['-1', 'bad', 'NaN']) {
+    await assert.rejects(client.balance(), /계약/);
+    assert.equal(client.connection().balance!.positions[0].price, 150);
+    assert.equal(client.connection().status.complete, false);
+  }
 });

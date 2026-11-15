@@ -2,9 +2,9 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매. 해외·실전·다중 사용자는 범위 밖.
 
-- 현재 완료: [#20 관심종목](tasks/20-watchlist.md), completed/Done. 이번 사용자 계속 진행 지시와 지정 Argon 검증에 따라 [PR #35](https://github.com/krdn/gon-stock03/pull/35)를 `e6aa5f7`로 통합했다. main 앱43702571567·구성43702571536 SUCCESS. [검증·수용 형태](verification/2026-11-15-watchlist.md#이번-계속-진행-지시와-수용통합).
-- 다음 작업: [#16 포트폴리오](https://github.com/krdn/gon-stock03/issues/16), Ready. native 선행 #6·#8 completed·통합을 재확인했다. 새 세션에서 계획 S06과 필수 파일만 읽고 TEMPLATE로 작업 파일을 만든다. KIS 잔고 조회·환경 분리 범위이며 주문 실행은 포함하지 않는다.
-- 기준 main: `e6aa5f7b7e5c3d0489a18ffb466ecbb0d332ddc6`. 기록 PR 통합 후 새 main SHA·CI를 다시 확인하고 실제 Herdr 탭 연결 이후 구현 소유권을 넘긴다. 기존 `.codex/config.toml`은 미추적 사용자 설정으로 보존한다.
+- 현재 작업: [#16 포트폴리오](tasks/16-portfolio.md), [PR #37](https://github.com/krdn/gon-stock03/pull/37) 게시, 구현·로컬 검증·Argon 리뷰 완료. 제품 `ac099ef` 앱·구성 CI SUCCESS, 화면 수용·통합 대기. 기록 커밋의 최종 HEAD/CI는 PR에서 확인한다. KIS 잔고·환경 분리·평가 불가·합계/비중을 검증했다. 주문 실행은 포함하지 않는다.
+- 최근 완료: [#20 관심종목](tasks/20-watchlist.md), completed/Done. PR #35·#36 통합 및 최종 main CI 성공을 확인했다.
+- 기준 main: `daa01baa65f94cb5c9e1497a28fa8c2ff71938e9`. 앱43702990997·구성43702990969 SUCCESS. 실제 Herdr 탭 연결 확인 후 #16 소유권을 이 세션으로 넘겼다. `.codex/config.toml`은 미추적 사용자 설정으로 보존한다.
 - 선행 기록: [기준선 #5](tasks/5-baseline.md), [공통 상태 #6](tasks/6-common-state.md), [마스터·일봉 #7](tasks/7-market-data.md), [연결·설정 #8](tasks/8-connection-settings.md). 완료 이력·세부 근거는 해당 파일을 읽는다.
 - 후속: #9는 Ready이지만 실제 모의접수 승인·장중 실증은 별도다. #12는 #9·#11 미완료로 Blocked다. 다음 구현은 선택된 이슈의 native 선행과 Project 상태를 다시 확인한 뒤 별도로 진행한다.
 - 필수 읽기: 현재 작업 파일 → 선택한 이슈 → [세션 계획](plans/interface-sessions-2026-11.md)의 해당 행·운영 규칙 → 필수 파일·관련 PR/CI. 전체 대화·과거 작업을 반복 읽지 않는다.
