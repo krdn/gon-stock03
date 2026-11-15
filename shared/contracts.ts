@@ -12,6 +12,8 @@ export const backtestInput = z.object({ code: codeSchema, fast: integer(2, 60), 
 export const riskInput = z.object({ maxOrder: integer(10000, 100000000), maxPosition: integer(10000, 100000000), dailyLoss: integer(1000, 100000000) }).strict();
 export const journalInput = z.object({ code: codeSchema, text: z.string().trim().min(1).max(2000) }).strict();
 export const idInput = z.object({ id: z.string().min(1).max(80) }).strict();
+export const paperRecoveryInput = z.object({ id: z.uuid(), evidenceId: z.uuid(), brokerId: z.string().regex(/^\d{1,10}$/), organization: z.string().regex(/^\d{1,5}$/), confirmed: z.literal(true) }).strict();
+export type PaperRecoveryInput = z.infer<typeof paperRecoveryInput>;
 export const haltInput = z.object({ halted: z.boolean() }).strict();
 export type OrderInput = z.infer<typeof orderInput>;
 

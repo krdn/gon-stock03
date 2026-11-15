@@ -1,0 +1,55 @@
+{
+  "checked_at": "2026-11-15T14:44:39.038457+00:00",
+  "scope": "public documentation only; no authenticated KIS request",
+  "contracts": [
+    {
+      "source": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/inquire-psbl-rvsecncl",
+      "fields": {
+        "id": "d4537e9c-73f7-414c-9fb0-4eae3bc397d0",
+        "accessUrl": "/uapi/domestic-stock/v1/trading/inquire-psbl-rvsecncl",
+        "httpMethod": "GET",
+        "realTrId": "TTTC0084R",
+        "virtualDomain": "모의투자 미지원",
+        "virtualTrId": "모의투자 미지원"
+      },
+      "normalized_response_sha256": "ddf6ba5a456feb791e0a2feeb67b3cd32bbfac9586f4d4a9969d13f931a3a49a"
+    },
+    {
+      "source": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/order-rvsecncl",
+      "fields": {
+        "id": "4bfdfb2b-34a7-43f6-935a-e637724f960a",
+        "accessUrl": "/uapi/domestic-stock/v1/trading/order-rvsecncl",
+        "httpMethod": "POST",
+        "realTrId": "TTTC0013U",
+        "virtualDomain": "https://openapivts.koreainvestment.com:29443",
+        "virtualTrId": "VTTC0013U"
+      },
+      "normalized_response_sha256": "5c6bc99942678b508d4fa82c7e42a8a8a4c96727ec1b00ad08216f2e479385e2"
+    },
+    {
+      "source": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
+      "fields": {
+        "id": "bc51f9f7-146f-4971-a5ae-ebd574acec12",
+        "accessUrl": "/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
+        "httpMethod": "GET",
+        "realTrId": "(3개월이내) TTTC0081R (3개월이전) CTSC9215R",
+        "virtualDomain": "https://openapivts.koreainvestment.com:29443",
+        "virtualTrId": "(3개월이내) VTTC0081R (3개월이전) VTSC9215R"
+      },
+      "normalized_response_sha256": "e2842d4b444d6ba1b4f89bcf096bb2f59602feb7911174c6d05efd5b32a9a80d"
+    },
+    {
+      "source": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/inquire-psbl-order",
+      "fields": {
+        "id": "806e407c-3082-44c0-9d71-e8534db5ad54",
+        "accessUrl": "/uapi/domestic-stock/v1/trading/inquire-psbl-order",
+        "httpMethod": "GET",
+        "realTrId": "TTTC8908R",
+        "virtualDomain": "https://openapivts.koreainvestment.com:29443",
+        "virtualTrId": "VTTC8908R"
+      },
+      "normalized_response_sha256": "88d7d118bf373341233b104d5d1abdea82baf0f2cbdbf9690bd4cab1ede7312b"
+    }
+  ],
+  "normalization": "json.dumps(response, ensure_ascii=False, indent=2), UTF-8"
+}

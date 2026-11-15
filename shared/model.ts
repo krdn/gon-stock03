@@ -23,6 +23,8 @@ export interface KisQuote { code: string; price: number; change: number; upper: 
 export interface KisBar { date: string; close: number }
 export interface BrokerOrder { brokerId: string; date: string; code: string; name: string; side: 'buy' | 'sell'; qty: number; price: number; filled: number; remaining: number; cancelled: boolean; organization: string }
 export interface PaperOrder { requestId: string; code: string; side: 'buy' | 'sell'; qty: number; price: number; createdAt: string; tradeDate: string; status: 'sending' | 'accepted' | 'unknown' | 'rejected' | 'partial' | 'filled' | 'cancelled'; brokerId?: string; organization?: string; filled: number; remaining: number; message: string }
+export interface PaperEvidence { observedAt: string; tradeDate: string; orders: BrokerOrder[]; balance: { cash: number; totalEquity: number; positions: { code: string; qty: number }[] } }
+export interface PaperAudit { id: string; requestId: string; at: string; actor: 'system' | 'local-user'; action: 'sending' | 'response' | 'reconcile' | 'restart' | 'recovery-inspect' | 'recovery-confirm'; before: PaperOrder['status'] | null; after: PaperOrder['status']; evidence?: PaperEvidence; recovery?: { evidenceId: string; brokerId: string; organization: string } }
 export const won = (value: number) => Math.round(value).toLocaleString('ko-KR');
 export const equity = (state: State) => state.cash + state.positions.reduce((total, p) => total + p.qty * (state.instruments.find(s => s.code === p.code)?.price ?? p.average), 0);
 export const orderStatus = { pending: '접수 · 미체결', filled: '체결', cancelled: '취소' };

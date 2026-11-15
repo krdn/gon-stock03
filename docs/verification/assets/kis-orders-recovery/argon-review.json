@@ -1,0 +1,24 @@
+{
+  "requested_model": "gemini-4-argon-high",
+  "requested_effort": "high",
+  "review_input_sha256": "230bcfd079732981a859cd73a794b5997a9c0eb8fa8f4515d2e7bd577527b90c",
+  "production_sha256": {
+    "server/paper.ts": "a33276e8ec9271f90318009f19bc47c7908da48e5e313c4972757a83075874be",
+    "server/store.ts": "6e6b608271f62b806c18f54593259cd5ed267ad5c3b50319051d420c5bac8b50",
+    "server/kis.ts": "d4d18925d757cbb2e71ef18d98c6e48dde18acb1e44d992f6e70194f4f6e0142",
+    "server/http.ts": "d3edd4a1e9fe5b623168001bcbb3ffee9fa86327b69cd9ffdfd9afb1f1e79d1f",
+    "shared/contracts.ts": "063f06413ed4cdefefdef55cd257c8fcd6efdca489c93856e553ddc4bd97dc70",
+    "shared/model.ts": "dedb846c2e3981d570aea52c72c37473922bd6f12a2b1dde40335219b7d3bbd8"
+  },
+  "init_model": "gemini-4-argon-high",
+  "conversation_id": "c0147597-a20c-4557-a551-5aa7fc48a709",
+  "result_status": "SUCCESS",
+  "duration_seconds": 182.461630245,
+  "verdict": "PASS for bounded code and documentation delivery / draft PR; not live trading or issue completion",
+  "blocking_findings": 0,
+  "nonblocking_findings": 2,
+  "response_excerpt": "### 모델 식별 및 리뷰 범위\n\n- **모델 식별**: 요청 조건(`gemini-4-argon-high`, effort `high`)에 따라 세션 설정상 **Gemini 4 Argon (High)**로 동작 중입니다(클라이언트·세션에 노출되지 않는 서버 내부 런타임 메타데이터는 별도 보증하지 않음).\n- **리뷰 방식**: 제공된 diff·코드·문서만을 대상으로 한 읽기 전용(Read-only) 독립 검증입니다.\n- **종합 판정**: **PASS (제한된 전달 범위 및 Draft PR 기준)**\n  - 본 변경 범위(공통 KIS 모의 주문 대조·복구, VTS 미지원 웹 정정·취소 Fail-Closed 차단, 최소 모의 실행 승인안 문서화) 내에서 **차단 결함(P0 / P1 / P2)은 발견되지 않았습니다.**\n  - 단, 이 판정은 **안전한 코드·문서 전달 가능 여부**에 대한 것이며, **실제 모의 주문 실행 준비 완료나 #9 이슈 최종 종료(Done)를 의미하지 않습니다.** 사용자 범위 결정(웹 취소 보류 및 앱 수동 취소 대안 수용 여부)과 별도 승인된 최소 모의 실주문·조회 실증 전까지 #9 전체 완료는 **Blocked** 상태를 유지해야 합니다.\n\n---\n\n### 1. 결함 분류 (P0 / P1 / P2 vs P3)\n\n#### P0 / P1 / P2 (차단 결함)\n- **없음 (0건)**\n\n#### P3 (비차단 개선 참고 사항)\n1. **`paperRecoveryInput`의 0값 주문·조직번호 사전 차단 (`shared/contracts.ts#L15`)**\n   - 현재 `paperRecoveryInput`의 `brokerId`(`^\\d{1,10}$`), `organization`(`^\\d{1,5}$`)은 `\"0\"` 또는 `\"000\"`을 스키마 단계에서 통과시킵니다. 다만 `server/kis.ts#L9-L10`의 `dailyOrders` 파서가 `Number(value) > 0`을 강제하고 `server/paper.ts#L63`에서 `sameId(selected[0].brokerId, input.brokerId)`로 대조하므로 실제 복구 우회 경로는 없습니다. 입력 계약 일관성을 원한다면 `refine(v => Number(v) > 0)`를 `paperRecoveryInput`에도 동일하게 둘 수 있습니다.\n2. **최소 모의 실행안 6단계 문구 명확화 (`docs/operations/kis-minimum-paper-run.md#L28`)**\n   - 6단계의 *\"새 UUID 1개와 정확한 단가를 로컬 원장에 기록하고 기존 `POST /api/kis/order` 공통 서비스를 한 번 호출한다\"*는 표현은, 호출 전에 SQLite `paper_orders`에 행을 수동 선삽입하라는 뜻으로 오독될 여지가 있습니다. `PaperBroker.submit`(`server/paper.ts#L78-L82`)은 `paper_orders`에 동일 `requestId`가 이미 존재하면 멱등 반환만 하고 KIS로 전송하지 않으며, 존재하지 않을 때 `POST /api/kis/order` 내부(`server/paper.ts#L112`)에서 `sending` 상태와 감사를 원장에 먼저 기록한 뒤 전송합니다. *\"새 UUID 1개와 정확한 단가를 지정해 `POST /api/kis/order`를 1회 호출하여 로컬 원장(`sending`)에 먼저 기록된 뒤 전송되게 한다\"*로 해석·운용하는 것이 코드와 일치합니다.\n\n---",
+  "handling": "P3-2 operations step6 clarified: POST itself persists sending before broker I/O. P3-1 zero identifiers remain schema-valid but cannot match validated positive broker IDs; no bypass or code change. No repeated review for this wording-only edit.",
+  "limits": "Request and init model match gemini-4-argon-high. Effort high specified in CLI; server model/effort not independently attested. Supplied material only, no live account/UI execution. #24 PASS not reused.",
+  "production_files_unchanged_after_review": true
+}
