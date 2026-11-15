@@ -195,6 +195,7 @@ test('design connects every screen to its issue, stage, contract and implementat
   await expect(page.locator('tbody tr')).toHaveCount(15);
   await page.getByRole('button', { name: '개발 단계', exact: true }).click();
   await expect(page.locator('.roadmap')).toContainText('06 장중 실증');
+  await expect(page.locator('.roadmap .panel').filter({ has: page.getByRole('heading', { name: '01 기반', exact: true }) }).getByRole('link', { name: '공통·실증 #7', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: '현재 진행 상태 · GitHub', exact: true })).toHaveAttribute('href', 'https://github.com/users/krdn/projects/25');
 });
 

@@ -7,8 +7,8 @@ import { Badge, Panel } from '../components/ui';
 const repository = 'https://github.com/krdn/gon-stock03';
 const stages = [
   { name: '00 기준선', output: '작업 계약·필수 CI·이슈 의존관계', done: '기준선의 수용·통합 근거를 확인한다.', common: [5] },
-  { name: '01 기반', output: '공통 상태·일지·설계 추적', done: '저장·실패·추적과 화면 탐색을 검증한다.', common: [6] },
-  { name: '02 데이터·조회', output: '마스터·일봉·설정·시세·잔고', done: '출처·시각·페이지 완전성과 실패 복구를 구분한다.', common: [7] },
+  { name: '01 기반', output: '공통 상태·마스터·일봉 기반·일지·설계 추적', done: '저장·실패·추적과 화면 탐색을 검증한다.', common: [6, 7] },
+  { name: '02 데이터·조회', output: '마스터·일봉·설정·시세·잔고', done: '출처·시각·페이지 완전성과 실패 복구를 구분한다.', common: [] },
   { name: '03 조회·주문 계약', output: '관심목록·저장 일봉 실험·공통 주문 복구', done: '저장 재현성과 주문의 접수·체결·불명 상태를 구분한다.', common: [9] },
   { name: '04 주문·위험', output: 'DEMO/KIS 화면 분리·위험·원장·이벤트', done: 'KIS 변경 조작은 /paper가 소유한다. 실제 주문은 별도 승인 범위에서 검증한다.', common: [] },
   { name: '05 자동매매', output: '실시간 수신·재연결·KIS 전략', done: 'DEMO 재생과 구분해 장중 신호·차단·중단·복구 근거를 확인한다.', common: [19] },
