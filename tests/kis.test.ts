@@ -253,22 +253,23 @@ test('expired access token renews once and failed token issuance is not hammered
 test('all KIS endpoints share pacing; reads do not retry 429 or 5xx and POST never retries auth failures', async () => {
   const starts: number[] = []; let auth = 0;
   const client = new KisClient(credentials, async url => {
-    starts.push(Date.now());
+    starts.push(performance.now());
     if (String(url).endsWith('/tokenP')) { auth++; return Response.json({ access_token: 'token', expires_in: 86400 }); }
-    return new Response('fixture-secret', { status: String(url).includes('order-cash') ? 401 : 429 });
+    return new Response('fixture-secret', { status: String(url).includes('order-cash') ? 401 : String(url).includes('itemchartprice') ? 503 : 429 });
   }, 20);
   const results = await Promise.allSettled([client.balance(), client.quote('005930'), client.bars('005930')]);
   assert.ok(results.every(r => r.status === 'rejected'));
   assert.equal(auth, 1); assert.equal(starts.length, 4);
-  for (let i = 1; i < starts.length; i++) assert.ok(starts[i] - starts[i - 1] >= 19);
+  for (let i = 1; i < starts.length; i++) assert.ok(starts[i] - starts[i - 1] >= 20, `transport spacing: ${starts[i] - starts[i - 1]}ms`);
   await assert.rejects(client.submit({ code: '005930', side: 'buy', qty: 1, price: 70000, requestId: randomUUID() }), /401/);
   assert.equal(starts.length, 5); assert.equal(auth, 1);
+  assert.ok(starts[4] - starts[3] >= 20, `POST spacing: ${starts[4] - starts[3]}ms`);
 });
 
 test('pacing starts at transport after a slow pre-send guard, including a subsequent daily page', async () => {
   const starts: number[] = [];
   const client = new KisClient(credentials, async url => {
-    starts.push(Date.now());
+    starts.push(performance.now());
     if (String(url).endsWith('/tokenP')) return Response.json({ access_token: 'token', expires_in: 86400 });
     if (String(url).endsWith('/order-cash')) return Response.json({ rt_cd: '0', output: { ODNO: '1', KRX_FWDG_ORD_ORGNO: '1' } });
     return Response.json({ rt_cd: '0', output2: [] });
@@ -276,6 +277,66 @@ test('pacing starts at transport after a slow pre-send guard, including a subseq
   await client.submit({ code: '005930', side: 'buy', qty: 1, price: 70000, requestId: randomUUID() }, () => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40); });
   await client.dailyPage({ id: randomUUID(), code: '005930', from: '20260102', to: '20260102', adjustment: 'raw' }, '20260102', '20260102');
   assert.equal(starts.length, 3); assert.ok(starts[2] - starts[1] >= 20, `transport spacing: ${starts[2] - starts[1]}ms`);
+});
+
+for (const scenario of ['early timer', 'wall clock jump', 'synchronous dispatch'] as const) {
+  test(`pacing preserves the full interval with ${scenario}`, async t => {
+    let now = 0.75, wallOffset = 0, wakes = 0;
+    const starts: number[] = [];
+    t.mock.method(Date, 'now', () => 1_800_000_000_000 + Math.floor(now) + wallOffset);
+    t.mock.method(performance, 'now', () => now);
+    t.mock.method(globalThis, 'setTimeout', (callback: () => void, delay: number) => {
+      now += scenario === 'early timer' && ++wakes === 2 ? 19.5 : Math.max(1, Math.trunc(delay));
+      queueMicrotask(callback);
+    });
+    const client = new KisClient(credentials, url => {
+      const order = String(url).endsWith('/order-cash');
+      if (order && scenario === 'synchronous dispatch') now += 7;
+      starts.push(now);
+      if (order && scenario === 'wall clock jump') wallOffset += 60_000;
+      const body = String(url).endsWith('/tokenP') ? { access_token: 'token', expires_in: 86400 }
+        : order ? { rt_cd: '0', output: { ODNO: '1', KRX_FWDG_ORD_ORGNO: '1' } }
+          : { rt_cd: '0', output2: [] };
+      return Promise.resolve(Response.json(body));
+    }, 20);
+    await client.submit({ code: '005930', side: 'buy', qty: 1, price: 70000, requestId: randomUUID() }, () => { now += 40; });
+    await client.dailyPage({ id: randomUUID(), code: '005930', from: '20260102', to: '20260102', adjustment: 'raw' }, '20260102', '20260102');
+    assert.equal(starts.length, 3);
+    assert.equal(starts[0], 0.75, 'first transport has no prior pacing deadline');
+    for (let i = 1; i < starts.length; i++) assert.ok(starts[i] - starts[i - 1] >= 20, `${scenario}: ${starts[i] - starts[i - 1]}ms`);
+  });
+}
+
+test('pacing survives a synchronous transport failure without replaying POST or blocking the queue', async t => {
+  let now = 0;
+  const starts: number[] = [], paths: string[] = [];
+  t.mock.method(performance, 'now', () => now);
+  t.mock.method(globalThis, 'setTimeout', (callback: () => void, delay: number) => { now += delay; queueMicrotask(callback); });
+  const client = new KisClient(credentials, url => {
+    paths.push(String(url)); starts.push(now);
+    if (String(url).endsWith('/tokenP')) return Promise.resolve(Response.json({ access_token: 'token', expires_in: 86400 }));
+    if (String(url).endsWith('/order-cash')) { now += 7; throw new Error('fixture transport failure'); }
+    return Promise.resolve(Response.json({ rt_cd: '0', output2: [] }));
+  }, 20);
+  await assert.rejects(client.submit({ code: '005930', side: 'buy', qty: 1, price: 70000, requestId: randomUUID() }), /통신 실패/);
+  await client.dailyPage({ id: randomUUID(), code: '005930', from: '20260102', to: '20260102', adjustment: 'raw' }, '20260102', '20260102');
+  assert.equal(paths.filter(path => path.endsWith('/order-cash')).length, 1);
+  assert.deepEqual(starts, [0, 20, 47]);
+});
+
+test('pacing does not add a second interval after a slow transport response', async t => {
+  let now = 0;
+  const starts: number[] = [];
+  t.mock.method(performance, 'now', () => now);
+  t.mock.method(globalThis, 'setTimeout', (callback: () => void, delay: number) => { now += delay; queueMicrotask(callback); });
+  const client = new KisClient(credentials, async url => {
+    starts.push(now);
+    await Promise.resolve();
+    now += 100;
+    return Response.json(String(url).endsWith('/tokenP') ? { access_token: 'token', expires_in: 86400 } : empty);
+  }, 20);
+  await client.balance();
+  assert.deepEqual(starts, [0, 100]);
 });
 
 test('quote requests coalesce and keep their observation time until the refresh interval; order checks bypass cache', async t => {

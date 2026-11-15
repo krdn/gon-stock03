@@ -11,12 +11,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only') {
+function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only', spacing = 0) {
   let submits = 0;
   const response = { cash: '10000000', totalEquity: '10000000', nonCreditCash: '10000000', rows: [] as Record<string, string>[], before: async (_path: string) => {}, receipt: { rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } } as unknown };
-  const requests: { url: URL; init: RequestInit | undefined }[] = [];
+  const requests: { url: URL; init: RequestInit | undefined; startedAt: number }[] = [];
   const transport: typeof fetch = async (url, init) => {
-    requests.push({ url: new URL(String(url)), init });
+    requests.push({ url: new URL(String(url)), init, startedAt: performance.now() });
     const path = new URL(String(url)).pathname;
     await response.before(path);
     if (path.endsWith('/tokenP')) return Response.json({ access_token: 'test-token', expires_in: 86400 });
@@ -35,7 +35,7 @@ function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'erro
     assert.fail(`unexpected endpoint: ${path}`);
   };
   const store = new Store(':memory:');
-  const client = new KisClient({ key: 'key', secret: 'secret', account: '00000000', product: '01' }, transport, 0);
+  const client = new KisClient({ key: 'key', secret: 'secret', account: '00000000', product: '01' }, transport, spacing);
   return { store, client, broker: new PaperBroker(store, client), count: () => submits, response, requests };
 }
 const input = () => ({ code: '005930', side: 'buy' as const, qty: 1, price: 70000, requestId: randomUUID() });
@@ -43,7 +43,7 @@ const brokerRow = (overrides: Record<string, string> = {}) => ({ odno: '00000000
 const deferred = () => { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; };
 
 test('external refresh waits for the complete submit preflight without internal refresh deadlock', { timeout: 3000 }, async () => {
-  const f = fixture('success');
+  const f = fixture('success', 20);
   const quoteEntered = deferred(), releaseQuote = deferred();
   f.response.before = async path => { if (path.endsWith('/inquire-price')) { quoteEntered.resolve(); await releaseQuote.promise; } };
   try {
@@ -54,7 +54,26 @@ test('external refresh waits for the complete submit preflight without internal 
     const post = paths.indexOf('order-cash');
     assert.ok(paths.lastIndexOf('inquire-daily-ccld') > post, `external refresh interleaved: ${paths.join(',')}`);
     assert.equal(f.count(), 1);
+    for (let i = 1; i < f.requests.length; i++) assert.ok(f.requests[i].startedAt - f.requests[i - 1].startedAt >= 20, 'submit/refresh transport spacing');
   } finally { releaseQuote.resolve(); f.store.close(); }
+});
+
+test('paced unknown recovery preserves request spacing and never resends the order', async () => {
+  const f = fixture('timeout', 20);
+  try {
+    const order = input();
+    assert.equal((await f.broker.submit(order)).status, 'unknown');
+    assert.equal((await f.broker.submit(order)).status, 'unknown');
+    f.response.rows = [brokerRow()];
+    const preview = await f.broker.inspectRecovery(order.requestId);
+    const confirm = { id: order.requestId, evidenceId: preview.evidenceId, brokerId: '001', organization: '12345', confirmed: true as const };
+    f.response.rows = [brokerRow({ tot_ccld_qty: '1', rmn_qty: '0' })];
+    const recovered = await Promise.all([f.broker.confirmRecovery(confirm), f.broker.confirmRecovery(confirm)]);
+    assert.deepEqual(recovered.map(row => row.status), ['filled', 'filled']);
+    assert.equal(f.count(), 1);
+    assert.equal(f.store.paperAudit(order.requestId).filter(row => row.action === 'recovery-confirm').length, 1);
+    for (let i = 1; i < f.requests.length; i++) assert.ok(f.requests[i].startedAt - f.requests[i - 1].startedAt >= 20, 'recovery transport spacing');
+  } finally { f.store.close(); }
 });
 
 test('a receipt without success code or a valid broker identity stays unknown and is never resent', async () => {
