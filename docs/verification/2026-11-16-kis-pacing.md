@@ -38,7 +38,7 @@
 - `gon-workflow implementation-ready .`: PASS. 최초 실행은 최상위 조사 시각 만료로 실패했다. #48의 공식 자료 확인 시각을 기록하고 기존 프로젝트 자료의 시각을 별도 보존한 뒤 통과했다.
 - `gon-workflow ready .`: 준비 커밋과 기본 main의 차이로 FAIL. 인계 당시 main 기준 PASS와 구분한다. 이를 우회하려고 PR을 병합하지 않는다.
 - `git diff --check`: PASS. STE lint는 기존 `docs/conventions/ste100-writing.md` 부재로 exit2. graphify 부재와 #8 Fable 한도 오류는 보존한다.
-- 문서 로컬 링크8건 PASS. 원격 CI·PR·최종 SHA는 push 후 확인한다.
+- 문서 로컬 링크8건 PASS. `git diff --cached --check` PASS, 증거 파일6개 커밋 포함 확인.
 
 ## 이번 지정 리뷰
 
@@ -48,4 +48,12 @@
 
 P3의 타이머 mock 통일 제안은 후속 두 검사가 정수 시각만 다루므로 현재 결함이 아니다. 미래 확장을 위한 helper는 추가하지 않았다. P3의 증거 파일 포함 요청은 이번 커밋 목록과 링크 검사로 확인한다. 제품 파일 해시는 [리뷰 대상](assets/kis-pacing/review-manifest.json)과 일치한다. 리뷰 뒤 제품 코드를 변경하지 않았다.
 
-실제 KIS 인증/조회/주문/취소/전략 호출은 없다. transport 호출 간격은 서버 도착 간격이나 KIS 계정별 한도 실증이 아니다. #9 원본 브랜치·`.codex/`, PR47 Draft와 #9 OPEN/Blocked·후속 차단을 유지한다. #48의 통합·사용자 수용 및 #9과 공통 파일 통합 후 회귀는 별도 단계다.
+## 원격 전달
+
+[초안 PR49](https://github.com/krdn/gon-stock03/pull/49), 제품 커밋 `df50147f240d0c2ad36c78953e8dc99fcd3207de`. 이 커밋의 원격 CI4개 SUCCESS: [push 앱43732214873](https://github.com/krdn/gon-stock03/actions/runs/43732214873)·[push 구성43732214929](https://github.com/krdn/gon-stock03/actions/runs/43732214929)·[PR 앱43732482872](https://github.com/krdn/gon-stock03/actions/runs/43732482872)·[PR 구성43732482782](https://github.com/krdn/gon-stock03/actions/runs/43732482782). push 앱 로그에서 단위/API84 PASS·빌드·브라우저67 PASS를 확인했다. 최종 기록 커밋의 SHA·CI는 [#48 인계 댓글](https://github.com/krdn/gon-stock03/issues/48)에 남긴다.
+
+인계 dry-run은 원격 SHA·파일 대조 PASS다. GitHub 앱의 PR 생성은403으로 실패하여 중복이 없음을 확인하고 기존 인증 `gh pr create --draft`로 PR49를 만들었다. 최초 npm/gh/handoff의 샌드박스 DNS/소켓 실패는 승인된 재실행으로 해결했으며 제품 재현 실패와 구분한다.
+
+읽기 전용 `git merge-tree 034f7e7 df50147 7fac5aa` 비교: PR47의 제품 코드와 텍스트 충돌은 없으나 `docs/STATE.md`, `docs/start-context.json`은 충돌한다. 실제 병합·결합 후 회귀는 수행하지 않았다. 원본 #9 브랜치 head `7fac5aac71702e1a56a61173b1b556ee703f35d9`와 미추적 `.codex/config.toml` 해시가 검사 전후 동일했다. 원격 PR47 OPEN/Draft, #9 OPEN/`status:blocked`를 재조회했다.
+
+실제 KIS 인증/조회/주문/취소/전략 호출은 없다. transport 호출 간격은 서버 도착 간격이나 KIS 계정별 한도 실증이 아니다. #9과 후속 선행 차단을 유지한다. #48의 통합·사용자 수용 및 #9과 공통 파일 통합 후 회귀는 별도 단계다.

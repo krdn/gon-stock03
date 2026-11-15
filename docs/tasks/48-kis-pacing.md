@@ -2,7 +2,7 @@
 
 기준 이슈: https://github.com/krdn/gon-stock03/issues/48
 
-- 상태: 독립 세션 재현·최소 수정·로컬 검증·지정 Argon 리뷰 PASS. 초안 PR·원격 CI 진행 중.
+- 상태: 독립 구현·검증 완료, [초안 PR49](https://github.com/krdn/gon-stock03/pull/49) OPEN/Draft. 수용·통합 대기이며 #48 OPEN 유지.
 - 목표: #21 최초 CI의 19ms < 20ms 원인을 구분하고 최소 수정·회귀·지정 리뷰·원격 CI를 검증한다.
 - 범위: `server/kis.ts`의 pacing, `tests/kis.test.ts` 관련 검사, 이 작업 기록. 실제 KIS 인증·조회·주문·취소·전략 실행은 없다.
 - 브랜치/폴더: `fix/48-kis-pacing` / `/home/gon/llm-projects/gon-stock03-worktrees/48-kis-pacing`. 기준 main `034f7e766d67b0ecfe3dab8477078939c255412e`.
@@ -19,6 +19,8 @@ AGENTS·WORKFLOW·#48, `server/kis.ts`의 send/request, `tests/kis.test.ts`의 p
 - 정수 벽시각과 전송 전 기준의 부족 간격을 재현했다. 원본100회 중 벽시각19ms 2회, 단조20ms 미만23회. 수정 후100회는 부족0회. 과거 CI의 정확한 스케줄은 로그만으로 복원하지 않는다.
 - 단조 시계·동기 전송 직후 기준으로 변경했다. 간격값 유지, 테스트19ms 허용은20ms로 강화. RED3건→GREEN, 전체 단위/API84/84·빌드 PASS. [검증·한계](../verification/2026-11-16-kis-pacing.md).
 - 이번 `gemini-4-argon-high`/high 리뷰: 전달 범위 PASS, P0/P1/P2 0건. 실제 init 일치, 서버 모델/effort 독립 확인 한계. P3 2건은 검증 기록에 판단을 남겼다.
+- 제품 SHA `df50147f240d0c2ad36c78953e8dc99fcd3207de`. 제품 push/PR CI4개 SUCCESS, 원격 브라우저67 PASS. 최종 기록 커밋·CI·인계 댓글은 #48에서 확인한다.
+- 인계 dry-run PASS. 작업 브랜치 ready는 미통합 main 차이로 FAIL, implementation-ready PASS. STE/graphify/번들 한계 보존. PR47 결합 미리보기의 충돌은 STATE/start-context 문서2개이며 결합 후 실행 회귀는 미검증.
 
 ## 착수 시 인계 근거
 
@@ -30,8 +32,8 @@ AGENTS·WORKFLOW·#48, `server/kis.ts`의 send/request, `tests/kis.test.ts`의 p
 
 ## 다음 행동
 
-초안 PR·원격 CI·handoff를 완료한다. #48은 통합·수용 전 OPEN을 유지한다. #9과 공유 파일은 통합 시 충돌·회귀를 확인하며 주문 승인·후속 차단을 보존한다.
+PR49의 최종 head CI·인계 댓글을 재조회하고 수용·통합을 판단한다. #9과 공유 파일은 통합 시 문서 충돌·결합 회귀를 확인한다. #9 주문 승인·후속 차단은 별도이며 이 수정으로 해제하지 않는다.
 
 ## 새 세션 시작 문구
 
-> 이 폴더의 AGENTS·STATE·docs/tasks/48-kis-pacing.md와 #48을 읽고 재현부터 진행해. 실제 KIS 호출 없이 #9 경계를 유지하고 지정 모델 검증·초안 PR·CI·인계까지 수행해.
+> AGENTS·STATE·docs/tasks/48-kis-pacing.md와 #48/PR49의 최신 CI·인계 댓글만 먼저 확인해. 구현·검증은 기록된 범위에서 완료했고 수용·통합이 남았다. 실제 KIS 호출 없이 PR47/#9 경계를 유지해.
