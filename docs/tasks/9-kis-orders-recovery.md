@@ -6,7 +6,7 @@
 - 목표·완료 조건: 공통 주문 큐, 명시적 불명 복구와 감사 기록, 재시작·다음 거래일·경합 fixture 검증. 전체 완료에는 승인된 최소 실제 모의 접수·조회 증거가 필요하다.
 - 허용된 작업·제외 범위: 조사·공통 서비스·fixture·검증·PR/인계. 실제 주문·정정·취소는 미승인. UI는 S15/#14 소유. 자동 재전송·실전 fallback·미지원 API 우회 금지.
 - 선행: #6/#8 completed, PR #27/#31 main 포함, #9 Project Ready를 2026-11-15 확인.
-- 이슈 / PR: [#9](https://github.com/krdn/gon-stock03/issues/9) OPEN/Blocked / [초안 PR #47](https://github.com/krdn/gon-stock03/pull/47).
+- 이슈 / PR: [#9](https://github.com/krdn/gon-stock03/issues/9) OPEN/Blocked / [PR #47](https://github.com/krdn/gon-stock03/pull/47) MERGED `b9a12325ec1fcb683bced5911709d09b6814ffe4`.
 - 제품 SHA: `c2dd987870203f29391ef721e473115f1f12ace6`. 최종 기록 SHA·원격 CI·handoff 결과는 #9 인계 댓글을 확인한다.
 - 브랜치 / 기준 SHA: `feat/9-kis-orders-recovery` / `034f7e766d67b0ecfe3dab8477078939c255412e`.
 
@@ -14,7 +14,7 @@
 
 AGENTS·WORKFLOW, #9, [계획 C03·S15·검증 경계](../plans/interface-sessions-2026-11.md), `server/paper.ts`의 refresh/submit, `server/kis.ts`의 request/dailyOrders/submit, `server/store.ts`의 paperOrders/savePaper, `server/http.ts`의 KIS 경로, `shared/contracts.ts`, `shared/model.ts`, `tests/paper.test.ts`.
 
-## 현재 결과
+## 구현 전달 당시 결과 (통합 전)
 
 - 현재 공식 포털: 정정취소 `VTTC0013U`는 모의 지원. 선행 가능수량 `TTTC0084R`은 모의 미지원. 잔량을 가능수량으로 대신하거나 실전 TR을 호출하지 않는다.
 - [공식 계약·대안](../research/kis-order-recovery-2026-11.md), [미승인 최소 실행안](../operations/kis-minimum-paper-run.md), [검증](../verification/2026-11-15-kis-orders-recovery.md).
@@ -23,11 +23,11 @@ AGENTS·WORKFLOW, #9, [계획 C03·S15·검증 경계](../plans/interface-sessio
 - 지정 리뷰: Argon/high 전달 범위 PASS, P0/P1/P2 0. 요청/init 일치, 서버 모델·effort 독립 확인 한계. P3 문구 보완·0값 사전 거부 개선은 현 후보 검증으로 차단되어 유지.
 - 미검증: 실제 주문/체결/취소/불명 복구, KIS 일봉·공식 달력·연속전략·V01. #7 공개 마스터3962 실조회와 구분한다.
 - 보존: 미추적 `.codex/config.toml`, `docs/architecture/tech-stack-review.md`, STE 기준 파일·graphify 부재, #8 Fable 한도 오류, #21 초기 pacing CI 실패 원인 미해결.
-- 소유권: t73 / `01a1df8d-f843-7de1-87e1-118df8eeb1bc`만 수정. 추가 에이전트·부모 재위임 없음.
+- 당시 구현 소유권: t73 / `01a1df8d-f843-7de1-87e1-118df8eeb1bc`. 후속 통합은 #50 독립 세션이 격리 clone에서 수행했다. 추가 에이전트·부모 재위임 없음.
 
 ## 다음 행동
 
-PR47 최종 CI·인계 댓글을 먼저 확인한다. 공식 모의 앱 수동 취소 대안의 범위 결정과 069500 1주·10만 원 상한·1회 모의 주문 실행 승인이 필요하다. 실제 접수·조회 증거 전 #9 completed/Done·후속 선행 해제 금지.
+[#50 통합](50-branch-integration.md)에서 PR47·49 결합 단위/API99·빌드·브라우저67·Argon MERGE PASS·최종 PR47 CI4개를 확인해 병합했다. 코드 통합 이후에도 전체 상태는 OPEN/Blocked다. 공식 모의 앱 수동 취소 대안의 범위 결정과 069500 1주·10만 원 상한·1회 모의 주문 실행 승인이 필요하다. 실제 접수·조회 증거 전 #9 completed/Done·후속 선행 해제 금지.
 
 ## 새 세션 시작 문구
 
