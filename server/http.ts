@@ -11,6 +11,7 @@ import { PaperBroker } from './paper.ts';
 import type { StateSnapshot } from '../shared/model.ts';
 import { emptyStatus } from '../shared/status.ts';
 import { MarketData } from './market-data.ts';
+import { marketQuoteInput, masterCodeSchema } from '../shared/market-data.ts';
 
 async function body(req: IncomingMessage, limit = 16384) {
   const chunks: Buffer[] = []; let size = 0;
@@ -49,6 +50,11 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         if (path === '/api/data/master/refresh') { json(res, 200, await market.refreshMaster()); return; }
         if (path === '/api/data/daily') { json(res, 200, { run: market.start(input) }); return; }
         if (path === '/api/data/daily/step') { json(res, 200, { run: await market.step(idInput.parse(input).id) }); return; }
+        if (path === '/api/market/quote') {
+          const { code } = marketQuoteInput.parse(input);
+          if (!store.masterData().instruments.some(row => row.code === code)) throw new Error('현재 마스터에 없는 종목입니다. 상장폐지·거래 가능 여부를 확인하세요.');
+          json(res, 200, { quote: await kis.quote(code) }); return;
+        }
         if (path === '/api/kis/check') { const connection = await kis.balance(); json(res, 200, { connection, message: 'KIS 모의 잔고 조회를 확인했습니다.' }); return; }
         if (path === '/api/kis/market') {
           const code = codeSchema.parse((input as { code?: unknown })?.code);
@@ -74,8 +80,8 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
               state.playing = !state.playing; record(state, state.playing ? '자동 데모 재생 시작' : '자동 데모 재생 정지', '3초마다 합성 봉을 생성합니다. KIS 주문을 실행하지 않습니다.'); return {};
             }
             case '/api/watchlist': {
-              const code = codeSchema.parse((input as { code?: unknown })?.code);
-              if (!state.instruments.some(s => s.code === code)) throw new Error('지원하지 않는 종목입니다.');
+              const code = masterCodeSchema.parse((input as { code?: unknown })?.code);
+              if (!state.watchlist.includes(code) && !state.instruments.some(s => s.code === code) && !store.masterData().instruments.some(s => s.code === code)) throw new Error('지원하지 않는 종목입니다.');
               state.watchlist = state.watchlist.includes(code) ? state.watchlist.filter(s => s !== code) : [...state.watchlist, code]; return {};
             }
             case '/api/strategies': {

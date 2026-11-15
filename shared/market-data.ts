@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import type { DataStatus } from './model.ts';
+import type { DataStatus, KisQuote } from './model.ts';
+
+export const masterCodeSchema = z.string().regex(/^[0-9A-Z]{6}$/);
+export const MARKET_PAGE_SIZE = 8;
+export const MARKET_REFRESH_MS = 15_000;
+export const MARKET_STALE_MS = 30_000;
 
 const isoDate = (value: string) => `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6)}`;
 export const marketDate = z.string().regex(/^\d{8}$/).refine(value => {
@@ -27,6 +32,15 @@ export interface DailyRun extends DailyInput {
   quality: { state: 'pending' | 'unverified' | 'passed' | 'failed'; missingDates: string[]; unexpectedDates: string[]; candidateMissingDates: string[]; duplicates: number; emptyWindows: { from: string; to: string }[] };
 }
 export type Exchange = 'KOSPI' | 'KOSDAQ';
-export interface MasterInstrument { code: string; isin: string; name: string; exchange: Exchange; kind: 'stock' | 'etf'; group: string }
+export interface MasterInstrument { code: string; isin: string; name: string; exchange: Exchange; kind: 'stock' | 'etf'; group: string; tradingHalted?: boolean; liquidation?: boolean }
+export interface RemovedInstrument extends MasterInstrument { removedAt: string }
 export interface MasterSnapshot { exchange: Exchange; source: string; sha256: string; collectedAt: string; rows: MasterInstrument[] }
 export interface MasterState { exchange: Exchange; source: string; phase: 'loading' | 'ready' | 'error'; observedAt: string; lastSuccessAt: string | null; error: string | null; sha256: string | null; count: number }
+const masterInstrumentSchema = z.object({ code: masterCodeSchema, isin: z.string(), name: z.string().min(1), exchange: z.enum(['KOSPI', 'KOSDAQ']), kind: z.enum(['stock', 'etf']), group: z.string(), tradingHalted: z.boolean().optional(), liquidation: z.boolean().optional() });
+export const masterDataSchema = z.object({
+  instruments: z.array(masterInstrumentSchema), removed: z.array(masterInstrumentSchema.extend({ removedAt: z.iso.datetime() })).default([]),
+  sources: z.array(z.object({ exchange: z.enum(['KOSPI', 'KOSDAQ']), source: z.string(), phase: z.enum(['loading', 'ready', 'error']), observedAt: z.iso.datetime(), lastSuccessAt: z.iso.datetime().nullable(), error: z.string().nullable(), sha256: z.string().nullable(), count: z.number().int().nonnegative() })),
+});
+export type MasterDataSnapshot = z.infer<typeof masterDataSchema>;
+export const marketQuoteInput = z.object({ code: masterCodeSchema }).strict();
+export const marketQuoteSchema = z.object({ code: masterCodeSchema, price: z.number().positive(), change: z.number(), upper: z.number().nonnegative(), lower: z.number().nonnegative(), tickSize: z.number().nonnegative(), stopped: z.boolean(), receivedAt: z.iso.datetime(), volume: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(), sector: z.string().optional(), liquidation: z.boolean().optional() }) satisfies z.ZodType<KisQuote>;

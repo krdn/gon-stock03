@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { initialState } from '../shared/fixtures.ts';
 import type { State, PaperOrder } from '../shared/model.ts';
 import { record } from './engine.ts';
-import type { DailyRun, MasterInstrument, MasterSnapshot, MasterState, StoredBar } from '../shared/market-data.ts';
+import type { DailyRun, MasterInstrument, MasterSnapshot, MasterState, RemovedInstrument, StoredBar } from '../shared/market-data.ts';
 
 export class Store {
   private db: DatabaseSync;
@@ -11,6 +11,7 @@ export class Store {
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1), schema_version INTEGER NOT NULL, body TEXT NOT NULL);');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_orders (request_id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS paper_baseline (day TEXT PRIMARY KEY, equity REAL NOT NULL);');
     this.db.exec('CREATE TABLE IF NOT EXISTS market_master (exchange TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS market_instruments (code TEXT PRIMARY KEY, exchange TEXT NOT NULL, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS daily_runs (id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS daily_bars (run_id TEXT NOT NULL, date TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(run_id,date));');
+    this.db.exec('CREATE TABLE IF NOT EXISTS market_removed (code TEXT PRIMARY KEY, body TEXT NOT NULL);');
     this.db.prepare('INSERT OR IGNORE INTO workspace VALUES (1, 1, ?)').run(JSON.stringify(initialState()));
     const row = this.db.prepare('SELECT schema_version FROM workspace WHERE id=1').get();
     if (row?.schema_version !== 1) throw new Error('지원하지 않는 저장 형식입니다. 원본 DB를 보존하세요.');
@@ -28,15 +29,20 @@ export class Store {
     return {
       sources: this.db.prepare('SELECT body FROM market_master ORDER BY exchange').all().map(row => JSON.parse(row.body as string) as MasterState),
       instruments: this.db.prepare('SELECT body FROM market_instruments ORDER BY code').all().map(row => JSON.parse(row.body as string) as MasterInstrument),
+      removed: this.db.prepare('SELECT body FROM market_removed ORDER BY code').all().map(row => JSON.parse(row.body as string) as RemovedInstrument),
     };
   }
   saveMasters(snapshots: MasterSnapshot[]) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
+      const nextCodes = new Set(snapshots.flatMap(snapshot => snapshot.rows.map(row => row.code)));
+      const removed = this.db.prepare('INSERT OR REPLACE INTO market_removed VALUES (?,?)');
+      for (const row of this.masterData().instruments) if (!nextCodes.has(row.code)) removed.run(row.code, JSON.stringify({ ...row, removedAt: new Date().toISOString() }));
       this.db.exec('DELETE FROM market_instruments');
       const insert = this.db.prepare('INSERT INTO market_instruments VALUES (?,?,?)');
+      const reappeared = this.db.prepare('DELETE FROM market_removed WHERE code=?');
       for (const snapshot of snapshots) {
-        for (const row of snapshot.rows) insert.run(row.code, row.exchange, JSON.stringify(row));
+        for (const row of snapshot.rows) { insert.run(row.code, row.exchange, JSON.stringify(row)); reappeared.run(row.code); }
         const state: MasterState = { exchange: snapshot.exchange, source: snapshot.source, phase: 'ready', observedAt: snapshot.collectedAt, lastSuccessAt: snapshot.collectedAt, error: null, sha256: snapshot.sha256, count: snapshot.rows.length };
         this.db.prepare('INSERT INTO market_master VALUES (?,?) ON CONFLICT(exchange) DO UPDATE SET body=excluded.body').run(state.exchange, JSON.stringify(state));
       }

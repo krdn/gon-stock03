@@ -76,37 +76,26 @@
   "decisions": "React/TypeScript+Vite SPA. 개인 PC 단일 사용자이므로 Node24+SQLite로 런타임 하나와 로컬 파일 DB를 사용한다. Rust/PostgreSQL 기본안은 서버·다중 사용자 요구 때 재평가. 데모와 KIS 모의 환경을 분리하고 실전 주문 미지원. 비밀값은 서버 Infisical 주입.",
   "status": "reviewed",
   "task_context": {
-    "issue": "https://github.com/krdn/gon-stock03/issues/8",
-    "checked_at": "2026-11-15T04:24:28.173068+00:00",
+    "issue": "https://github.com/krdn/gon-stock03/issues/10",
+    "checked_at": "2026-11-15T05:27:37.119073+00:00",
     "sources": [
       {
-        "url": "https://infisical.com/docs/cli/project-config",
-        "finding": "프로젝트 설정은 비밀값을 포함하지 않으며 YAML이 JSON보다 우선한다. dev와 /kis는 명시해 주입한다. 환경변수 존재만으로 Infisical 인증·권한·출처를 증명하지 않는다."
+        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_price/inquire_price.py",
+        "finding": "실전/모의 현재가 TR FHKST01010100, J는 KRX, 종목코드는 문자열. REST는 스냅샷이며 실시간은 WebSocket 별도다."
       },
       {
-        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_user/kis_auth.py",
-        "finding": "실전과 모의 앱키·토큰·서버를 구분하고 tokenP 응답의 토큰과 만료 정보를 사용한다. 기존 KisClient의 모의 전용 주소·재사용·재시도 상한을 유지한다."
+        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_price/chk_inquire_price.py",
+        "finding": "acml_vol 누적거래량, bstp_kor_isnm 업종, temp_stop_yn 임시정지, sltr_yn 정리매매. 현재가 수신시각은 체결시각이나 상장폐지 확인이 아니다."
       },
       {
-        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_balance/inquire_balance.py",
-        "finding": "모의 잔고는 VTTC8434R, 계좌 8자리와 상품코드 2자리. 모의 20건 초과 연속조회와 0수량 잔고를 처리해야 한다."
+        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/stocks_info/kis_kospi_code_mst.py",
+        "finding": "단축코드·표준코드·명칭과 고정폭 227자 필드. 거래정지·정리매매 필드를 제공한다. 기존 TLS 검증을 유지한다."
       },
       {
-        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/README.md",
-        "finding": "토큰 발급은 1분당 1회 안내, EGW00201은 초당 호출 한도 초과다. 실전 전환 권고는 이 프로젝트 범위에 적용하지 않는다."
-      },
-      {
-        "url": "https://apiportal.koreainvestment.com/faq-error-code",
-        "finding": "공개 오류 목록 API에서 EGW00123 토큰 만료, EGW00201 초당 호출 초과, EGW00103/00105 키 오류, EGW00121/00122 토큰 오류를 확인했다. HTTP 401/403/429/5xx·통신·응답 계약과 구분한다. 목록 API: https://apiportal.koreainvestment.com/api/contents/kind?title=ERRORCODE&kind=CONTENTS"
+        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/stocks_info/kis_kosdaq_code_mst.py",
+        "finding": "고정폭 221자이며 KOSPI와 거래정지·정리매매 오프셋이 다르다. 마스터 미포함은 상장폐지 확정이 아니다."
       }
     ],
-    "decisions": "기존 React/Node/KisClient를 유지한다. 필수 값 상태·토큰 인증 상태·전체 잔고 상태를 분리하고 오류를 구조화한다. 인증 성공은 잔고 성공이 아니며 주입 출처 미확인을 명시한다. 알려진 HTTP/공식 코드만 분류하고 응답 원문은 공개하지 않는다. 주문·취소·전략 제외; 화면 수용은 사용자 답변+SHA로 별도 확인.",
-    "runtime_observations": [
-      {
-        "at": "2026-11-15T04:42:09.819Z",
-        "endpoint": "https://openapivts.koreainvestment.com:29443/oauth2/tokenP",
-        "finding": "동일 dev /kis 주입의 독립 클라이언트 두 개에서 첫 발급 HTTP200·잔고 전체 조회 후 두 번째 발급 HTTP403/error_code EGW00133 직접 확인. 공개 오류코드 목록에는 누락되어 있으므로 이 코드의 호출제한 분류는 실제 응답 관측에 근거한다. 수정 후 rate-limit로 표시. 비밀값·응답 원문은 저장하지 않았다."
-      }
-    ]
+    "decisions": "기존 Node/React/SQLite 및 마스터·KisClient 재사용. 페이지 8종목 순차 REST, 완료 후 15초 간격·숨김 중단. 가격·거래량 미수신은 0으로 채우지 않는다. 실패/30초 경과는 이전 수신값으로 표시. 마스터 제외를 보존하되 상장폐지 확정으로 오인하지 않는다. 주문·취소 제외; #10 화면 수용은 별도 답변과 SHA 필요."
   }
 }
