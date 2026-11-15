@@ -4,6 +4,7 @@ import { ArrowRight, ArrowUpRight, Search, ShieldCheck, Star, Zap } from 'lucide
 import { useWorkbench } from '../context';
 import { Badge, Change, Chart, Empty, Money, PageLink, Panel, Stat } from '../components/ui';
 import { equity, won, type Instrument } from '../../shared/model';
+import { MarketExplorer } from './MarketExplorer';
 
 export function InstrumentTable({ instruments }: { instruments: Instrument[] }) {
   const { state, act, busy, available } = useWorkbench();
@@ -20,9 +21,13 @@ export function Dashboard() {
   </>;
 }
 export function Market({ watchOnly = false }: { watchOnly?: boolean }) {
+  return watchOnly ? <DemoWatchlist /> : <MarketExplorer />;
+}
+function DemoWatchlist() {
   const { state } = useWorkbench(); const [search, setSearch] = useState(''), [market, setMarket] = useState('전체');
-  const instruments = state.instruments.filter(s => (!watchOnly || state.watchlist.includes(s.code)) && (market === '전체' || market === s.market) && (s.name.toLowerCase().includes(search.toLowerCase()) || s.code.includes(search)));
-  return <><div className="market-summary">{['KOSPI', 'KOSDAQ', 'ETF'].map(m => <div key={m}><span className="eyebrow">{m}</span><h3>{state.instruments.filter(s => s.market === m).length}<small>개 예시 종목</small></h3><p>마스터 전체 목록은 KIS 수집 단계에서 연결</p></div>)}</div><Panel><div className="toolbar"><div className="tabs">{['전체', 'KOSPI', 'KOSDAQ', 'ETF'].map(m => <button className={market === m ? 'active' : ''} onClick={() => setMarket(m)} key={m}>{m}</button>)}</div><label className="search-field"><Search size={17} /><input aria-label="종목명 또는 코드 검색" placeholder="종목명 또는 코드 검색" value={search} onChange={e => setSearch(e.target.value)} /></label></div>{instruments.length ? <InstrumentTable instruments={instruments} /> : <Empty title="표시할 종목이 없습니다">검색 조건을 바꾸거나 <Link to="/market">시장 탐색</Link>에서 관심종목을 추가하세요.</Empty>}<div className="table-foot">총 {instruments.length}개 종목<span>KRX · 가격과 거래량은 합성 예시</span></div></Panel></>;
+  const masterWatchCount = state.watchlist.filter(code => !state.instruments.some(row => row.code === code)).length;
+  const instruments = state.instruments.filter(s => state.watchlist.includes(s.code) && (market === '전체' || market === s.market) && (s.name.toLowerCase().includes(search.toLowerCase()) || s.code.includes(search)));
+  return <>{masterWatchCount > 0 && <div className="notice compact">실제 마스터 관심종목 {masterWatchCount}개가 저장되어 있습니다. 이 화면은 데모 종목만 표시합니다. <Link className="text-link" to="/market">시장 탐색에서 확인</Link></div>}<div className="market-summary">{['KOSPI', 'KOSDAQ', 'ETF'].map(m => <div key={m}><span className="eyebrow">{m}</span><h3>{state.instruments.filter(s => s.market === m).length}<small>개 예시 종목</small></h3><p>데모 종목 기준 · 가격과 거래량은 합성</p></div>)}</div><Panel><div className="toolbar"><div className="tabs">{['전체', 'KOSPI', 'KOSDAQ', 'ETF'].map(m => <button className={market === m ? 'active' : ''} onClick={() => setMarket(m)} key={m}>{m}</button>)}</div><label className="search-field"><Search size={17} /><input aria-label="종목명 또는 코드 검색" placeholder="종목명 또는 코드 검색" value={search} onChange={e => setSearch(e.target.value)} /></label></div>{instruments.length ? <InstrumentTable instruments={instruments} /> : <Empty title="표시할 종목이 없습니다">검색 조건을 바꾸거나 <Link to="/market">시장 탐색</Link>에서 관심종목을 추가하세요.</Empty>}<div className="table-foot">총 {instruments.length}개 종목<span>KRX · 가격과 거래량은 합성 예시</span></div></Panel></>;
 }
 export function Portfolio() {
   const { state } = useWorkbench(); const total = equity(state); const invested = total - state.cash;

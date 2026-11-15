@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { StateSnapshot } from './model.ts';
+import { masterCodeSchema } from './market-data.ts';
 
 export const storageErrorMessage = '요청과 이벤트 저장에 실패했습니다. 저장소 상태를 확인하세요.';
 
@@ -34,7 +35,7 @@ export const stateSnapshotSchema = z.object({
   instruments: z.array(z.object({ code: codeSchema, name: z.string(), market: z.enum(['KOSPI', 'KOSDAQ', 'ETF']), sector: z.string(), price: z.number(), change: z.number(), volume: z.number(), history: z.array(z.number()) })),
   positions: z.array(z.object({ code: codeSchema, qty: z.number(), average: z.number() })),
   orders: z.array(z.object({ id: z.string(), code: codeSchema, side: z.enum(['buy', 'sell']), qty: z.number(), price: z.number(), filledPrice: z.number().optional(), status: z.enum(['pending', 'filled', 'cancelled']), createdAt: z.string(), filledAt: z.string().optional(), source: z.string(), fee: z.number(), requestId: z.string() })),
-  watchlist: z.array(codeSchema),
+  watchlist: z.array(masterCodeSchema),
   strategies: z.array(z.object({ id: z.string(), name: z.string(), code: codeSchema, fast: z.number(), slow: z.number(), qty: z.number(), active: z.boolean(), lastSignal: z.enum(['buy', 'sell', 'hold']), lastTick: z.number() })),
   risk: riskInput.extend({ halted: z.boolean() }),
   events: z.array(z.object({ id: z.string(), time: z.string(), level: z.enum(['info', 'warning', 'error']), title: z.string(), detail: z.string(), read: z.boolean() })),

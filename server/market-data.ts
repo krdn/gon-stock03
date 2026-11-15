@@ -26,7 +26,9 @@ export function parseMaster(bytes: Buffer, exchange: Exchange): MasterSnapshot {
     if (!['ST', 'MF', 'RT', 'SC', 'IF', 'DR', 'FS', 'EF'].includes(group)) continue;
     const code = line.slice(0, 9).trim(), isin = line.slice(9, 21).trim(), name = line.slice(21, -tail).trim();
     if (!/^[0-9A-Z]{6}$/.test(code) || !/^[A-Z0-9]{12}$/.test(isin) || !name || seen.has(code)) throw new Error('종목 마스터 코드·이름이 잘못되었거나 중복되었습니다.');
-    seen.add(code); rows.push({ code, isin, name, exchange, kind: group === 'EF' ? 'etf' : 'stock', group });
+    const flagOffset = exchange === 'KOSPI' ? 60 : 55;
+    const flag = (offset: number) => line.at(-tail + offset) === 'Y' ? true : line.at(-tail + offset) === 'N' ? false : undefined;
+    seen.add(code); rows.push({ code, isin, name, exchange, kind: group === 'EF' ? 'etf' : 'stock', group, tradingHalted: flag(flagOffset), liquidation: flag(flagOffset + 1) });
   }
   if (!rows.length) throw new Error('종목 마스터에 주식·ETF가 없습니다.');
   return { exchange, source: masterUrl(exchange), sha256: createHash('sha256').update(bytes).digest('hex'), collectedAt: new Date().toISOString(), rows };

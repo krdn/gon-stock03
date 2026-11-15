@@ -71,9 +71,10 @@ test('manual order is confirmed, filled later, and reflected in portfolio; watch
   await page.goto('/orders'); await expect(page.getByText('접수 · 미체결', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '다음 데모 봉 재생' }).click(); await expect(page.getByRole('cell', { name: '체결', exact: true })).toBeVisible();
   await page.goto('/portfolio'); await expect(page.getByRole('row').filter({ hasText: '삼성전자' })).toContainText('31주');
-  await page.goto('/market'); await page.getByRole('button', { name: 'NAVER 관심 해제', exact: true }).click();
-  await page.reload(); await expect(page.getByRole('button', { name: 'NAVER 관심 등록', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: 'NAVER 관심 등록', exact: true }).click();
+  await page.goto('/watchlist'); await page.getByRole('button', { name: 'NAVER 관심 해제', exact: true }).click();
+  await page.reload(); await expect(page.getByRole('button', { name: 'NAVER 관심 해제', exact: true })).toHaveCount(0);
+  const saved = await (await page.request.get('/api/state')).json(); expect(saved.watchlist).not.toContain('035420');
+  await page.request.post('/api/watchlist', { headers: { 'X-Workbench': 'local' }, data: { code: '035420' } });
 });
 test('strategy saves, automatic replay advances, backtest computes, halt stops and blocks new orders', async ({ page, request }) => {
   await page.goto('/strategies'); await page.getByLabel('전략 이름').fill('브라우저 검증 전략'); await page.getByRole('button', { name: '전략 저장', exact: true }).click();
