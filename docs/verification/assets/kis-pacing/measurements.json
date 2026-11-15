@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-16",
+  "runtime": "Node.js v24.22.2",
+  "baseline": "6839743eb3abdf12612880d4c6fdb3266d9c502e",
+  "method": "100 sequential fake transport auth -> submit (40ms synchronous guard) -> dailyPage; spacing20ms; Date.now and performance.now at the same transport entry",
+  "before": {
+    "samples": 100,
+    "wallUnder20": 2,
+    "monotonicUnder20": 23,
+    "minMonotonicMs": 19.396679999999833,
+    "example": {
+      "iteration": 5,
+      "wallMs": 19,
+      "monotonicMs": 19.971397000000024
+    }
+  },
+  "after": {
+    "samples": 100,
+    "wallUnder20": 0,
+    "monotonicUnder20": 0,
+    "minMonotonicMs": 20.31597099999999
+  },
+  "limits": "No KIS network I/O. Historical CI lacked monotonic/internal timestamps; its exact scheduling or wall-clock change cannot be reconstructed."
+}

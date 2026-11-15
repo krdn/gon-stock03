@@ -1,0 +1,12 @@
+{
+  "requested_model": "gemini-4-argon-high",
+  "requested_effort": "high",
+  "central_gemini_default": "Gemini 3.8 Flash (High)",
+  "override_reason": "Explicit user request: Gemini4Argon or Fable5.2; central config unchanged",
+  "files": {
+    "server/kis.ts": "034189e4799caeb5bd37cc913aaf77f36e59be518ce467dcf3ad6b2d1a385129",
+    "tests/kis.test.ts": "9ee42e29638db86013fff84d99a105bd1a2d76bed12140a85c09b143e63be349",
+    "docs/verification/2026-11-16-kis-pacing.md": "9c9a02c313335a5628e350ba55062afbb54c590cbea01513a857ac87ccba7573"
+  },
+  "input_sha256": "73c04df88cdb7faa297769da5fcf6c3883519816c4435d19380fa06e5eb362b5"
+}
