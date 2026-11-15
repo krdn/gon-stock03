@@ -53,3 +53,205 @@ test('pre-send guard runs after pacing and blocks broker mutation when halted', 
   await assert.rejects(client.submit({ code: '005930', side: 'buy', qty: 1, price: 70000, requestId: randomUUID() }, () => { if (halted) throw new KisNotSent('halted'); }), /halted/);
   assert.equal(mutations, 0);
 });
+
+test('account status distinguishes loading, complete, stale and partial without replacing last good money', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_800_000_000_000 });
+  let fail = false, page = 0;
+  const client = new KisClient(credentials, async url => {
+    if (String(url).endsWith('/tokenP')) return Response.json({ access_token: 'fixture-token', expires_in: 86400 });
+    page++;
+    if (fail && page % 2 === 0) return new Response('<html>fixture-secret</html>', { status: 502 });
+    return Response.json({ ...empty, ctx_area_fk100: 'next', ctx_area_nk100: 'one' }, { headers: { tr_cont: fail ? 'M' : '' } });
+  }, 0);
+  assert.equal(client.connection().status.phase, 'disconnected');
+  const pending = client.balance(); assert.equal(client.connection().status.phase, 'loading');
+  const good = await pending;
+  assert.equal(good.status.phase, 'ready'); assert.equal(good.status.complete, true); assert.equal(good.status.pages, 1);
+  t.mock.timers.tick(60_001);
+  assert.equal(client.connection().status.phase, 'stale'); assert.equal(client.connection().connected, false);
+  fail = true; page = 0;
+  await assert.rejects(client.balance(), /502/);
+  const partial = client.connection();
+  assert.equal(partial.status.phase, 'partial'); assert.equal(partial.status.complete, false); assert.equal(partial.status.pages, 1);
+  assert.equal(partial.status.lastSuccessAt, good.status.lastSuccessAt); assert.notEqual(partial.status.observedAt, good.status.observedAt);
+  assert.equal(partial.balance?.cash, 1_000_000); assert.equal(partial.connected, false);
+  assert.ok(!JSON.stringify(partial).includes('fixture-'));
+  fail = false;
+  assert.equal((await client.balance()).status.phase, 'ready');
+});
+
+test('first partial balance has no fabricated zero balance and concurrent checks share the whole query', async () => {
+  let auth = 0, calls = 0;
+  const client = new KisClient(credentials, async url => {
+    if (String(url).endsWith('/tokenP')) { auth++; return Response.json({ access_token: 'token', expires_in: 86400 }); }
+    if (++calls === 2) throw new Error('fixture-secret');
+    return Response.json({ ...empty, ctx_area_fk100: 'next', ctx_area_nk100: 'one' }, { headers: { tr_cont: 'M' } });
+  }, 0);
+  const results = await Promise.allSettled([client.balance(), client.balance(), client.balance()]);
+  assert.ok(results.every(r => r.status === 'rejected'));
+  assert.equal(auth, 1); assert.equal(calls, 2);
+  assert.equal(client.connection().status.phase, 'partial'); assert.equal(client.connection().balance, undefined);
+});
+
+test('authentication refresh retries reads once, shares renewal and enforces the issuance cooldown', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_800_000_000_000 });
+  let auth = 0, reads = 0, expire = false;
+  const client = new KisClient(credentials, async (url, init) => {
+    if (String(url).endsWith('/tokenP')) { auth++; return Response.json({ access_token: `token-${auth}`, expires_in: 86400 }); }
+    reads++;
+    const token = new Headers(init?.headers).get('authorization');
+    if (expire && token === 'Bearer token-1') return Response.json({ rt_cd: '1', msg_cd: 'EGW00123', msg1: 'fixture-secret' });
+    return Response.json(empty);
+  }, 0);
+  await client.balance(); t.mock.timers.tick(60_001); expire = true;
+  await Promise.all([client.balance(), client.balance()]);
+  assert.equal(auth, 2); assert.equal(reads, 3); assert.equal(client.connection().status.phase, 'ready');
+
+  let badAuth = 0, badReads = 0;
+  const rejected = new KisClient(credentials, async url => {
+    if (String(url).endsWith('/tokenP')) { badAuth++; return Response.json({ access_token: `bad-${badAuth}`, expires_in: 86400 }); }
+    badReads++;
+    return new Response('', { status: 401 });
+  }, 0);
+  await assert.rejects(rejected.balance(), /만료되거나 거부/);
+  assert.equal(badAuth, 1); assert.equal(badReads, 1);
+  await assert.rejects(rejected.balance(), /만료되거나 거부/); assert.equal(badAuth, 1);
+  t.mock.timers.tick(60_001);
+  await assert.rejects(rejected.balance(), /만료되거나 거부/);
+  assert.equal(badAuth, 2); assert.equal(badReads, 2);
+});
+
+test('expired access token renews once and failed token issuance is not hammered', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_800_000_000_000 });
+  let auth = 0;
+  const client = new KisClient(credentials, async url => String(url).endsWith('/tokenP') ? (auth++, Response.json({ access_token: 'token', expires_in: 120 })) : Response.json(empty), 0);
+  await client.balance(); await client.balance(); assert.equal(auth, 1);
+  t.mock.timers.tick(60_001);
+  await Promise.all([client.balance(), client.balance()]); assert.equal(auth, 2);
+  let failed = 0;
+  const bad = new KisClient(credentials, async () => { failed++; return new Response('fixture-secret', { status: 503 }); }, 0);
+  await assert.rejects(bad.balance(), /503/); await assert.rejects(bad.balance(), /503/);
+  assert.equal(failed, 1);
+});
+
+test('all KIS endpoints share pacing; reads do not retry 429 or 5xx and POST never retries auth failures', async () => {
+  const starts: number[] = []; let auth = 0;
+  const client = new KisClient(credentials, async url => {
+    starts.push(Date.now());
+    if (String(url).endsWith('/tokenP')) { auth++; return Response.json({ access_token: 'token', expires_in: 86400 }); }
+    return new Response('fixture-secret', { status: String(url).includes('order-cash') ? 401 : 429 });
+  }, 20);
+  const results = await Promise.allSettled([client.balance(), client.quote('005930'), client.bars('005930')]);
+  assert.ok(results.every(r => r.status === 'rejected'));
+  assert.equal(auth, 1); assert.equal(starts.length, 4);
+  for (let i = 1; i < starts.length; i++) assert.ok(starts[i] - starts[i - 1] >= 19);
+  await assert.rejects(client.submit({ code: '005930', side: 'buy', qty: 1, price: 70000, requestId: randomUUID() }), /401/);
+  assert.equal(starts.length, 5); assert.equal(auth, 1);
+});
+
+test('quote requests coalesce and keep their observation time until the refresh interval; order checks bypass cache', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_800_000_000_000 });
+  let quotes = 0;
+  const client = new KisClient(credentials, async url => {
+    if (String(url).endsWith('/tokenP')) return Response.json({ access_token: 'token', expires_in: 86400 });
+    quotes++;
+    return Response.json({ rt_cd: '0', output: { stck_prpr: '70000', prdy_ctrt: '1', stck_mxpr: '91000', stck_llam: '49000', aspr_unit: '100', temp_stop_yn: 'N' } });
+  }, 0);
+  const [first, concurrent] = await Promise.all([client.quote('005930'), client.quote('005930')]);
+  t.mock.timers.tick(2999); const cached = await client.quote('005930');
+  assert.equal(quotes, 1); assert.equal(first.receivedAt, concurrent.receivedAt); assert.equal(cached.receivedAt, first.receivedAt);
+  t.mock.timers.tick(1); assert.notEqual((await client.quote('005930')).receivedAt, first.receivedAt); assert.equal(quotes, 2);
+  await client.quote('005930', true); assert.equal(quotes, 3);
+});
+
+test('balance page cap and duplicate holdings cannot become a complete balance', async () => {
+  let page = 0;
+  const capped = new KisClient(credentials, async url => String(url).endsWith('/tokenP') ? Response.json({ access_token: 'token', expires_in: 86400 }) : Response.json({ ...empty, ctx_area_fk100: String(++page), ctx_area_nk100: 'next' }, { headers: { tr_cont: 'M' } }), 0);
+  await assert.rejects(capped.balance(), /전체 페이지/); assert.equal(page, 50); assert.equal(capped.connection().status.complete, false); assert.equal(capped.connection().balance, undefined);
+  page = 0;
+  const duplicate = new KisClient(credentials, async url => String(url).endsWith('/tokenP') ? Response.json({ access_token: 'token', expires_in: 86400 }) : Response.json({ ...empty, ctx_area_fk100: String(++page), output1: [{ pdno: '005930', prdt_name: '삼성전자', hldg_qty: '1', pchs_avg_pric: '70000', prpr: '71000' }] }, { headers: { tr_cont: page === 1 ? 'M' : '' } }), 0);
+  await assert.rejects(duplicate.balance(), /중복/); assert.equal(duplicate.connection().status.phase, 'partial');
+});
+
+test('a second auth failure stops after one replay and changed page totals remain partial', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_800_000_000_000 });
+  let tokens = 0, reads = 0, reject = false;
+  const client = new KisClient(credentials, async url => {
+    if (String(url).endsWith('/tokenP')) { tokens++; return Response.json({ access_token: `token-${tokens}`, expires_in: 86400 }); }
+    reads++; return reject ? new Response('', { status: 401 }) : Response.json(empty);
+  }, 0);
+  await client.balance(); t.mock.timers.tick(60_001); reject = true;
+  await assert.rejects(client.balance(), /만료되거나 거부/); assert.equal(tokens, 2); assert.equal(reads, 3);
+  await assert.rejects(client.balance(), /만료되거나 거부/); assert.equal(tokens, 2); assert.equal(reads, 3);
+  let page = 0;
+  const changed = new KisClient(credentials, async url => String(url).endsWith('/tokenP') ? Response.json({ access_token: 'token', expires_in: 86400 }) : Response.json({ ...empty, output2: [{ dnca_tot_amt: String(++page), tot_evlu_amt: '1000000' }], ctx_area_fk100: 'next' }, { headers: { tr_cont: page === 1 ? 'M' : '' } }), 0);
+  await assert.rejects(changed.balance(), /합계가 바뀌/); assert.equal(changed.connection().balance, undefined); assert.equal(changed.connection().status.phase, 'partial');
+});
+
+test('global pending bound rejects excess reads before transport instead of accumulating an unlimited queue', async () => {
+  let reads = 0, release: (() => void) | undefined;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const client = new KisClient(credentials, async url => {
+    if (String(url).endsWith('/tokenP')) return Response.json({ access_token: 'token', expires_in: 86400 });
+    reads++; await gate;
+    return Response.json({ rt_cd: '0', output: { stck_prpr: '70000', prdy_ctrt: '1', stck_mxpr: '91000', stck_llam: '49000', aspr_unit: '100', temp_stop_yn: 'N' } });
+  }, 0);
+  const pending = Promise.allSettled(Array.from({ length: 35 }, (_, i) => client.quote(String(i).padStart(6, '0'))));
+  await new Promise(resolve => setImmediate(resolve)); release!();
+  const results = await pending; assert.equal(reads, 30); assert.equal(results.filter(r => r.status === 'rejected').length, 5);
+  assert.equal((await client.quote('005930')).price, 70000);
+});
+
+test('fresh balance waits for a prior display query then performs its own account read', async () => {
+  let reads = 0, release: (() => void) | undefined;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const client = new KisClient(credentials, async url => {
+    if (String(url).endsWith('/tokenP')) return Response.json({ access_token: 'token', expires_in: 86400 });
+    const cash = String(++reads * 10000); if (reads === 1) await gate;
+    return Response.json({ ...empty, output2: [{ dnca_tot_amt: cash, tot_evlu_amt: cash }] });
+  }, 0);
+  const prior = client.balance(); await new Promise(resolve => setImmediate(resolve));
+  const fresh = client.balance(true); release!();
+  assert.equal((await prior).balance?.cash, 10000); assert.equal((await fresh).balance?.cash, 20000); assert.equal(reads, 2);
+});
+
+test('token issuance rejected by queue capacity does not start an unsent authentication cooldown', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_800_000_000_000 });
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const client = new KisClient(credentials, async url => {
+    if (String(url).endsWith('/tokenP')) return Response.json({ access_token: 'token', expires_in: 120 });
+    if (String(url).includes('inquire-balance')) return Response.json(empty);
+    await gate; return Response.json({ rt_cd: '0', output: { stck_prpr: '70000', prdy_ctrt: '1', stck_mxpr: '91000', stck_llam: '49000', aspr_unit: '100', temp_stop_yn: 'N' } });
+  }, 0);
+  const reads = Promise.all(Array.from({ length: 30 }, (_, i) => client.quote(String(i).padStart(6, '0'))));
+  await new Promise(resolve => setImmediate(resolve)); t.mock.timers.tick(60_001);
+  await assert.rejects(client.balance(), /대기가 많습니다/);
+  release!(); await reads;
+  assert.equal((await client.balance()).status.phase, 'ready');
+});
+
+test('concurrent endpoints with an expired token share one renewal and replay each read once', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_800_000_000_000 });
+  let auth = 0, reads = 0, expired = false;
+  const client = new KisClient(credentials, async (url, init) => {
+    if (String(url).endsWith('/tokenP')) { auth++; return Response.json({ access_token: `token-${auth}`, expires_in: 86400 }); }
+    reads++;
+    if (expired && new Headers(init?.headers).get('authorization') === 'Bearer token-1') return new Response('', { status: 401 });
+    if (String(url).includes('inquire-balance')) return Response.json(empty);
+    return Response.json({ rt_cd: '0', output: { stck_prpr: '70000', prdy_ctrt: '1', stck_mxpr: '91000', stck_llam: '49000', aspr_unit: '100', temp_stop_yn: 'N' } });
+  }, 0);
+  await client.balance(); t.mock.timers.tick(60_001); expired = true;
+  const [balance, quote] = await Promise.all([client.balance(), client.quote('005930')]);
+  assert.equal(balance.status.phase, 'ready'); assert.equal(quote.price, 70000); assert.equal(auth, 2); assert.equal(reads, 5);
+});
+
+test('failed renewal retains its latest safe failure rather than an older unauthorized response', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_800_000_000_000 }); let tokens = 0, expired = false;
+  const client = new KisClient(credentials, async url => {
+    if (String(url).endsWith('/tokenP')) return ++tokens === 1 ? Response.json({ access_token: 'token', expires_in: 86400 }) : new Response('fixture-secret', { status: 503 });
+    return expired ? new Response('', { status: 401 }) : Response.json(empty);
+  }, 0);
+  await client.balance(); t.mock.timers.tick(60_001); expired = true;
+  await assert.rejects(client.balance(), /503/); await assert.rejects(client.balance(), /503/); assert.equal(tokens, 2);
+});

@@ -74,5 +74,32 @@
     }
   ],
   "decisions": "React/TypeScript+Vite SPA. 개인 PC 단일 사용자이므로 Node24+SQLite로 런타임 하나와 로컬 파일 DB를 사용한다. Rust/PostgreSQL 기본안은 서버·다중 사용자 요구 때 재평가. 데모와 KIS 모의 환경을 분리하고 실전 주문 미지원. 비밀값은 서버 Infisical 주입.",
-  "status": "reviewed"
+  "status": "reviewed",
+  "task_context": {
+    "issue": "https://github.com/krdn/gon-stock03/issues/6",
+    "checked_at": "2026-11-15T02:17:08.807609+00:00",
+    "sources": [
+      {
+        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_balance/inquire_balance.py",
+        "finding": "모의 잔고20건, M/F 후 N과 FK/NK 키로 연속조회. 전체 확인 전 완료로 처리하지 않는다."
+      },
+      {
+        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_user/kis_auth.py",
+        "finding": "공식 샘플은 모의 smart_sleep 0.5초와 24시간 토큰 재인증을 사용한다. 계정별 실제 한도 보장이 아니므로 기존1.1초 직렬화를 유지한다."
+      },
+      {
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/Response/json",
+        "finding": "JSON으로 파싱할 수 없는 본문은 SyntaxError가 발생한다. 화면에는 고정 오류를 표시한다."
+      },
+      {
+        "url": "https://react.dev/reference/react/useEffect",
+        "finding": "비동기 응답은 요청과 다른 순서로 올 수 있다. 이전 요청의 뒤늦은 결과를 적용하지 않는다."
+      },
+      {
+        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/legacy/rest/current_price_samle.py",
+        "finding": "공식 legacy 현재가 샘플은 EGW00123을 토큰 만료로 취급한다. 앱은 GET 재조회만1회로 제한하고 새 토큰 발급 간격도 적용한다."
+      }
+    ],
+    "decisions": "기존 스택 유지. 상태 API는 local snapshot과 KIS 계좌 상태를 분리. server instanceId와 revision/요청순서를 함께 사용. 새 dependency 없이 공유 Zod 계약 사용."
+  }
 }

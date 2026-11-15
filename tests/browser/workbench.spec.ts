@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { screens } from '../../src/specs';
 import { readFile } from 'node:fs/promises';
-import { initialState } from '../../shared/fixtures';
+import { snapshot } from '../snapshot';
 
 test('stored risk limits hydrate after reload without overwriting user edits on polling', async ({ page, request }) => {
   const before = (await (await request.get('/api/state')).json()).risk;
@@ -17,7 +17,7 @@ test('stored risk limits hydrate after reload without overwriting user edits on 
 });
 test('quote polling preserves the limit price and open order confirmation', async ({ page }) => {
   await page.clock.install();
-  const state = initialState(); state.instruments[0].price = 74800; state.revision = 20;
+  const state = snapshot(); state.instruments[0].price = 74800; state.revision = 20;
   await page.route('**/api/state', route => route.fulfill({ json: state }));
   await page.goto('/trade'); await expect(page.getByRole('button', { name: '매수 주문 확인' })).toBeEnabled();
   await expect(page.getByLabel('주문 가격 (원)')).toHaveValue('74800');
@@ -45,6 +45,9 @@ test('all screens and detailed specs render without console errors at desktop an
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
   for (const screen of screens) {
     await page.goto('/' + screen.id); await expect(page.getByRole('heading', { name: screen.title + '.', exact: true })).toBeVisible();
+    await expect(page.getByLabel('환경과 데이터 상태')).toContainText('DEMO · 합성 데이터');
+    await expect(page.getByLabel('환경과 데이터 상태')).toContainText('KIS 모의 · REST');
+    await expect(page.getByLabel('긴급정지 상태', { exact: true })).toContainText('긴급정지 꺼짐');
     await expect(page.getByText('화면 미리보기입니다.', { exact: false })).toHaveCount(0);
   }
   await page.goto('/design?screen=trade'); await expect(page.getByText('사용자가 하는 일', { exact: false })).toBeVisible();
@@ -53,6 +56,9 @@ test('all screens and detailed specs render without console errors at desktop an
   await page.setViewportSize({ width: 390, height: 844 });
   for (const screen of screens) {
     await page.goto('/' + screen.id); await expect(page.getByRole('heading', { name: screen.title + '.', exact: true })).toBeVisible();
+    await expect(page.getByLabel('환경과 데이터 상태')).toContainText('DEMO · 합성 데이터');
+    await expect(page.getByLabel('환경과 데이터 상태')).toContainText('KIS 모의 · REST');
+    await expect(page.getByLabel('긴급정지 상태', { exact: true })).toContainText('긴급정지 꺼짐');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), screen.id).toBe(true);
   }
   await page.getByRole('button', { name: '메뉴 열기' }).click(); await page.getByRole('navigation').getByRole('link', { name: '대시보드', exact: true }).click();

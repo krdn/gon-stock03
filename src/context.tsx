@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { State } from '../shared/model';
-export interface Workbench { state: State; busy: boolean; available: boolean; act: <T = unknown>(path: string, body?: unknown) => Promise<T>; refresh: () => Promise<void> }
+import type { State, DataStatus, ConnectionState } from '../shared/model';
+export interface Workbench { state: State; status: DataStatus; connection: ConnectionState; busy: boolean; available: boolean; act: <T = unknown>(path: string, body?: unknown) => Promise<T>; refresh: () => Promise<void> }
 export const WorkbenchContext = createContext<Workbench | null>(null);
 export function useWorkbench() { const value = useContext(WorkbenchContext); if (!value) throw new Error('워크스페이스가 없습니다.'); return value; }

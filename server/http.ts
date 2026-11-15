@@ -3,11 +3,13 @@ import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { ZodError } from 'zod';
-import { backtestInput, codeSchema, haltInput, idInput, journalInput, orderInput, riskInput, strategyInput } from '../shared/contracts.ts';
+import { backtestInput, codeSchema, haltInput, idInput, journalInput, orderInput, riskInput, storageErrorMessage, strategyInput } from '../shared/contracts.ts';
 import { advanceTick, backtest, cancelOrder, halt, placeOrder, record } from './engine.ts';
 import { KisClient } from './kis.ts';
 import { Store } from './store.ts';
 import { PaperBroker } from './paper.ts';
+import type { StateSnapshot } from '../shared/model.ts';
+import { emptyStatus } from '../shared/status.ts';
 
 async function body(req: IncomingMessage) {
   const chunks: Buffer[] = []; let size = 0;
@@ -19,13 +21,18 @@ function json(res: ServerResponse, status: number, data: unknown) {
 }
 export function makeServer(store: Store, kis = KisClient.fromEnvironment(), ports = [4303, 4304]) {
   const paper = new PaperBroker(store, kis);
+  const instanceId = randomUUID();
   const origins = new Set(ports.flatMap(port => [`http://127.0.0.1:${port}`, `http://localhost:${port}`]));
   const hosts = new Set([...origins].map(origin => new URL(origin).host));
   return createServer(async (req, res) => {
     if (!hosts.has(req.headers.host ?? '') || (req.headers.origin && !origins.has(req.headers.origin)) || req.headers['sec-fetch-site'] === 'cross-site') { json(res, 403, { error: '로컬 워크스페이스에서만 접근할 수 있습니다.' }); return; }
     const path = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
     try {
-      if (path === '/api/state' && req.method === 'GET') { json(res, 200, store.read()); return; }
+      if (path === '/api/state' && req.method === 'GET') {
+        const now = new Date().toISOString();
+        const snapshot: StateSnapshot = { ...store.read(), instanceId, status: { ...emptyStatus('demo'), phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now }, connection: kis.connection() };
+        json(res, 200, snapshot); return;
+      }
       if (path === '/api/kis/ledger' && req.method === 'GET') { json(res, 200, { orders: store.paperOrders() }); return; }
       if (path.startsWith('/api/')) {
         if (req.method !== 'POST') { json(res, 405, { error: '허용하지 않는 요청 방식입니다.' }); return; }
@@ -97,7 +104,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       const message = error instanceof ZodError ? '입력값을 확인하세요. 범위·필수 항목 또는 단기/장기 기간이 올바르지 않습니다.' : error instanceof Error ? error.message : '요청 처리에 실패했습니다.';
       if (path === '/api/orders') {
         try { store.update(state => record(state, '주문 요청 차단', message, 'warning')); }
-        catch { json(res, 500, { error: '요청과 이벤트 저장에 실패했습니다. 저장소 상태를 확인하세요.' }); return; }
+        catch { json(res, 500, { error: storageErrorMessage }); return; }
       }
       json(res, 400, { error: message });
     }
