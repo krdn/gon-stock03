@@ -24,7 +24,7 @@ export class KisClient {
   private token?: { value: string; until: number };
   private auth?: Promise<string>;
   private queue: Promise<unknown> = Promise.resolve();
-  private lastCall = 0;
+  private lastCall = -Infinity;
   private pending = 0;
   private nextAuthAt = 0;
   private authError?: Error;
@@ -47,12 +47,16 @@ export class KisClient {
     if (this.pending >= 30) throw new KisNotSent('KIS 요청 대기가 많습니다. 잠시 후 다시 확인하세요.', 'rate-limit');
     this.pending++;
     const job = this.queue.catch(() => {}).then(async () => {
-      for (let wait = this.spacing - (Date.now() - this.lastCall); wait > 0; wait = this.spacing - (Date.now() - this.lastCall)) await new Promise(resolve => setTimeout(resolve, wait));
+      for (let wait = this.spacing - (performance.now() - this.lastCall); wait > 0; wait = this.spacing - (performance.now() - this.lastCall)) await new Promise(resolve => setTimeout(resolve, wait));
       const options: RequestInit = { ...init, redirect: 'error', signal: AbortSignal.timeout(15000) };
       beforeSend?.();
       let response: Response;
-      this.lastCall = Date.now();
-      try { response = await this.transport(BASE + path, options); }
+      try {
+        let pendingResponse: Promise<Response>;
+        try { pendingResponse = this.transport(BASE + path, options); }
+        finally { this.lastCall = performance.now(); }
+        response = await pendingResponse;
+      }
       catch { throw new KisFailure('KIS 모의 서버 통신 실패 또는 시간 초과입니다. 실전 서버로 대체하지 않습니다.', 'network'); }
       if (response.status === 401 && init.method !== 'POST') throw new KisAuthExpired('KIS 모의 인증이 만료되거나 거부되었습니다.');
       let data: unknown;

@@ -1,0 +1,6 @@
+Run 43714059921, attempt 1, job 132811663970; fetched 2026-11-16 KST.
+2026-11-15T12:29:16.4575594Z ✖ pacing starts at transport after a slow pre-send guard, including a subsequent daily page (83.441733ms)
+2026-11-15T12:29:17.2232155Z ℹ pass 76
+2026-11-15T12:29:17.2232335Z ℹ fail 1
+2026-11-15T12:29:17.2240960Z ✖ pacing starts at transport after a slow pre-send guard, including a subsequent daily page (83.441733ms)
+2026-11-15T12:29:17.2241683Z   AssertionError [ERR_ASSERTION]: transport spacing: 19ms
