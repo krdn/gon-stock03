@@ -76,18 +76,22 @@
   "decisions": "React/TypeScript+Vite SPA. 개인 PC 단일 사용자이므로 Node24+SQLite로 런타임 하나와 로컬 파일 DB를 사용한다. Rust/PostgreSQL 기본안은 서버·다중 사용자 요구 때 재평가. 데모와 KIS 모의 환경을 분리하고 실전 주문 미지원. 비밀값은 서버 Infisical 주입.",
   "status": "reviewed",
   "task_context": {
-    "issue": "https://github.com/krdn/gon-stock03/issues/20",
-    "checked_at": "2026-11-15T06:13:50.975187+00:00",
+    "issue": "https://github.com/krdn/gon-stock03/issues/16",
+    "checked_at": "2026-11-15T10:22:16.601393+00:00",
     "sources": [
       {
-        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_price/inquire_price.py",
-        "finding": "실전/모의 현재가 FHKST01010100, J=KRX, 문자열 종목코드. REST 현재가와 WebSocket 실시간은 별도다."
+        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_balance/inquire_balance.py",
+        "finding": "모의 VTTC8434R, 종목별 조회 02, 모의 최대20건 이후 연속조회와 0수량 잔고를 공식 예제에서 재확인했다."
       },
       {
-        "url": "https://nodejs.org/download/release/v24.11.0/docs/api/sqlite.html",
-        "finding": "DatabaseSync는 파일 경로로 영속 DB를 열며 동기 API를 제공한다. 기존 Store의 SQLite 트랜잭션·저장 구조를 재사용한다."
+        "url": "https://react.dev/reference/react/useEffect",
+        "finding": "외부 시스템 동기화가 필요 없으면 Effect가 필요하지 않다. 환경 선택은 로컬 상태, 조회는 기존 공통 상태와 명시 버튼을 사용한다."
+      },
+      {
+        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_balance/chk_inquire_balance.py",
+        "finding": "공식 필드 매핑에서 예수금총금액(dnca_tot_amt), 현재가(prpr), 총평가금액(tot_evlu_amt), 순자산·정산금액이 별도임을 확인했다. 화면 계산 합계와 KIS 제공 총평가액을 같은 정의라고 가정하지 않는다."
       }
     ],
-    "decisions": "#20은 기존 관심목록 API/SQLite와 MarketExplorer의 최대8종목 순차 조회·15초 간격·숨김 중단 및 서버 캐시를 재사용한다. /paper에 선택코드만 전달하며 자동 조회·주문을 실행하지 않는다. 숫자 외 코드의 주문 지원을 확대하지 않는다. 기술 스택 변경 없음."
+    "decisions": "기존 C01 잔고 페이지·토큰·호출제한·이전 전체 성공값 보존을 재사용한다. 포트폴리오는 DEMO와 KIS 모의를 선택해 분리 표시한다. 현재가 누락/0은 평가 불가, 총자산 0은 비중 없음. 화면 평가 합계는 예수금+수량×현재가이며 KIS 계좌 총평가액은 별도 참고값이다. 주문 경로·기술 스택 변경 없음."
   }
 }

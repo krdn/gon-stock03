@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ArrowUpRight, ShieldCheck, Star, Zap } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, RefreshCw, ShieldCheck, Star, Zap } from 'lucide-react';
 import { useWorkbench } from '../context';
-import { Badge, Change, Chart, Money, PageLink, Panel, Stat } from '../components/ui';
+import { Badge, Change, Chart, DataStatusLine, Empty, PageLink, Panel, Stat } from '../components/ui';
 import { equity, won, type Instrument } from '../../shared/model';
+import { portfolioValue } from '../../shared/portfolio';
 import { MarketExplorer } from './MarketExplorer';
 
 export function InstrumentTable({ instruments }: { instruments: Instrument[] }) {
@@ -24,6 +26,64 @@ export function Market({ watchOnly = false }: { watchOnly?: boolean }) {
 }
 
 export function Portfolio() {
-  const { state } = useWorkbench(); const total = equity(state); const invested = total - state.cash;
-  return <><div className="stats-grid three"><Stat label="총 평가자산" value={`${won(total)}원`} sub="현재 로컬 데모 잔고" /><Stat label="주식·ETF 평가액" value={`${won(invested)}원`} sub={`${(invested / total * 100).toFixed(1)}% 비중`} /><Stat label="보유 현금" value={`${won(state.cash)}원`} sub={`${(state.cash / total * 100).toFixed(1)}% 비중`} /></div><div className="grid-main"><Panel title="보유자산"><div className="table-scroll"><table><thead><tr><th>종목</th><th>보유수량</th><th>평균 매입가</th><th>평가액</th><th>평가손익</th></tr></thead><tbody>{state.positions.filter(p => p.qty > 0).map(p => { const s = state.instruments.find(s => s.code === p.code)!; const pnl = (s.price - p.average) * p.qty; return <tr key={p.code}><td><Link className="stock-name" to={`/trade?code=${p.code}`}>{s.name}<small>{p.code}</small></Link></td><td className="number">{p.qty}주</td><td className="number">{won(p.average)}</td><td className="number">{won(s.price * p.qty)}</td><td className={pnl >= 0 ? 'number up' : 'number down'}>{pnl >= 0 ? '+' : ''}{won(pnl)}</td></tr>; })}</tbody></table></div></Panel><Panel title="자산 배분"><div className="allocation"><div className="allocation-center"><span>현금 비중</span><strong>{(state.cash / total * 100).toFixed(1)}%</strong></div><svg viewBox="0 0 120 120" role="img" aria-label="현금과 투자 자산의 비중"><circle cx="60" cy="60" r="50" fill="none" stroke="var(--line)" strokeWidth="12" /><circle cx="60" cy="60" r="50" fill="none" stroke="var(--teal)" strokeWidth="12" strokeDasharray={`${314 * state.cash / total} 314`} transform="rotate(-90 60 60)" /></svg></div><div className="check-row"><span>현금</span><strong><Money value={state.cash} /></strong></div><div className="check-row"><span>주식·ETF</span><strong><Money value={invested} /></strong></div></Panel></div></>;
+  const { state, status, connection, act, busy, available } = useWorkbench();
+  const [environment, setEnvironment] = useState<'kis-paper' | 'demo'>('kis-paper');
+  const kis = environment === 'kis-paper';
+  const balance = kis ? connection.balance : {
+    cash: state.cash,
+    positions: state.positions.map(p => {
+      const instrument = state.instruments.find(s => s.code === p.code);
+      return { ...p, name: instrument?.name ?? p.code, price: instrument?.price ?? null };
+    }),
+  };
+  const dataStatus = kis ? connection.status : status;
+  const current = dataStatus.phase === 'ready' && dataStatus.complete;
+  const portfolio = balance ? portfolioValue(balance.cash, balance.positions) : null;
+  const money = (value: number | null) => value === null ? '평가 불가' : `${won(value)}원`;
+  const weight = (value: number | null) => value === null ? '산출 불가' : `${value.toFixed(1)}%`;
+  const profit = (value: number | null) => value === null ? '평가 불가' : `${value >= 0 ? '+' : ''}${won(value)}원`;
+  return <>
+    <div className="button-row" role="group" aria-label="포트폴리오 환경">
+      <button className={`button ${kis ? 'primary' : 'secondary'}`} aria-pressed={kis} onClick={() => setEnvironment('kis-paper')}>KIS 모의</button>
+      <button className={`button ${!kis ? 'primary' : 'secondary'}`} aria-pressed={!kis} onClick={() => setEnvironment('demo')}>로컬 DEMO</button>
+      {kis && <button className="button secondary" disabled={!available || busy || connection.status.phase === 'loading'} onClick={() => void act('kis/check').catch(() => {})}><RefreshCw size={15} />KIS 잔고 새로고침</button>}
+    </div>
+    <p className="muted">{kis ? 'KIS 모의 계좌 · REST 수동 조회' : '로컬 DEMO · 합성 시나리오'} · 선택한 환경의 자산만 표시합니다.</p>
+    <DataStatusLine label="포트폴리오 조회 상태" status={dataStatus} showPages={kis} />
+    {!current && <div className="notice warning" role="status">{balance ? kis ? '이전 전체 성공값 · 최신 아님' : status.lastSuccessAt ? '이전 DEMO 확인값 · 최신 아님' : 'DEMO 미리보기 · 서버 미확인' : 'KIS 잔고 전체 조회 전 · 금액을 아직 확인할 수 없습니다.'} {dataStatus.phase === 'partial' && '페이지 조회 불완전 · 새 부분 잔고는 합산하지 않습니다.'}</div>}
+    {!portfolio ? <Empty title="KIS 잔고를 조회해 주세요">잔고 새로고침으로 전체 페이지를 확인합니다. <Link to="/settings">연결·설정 확인 ↗</Link></Empty> : <>
+      {portfolio.unpriced > 0 && <div className="notice warning" role="status">현재가 누락 {portfolio.unpriced}종목 · 해당 평가액·손익과 전체 평가 합계·비중은 평가 불가입니다.</div>}
+      {portfolio.total === 0 && <p className="notice" role="status">총자산 0원 · 비중을 산출하지 않습니다.</p>}
+      <section className="stats-grid" aria-label="포트폴리오 요약">
+        <Stat label="총 평가자산" value={money(portfolio.total)} sub="예수금 + 보유종목 평가액" />
+        <Stat label="주식·ETF 평가액" value={money(portfolio.invested)} sub={`비중 ${weight(portfolio.investedWeight)}`} />
+        <Stat label={kis ? 'KIS 모의 예수금' : 'DEMO 보유 현금'} value={money(portfolio.cash)} sub={`비중 ${weight(portfolio.cashWeight)}`} />
+        <Stat label="보유 평가손익" value={profit(portfolio.profit)} sub="평가액 − 평균 매입가 × 수량 · 비용 전" tone={portfolio.profit === null ? undefined : portfolio.profit >= 0 ? 'up' : 'down'} />
+      </section>
+      {kis && <p className="muted tiny">KIS 계좌 총평가액: {money(connection.balance!.totalEquity)} · API 제공 참고값. 화면 합계는 예수금과 현재 보유 평가액으로 계산하므로 결제·미수 등의 반영 기준에 따라 다를 수 있습니다. 예수금은 주문 가능 금액이 아닙니다.</p>}
+      <div className="grid-main">
+        <Panel title="보유자산" action={<Badge>{kis ? 'KIS 모의' : 'DEMO'} · {portfolio.positions.length}종목</Badge>}>
+          {portfolio.positions.length ? <div className="table-scroll"><table><thead><tr><th>종목</th><th>보유수량</th><th>평균 매입가</th><th>현재가</th><th>평가액</th><th>평가손익</th><th>비중</th></tr></thead><tbody>
+            {portfolio.positions.map(p => <tr key={p.code}>
+              <td><Link className="stock-name" to={`${kis ? '/paper' : '/trade'}?code=${encodeURIComponent(p.code)}`}>{p.name}<small>{p.code}</small></Link></td>
+              <td className="number">{p.qty}주</td><td className="number">{won(p.average)}</td>
+              <td className="number">{p.price !== null && p.price > 0 ? won(p.price) : '평가 불가'}</td>
+              <td className="number">{money(p.value)}</td><td className={p.profit === null ? 'number' : p.profit >= 0 ? 'number up' : 'number down'}>{profit(p.profit)}</td>
+              <td className="number">{weight(p.weight)}</td>
+            </tr>)}
+          </tbody></table></div> : <Empty title="보유종목 없음">보유수량이 0인 종목은 제외합니다.</Empty>}
+        </Panel>
+        <Panel title="자산 배분">
+          <div className="allocation"><div className="allocation-center"><span>현금 비중</span><strong>{weight(portfolio.cashWeight)}</strong></div>
+            <svg viewBox="0 0 120 120" role="img" aria-label="현금과 투자 자산의 비중"><circle cx="60" cy="60" r="50" fill="none" stroke="var(--line)" strokeWidth="12" />
+              {portfolio.cashWeight !== null && portfolio.cashWeight >= 0 && portfolio.cashWeight <= 100 && <circle cx="60" cy="60" r="50" fill="none" stroke="var(--teal)" strokeWidth="12" strokeDasharray={`${314 * portfolio.cashWeight / 100} 314`} transform="rotate(-90 60 60)" />}
+            </svg>
+          </div>
+          <div className="check-row"><span>현금</span><strong>{money(portfolio.cash)}</strong></div>
+          <div className="check-row"><span>주식·ETF</span><strong>{money(portfolio.invested)}</strong></div>
+          <p className="muted tiny">종목 비중 = 종목 평가액 ÷ 총 평가자산. 현재가 누락 또는 총자산 0이면 비중은 산출 불가입니다.</p>
+        </Panel>
+      </div>
+    </>}
+  </>;
 }
