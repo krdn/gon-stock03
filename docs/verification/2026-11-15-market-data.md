@@ -11,6 +11,7 @@
 - `npm run test:e2e`: 기존 화면 21/21 성공. 새 UI를 추가한 것은 아니다.
 - `git diff --check`: 성공. 변경 문서 4개의 상대 링크 검사 성공.
 - `evolve docs ste-lint --strict --changed refs/remotes/origin/main --added`: exit 2. `docs/conventions/ste100-writing.md`가 없어 미검증이며 통과로 처리하지 않는다.
+- 구현 커밋의 graphify hook은 설치된 Python 환경을 찾지 못했다. Git 커밋은 성공했으나 graphify 검증 성공은 아니다.
 
 ## 실제 공개 마스터
 
@@ -43,4 +44,8 @@
 
 후속 리뷰 뒤 최종 검사에서 기존 호출 간격 검사가 실패했고 분리 실행도 실패했다. 느린 전송 직전 검사 뒤 다음 일봉 호출의 간격이 20ms 설정에서 3ms가 되는 증상을 별도 회귀로 재현했다. 실제 transport 직전에 기준 시각을 기록하고 타이머 대기 후 남은 간격을 재확인하도록 보완했다. 최종 단위51/51·빌드와 간격 회귀를 직접 확인했다. 이 마지막 간격 보완은 외부 리뷰 대상에 포함되지 않았으며 지침의 반복 리뷰 제한에 따라 세 번째 호출은 하지 않았다.
 
-원격 PR/CI는 진행 중이다.
+## 원격 확인
+
+[PR #29](https://github.com/krdn/gon-stock03/pull/29), 구현 SHA `1aeca9b0430aabb5ab779c339a94cafcbc52ef52`를 origin에 저장하고 SHA 일치를 확인했다. 해당 SHA의 PR [Application checks](https://github.com/krdn/gon-stock03/actions/runs/43674283668)와 [Workflow configuration](https://github.com/krdn/gon-stock03/actions/runs/43674283728)은 SUCCESS다. 원격 앱 검사에는 단위·빌드·브라우저 검사가 모두 포함됐다.
+
+이슈 #7은 OPEN / Project In Review다. 이 기록의 후속 문서 커밋은 PR 최신 CI와 이슈 인계 댓글에서 별도로 확인한다. main 병합과 사용자 수용을 수행했다고 기록하지 않는다.
