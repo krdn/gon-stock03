@@ -76,18 +76,22 @@
   "decisions": "React/TypeScript+Vite SPA. 개인 PC 단일 사용자이므로 Node24+SQLite로 런타임 하나와 로컬 파일 DB를 사용한다. Rust/PostgreSQL 기본안은 서버·다중 사용자 요구 때 재평가. 데모와 KIS 모의 환경을 분리하고 실전 주문 미지원. 비밀값은 서버 Infisical 주입.",
   "status": "reviewed",
   "task_context": {
-    "issue": "https://github.com/krdn/gon-stock03/issues/23",
-    "checked_at": "2026-11-15T13:09:16.033312+00:00",
+    "issue": "https://github.com/krdn/gon-stock03/issues/24",
+    "checked_at": "2026-11-15T13:50:38.499369+00:00",
     "sources": [
       {
-        "url": "https://react.dev/reference/react-dom/components/textarea",
-        "finding": "value/onChange로 제어하는 textarea와 required/maxLength를 확인했다. 저장 중 새 입력의 보존은 앱 응답 처리와 브라우저 회귀 검사로 확인한다."
+        "url": "https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-pressed",
+        "finding": "기본 button과 선택 상태를 함께 제공하고 레이블은 선택 시에도 유지한다. 실제 키보드 탐색은 브라우저 검사로 확인한다."
       },
       {
-        "url": "https://nodejs.org/api/sqlite.html",
-        "finding": "파일 DB와 메모리 DB를 구분하고 동기 쿼리·바인딩을 제공한다. 현재 문서는 v26이며 Node24 URL 접근은 실패했다. 설치 Node v24.22.2에서 실제 파일 DB와 서버 프로세스 재시작으로 검증한다."
+        "url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage",
+        "finding": "localStorage는 origin별 저장이며 정책 제한 시 SecurityError가 발생할 수 있다. 지도 저장 실패와 로컬 초안/AI 미전송 경계를 확인한다."
+      },
+      {
+        "url": "https://reactrouter.com/api/hooks/useSearchParams",
+        "finding": "검색 매개변수를 읽고 갱신하면 탐색이 발생한다. 현재 공식 문서는 최신 버전이며 설치된 7.18.5 동작은 로컬 브라우저에서 검증한다."
       }
     ],
-    "decisions": "#23 기존 일지 계약만 검증한다. 저장 실패는 성공으로 표시하지 않고 작성 메모를 보존한다. 검색 결과 없음과 최초 빈 기록을 구분한다. HTML은 React 텍스트로 렌더링하며 첨부·편집·주문 기능을 추가하지 않는다."
+    "decisions": "#24 설계 레지스트리에 15개 화면의 이슈·GitHub 단계·현재 동작·후속 경계·구현 근거를 연결한다. 진행 상태는 GitHub만 소유한다. 프로젝트 지도는 로컬 수정 요청 초안이며 실행·승인이 아니다. 다른 화면·KIS 호출 경로는 변경하지 않는다."
   }
 }
