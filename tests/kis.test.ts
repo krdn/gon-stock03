@@ -149,6 +149,19 @@ test('all KIS endpoints share pacing; reads do not retry 429 or 5xx and POST nev
   assert.equal(starts.length, 5); assert.equal(auth, 1);
 });
 
+test('pacing starts at transport after a slow pre-send guard, including a subsequent daily page', async () => {
+  const starts: number[] = [];
+  const client = new KisClient(credentials, async url => {
+    starts.push(Date.now());
+    if (String(url).endsWith('/tokenP')) return Response.json({ access_token: 'token', expires_in: 86400 });
+    if (String(url).endsWith('/order-cash')) return Response.json({ rt_cd: '0', output: { ODNO: '1', KRX_FWDG_ORD_ORGNO: '1' } });
+    return Response.json({ rt_cd: '0', output2: [] });
+  }, 20);
+  await client.submit({ code: '005930', side: 'buy', qty: 1, price: 70000, requestId: randomUUID() }, () => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40); });
+  await client.dailyPage({ id: randomUUID(), code: '005930', from: '20260102', to: '20260102', adjustment: 'raw' }, '20260102', '20260102');
+  assert.equal(starts.length, 3); assert.ok(starts[2] - starts[1] >= 20, `transport spacing: ${starts[2] - starts[1]}ms`);
+});
+
 test('quote requests coalesce and keep their observation time until the refresh interval; order checks bypass cache', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: 1_800_000_000_000 });
   let quotes = 0;

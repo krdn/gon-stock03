@@ -3,8 +3,9 @@
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매. 해외·실전·다중 사용자는 범위 밖.
 
 - 기준선: [#5 수용·통합 기록](tasks/5-baseline.md). 사용자 조건부 승인과 실제 Claude Opus 5.5 PASS에 따라 [PR #4](https://github.com/krdn/gon-stock03/pull/4)를 병합했다. 기준선 SHA `9b4b361fa4b476f296cdaf60e27ba915c3d521a7`, main 앱·구성 CI 통과.
-- 현재 작업 완료: [공통 상태 계약 #6](tasks/6-common-state.md). 새 탭에서 통합을 계속하라는 사용자 지시에 따라 [PR #27](https://github.com/krdn/gon-stock03/pull/27)을 `8b280229671bb8452c66ecc4939e87fda569c697`로 병합했다. main 앱·구성 CI와 단위38·브라우저21·빌드 성공을 확인하고 #6을 completed/Done으로 마감했다. 별도 사용자 수용 발언이나 실제 KIS 성공을 추정하지 않았다.
-- 다음 권장: [국내 종목 마스터·일봉 수집 #7](https://github.com/krdn/gon-stock03/issues/7), Ready·미착수. native 선행 #6 completed·main 통합을 확인했다. 새 세션에서 최신 origin/main·CI·이슈의 필수 자료를 확인하고 작업 파일을 만든다.
+- 선행 완료: [공통 상태 계약 #6](tasks/6-common-state.md), PR #27·#28 통합, completed/Done. 2026-11-15 최신 main `d898eec`의 앱·구성 CI 성공을 재확인했다.
+- 현재: [국내 종목 마스터·일봉 수집 #7](tasks/7-market-data.md), In Progress. 탭·세션 연결과 소유권 이전을 확인한 뒤 `feat/7-market-data`에서 공통 API를 구현했다. 단위51·브라우저21·빌드 및 실제 공개 마스터3962종목 검증. Opus 수정분 PASS 후 호출 간격 직접 보완, PR/CI 진행 중이며 실제 KIS 기간별 일봉은 미검증이다.
+- 다음 행동: #7 PR/CI·원격 인계. 사용자 수용과 통합을 추정하지 않는다. #8 구현은 시작하지 않았다.
 - 다른 Ready: [연결·설정 #8](https://github.com/krdn/gon-stock03/issues/8), [매매일지 #23](https://github.com/krdn/gon-stock03/issues/23), [설계실 #24](https://github.com/krdn/gon-stock03/issues/24). 2026-11-15 native 선행과 Project를 재조회했다. 한 세션에 한 이슈씩 진행한다.
 - 필수 읽기: 선택한 이슈 → [세션 계획](plans/interface-sessions-2026-11.md)의 해당 행·운영 규칙 → 그 이슈의 필수 파일·관련 PR/CI. 전체 과거 기록은 읽지 않는다.
 - 리뷰 후속: [Opus 검증 기록](verification/2026-11-15-baseline.md). 비차단 P2를 #9·#11·#18·#6·#2에 이관했다. #6의 비JSON·revision 두 항목은 재현·수정했고 나머지는 해당 작업에서 검증한다.
