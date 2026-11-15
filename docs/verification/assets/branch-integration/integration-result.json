@@ -1,0 +1,44 @@
+{
+  "product_main_sha": "b9a12325ec1fcb683bced5911709d09b6814ffe4",
+  "pr49_merge_sha": "401be0089ac47f29bf3553aff3d2aec6ccd0e7c1",
+  "pr47_reviewed_head": "f8714289e73897faeb9f8d1ddfe647730450c686",
+  "pr47_checks": [
+    43735913304,
+    43735916399,
+    43735913297,
+    43735916391
+  ],
+  "original_worktree": {
+    "head": "7fac5aac71702e1a56a61173b1b556ee703f35d9",
+    "status": "?? .codex/",
+    "hashed_files": 148,
+    "all_unchanged": true
+  },
+  "unintegrated_initial_branches": [],
+  "live_kis_calls": false,
+  "product_main_ci": [
+    {
+      "conclusion": "success",
+      "databaseId": 43736151565,
+      "event": "push",
+      "name": "Workflow configuration",
+      "status": "completed",
+      "url": "https://github.com/krdn/gon-stock03/actions/runs/43736151565"
+    },
+    {
+      "conclusion": "success",
+      "databaseId": 43736151541,
+      "event": "push",
+      "name": "Application checks",
+      "status": "completed",
+      "url": "https://github.com/krdn/gon-stock03/actions/runs/43736151541"
+    }
+  ],
+  "live_remote_heads_before_record_merge": {
+    "docs/50-integration-complete": "329d331e5033f8081a559760ef38f2c1a2ea30f0",
+    "feat/9-kis-orders-recovery": "f8714289e73897faeb9f8d1ddfe647730450c686",
+    "fix/48-kis-pacing": "0526d0fa1a68cb843ea91521a95d024016297a6a",
+    "main": "b9a12325ec1fcb683bced5911709d09b6814ffe4"
+  },
+  "remote_inventory_limit": "Initial inventory included stale remote-tracking refs; no initial live head snapshot. Existing local branches preserved; PR47 and PR49 live remote heads verified preserved."
+}

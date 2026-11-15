@@ -2,18 +2,18 @@
 
 기준 이슈: https://github.com/krdn/gon-stock03/issues/48
 
-- 상태: 독립 구현·검증 완료, [초안 PR49](https://github.com/krdn/gon-stock03/pull/49) OPEN/Draft. 수용·통합 대기이며 #48 OPEN 유지.
+- 상태: 수용·통합 완료. [PR49](https://github.com/krdn/gon-stock03/pull/49) MERGED `401be0089ac47f29bf3553aff3d2aec6ccd0e7c1`. PR47 결합 검증·통합은 [#50](50-branch-integration.md)에 기록했다. #9 및 후속 차단은 유지한다.
 - 목표: #21 최초 CI의 19ms < 20ms 원인을 구분하고 최소 수정·회귀·지정 리뷰·원격 CI를 검증한다.
 - 범위: `server/kis.ts`의 pacing, `tests/kis.test.ts` 관련 검사, 이 작업 기록. 실제 KIS 인증·조회·주문·취소·전략 실행은 없다.
 - 브랜치/폴더: `fix/48-kis-pacing` / `/home/gon/llm-projects/gon-stock03-worktrees/48-kis-pacing`. 기준 main `034f7e766d67b0ecfe3dab8477078939c255412e`.
-- 독립 작업: #9 완료가 필요한 기능 착수가 아니다. #9/PR47은 OPEN·Blocked/Draft, 후속 native 선행 차단 유지. 공통 파일 변경은 통합 시 #9과 충돌·회귀를 확인한다.
-- 원본 `/home/gon/llm-projects/gon-stock03`의 #9 브랜치와 미추적 `.codex/`를 보존한다. 새 세션이 #48만 단독 구현하며 추가 에이전트·부모 재위임은 없다.
+- 독립 작업: #9 완료가 필요한 기능 착수가 아니다. #9는 OPEN/Blocked이며 PR47은 #50에서 병합했다. 후속 native 선행 차단을 유지한다. 공유 파일의 문서 충돌·결합 회귀 확인도 #50에서 완료했다.
+- 원본 `/home/gon/llm-projects/gon-stock03`의 #9 브랜치와 미추적 `.codex/`를 보존한다. 당시 새 세션이 #48만 단독 구현했고, 후속 #50이 격리 clone에서 통합했다. 추가 에이전트·부모 재위임은 없다.
 
 ## 먼저 읽을 자료
 
 AGENTS·WORKFLOW·#48, `server/kis.ts`의 send/request, `tests/kis.test.ts`의 pacing 검사, [#21 검증 기록](../verification/2026-11-15-backtest.md)의 첫 CI 실패 절, [#9 인계](https://github.com/krdn/gon-stock03/issues/9#issuecomment-6896471788)와 [PR47](https://github.com/krdn/gon-stock03/pull/47)의 최신 상태.
 
-## 확인한 결과
+## 독립 전달 당시 결과 (통합 전)
 
 - 사용자 확인 탭 t74, session `01a1dfc6-fcfd-7773-9a91-0716aa25ebe1`에서 착수 응답 후 직접 구현했다. 추가 에이전트·부모 재위임 없음.
 - 정수 벽시각과 전송 전 기준의 부족 간격을 재현했다. 원본100회 중 벽시각19ms 2회, 단조20ms 미만23회. 수정 후100회는 부족0회. 과거 CI의 정확한 스케줄은 로그만으로 복원하지 않는다.
@@ -32,8 +32,8 @@ AGENTS·WORKFLOW·#48, `server/kis.ts`의 send/request, `tests/kis.test.ts`의 p
 
 ## 다음 행동
 
-PR49의 최종 head CI·인계 댓글을 재조회하고 수용·통합을 판단한다. #9과 공유 파일은 통합 시 문서 충돌·결합 회귀를 확인한다. #9 주문 승인·후속 차단은 별도이며 이 수정으로 해제하지 않는다.
+PR49와 PR47의 결합 단위/API99·빌드·브라우저67·이번 Argon MERGE PASS 및 PR47 CI4개를 확인해 통합했다. 다음은 #9의 별도 사용자 결정·실증 승인 대기이며 후속 차단을 유지한다.
 
 ## 새 세션 시작 문구
 
-> AGENTS·STATE·docs/tasks/48-kis-pacing.md와 #48/PR49의 최신 CI·인계 댓글만 먼저 확인해. 구현·검증은 기록된 범위에서 완료했고 수용·통합이 남았다. 실제 KIS 호출 없이 PR47/#9 경계를 유지해.
+> AGENTS·STATE와 #9 작업 기록을 확인해. #48/PR49는 통합됐으며 재조사하지 마. #9 승인·실증 미완료와 후속 차단을 유지해.
