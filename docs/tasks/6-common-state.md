@@ -1,6 +1,6 @@
 # #6 공통 상태 계약
 
-- 상태: 검증 대기(사용자 수용·통합 전). [이슈 #6](https://github.com/krdn/gon-stock03/issues/6), 작업 브랜치 `feat/6-common-state`.
+- 상태: 검증 대기(사용자 수용·통합 전). [이슈 #6](https://github.com/krdn/gon-stock03/issues/6), [PR #27](https://github.com/krdn/gon-stock03/pull/27), 작업 브랜치 `feat/6-common-state`.
 - 기준: `origin/main` = `e15d3073cf29ef62dde964f1f41ab186e611ec88`. 2026-11-15 native 선행 #5 `closed/completed`, 기준선 통합·main 앱/구성 CI 성공, #6 Project `Ready`, 열린 PR 없음 확인.
 - 목표: DEMO와 KIS 모의 데이터를 분리하고 미연결·로딩·정상·오래됨·부분실패·오류, 관측/최종 성공 시각을 공통 계약으로 표시한다. 전 화면 환경·긴급정지 표시, 비JSON 오류와 revision 역행 회귀를 포함한다.
 - 범위: 공통 모델/계약, 상태 조회·화면 컨텍스트, KIS 조회 서비스, 이를 소비하는 설정/모의 화면과 관련 검사. 실제 주문 전송·취소·실시간·전략 실증·실전 환경은 제외한다.
@@ -25,6 +25,15 @@
 - 결정: 기존 React/Node/SQLite·npm을 유지한다. KIS 요청은 단일 클라이언트의 공통 큐를 사용하고 실패한 부분 잔고를 성공 잔고로 반환하지 않는다.
 - 미검증: 실제 KIS 계좌·장중 호출·주문·체결. 이 작업의 네트워크 회귀는 비밀값 없는 가짜 응답으로 검증한다.
 
+## 원격 전달
+
+- 구현 커밋: `0b202401700d56753edffc512256e4e6920b2f60`. push 후 원격 브랜치 SHA 일치를 확인했다.
+- 해당 코드의 PR [application CI](https://github.com/krdn/gon-stock03/actions/runs/43668384738)·[configuration CI](https://github.com/krdn/gon-stock03/actions/runs/43668384828) 모두 PASS. push 이벤트의 두 CI도 PASS. required check는 configuration이며 application도 별도 통과했다.
+- PR #27 `OPEN`, 초안 아님. #6 `OPEN / In Review`를 원격 재조회했다. 사용자 수용·병합은 수행하지 않았고 후속 native 선행도 해제하지 않았다.
+- GitHub 연결 앱의 생성403 뒤 중복 없음을 확인하고 기존 인증의 gh로 PR을 생성했다. 권한은 변경하지 않았다.
+- 커밋의 graphify 훅은 설치된 Python 환경을 찾지 못해 실행하지 못했다. 커밋·push는 성공했으나 그래프 갱신은 검증하지 않았다.
+- 이 증거를 추가한 문서 커밋은 구현 코드를 바꾸지 않는다. 마지막 head의 CI 결과는 PR에서 재조회한다.
+
 ## 다음 행동
 
-PR·원격 CI를 확인한 뒤 이 변경에 대한 사용자 수용·통합을 진행한다. 사용자 수용·통합 전까지 #6은 OPEN으로 유지한다. 실제 KIS·장중 수용은 후속 이슈 범위다.
+PR #27의 최신 head·required/application CI와 이 변경에 대한 사용자 수용을 확인한 뒤 통합한다. 사용자 수용·통합 전까지 #6은 OPEN으로 유지한다. 실제 KIS·장중 수용은 후속 이슈 범위다.

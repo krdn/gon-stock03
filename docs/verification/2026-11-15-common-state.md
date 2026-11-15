@@ -41,3 +41,7 @@
 리뷰 설계 메모의 주문 HTTP401 분류 변화는 원래 `unknown`으로 복원하고 재전송 방지 회귀를 추가했다. 공식 legacy 샘플은2xx `EGW00123`을 토큰 만료로 취급한다. 비2xx 본문은 파싱·재시도하지 않는 보수적 정책을 유지한다.
 
 수정분 추가 리뷰1회 실제 반환 `claude-opus-5-5 / high`, session `64d089b8-ab11-4008-87ae-14e9de305413`: **PASS**, P0/P1 및 미해결 P2 없음. 남은 P3 3건은 직접 보완했다. 인증 원인 검사를 `/만료되거나 거부/`로 강화하고, 최근 재발급 실패 원인을 보존하며, revision 역행 분기도 계좌 상태를 강등한다. 후자의 두 증상은 추가 RED→GREEN으로 확인했다. P3 보완 뒤 모델 리뷰를 반복하지 않았고 최종38/21개 검사로 확인했다. 최종 커밋·PR·원격 CI는 작업 파일에 연결한다.
+
+## 원격 증거
+
+구현 SHA `0b202401700d56753edffc512256e4e6920b2f60`: [PR #27](https://github.com/krdn/gon-stock03/pull/27)의 [앱 CI](https://github.com/krdn/gon-stock03/actions/runs/43668384738)·[구성 CI](https://github.com/krdn/gon-stock03/actions/runs/43668384828) PASS. 로컬 결과와 원격 결과를 각각 확인했다. 사용자 수용·병합·실제 KIS 실증은 이 기록의 완료 범위에 포함하지 않는다.
