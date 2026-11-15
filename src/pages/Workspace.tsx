@@ -58,7 +58,7 @@ export function Portfolio() {
         <Stat label="총 평가자산" value={money(portfolio.total)} sub="예수금 + 보유종목 평가액" />
         <Stat label="주식·ETF 평가액" value={money(portfolio.invested)} sub={`비중 ${weight(portfolio.investedWeight)}`} />
         <Stat label={kis ? 'KIS 모의 예수금' : 'DEMO 보유 현금'} value={money(portfolio.cash)} sub={`비중 ${weight(portfolio.cashWeight)}`} />
-        <Stat label="보유 평가손익" value={profit(portfolio.profit)} sub="평가액 − 평균 매입가 × 수량 · 비용 전" tone={portfolio.profit === null ? undefined : portfolio.profit >= 0 ? 'up' : 'down'} />
+        <Stat label="보유 평가손익" value={profit(portfolio.profit)} sub="원본 평균가 기준 · 비용 전 · 원 단위 반올림" tone={portfolio.profit === null ? undefined : portfolio.profit >= 0 ? 'up' : 'down'} />
       </section>
       {kis && <p className="muted tiny">KIS 계좌 총평가액: {money(connection.balance!.totalEquity)} · API 제공 참고값. 화면 합계는 예수금과 현재 보유 평가액으로 계산하므로 결제·미수 등의 반영 기준에 따라 다를 수 있습니다. 예수금은 주문 가능 금액이 아닙니다.</p>}
       <div className="grid-main">
@@ -66,7 +66,7 @@ export function Portfolio() {
           {portfolio.positions.length ? <div className="table-scroll"><table><thead><tr><th>종목</th><th>보유수량</th><th>평균 매입가</th><th>현재가</th><th>평가액</th><th>평가손익</th><th>비중</th></tr></thead><tbody>
             {portfolio.positions.map(p => <tr key={p.code}>
               <td><Link className="stock-name" to={`${kis ? '/paper' : '/trade'}?code=${encodeURIComponent(p.code)}`}>{p.name}<small>{p.code}</small></Link></td>
-              <td className="number">{p.qty}주</td><td className="number">{won(p.average)}</td>
+              <td className="number">{p.qty}주</td><td className="number">{p.average.toLocaleString('ko-KR', { maximumFractionDigits: 20 })}</td>
               <td className="number">{p.price !== null && p.price > 0 ? won(p.price) : '평가 불가'}</td>
               <td className="number">{money(p.value)}</td><td className={p.profit === null ? 'number' : p.profit >= 0 ? 'number up' : 'number down'}>{profit(p.profit)}</td>
               <td className="number">{weight(p.weight)}</td>

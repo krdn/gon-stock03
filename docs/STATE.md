@@ -2,7 +2,7 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매. 해외·실전·다중 사용자는 범위 밖.
 
-- 현재 작업: [#16 포트폴리오](tasks/16-portfolio.md), 구현·로컬 검증·Argon 리뷰 완료, PR/CI 준비. KIS 잔고·환경 분리·평가 불가·합계/비중을 검증했다. 주문 실행은 포함하지 않는다.
+- 현재 작업: [#16 포트폴리오](tasks/16-portfolio.md), [PR #37](https://github.com/krdn/gon-stock03/pull/37) 게시, 구현·로컬 검증·Argon 리뷰 완료. 최종 CI·화면 수용·통합 대기. KIS 잔고·환경 분리·평가 불가·합계/비중을 검증했다. 주문 실행은 포함하지 않는다.
 - 최근 완료: [#20 관심종목](tasks/20-watchlist.md), completed/Done. PR #35·#36 통합 및 최종 main CI 성공을 확인했다.
 - 기준 main: `daa01baa65f94cb5c9e1497a28fa8c2ff71938e9`. 앱43702990997·구성43702990969 SUCCESS. 실제 Herdr 탭 연결 확인 후 #16 소유권을 이 세션으로 넘겼다. `.codex/config.toml`은 미추적 사용자 설정으로 보존한다.
 - 선행 기록: [기준선 #5](tasks/5-baseline.md), [공통 상태 #6](tasks/6-common-state.md), [마스터·일봉 #7](tasks/7-market-data.md), [연결·설정 #8](tasks/8-connection-settings.md). 완료 이력·세부 근거는 해당 파일을 읽는다.

@@ -96,3 +96,12 @@ test('portfolio detail navigation is environment-specific and layouts stay usabl
   await page.setViewportSize({ width: 1440, height: 1050 }); await page.screenshot({ path: 'test-results/portfolio-desktop.png', fullPage: true });
   expect(errors).toEqual([]); expect(posts).toBe(0);
 });
+
+test('portfolio keeps fractional average purchase prices visible so displayed PnL can be checked', async ({ page }) => {
+  const state = portfolioState();
+  state.connection.balance!.positions = [{ code: '005930', name: '삼성전자', qty: 2, average: 100.5, price: 150 }];
+  await page.route('**/api/state', route => route.fulfill({ json: state })); await page.goto('/portfolio');
+  const row = page.getByRole('row').filter({ hasText: '삼성전자' });
+  await expect(row.getByRole('cell', { name: '100.5', exact: true })).toBeVisible();
+  await expect(row.getByRole('cell', { name: '+99원', exact: true })).toBeVisible();
+});
