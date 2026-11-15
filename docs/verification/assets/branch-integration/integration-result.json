@@ -33,5 +33,12 @@
       "status": "completed",
       "url": "https://github.com/krdn/gon-stock03/actions/runs/43736151541"
     }
-  ]
+  ],
+  "live_remote_heads_before_record_merge": {
+    "docs/50-integration-complete": "329d331e5033f8081a559760ef38f2c1a2ea30f0",
+    "feat/9-kis-orders-recovery": "f8714289e73897faeb9f8d1ddfe647730450c686",
+    "fix/48-kis-pacing": "0526d0fa1a68cb843ea91521a95d024016297a6a",
+    "main": "b9a12325ec1fcb683bced5911709d09b6814ffe4"
+  },
+  "remote_inventory_limit": "Initial inventory included stale remote-tracking refs; no initial live head snapshot. Existing local branches preserved; PR47 and PR49 live remote heads verified preserved."
 }

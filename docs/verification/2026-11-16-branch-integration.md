@@ -32,3 +32,7 @@
 - PR47 merge/제품 main `b9a12325ec1fcb683bced5911709d09b6814ffe4`는 위 head와 동일 트리다. main 앱[43736151541](https://github.com/krdn/gon-stock03/actions/runs/43736151541)·구성[43736151565](https://github.com/krdn/gon-stock03/actions/runs/43736151565) SUCCESS. [실행·보존 요약](assets/branch-integration/integration-result.json), 최종 기록 PR 및 main CI는 #50 종료 댓글에서 확인한다.
 
 후속 기록은 완료 상태·실행 결과만 바꾸며 제품/테스트 추가 변경은 없다. `gh pr edit`의 구형 Projects Classic 필드 오류는 REST PATCH로 처리했다. GitHub 연결 도구의 쓰기403은 인증된 gh 경로를 사용했다.
+
+## 원격 브랜치 대조 정정
+
+첫 refs 대조의 원격23개는 `git for-each-ref`의 추적 참조였다. 실제 원격을 `git ls-remote --heads`로 확인한 결과 제품 통합 후에는 main·feat/9-kis-orders-recovery·fix/48-kis-pacing·docs/50-integration-complete의4개다. 과거 병합21개는 로컬 브랜치·추적 참조와 PR/merge tree로 확인되지만 현재 원격에는 없다. 최초 live 목록이 없어 삭제 시점은 미확인이다. 이번 통합의 삭제 명령·자동 삭제는 없으며, 기존 로컬24개와 이번 원격 PR47·49의 보존을 확인했다. Argon에 공급한23개도 이 추적 ref 수이며 코드/통합 판단에는 영향이 없다.

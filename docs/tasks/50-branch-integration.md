@@ -17,7 +17,7 @@ AGENTS·WORKFLOW, 이 파일, [#48](48-kis-pacing.md), 필요한 [#9](9-kis-orde
 
 ## 대조와 통합 결정
 
-[전체 refs 근거](../verification/assets/branch-integration/branch-audit.json): 로컬24개(main 포함)와 원격23개 작업 브랜치를 대조했다. 기존21개는 PR의 head SHA가 현재 브랜치와 같고, head 파일 트리가 당시 병합 결과 트리와 같다. 병합 커밋은 시작 main의 조상이다. 실제 미반영은 PR47·49 두 개다.
+[전체 refs 근거](../verification/assets/branch-integration/branch-audit.json): 로컬24개(main 포함)와 원격 추적23개 작업 refs를 대조했다. 원격 추적 ref는 실제 원격 브랜치 존재의 증거가 아니다. 기존21개는 PR의 head SHA가 현재 브랜치와 같고, head 파일 트리가 당시 병합 결과 트리와 같다. 병합 커밋은 시작 main의 조상이다. 실제 미반영은 PR47·49 두 개다. 최종 `git ls-remote --heads origin`에서 원격은 main·PR47·PR49·완료 기록 PR51의4개다. 기존21개는 원격에 없는 추적 참조다. 시작 시 실제 원격 목록을 따로 저장하지 않아 그 삭제 시점은 확인하지 못했다. 이번 통합은 브랜치를 삭제하지 않았고, 병합 전에 자동 삭제를 꺼 PR47·49를 보존했다.
 
 `--no-merged`에 남은 squash 브랜치10개는 아래와 같다. 후속 커밋이 없어 다시 병합하지 않는다.
 

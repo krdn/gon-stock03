@@ -519,5 +519,43 @@
       "pr_state": null,
       "classification": "already_integrated"
     }
-  ]
+  ],
+  "inventory_source": "git for-each-ref after fetch without prune: local heads and remote-tracking refs; tracking refs do not prove live remote branch existence.",
+  "live_remote_observation": {
+    "phase": "after PR49/47 merges, before documentation PR51 merge",
+    "heads": {
+      "docs/50-integration-complete": "329d331e5033f8081a559760ef38f2c1a2ea30f0",
+      "feat/9-kis-orders-recovery": "f8714289e73897faeb9f8d1ddfe647730450c686",
+      "fix/48-kis-pacing": "0526d0fa1a68cb843ea91521a95d024016297a6a",
+      "main": "b9a12325ec1fcb683bced5911709d09b6814ffe4"
+    },
+    "expected_live_branches_preserved": [
+      "fix/48-kis-pacing",
+      "feat/9-kis-orders-recovery"
+    ],
+    "absent_merged_tracking_refs": [
+      "origin/docs/15-data-status-integration",
+      "origin/docs/16-portfolio-integration",
+      "origin/docs/20-integration-handoff",
+      "origin/docs/21-integrated-handoff",
+      "origin/docs/23-journal-integration",
+      "origin/docs/24-integration",
+      "origin/docs/6-integration-complete",
+      "origin/docs/7-market-data-integration",
+      "origin/docs/8-settings-integration",
+      "origin/docs/baseline-5-accepted",
+      "origin/feat/10-market-explorer",
+      "origin/feat/15-data-status",
+      "origin/feat/16-portfolio",
+      "origin/feat/20-watchlist",
+      "origin/feat/21-backtest",
+      "origin/feat/23-journal",
+      "origin/feat/24-design",
+      "origin/feat/6-common-state",
+      "origin/feat/7-market-data",
+      "origin/feat/8-connection-settings",
+      "origin/feat/trading-workbench"
+    ],
+    "limit": "No initial ls-remote snapshot was saved. Absence/deletion time of 21 old merged branches is unverified. No branch deletion was performed in this integration; auto-delete was false before both merges."
+  }
 }
