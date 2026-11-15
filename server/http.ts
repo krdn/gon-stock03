@@ -10,10 +10,11 @@ import { Store } from './store.ts';
 import { PaperBroker } from './paper.ts';
 import type { StateSnapshot } from '../shared/model.ts';
 import { emptyStatus } from '../shared/status.ts';
+import { MarketData } from './market-data.ts';
 
-async function body(req: IncomingMessage) {
+async function body(req: IncomingMessage, limit = 16384) {
   const chunks: Buffer[] = []; let size = 0;
-  for await (const chunk of req) { size += chunk.length; if (size > 16384) throw new Error('입력 크기 제한을 초과했습니다.'); chunks.push(chunk); }
+  for await (const chunk of req) { size += chunk.length; if (size > limit) throw new Error('입력 크기 제한을 초과했습니다.'); chunks.push(chunk); }
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as unknown; } catch { throw new Error('올바른 JSON 입력이 필요합니다.'); }
 }
 function json(res: ServerResponse, status: number, data: unknown) {
@@ -21,6 +22,7 @@ function json(res: ServerResponse, status: number, data: unknown) {
 }
 export function makeServer(store: Store, kis = KisClient.fromEnvironment(), ports = [4303, 4304]) {
   const paper = new PaperBroker(store, kis);
+  const market = new MarketData(store, kis);
   const instanceId = randomUUID();
   const origins = new Set(ports.flatMap(port => [`http://127.0.0.1:${port}`, `http://localhost:${port}`]));
   const hosts = new Set([...origins].map(origin => new URL(origin).host));
@@ -34,10 +36,19 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         json(res, 200, snapshot); return;
       }
       if (path === '/api/kis/ledger' && req.method === 'GET') { json(res, 200, { orders: store.paperOrders() }); return; }
+      if (path === '/api/data/master' && req.method === 'GET') { json(res, 200, store.masterData()); return; }
+      if (path === '/api/data/daily' && req.method === 'GET') { json(res, 200, { runs: store.dailyRuns() }); return; }
+      if (path.startsWith('/api/data/daily/') && req.method === 'GET') {
+        const id = idInput.parse({ id: path.slice('/api/data/daily/'.length) }).id;
+        const run = store.dailyRun(id); json(res, run ? 200 : 404, run ? { run, bars: store.dailyBars(id) } : { error: '수집 ID를 찾지 못했습니다.' }); return;
+      }
       if (path.startsWith('/api/')) {
         if (req.method !== 'POST') { json(res, 405, { error: '허용하지 않는 요청 방식입니다.' }); return; }
         if (req.headers['x-workbench'] !== 'local' || !req.headers['content-type']?.startsWith('application/json')) { json(res, 403, { error: '워크스페이스 요청 검증에 실패했습니다.' }); return; }
-        const input = await body(req);
+        const input = await body(req, path === '/api/data/daily' ? 65536 : 16384);
+        if (path === '/api/data/master/refresh') { json(res, 200, await market.refreshMaster()); return; }
+        if (path === '/api/data/daily') { json(res, 200, { run: market.start(input) }); return; }
+        if (path === '/api/data/daily/step') { json(res, 200, { run: await market.step(idInput.parse(input).id) }); return; }
         if (path === '/api/kis/check') { const connection = await kis.balance(); json(res, 200, { connection, message: 'KIS 모의 잔고 조회를 확인했습니다.' }); return; }
         if (path === '/api/kis/market') {
           const code = codeSchema.parse((input as { code?: unknown })?.code);

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { ConnectionState, KisQuote, KisBar, BrokerOrder } from '../shared/model.ts';
 import type { OrderInput } from '../shared/contracts.ts';
 import { disconnectedConnection, freshness, QUOTE_REFRESH_MS } from '../shared/status.ts';
+import { dailyInput, marketDate, type DailyInput, type DailyPrice } from '../shared/market-data.ts';
 
 const BASE = 'https://openapivts.koreainvestment.com:29443';
 const amount = z.string().regex(/^\d+(\.\d+)?$/).transform(Number).refine(Number.isFinite);
@@ -14,6 +15,7 @@ const balanceSchema = z.object({
 interface Credentials { key: string; secret: string; account: string; product: string }
 export class KisRejected extends Error {}
 export class KisNotSent extends Error {}
+export class KisDataError extends Error { constructor(readonly kind: 'request' | 'contract', message: string) { super(message); } }
 class KisAuthExpired extends KisRejected {}
 export const koreaDate = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(new Date()).replaceAll('-', '');
 export class KisClient {
@@ -37,12 +39,12 @@ export class KisClient {
     if (this.pending >= 30) throw new KisNotSent('KIS 요청 대기가 많습니다. 잠시 후 다시 확인하세요.');
     this.pending++;
     const job = this.queue.catch(() => {}).then(async () => {
-      const wait = this.spacing - (Date.now() - this.lastCall);
-      if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
-      this.lastCall = Date.now();
+      for (let wait = this.spacing - (Date.now() - this.lastCall); wait > 0; wait = this.spacing - (Date.now() - this.lastCall)) await new Promise(resolve => setTimeout(resolve, wait));
+      const options: RequestInit = { ...init, redirect: 'error', signal: AbortSignal.timeout(15000) };
       beforeSend?.();
       let response: Response;
-      try { response = await this.transport(BASE + path, { ...init, redirect: 'error', signal: AbortSignal.timeout(15000) }); }
+      this.lastCall = Date.now();
+      try { response = await this.transport(BASE + path, options); }
       catch { throw new Error('KIS 모의 서버 통신 실패 또는 시간 초과입니다. 실전 서버로 대체하지 않습니다.'); }
       if (response.status === 401 && init.method !== 'POST') throw new KisAuthExpired('KIS 모의 인증이 만료되거나 거부되었습니다.');
       if (!response.ok) throw new Error(`KIS 모의 API가 HTTP ${response.status}로 거부했습니다. 모의 키·서비스 신청 상태를 확인하세요.`);
@@ -106,6 +108,27 @@ export class KisClient {
     const rows = parsed.data.output2.filter(r => /^\d{8}$/.test(r.stck_bsop_date) && /^\d+(\.\d+)?$/.test(r.stck_clpr) && Number(r.stck_clpr) > 0).map(r => ({ date: r.stck_bsop_date, close: Number(r.stck_clpr) })).sort((a, b) => a.date.localeCompare(b.date));
     if (rows.length < 2 || new Set(rows.map(r => r.date)).size !== rows.length) throw new Error('KIS 일봉이 부족하거나 중복되었습니다.');
     return rows;
+  }
+  async dailyPage(input: DailyInput, from: string, to: string): Promise<DailyPrice[]> {
+    dailyInput.strip().parse(input); marketDate.parse(from); marketDate.parse(to);
+    if (from < input.from || to > input.to || from > to) throw new Error('일봉 요청 기간이 올바르지 않습니다.');
+    const { data } = await this.request('/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice', 'FHKST03010100', {
+      FID_COND_MRKT_DIV_CODE: 'J', FID_INPUT_ISCD: input.code, FID_INPUT_DATE_1: from, FID_INPUT_DATE_2: to,
+      FID_PERIOD_DIV_CODE: 'D', FID_ORG_ADJ_PRC: input.adjustment === 'adjusted' ? '0' : '1',
+    }).catch(error => { throw new KisDataError('request', error instanceof Error ? error.message : 'KIS 일봉 요청에 실패했습니다.'); });
+    const parsed = z.object({ rt_cd: z.literal('0'), output2: z.array(z.object({
+      stck_bsop_date: z.string(), stck_oprc: z.string(), stck_hgpr: z.string(), stck_lwpr: z.string(), stck_clpr: z.string(), acml_vol: z.string(),
+    })).max(100) }).safeParse(data);
+    if (!parsed.success) throw new KisDataError('contract', 'KIS 일봉 응답 계약이 일치하지 않습니다.');
+    return parsed.data.output2.filter(row => !Object.values(row).every(value => value === '')).map(row => {
+      const date = marketDate.safeParse(row.stck_bsop_date);
+      const values = [row.stck_oprc, row.stck_hgpr, row.stck_lwpr, row.stck_clpr, row.acml_vol];
+      if (!date.success || date.data < from || date.data > to || !values.every(value => /^\d+$/.test(value) && Number.isSafeInteger(Number(value)))) throw new KisDataError('contract', 'KIS 일봉 날짜·가격·거래량 또는 기간 경계가 올바르지 않습니다.');
+      const [open, high, low, close, volume] = values.map(Number);
+      const suspended = open === 0 && high === 0 && low === 0 && volume === 0;
+      if (close <= 0 || (!suspended && (open <= 0 || low <= 0 || high <= 0 || low > Math.min(open, close) || high < Math.max(open, close) || low > high))) throw new KisDataError('contract', 'KIS 일봉 가격 또는 고가·저가 관계가 올바르지 않습니다.');
+      return { date: date.data, open, high, low, close, volume };
+    });
   }
   async buyingPower(code: string, price: number) {
     const { data } = await this.request('/uapi/domestic-stock/v1/trading/inquire-psbl-order', 'VTTC8908R', { ...this.accountParams(), PDNO: code, ORD_UNPR: String(price), ORD_DVSN: '00', CMA_EVLU_AMT_ICLD_YN: 'N', OVRS_ICLD_YN: 'N' });
