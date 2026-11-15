@@ -76,22 +76,18 @@
   "decisions": "React/TypeScript+Vite SPA. 개인 PC 단일 사용자이므로 Node24+SQLite로 런타임 하나와 로컬 파일 DB를 사용한다. Rust/PostgreSQL 기본안은 서버·다중 사용자 요구 때 재평가. 데모와 KIS 모의 환경을 분리하고 실전 주문 미지원. 비밀값은 서버 Infisical 주입.",
   "status": "reviewed",
   "task_context": {
-    "issue": "https://github.com/krdn/gon-stock03/issues/15",
-    "checked_at": "2026-11-15T11:18:11.057203+00:00",
+    "issue": "https://github.com/krdn/gon-stock03/issues/21",
+    "checked_at": "2026-11-15T12:14:40.892220+00:00",
     "sources": [
       {
         "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_daily_itemchartprice/inquire_daily_itemchartprice.py",
-        "finding": "공식 예제에서 실전/모의 최대100건, J=KRX, D=일봉, 0=수정주가/1=원주가를 재확인했다."
+        "finding": "공식 예제에서 최대100건, J=KRX, D=일봉, 0=수정주가/1=원주가를 재확인했다. 실제 응답·공식 달력 검증은 수행하지 않았다."
       },
       {
-        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_time_itemchartprice/inquire_time_itemchartprice.py",
-        "finding": "당일분봉 최대30건·전일분봉 미제공을 재확인했다. 장기 분봉 수집은 이번 화면 범위 밖이다."
-      },
-      {
-        "url": "https://github.com/koreainvestment/open-trading-api/blob/main/stocks_info/kis_kospi_code_mst.py",
-        "finding": "공개 마스터 URL, CP949와 고정폭 파싱을 재확인했다. 공식 기준 거래일은 수집시각으로 추정하지 않는다. 예제의 TLS 해제는 사용하지 않는다."
+        "url": "https://nodejs.org/api/sqlite.html",
+        "finding": "기존 SQLite 파일 DB·바인딩·동기 조회 계약을 유지한다. 현재 문서는 v26이므로 Node24 실제 저장·재시작 검증을 별도로 수행한다. v24 문서 URL은 도구 접근 실패."
       }
     ],
-    "decisions": "C01 상태와 C02 SQLite 및 GET API를 재사용하는 조회 화면. DEMO·공개 마스터·KIS 모의 일봉을 분리하고 수집 완료/달력 대조/신선도를 구분한다. 실제 수집 조작·주문·전략·WebSocket 변경 없음. 입력 달력의 출처 진위는 인증하지 않는다."
+    "decisions": "C02 저장 일봉만 선택하고 부분/달력 미대조/누락은 거부한다. 선택 기간 안의 봉으로만 종가 신호를 계산해 다음 시가에 체결한다. 입력 봉·설정·출처·엔진 버전의 SHA256과 결과를 SQLite에 불변 저장한다. DEMO 기존 합성 경로와 분리한다. 세금·배당·기업행사·호가/유동성 미모델링 및 수정주가 비PIT 한계를 표시한다."
   }
 }

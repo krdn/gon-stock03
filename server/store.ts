@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { initialState } from '../shared/fixtures.ts';
 import type { State, PaperOrder } from '../shared/model.ts';
+import type { Experiment } from '../shared/backtest.ts';
 import { record } from './engine.ts';
 import type { DailyRun, MasterInstrument, MasterSnapshot, MasterState, RemovedInstrument, StoredBar } from '../shared/market-data.ts';
 
@@ -11,6 +12,7 @@ export class Store {
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1), schema_version INTEGER NOT NULL, body TEXT NOT NULL);');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_orders (request_id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS paper_baseline (day TEXT PRIMARY KEY, equity REAL NOT NULL);');
     this.db.exec('CREATE TABLE IF NOT EXISTS market_master (exchange TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS market_instruments (code TEXT PRIMARY KEY, exchange TEXT NOT NULL, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS daily_runs (id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS daily_bars (run_id TEXT NOT NULL, date TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(run_id,date));');
+    this.db.exec('CREATE TABLE IF NOT EXISTS backtest_experiments (id TEXT PRIMARY KEY, body TEXT NOT NULL);');
     this.db.exec('CREATE TABLE IF NOT EXISTS market_removed (code TEXT PRIMARY KEY, body TEXT NOT NULL);');
     this.db.prepare('INSERT OR IGNORE INTO workspace VALUES (1, 1, ?)').run(JSON.stringify(initialState()));
     const row = this.db.prepare('SELECT schema_version FROM workspace WHERE id=1').get();
@@ -69,6 +71,12 @@ export class Store {
       this.db.exec('COMMIT');
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
+  experiments() { return this.db.prepare('SELECT body FROM backtest_experiments ORDER BY rowid DESC').all().map(row => {
+    const experiment = JSON.parse(row.body as string) as Experiment;
+    return { id: experiment.id, createdAt: experiment.createdAt, input: experiment.snapshot.input, bars: experiment.snapshot.bars.length };
+  }); }
+  experiment(id: string): Experiment | undefined { const row = this.db.prepare('SELECT body FROM backtest_experiments WHERE id=?').get(id); return row ? JSON.parse(row.body as string) as Experiment : undefined; }
+  saveExperiment(experiment: Experiment) { this.db.prepare('INSERT OR IGNORE INTO backtest_experiments VALUES (?,?)').run(experiment.id, JSON.stringify(experiment)); }
   paperOrders(): PaperOrder[] { return this.db.prepare('SELECT body FROM paper_orders ORDER BY rowid DESC').all().map(row => JSON.parse(row.body as string) as PaperOrder); }
   savePaper(order: PaperOrder) { this.db.prepare('INSERT INTO paper_orders (request_id,body) VALUES (?,?) ON CONFLICT(request_id) DO UPDATE SET body=excluded.body').run(order.requestId, JSON.stringify(order)); }
   paperBaseline(day: string, value: number) {

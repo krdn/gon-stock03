@@ -10,6 +10,7 @@ import { Store } from './store.ts';
 import { PaperBroker } from './paper.ts';
 import type { StateSnapshot } from '../shared/model.ts';
 import { emptyStatus } from '../shared/status.ts';
+import { createExperiment, replayExperiment } from './backtest.ts';
 import { MarketData } from './market-data.ts';
 import { marketQuoteInput, masterCodeSchema } from '../shared/market-data.ts';
 
@@ -43,6 +44,11 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         const id = idInput.parse({ id: path.slice('/api/data/daily/'.length) }).id;
         const run = store.dailyRun(id); json(res, run ? 200 : 404, run ? { run, bars: store.dailyBars(id) } : { error: '수집 ID를 찾지 못했습니다.' }); return;
       }
+      if (path === '/api/backtest/experiments' && req.method === 'GET') { json(res, 200, { experiments: store.experiments() }); return; }
+      if (path.startsWith('/api/backtest/experiments/') && req.method === 'GET') {
+        const experiment = store.experiment(idInput.parse({ id: path.slice('/api/backtest/experiments/'.length) }).id);
+        json(res, experiment ? 200 : 404, experiment ? { experiment } : { error: '저장 실험을 찾지 못했습니다.' }); return;
+      }
       if (path.startsWith('/api/')) {
         if (req.method !== 'POST') { json(res, 405, { error: '허용하지 않는 요청 방식입니다.' }); return; }
         if (req.headers['x-workbench'] !== 'local' || !req.headers['content-type']?.startsWith('application/json')) { json(res, 403, { error: '워크스페이스 요청 검증에 실패했습니다.' }); return; }
@@ -65,6 +71,8 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         if (path === '/api/kis/order') {
           const order = await paper.submit(orderInput.parse(input)); json(res, 200, { order, message: order.message, warning: order.status === 'unknown' || order.status === 'rejected' }); return;
         }
+        if (path === '/api/backtest/daily') { json(res, 200, { experiment: createExperiment(store, input), message: '저장 일봉의 입력과 결과를 보존했습니다.' }); return; }
+        if (path === '/api/backtest/replay') { const replay = replayExperiment(store, idInput.parse(input).id); json(res, 200, { ...replay, message: replay.matches ? '고정 입력 재현 결과가 일치합니다.' : '재현 불일치: 엔진·저장 결과를 점검하세요.', warning: !replay.matches }); return; }
         if (path === '/api/backtest') {
           const config = backtestInput.parse(input); const instrument = store.read().instruments.find(s => s.code === config.code);
           if (!instrument) throw new Error('지원하지 않는 종목입니다.');
@@ -118,7 +126,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       const type = ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' } as Record<string, string>)[extname(file)] ?? 'application/octet-stream';
       res.writeHead(200, { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' }); res.end(req.method === 'HEAD' ? undefined : bytes);
     } catch (error) {
-      if (path === '/api/watchlist' && error instanceof Error && 'code' in error && error.code === 'ERR_SQLITE_ERROR') { json(res, 500, { error: storageErrorMessage }); return; }
+      if ((path === '/api/watchlist' || path.startsWith('/api/backtest/')) && error instanceof Error && 'code' in error && error.code === 'ERR_SQLITE_ERROR') { json(res, 500, { error: storageErrorMessage }); return; }
       const message = error instanceof ZodError ? '입력값을 확인하세요. 범위·필수 항목 또는 단기/장기 기간이 올바르지 않습니다.' : error instanceof Error ? error.message : '요청 처리에 실패했습니다.';
       if (path === '/api/orders') {
         try { store.update(state => record(state, '주문 요청 차단', message, 'warning')); }
