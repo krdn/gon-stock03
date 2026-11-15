@@ -1,0 +1,15 @@
+{
+  "requested_model": "gemini-4-argon-high",
+  "requested_effort": "high",
+  "init_model": "gemini-4-argon-high",
+  "result_status": "SUCCESS",
+  "duration_seconds": 72.438396436,
+  "review_input_sha256": "243be0d42b883f9d92fef1d24a7edcac1251a4d57687b78e24bc925ad456c869",
+  "production_sha256": {
+    "src/pages/Design.tsx": "eaf6020f91c4c5fb6c752ef84ba6adbd79db7590e6bb5ce5f73b09c1d56eee21",
+    "src/specs.ts": "07e74ae1afb04070951c1d1c2342e5c8ac4d7f86ca48de38708aeea029dfc511",
+    "public/project-map.html": "83430b917440cc02ab34d8282b53209c617fec267343e570e0fc2e202a75c366"
+  },
+  "limits": "CLI request/init model match. Server model and effort not independently attested. Reviewer read diff only, not screenshots. After review input was sent, the reload viewport assertion changed from ratio1 to0.99 for observed 0.3125px rounding; production files unchanged. Final full browser run 67/67 PASS separately confirmed.",
+  "response": "**판정: PASS (제한사항 포함)**  \n**모델 식별자**: Gemini 4 Argon (High)\n\n제공된 diff(`public/project-map.html`, `src/pages/Design.tsx`, `src/specs.ts`, `tests/browser/workbench.spec.ts`)를 기준으로 P1/P2 결함은 발견되지 않았습니다.\n\n### 검토 확인 항목\n1. **15개 화면 ↔ 15개 이슈·단계·계약·근거 매핑 (`src/specs.ts`, `src/pages/Design.tsx`)**\n   - 15개 화면(`dashboard`, `market`, `watchlist`, `trade`, `orders`, `portfolio`, `strategies`, `backtest`, `risk`, `journal`, `alerts`, `data`, `settings`, `design`, `paper`)이 각각 고유 GitHub 이슈(`#8`, `#10`~`#18`, `#20`~`#24`) 및 단계(`01 기반` ~ `05 자동매매`)와 1:1로 매핑되어 있으며, 로드맵의 공통·실증 이슈(`#5`, `#6`, `#7`, `#9`, `#19`, `#25`)와도 정합합니다.\n   - `sources` 탭의 API 계약 테이블에서도 기존 `design` 제외 필터가 제거되어 15개 화면 전체가 표시됩니다.\n2. **목표 계약 vs 현재 동작 및 DEMO/KIS/후속 경계 분리**\n   - 화면 상세 패널에서 `현재 동작 범위`(`work.current`), `후속·검증 경계`(`work.boundary`), `목표 계약`이 분리되어 있으며, 구현 근거 링크가 `main` 브랜치를 가리키고 검증 SHA·수용 증거는 이슈에서 확인한다는 안내가 명시되어 있습니다.\n3. **정적 UI 내 가변 진행 상태 제거**\n   - `Design.tsx` 로드맵의 가변 상태 배지(`1차 구현`, `2차 검증 대상` 등)와 `project-map.html`의 완료·검증 상태 문구가 정적 구분값(`설계·운영 경계`, `화면 계약` 등)으로 교체되었고, 진행·수용 상태는 GitHub Project(`projects/25`) 및 개별 이슈 링크로 위임되었습니다.\n4. **로컬 프로젝트 지도 초안 경계·키 호환성·인젝션 방지 (`public/project-map.html`)**\n   - 기존 5개 노드 ID(`requirements`, `research`, `screens`, `local-features`, `kis-integration`)와 `localStorage` 키 규칙(`gon-project-map:gon-stock03:<id>`)이 그대로 보존되었습니다.\n   - 초안 저장·복사·다운로드 문구와 패킷 본문에 `실행·승인 아님` 및 `전송 상태: 미전송`이 명시되어 있고, 패킷 미리보기는 `textContent`를 사용해 스크립트/HTML 인젝션이 발생하지 않으며 `localStorage` 차단 시에도 입력값 유지 및 다운로드 안내로 안전하게 복구됩니다.\n5. **URL 입력 경계 및 키보드·모바일 접근성**\n   - `tab` 미등록 값, `screen` 미등록 값, `step` 비정수·음수·범위 초과(`1.5`, `-1`, `Infinity`, `no-step` 등) 입력 시 각각 `'overview'`, `screens[0]`, `0`으로 안전하게 폴백합니다.\n   - 주제 탭·화면 선택·주문 단계 버튼에 `aria-pressed`가 부여되었고, 포커스 이동 및 `[tab, selected.id]` 변경 시 `scrollIntoView({ block: 'nearest', inline: 'nearest' })`로 모바일 가로 잘림과 딥링크/새로고침 시 선택 항목 노출을 처리하며 상태 폴링 시 불필요하게 재실행되지 않습니다.\n\n### 제한사항 (검증 제외 범위)\n- 제공된 자료만 검토한 읽기 전용 리뷰이며, 스크린샷 이미지(`1440x1050`, `390x844`, 모바일 지도)는 제공되지 않아 시각적 레이아웃은 직접 육안 검증하지 않았습니다.\n- 딥링크 스크롤 `useEffect` 추가 이후 전체 브라우저 회귀 테스트(67개) 재실행 완료 여부는 본 리뷰 시점에 최종 결과 대기 상태입니다.\n- 실제 KIS 일봉 수집·공식 거래일 달력 대조·실제 모의 주문/취소/불명 복구·연속 전략 실행·장중 통합 수용(`#25`)은 이번 변경의 실증 범위에 포함되지 않습니다.\n"
+}

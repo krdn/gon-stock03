@@ -168,6 +168,89 @@ test('journal keeps new typing while an earlier save response is pending', async
   expect((await (await page.request.get('/api/state')).json()).journal.some((entry: { text: string }) => entry.text === '응답 대기 중 새로 작성한 메모')).toBe(false);
 });
 
+test('design connects every screen to its issue, stage, contract and implementation evidence', async ({ page }) => {
+  const mapping = [
+    ['dashboard', 18, '04 주문·위험'], ['market', 10, '02 데이터·조회'], ['watchlist', 20, '03 조회·주문 계약'],
+    ['trade', 12, '04 주문·위험'], ['orders', 13, '04 주문·위험'], ['portfolio', 16, '02 데이터·조회'],
+    ['strategies', 22, '05 자동매매'], ['backtest', 21, '03 조회·주문 계약'], ['risk', 11, '04 주문·위험'],
+    ['journal', 23, '01 기반'], ['alerts', 17, '04 주문·위험'], ['data', 15, '02 데이터·조회'],
+    ['settings', 8, '02 데이터·조회'], ['design', 24, '01 기반'], ['paper', 14, '04 주문·위험'],
+  ] as const;
+  expect(screens.map(s => s.id)).toEqual(mapping.map(([id]) => id));
+  await page.goto('/design?tab=screens');
+  for (const [id, issue, stage] of mapping) {
+    const screen = screens.find(s => s.id === id)!;
+    const button = page.locator('.spec-nav').getByRole('button', { name: new RegExp(screen.title) });
+    await button.click();
+    await expect(button).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('link', { name: `작업·완료 기준 #${issue}`, exact: true })).toHaveAttribute('href', `https://github.com/krdn/gon-stock03/issues/${issue}`);
+    await expect(page.getByRole('link', { name: '구현 근거', exact: true })).toHaveAttribute('href', /^https:\/\/github.com\/krdn\/gon-stock03\/blob\/main\/src\//);
+    await expect(page.getByText(stage, { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '현재 동작 범위', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '후속·검증 경계', exact: true })).toBeVisible();
+    await expect(page.locator('.api-chips')).toContainText(screen.api[0]);
+    await expect(page.getByRole('link', { name: '화면 열기', exact: true })).toHaveAttribute('href', '/' + id);
+  }
+  await page.getByRole('button', { name: '리서치·API', exact: true }).click();
+  await expect(page.locator('tbody tr')).toHaveCount(15);
+  await page.getByRole('button', { name: '개발 단계', exact: true }).click();
+  await expect(page.locator('.roadmap')).toContainText('06 장중 실증');
+  await expect(page.getByRole('link', { name: '현재 진행 상태 · GitHub', exact: true })).toHaveAttribute('href', 'https://github.com/users/krdn/projects/25');
+});
+
+test('design supports keyboard selection and mobile navigation across every topic', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/design?screen=design');
+  const topics = page.getByRole('group', { name: '설계 주제' }).getByRole('button');
+  await topics.first().focus();
+  for (let i = 0; i < 6; i++) {
+    await expect(topics.nth(i)).toBeFocused(); await page.keyboard.press('Enter');
+    await expect(topics.nth(i)).toHaveAttribute('aria-pressed', 'true');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    if (i < 5) await page.keyboard.press('Tab');
+  }
+  await topics.nth(1).focus(); await page.keyboard.press('Space');
+  const choices = page.locator('.spec-nav button'); await choices.first().focus();
+  for (let i = 0; i < 15; i++) {
+    await expect(choices.nth(i)).toBeFocused(); await page.keyboard.press('Enter');
+    await expect(choices.nth(i)).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('link', { name: '화면 열기', exact: true })).toHaveAttribute('href', '/' + screens[i].id);
+    const bounds = await choices.nth(i).evaluate(el => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, width: innerWidth }; });
+    expect(bounds.left >= 0 && bounds.right <= bounds.width, `${screens[i].id}: ${JSON.stringify(bounds)}`).toBe(true);
+    if (i < 14) await page.keyboard.press('Tab');
+  }
+  await page.reload(); await expect(choices.last()).toHaveAttribute('aria-pressed', 'true');
+  await expect(choices.last()).toBeInViewport({ ratio: 0.99 });
+});
+
+test('design malformed topic and fractional step links remain navigable', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/design?tab=missing');
+  await expect(page.getByRole('heading', { name: '화면 지도', exact: true })).toBeVisible();
+  for (const step of ['1.5', '-1', 'Infinity', 'no-step']) {
+    await page.goto('/design?tab=flow&step=' + step);
+    await expect(page.locator('.step-detail h3')).toHaveText('입력·확인');
+  }
+  expect(errors).toEqual([]);
+});
+
+test('project map local drafts never send requests or approve execution, including blocked storage', async ({ page }) => {
+  await page.addInitScript(() => { Storage.prototype.setItem = () => { throw new DOMException('blocked', 'SecurityError'); }; });
+  await page.goto('/project-map.html#screens');
+  const requests: string[] = []; page.on('request', req => requests.push(req.url()));
+  await expect(page.getByRole('link', { name: '현재 진행 상태 · GitHub' })).toHaveAttribute('href', 'https://github.com/users/krdn/projects/25');
+  await page.getByRole('textbox', { name: '이 부분에 수정 요청 남기기' }).fill('<script>검토 요청</script>');
+  const save = page.getByRole('button', { name: '초안 저장', exact: true }); await save.focus(); await page.keyboard.press('Enter');
+  await expect(page.getByRole('status')).toContainText('브라우저 저장이 제한');
+  await expect(page.getByRole('textbox')).toHaveValue('<script>검토 요청</script>');
+  await page.locator('summary').click();
+  await expect(page.locator('#packet')).toContainText('실행·승인 아님');
+  await expect(page.locator('#packet script')).toHaveCount(0);
+  const downloading = page.waitForEvent('download'); await page.getByRole('button', { name: '요청 파일 받기', exact: true }).click();
+  const content = await readFile((await (await downloading).path())!, 'utf8');
+  expect(content).toContain('전송 상태: 미전송'); expect(content).toContain('실행·승인 아님'); expect(requests).toEqual([]);
+});
+
 test('project map selects a stable node, restores draft and downloads request without AI transmission', async ({ page }) => {
   await page.goto('/project-map.html');
   await page.getByRole('button', { name: /^4 로컬 기능 구현/ }).click();
