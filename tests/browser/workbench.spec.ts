@@ -98,6 +98,76 @@ test('journal treats input as text and saves; missing KIS credentials show failu
   await expect(page.getByRole('alert')).toContainText('환경변수'); await expect(page.getByText('조회 확인', { exact: true })).toHaveCount(0);
   await page.goto('/paper'); await expect(page.getByRole('button', { name: 'KIS 모의 주문 확인', exact: true })).toBeDisabled();
 });
+test('journal rejects empty and whitespace notes without losing the draft', async ({ page }) => {
+  await page.goto('/journal');
+  await expect(page.getByRole('button', { name: '일지 저장' })).toBeEnabled();
+  const before = (await (await page.request.get('/api/state')).json()).journal;
+  await page.getByRole('button', { name: '일지 저장' }).click();
+  expect(await page.getByLabel('매매 메모').evaluate((node: HTMLTextAreaElement) => node.validity.valueMissing)).toBe(true);
+  await page.getByLabel('매매 메모').fill('  \n\t ');
+  await page.getByRole('button', { name: '일지 저장' }).click();
+  await expect(page.getByRole('alert')).toContainText('입력값을 확인하세요');
+  await expect(page.getByLabel('매매 메모')).toHaveValue('  \n\t ');
+  expect((await (await page.request.get('/api/state')).json()).journal).toEqual(before);
+  await expect(page.getByText('변경 사항을 저장했습니다.', { exact: true })).toHaveCount(0);
+});
+
+test('journal separates first empty state from no search results and searches body/code', async ({ page }) => {
+  const state = snapshot(); state.journal = [];
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.goto('/journal'); await expect(page.getByText('기록이 쌓이면 원칙이 보입니다')).toBeVisible();
+  state.journal = [{ id: 'journal-search', code: '005930', date: '2026-11-15T12:00:00Z', text: '진입 원칙 지키기' }];
+  await page.reload();
+  for (const query of ['원칙', '005930']) {
+    await page.getByLabel('일지 검색').fill(query); await expect(page.locator('.journal-entry')).toHaveCount(1);
+  }
+  await page.getByLabel('일지 검색').fill('일치하지 않는 검색어');
+  await expect(page.getByText('검색 결과가 없습니다', { exact: true })).toBeVisible();
+  await expect(page.getByText('기록이 쌓이면 원칙이 보입니다')).toHaveCount(0);
+  await page.getByLabel('일지 검색').fill(''); await expect(page.locator('.journal-entry')).toHaveCount(1);
+});
+
+test('journal save failure retains draft and never reports success; retry persists safely on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const text = '<img src=x onerror="window.journalExecuted=true"><script>window.journalExecuted=true</script>\n' + '긴메모'.repeat(90);
+  await page.goto('/journal'); await expect(page.getByRole('button', { name: '일지 저장' })).toBeEnabled();
+  await page.getByLabel('매매 메모').fill(text);
+  await page.route('**/api/journal', route => route.fulfill({ status: 500, json: { error: '요청과 이벤트 저장에 실패했습니다. 저장소 상태를 확인하세요.' } }));
+  await page.getByRole('button', { name: '일지 저장' }).click();
+  await expect(page.getByRole('alert')).toContainText('저장에 실패');
+  await expect(page.getByLabel('매매 메모')).toHaveValue(text);
+  await expect(page.getByText('변경 사항을 저장했습니다.', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.journal-entry').filter({ hasText: text })).toHaveCount(0);
+  await page.unroute('**/api/journal');
+  await page.getByRole('button', { name: '일지 저장' }).click();
+  await expect(page.getByLabel('매매 메모')).toHaveValue('');
+  await expect(page.locator('.journal-entry').filter({ hasText: text })).toHaveCount(1);
+  await page.reload();
+  const entry = page.locator('.journal-entry').filter({ hasText: text });
+  await expect(entry).toBeVisible(); await expect(entry.locator('img,script')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as Window & { journalExecuted?: boolean }).journalExecuted)).toBeUndefined();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+});
+
+test('journal keeps new typing while an earlier save response is pending', async ({ page }) => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let received!: () => void;
+  const requestReceived = new Promise<void>(resolve => { received = resolve; });
+  await page.route('**/api/journal', async route => { received(); await gate; await route.continue(); });
+  await page.goto('/journal'); await expect(page.getByRole('button', { name: '일지 저장' })).toBeEnabled();
+  await page.getByLabel('매매 메모').fill('먼저 저장한 메모');
+  await page.getByRole('button', { name: '일지 저장' }).click(); await requestReceived;
+  try {
+    await expect(page.getByRole('button', { name: '일지 저장' })).toBeDisabled();
+    await page.getByLabel('매매 메모').fill('응답 대기 중 새로 작성한 메모');
+  } finally { release(); }
+  await expect(page.getByRole('button', { name: '일지 저장' })).toBeEnabled();
+  await expect(page.locator('.journal-entry').filter({ hasText: '먼저 저장한 메모' })).toHaveCount(1);
+  await expect(page.getByLabel('매매 메모')).toHaveValue('응답 대기 중 새로 작성한 메모');
+  expect((await (await page.request.get('/api/state')).json()).journal.some((entry: { text: string }) => entry.text === '응답 대기 중 새로 작성한 메모')).toBe(false);
+});
+
 test('project map selects a stable node, restores draft and downloads request without AI transmission', async ({ page }) => {
   await page.goto('/project-map.html');
   await page.getByRole('button', { name: /^4 로컬 기능 구현/ }).click();

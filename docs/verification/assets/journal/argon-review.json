@@ -1,0 +1,17 @@
+{
+  "requested_model": "gemini-4-argon-high",
+  "requested_effort": "high",
+  "init_model": "gemini-4-argon-high",
+  "conversation_id": "9094856a-1e1a-4fdb-af8d-1c9af2f7b0c7",
+  "status": "SUCCESS",
+  "verdict": "PASS",
+  "findings": [],
+  "step_types": [
+    "agent_response",
+    "user_input"
+  ],
+  "input_sha256": "dd3ff4e49151daa986d048f327d961337a7cf33d944659b82e18c1558f2e290b",
+  "response_sha256": "458cfeeab56ab5029511346c5209be1034d97c05759eb2a9e45a676953af8f44",
+  "reviewed_diff_sha256": "02030240ca8f6ed6cead7189d8fbcfb7ec40e64f4342c03e75a696becb95e4f6",
+  "limits": "제공한 diff와 코드·실행 결과의 정적 리뷰. 리뷰어 자체 테스트·시각 검사는 없음. 요청/init 모델 일치. 서버 내부 모델과 effort는 독립 확인 불가."
+}
