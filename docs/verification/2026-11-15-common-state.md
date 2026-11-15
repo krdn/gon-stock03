@@ -45,3 +45,9 @@
 ## 원격 증거
 
 구현 SHA `0b202401700d56753edffc512256e4e6920b2f60`: [PR #27](https://github.com/krdn/gon-stock03/pull/27)의 [앱 CI](https://github.com/krdn/gon-stock03/actions/runs/43668384738)·[구성 CI](https://github.com/krdn/gon-stock03/actions/runs/43668384828) PASS. 로컬 결과와 원격 결과를 각각 확인했다. 사용자 수용·병합·실제 KIS 실증은 이 기록의 완료 범위에 포함하지 않는다.
+
+## 통합 후 확인 — 2026-11-15
+
+사용자의 새 탭 통합 진행 지시에 따라 PR #27을 `8b280229671bb8452c66ecc4939e87fda569c697`로 병합했다. [통합 근거](https://github.com/krdn/gon-stock03/pull/27#issuecomment-6888321579). PR 최종 head `e37d7f8`와 병합 tree가 같고, main [앱 CI](https://github.com/krdn/gon-stock03/actions/runs/43670725890)·[구성 CI](https://github.com/krdn/gon-stock03/actions/runs/43670725872)가 SUCCESS다. 앱 로그에서 단위38/38·브라우저21/21·TypeScript/빌드 성공을 확인했다.
+
+이번 세션은 제품 코드·외부 리뷰를 추가하지 않았다. #6을 completed/Done으로 마감하고 native 선행을 조회해 #7·#8을 Ready로 갱신했다. 별도 사용자 수용 발언·실제 KIS 실증은 새로 확인하지 않았다. 완료 기록 PR과 최종 원격 확인은 [이슈 #6](https://github.com/krdn/gon-stock03/issues/6)에 연결한다.
