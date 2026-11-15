@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import type { Connection, KisQuote, KisBar, BrokerOrder } from '../shared/model.ts';
+import type { ConnectionState, KisQuote, KisBar, BrokerOrder } from '../shared/model.ts';
 import type { OrderInput } from '../shared/contracts.ts';
+import { disconnectedConnection, freshness, QUOTE_REFRESH_MS } from '../shared/status.ts';
 
 const BASE = 'https://openapivts.koreainvestment.com:29443';
 const amount = z.string().regex(/^\d+(\.\d+)?$/).transform(Number).refine(Number.isFinite);
@@ -13,18 +14,28 @@ const balanceSchema = z.object({
 interface Credentials { key: string; secret: string; account: string; product: string }
 export class KisRejected extends Error {}
 export class KisNotSent extends Error {}
+class KisAuthExpired extends KisRejected {}
 export const koreaDate = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(new Date()).replaceAll('-', '');
 export class KisClient {
   private token?: { value: string; until: number };
   private auth?: Promise<string>;
   private queue: Promise<unknown> = Promise.resolve();
   private lastCall = 0;
+  private pending = 0;
+  private nextAuthAt = 0;
+  private authError?: Error;
+  private balanceRequest?: Promise<ConnectionState>;
+  private accountState = disconnectedConnection();
+  private quotes = new Map<string, KisQuote>();
+  private quoteRequests = new Map<string, Promise<KisQuote>>();
   constructor(private credentials: Credentials, private transport: typeof fetch = fetch, private spacing = 1100) {}
   static fromEnvironment() {
     return new KisClient({ key: process.env.KIS_APP_KEY ?? '', secret: process.env.KIS_APP_SECRET ?? '', account: process.env.KIS_CANO ?? '', product: process.env.KIS_ACNT_PRDT_CD ?? '' });
   }
   configured() { const c = this.credentials; return Boolean(c.key && c.secret && /^\d{8}$/.test(c.account) && /^\d{2}$/.test(c.product)); }
   private async send(path: string, init: RequestInit, beforeSend?: () => void) {
+    if (this.pending >= 30) throw new KisNotSent('KIS 요청 대기가 많습니다. 잠시 후 다시 확인하세요.');
+    this.pending++;
     const job = this.queue.catch(() => {}).then(async () => {
       const wait = this.spacing - (Date.now() - this.lastCall);
       if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
@@ -33,28 +44,54 @@ export class KisClient {
       let response: Response;
       try { response = await this.transport(BASE + path, { ...init, redirect: 'error', signal: AbortSignal.timeout(15000) }); }
       catch { throw new Error('KIS 모의 서버 통신 실패 또는 시간 초과입니다. 실전 서버로 대체하지 않습니다.'); }
+      if (response.status === 401 && init.method !== 'POST') throw new KisAuthExpired('KIS 모의 인증이 만료되거나 거부되었습니다.');
       if (!response.ok) throw new Error(`KIS 모의 API가 HTTP ${response.status}로 거부했습니다. 모의 키·서비스 신청 상태를 확인하세요.`);
       let data: unknown; try { data = await response.json(); } catch { throw new Error('KIS 응답 형식이 JSON이 아닙니다.'); }
       if (data && typeof data === 'object' && 'rt_cd' in data && data.rt_cd !== '0') {
         const code = 'msg_cd' in data && typeof data.msg_cd === 'string' && /^[A-Z0-9_-]{1,30}$/.test(data.msg_cd) ? data.msg_cd : 'UNKNOWN';
-        throw new KisRejected(`KIS 모의 요청 거부 (${code}). 모의 계좌·키·이용 가능 시간을 확인하세요.`);
+        if (code === 'EGW00123') throw new KisAuthExpired('KIS 모의 인증이 만료되었습니다 (EGW00123).');
+        const safeCode = [this.credentials.key, this.credentials.secret, this.credentials.account, this.token?.value].some(secret => secret && code.includes(secret)) ? 'UNKNOWN' : code;
+        throw new KisRejected(`KIS 모의 요청 거부 (${safeCode}). 모의 계좌·키·이용 가능 시간을 확인하세요.`);
       }
       return { response, data };
     });
-    this.queue = job; return job;
+    this.queue = job;
+    try { return await job; } finally { this.pending--; }
   }
   private async request(path: string, tr: string, params: Record<string, string>, post = false, continuation = '', beforeSend?: () => void) {
     let token: string;
     try { token = await this.accessToken(); }
     catch (error) { if (post) throw new KisNotSent('인증을 완료하지 못해 주문을 보내지 않았습니다.'); throw error; }
-    return this.send(path + (post ? '' : '?' + new URLSearchParams(params)), {
+    const send = (value: string) => this.send(path + (post ? '' : '?' + new URLSearchParams(params)), {
       method: post ? 'POST' : 'GET',
-      headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}`, appkey: this.credentials.key, appsecret: this.credentials.secret, tr_id: tr, tr_cont: continuation, custtype: 'P' },
+      headers: { 'Content-Type': 'application/json', authorization: `Bearer ${value}`, appkey: this.credentials.key, appsecret: this.credentials.secret, tr_id: tr, tr_cont: continuation, custtype: 'P' },
       ...(post ? { body: JSON.stringify(params) } : {}),
     }, beforeSend);
+    try { return await send(token); }
+    catch (error) {
+      if (!(error instanceof KisAuthExpired) || post) throw error;
+      if (this.token?.value === token) this.token = undefined;
+      this.authError = error;
+      const renewed = await this.accessToken();
+      try { return await send(renewed); }
+      catch (retryError) { if (retryError instanceof KisAuthExpired && this.token?.value === renewed) { this.token = undefined; this.authError = retryError; } throw retryError; }
+    }
   }
   private accountParams() { return { CANO: this.credentials.account, ACNT_PRDT_CD: this.credentials.product }; }
-  async quote(code: string): Promise<KisQuote> {
+  async quote(code: string, fresh = false): Promise<KisQuote> {
+    const cached = this.quotes.get(code);
+    if (!fresh && cached && Date.now() - Date.parse(cached.receivedAt) < QUOTE_REFRESH_MS) return cached;
+    const pending = this.quoteRequests.get(code);
+    if (!fresh && pending) return pending;
+    const request = this.loadQuote(code);
+    if (!fresh) this.quoteRequests.set(code, request);
+    try {
+      const quote = await request;
+      if (this.quotes.size >= 100) this.quotes.delete(this.quotes.keys().next().value!);
+      this.quotes.set(code, quote); return quote;
+    } finally { if (!fresh) this.quoteRequests.delete(code); }
+  }
+  private async loadQuote(code: string): Promise<KisQuote> {
     const { data } = await this.request('/uapi/domestic-stock/v1/quotations/inquire-price', 'FHKST01010100', { FID_COND_MRKT_DIV_CODE: 'J', FID_INPUT_ISCD: code });
     const parsed = z.object({ output: z.object({ stck_prpr: amount, prdy_ctrt: z.string().regex(/^-?\d+(\.\d+)?$/).transform(Number), stck_mxpr: amount, stck_llam: amount, aspr_unit: amount, temp_stop_yn: z.string() }) }).safeParse(data);
     if (!parsed.success || parsed.data.output.stck_prpr <= 0) throw new Error('KIS 현재가 응답을 확인할 수 없습니다.');
@@ -101,28 +138,54 @@ export class KisClient {
     if (!this.configured()) throw new Error('KIS 모의 환경변수가 없거나 계좌 형식이 올바르지 않습니다. Infisical 주입을 확인하세요.');
     if (this.token && this.token.until > Date.now()) return this.token.value;
     if (this.auth) return this.auth;
+    if (Date.now() < this.nextAuthAt) throw this.authError ?? new Error('KIS 인증 갱신 대기 중입니다. 1분 후 다시 확인하세요.');
     this.auth = (async () => {
-      const { data } = await this.send('/oauth2/tokenP', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ grant_type: 'client_credentials', appkey: this.credentials.key, appsecret: this.credentials.secret }) });
+      const { data } = await this.send('/oauth2/tokenP', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ grant_type: 'client_credentials', appkey: this.credentials.key, appsecret: this.credentials.secret }) }, () => { this.nextAuthAt = Date.now() + 60_000; });
       const parsed = z.object({ access_token: z.string().min(1), expires_in: z.number().positive() }).safeParse(data);
       if (!parsed.success) throw new Error('KIS 모의 토큰 발급이 거부되었습니다. 모의 전용 키인지 확인하세요.');
       this.token = { value: parsed.data.access_token, until: Date.now() + Math.max(0, parsed.data.expires_in - 60) * 1000 };
+      this.authError = undefined;
       return this.token.value;
     })();
-    try { return await this.auth; } finally { this.auth = undefined; }
+    try { return await this.auth; }
+    catch (error) { this.authError = error instanceof Error ? error : new Error('KIS 모의 인증에 실패했습니다.'); throw this.authError; }
+    finally { this.auth = undefined; }
   }
-  async balance(): Promise<Connection> {
-    const token = await this.accessToken(); const positions: NonNullable<Connection['balance']>['positions'] = [];
+  connection(): ConnectionState {
+    const status = freshness(this.accountState.status);
+    return structuredClone({ ...this.accountState, configured: this.configured(), status, connected: status.phase === 'ready' });
+  }
+  async balance(fresh = false): Promise<ConnectionState> {
+    if (fresh) while (this.balanceRequest) await this.balanceRequest.catch(() => {});
+    if (this.balanceRequest) return this.balanceRequest;
+    this.accountState.status = { ...this.accountState.status, phase: 'loading', complete: false, error: null, pages: 0 };
+    this.balanceRequest = this.loadBalance();
+    try { return await this.balanceRequest; }
+    catch (error) {
+      const message = error instanceof Error ? error.message : 'KIS 모의 잔고 조회에 실패했습니다.';
+      const previous = this.accountState.status;
+      this.accountState = { ...this.accountState, connected: false, message, status: { ...previous, phase: previous.pages > 0 ? 'partial' : this.configured() ? 'error' : 'disconnected', complete: false, observedAt: new Date().toISOString(), error: message } };
+      throw error;
+    } finally { this.balanceRequest = undefined; }
+  }
+  private async loadBalance(): Promise<ConnectionState> {
+    const positions: NonNullable<ConnectionState['balance']>['positions'] = [];
     let fk = '', nk = '', cash = 0, totalEquity = 0; const seen = new Set<string>();
     for (let page = 0; page < 50; page++) {
-      const params = new URLSearchParams({ CANO: this.credentials.account, ACNT_PRDT_CD: this.credentials.product, AFHR_FLPR_YN: 'N', OFL_YN: '', INQR_DVSN: '02', UNPR_DVSN: '01', FUND_STTL_ICLD_YN: 'N', FNCG_AMT_AUTO_RDPT_YN: 'N', PRCS_DVSN: '00', CTX_AREA_FK100: fk, CTX_AREA_NK100: nk });
-      const { response, data } = await this.send('/uapi/domestic-stock/v1/trading/inquire-balance?' + params, { headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}`, appkey: this.credentials.key, appsecret: this.credentials.secret, tr_id: 'VTTC8434R', tr_cont: page ? 'N' : '', custtype: 'P' } });
+      const params = { ...this.accountParams(), AFHR_FLPR_YN: 'N', OFL_YN: '', INQR_DVSN: '02', UNPR_DVSN: '01', FUND_STTL_ICLD_YN: 'N', FNCG_AMT_AUTO_RDPT_YN: 'N', PRCS_DVSN: '00', CTX_AREA_FK100: fk, CTX_AREA_NK100: nk };
+      const { response, data } = await this.request('/uapi/domestic-stock/v1/trading/inquire-balance', 'VTTC8434R', params, false, page ? 'N' : '');
       const parsed = balanceSchema.safeParse(data);
       if (!parsed.success) throw new Error('KIS 모의 잔고 응답 계약이 일치하지 않습니다. 불완전 잔고는 표시하지 않습니다.');
+      this.accountState.status = { ...this.accountState.status, observedAt: new Date().toISOString(), pages: page + 1 };
+      if (page > 0 && (cash !== parsed.data.output2[0].dnca_tot_amt || totalEquity !== parsed.data.output2[0].tot_evlu_amt)) throw new Error('KIS 잔고 페이지 사이에 계좌 합계가 바뀌었습니다. 다시 조회하세요.');
       cash = parsed.data.output2[0].dnca_tot_amt;
       totalEquity = parsed.data.output2[0].tot_evlu_amt;
       positions.push(...parsed.data.output1.filter(p => p.hldg_qty > 0).map(p => ({ code: p.pdno, name: p.prdt_name, qty: p.hldg_qty, average: p.pchs_avg_pric, price: p.prpr })));
+      if (new Set(positions.map(p => p.code)).size !== positions.length) throw new Error('KIS 잔고 페이지에 중복 종목이 있어 전체 잔고를 확정할 수 없습니다.');
       if (!['M', 'F'].includes(response.headers.get('tr_cont') ?? '')) {
-        return { configured: true, mode: 'paper', connected: true, checkedAt: new Date().toISOString(), message: 'KIS 모의 인증과 전체 잔고 조회 응답을 확인했습니다. 주문 검증은 별도입니다.', balance: { cash, totalEquity, positions } };
+        const now = new Date().toISOString();
+        this.accountState = { configured: true, mode: 'paper', connected: true, checkedAt: now, message: 'KIS 모의 인증과 전체 잔고 조회 응답을 확인했습니다. 주문 검증은 별도입니다.', balance: { cash, totalEquity, positions }, status: { ...this.accountState.status, phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now, error: null } };
+        return this.connection();
       }
       fk = parsed.data.ctx_area_fk100?.trim() ?? ''; nk = parsed.data.ctx_area_nk100?.trim() ?? '';
       const cursor = `${fk}|${nk}`;

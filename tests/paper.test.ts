@@ -5,7 +5,7 @@ import { KisClient, koreaDate } from '../server/kis.ts';
 import { PaperBroker } from '../server/paper.ts';
 import { Store } from '../server/store.ts';
 
-function fixture(mode: 'success' | 'timeout' | 'reject') {
+function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized') {
   let submits = 0;
   const response = { cash: '10000000', totalEquity: '10000000', rows: [] as Record<string, string>[] };
   const transport: typeof fetch = async url => {
@@ -17,6 +17,7 @@ function fixture(mode: 'success' | 'timeout' | 'reject') {
     if (path.endsWith('/inquire-daily-ccld')) return Response.json({ rt_cd: '0', output1: response.rows });
     if (path.endsWith('/order-cash')) {
       submits += 1;
+      if (mode === 'unauthorized') return new Response('fixture-secret', { status: 401 });
       if (mode === 'timeout') throw new Error('network timeout after broker accepted');
       if (mode === 'reject') return Response.json({ rt_cd: '1', msg_cd: 'TEST_REJECT', msg1: 'secret upstream text' });
       return Response.json({ rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } });
@@ -80,5 +81,14 @@ test('paper risk limits fail before broker mutation and sell cannot exceed holdi
     f.store.update(state => { state.risk.halted = true; }); await assert.rejects(f.broker.submit(input()), /정지/); assert.equal(f.count(), 0);
     f.store.update(state => { state.risk.halted = false; }); await assert.rejects(f.broker.submit({ ...input(), side: 'sell' }), /보유/); assert.equal(f.count(), 0);
     await assert.rejects(f.broker.submit({ ...input(), qty: 20 }), /주문 한도/); assert.equal(f.count(), 0);
+  } finally { f.store.close(); }
+});
+
+test('HTTP 401 on the order POST preserves unknown classification and prevents automatic resend', async () => {
+  const f = fixture('unauthorized'); try {
+    const order = input(); const result = await f.broker.submit(order);
+    assert.equal(result.status, 'unknown'); assert.ok(!result.message.includes('fixture-secret'));
+    await f.broker.submit(order); assert.equal(f.count(), 1);
+    await assert.rejects(f.broker.submit(input()), /응답 불명/); assert.equal(f.count(), 1);
   } finally { f.store.close(); }
 });

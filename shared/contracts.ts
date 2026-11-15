@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import type { StateSnapshot } from './model.ts';
+
+export const storageErrorMessage = '요청과 이벤트 저장에 실패했습니다. 저장소 상태를 확인하세요.';
 
 export const codeSchema = z.string().regex(/^\d{6}$/);
 const integer = (min: number, max: number) => z.number().int().min(min).max(max);
@@ -10,3 +13,28 @@ export const journalInput = z.object({ code: codeSchema, text: z.string().trim()
 export const idInput = z.object({ id: z.string().min(1).max(80) }).strict();
 export const haltInput = z.object({ halted: z.boolean() }).strict();
 export type OrderInput = z.infer<typeof orderInput>;
+
+export const dataStatusSchema = z.object({
+  environment: z.enum(['demo', 'kis-paper']), source: z.enum(['synthetic', 'kis-rest']),
+  phase: z.enum(['disconnected', 'loading', 'ready', 'stale', 'partial', 'error']),
+  observedAt: z.iso.datetime().nullable(), lastSuccessAt: z.iso.datetime().nullable(),
+  staleAfterMs: z.number().positive(), complete: z.boolean(), error: z.string().nullable(), pages: z.number().int().nonnegative(),
+});
+export const connectionSchema = z.object({
+  configured: z.boolean(), mode: z.literal('paper'), connected: z.boolean(), checkedAt: z.iso.datetime().optional(), message: z.string(),
+  status: dataStatusSchema.extend({ environment: z.literal('kis-paper'), source: z.literal('kis-rest') }),
+  balance: z.object({ cash: z.number().nonnegative(), totalEquity: z.number().nonnegative(), positions: z.array(z.object({ code: z.string(), name: z.string(), qty: z.number().nonnegative(), average: z.number().nonnegative(), price: z.number().nonnegative() })) }).optional(),
+});
+export const stateSnapshotSchema = z.object({
+  cash: z.number(), startingEquity: z.number(),
+  instruments: z.array(z.object({ code: codeSchema, name: z.string(), market: z.enum(['KOSPI', 'KOSDAQ', 'ETF']), sector: z.string(), price: z.number(), change: z.number(), volume: z.number(), history: z.array(z.number()) })),
+  positions: z.array(z.object({ code: codeSchema, qty: z.number(), average: z.number() })),
+  orders: z.array(z.object({ id: z.string(), code: codeSchema, side: z.enum(['buy', 'sell']), qty: z.number(), price: z.number(), filledPrice: z.number().optional(), status: z.enum(['pending', 'filled', 'cancelled']), createdAt: z.string(), filledAt: z.string().optional(), source: z.string(), fee: z.number(), requestId: z.string() })),
+  watchlist: z.array(codeSchema),
+  strategies: z.array(z.object({ id: z.string(), name: z.string(), code: codeSchema, fast: z.number(), slow: z.number(), qty: z.number(), active: z.boolean(), lastSignal: z.enum(['buy', 'sell', 'hold']), lastTick: z.number() })),
+  risk: riskInput.extend({ halted: z.boolean() }),
+  events: z.array(z.object({ id: z.string(), time: z.string(), level: z.enum(['info', 'warning', 'error']), title: z.string(), detail: z.string(), read: z.boolean() })),
+  journal: z.array(z.object({ id: z.string(), date: z.string(), code: codeSchema, text: z.string() })),
+  tick: z.number(), playing: z.boolean(), revision: z.number().int().nonnegative(), updatedAt: z.string(), instanceId: z.string().min(1),
+  status: dataStatusSchema.extend({ environment: z.literal('demo'), source: z.literal('synthetic') }), connection: connectionSchema,
+}) satisfies z.ZodType<StateSnapshot>;

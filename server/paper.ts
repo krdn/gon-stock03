@@ -7,8 +7,8 @@ import { record } from './engine.ts';
 export class PaperBroker {
   private queue: Promise<unknown> = Promise.resolve();
   constructor(private store: Store, private kis: KisClient) {}
-  async refresh() {
-    const connection = await this.kis.balance(); const orders = await this.kis.dailyOrders();
+  async refresh(freshBalance = false) {
+    const connection = await this.kis.balance(freshBalance); const orders = await this.kis.dailyOrders();
     const byDay = new Map([[koreaDate(), orders]]);
     for (const local of this.store.paperOrders()) {
       if (!local.brokerId || ['filled', 'cancelled', 'rejected'].includes(local.status)) continue;
@@ -31,9 +31,9 @@ export class PaperBroker {
       }
       if (this.store.paperOrders().some(o => ['unknown', 'sending'].includes(o.status))) throw new Error('응답 불명 주문이 있습니다. KIS 계좌 대조 전 추가 주문을 차단합니다.');
       if (this.store.paperOrders().length >= 1000) throw new Error('KIS 주문 기록 한도에 도달했습니다.');
-      const { connection, brokerOrders } = await this.refresh(); const balance = connection.balance!;
+      const { connection, brokerOrders } = await this.refresh(true); const balance = connection.balance!;
       if (this.store.paperOrders().some(o => o.status === 'unknown')) throw new Error('계좌 대조 중 응답 불명 주문이 확인되었습니다.');
-      const quote = await this.kis.quote(input.code);
+      const quote = await this.kis.quote(input.code, true);
       const risk = this.store.read().risk;
       if (risk.halted) throw new Error('신규 주문 정지 상태입니다.');
       const value = balance.totalEquity;
