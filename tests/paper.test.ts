@@ -5,7 +5,7 @@ import { KisClient, koreaDate } from '../server/kis.ts';
 import { PaperBroker } from '../server/paper.ts';
 import { Store } from '../server/store.ts';
 
-function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized') {
+function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only') {
   let submits = 0;
   const response = { cash: '10000000', totalEquity: '10000000', rows: [] as Record<string, string>[] };
   const transport: typeof fetch = async url => {
@@ -20,6 +20,7 @@ function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized') {
       if (mode === 'unauthorized') return new Response('fixture-secret', { status: 401 });
       if (mode === 'timeout') throw new Error('network timeout after broker accepted');
       if (mode === 'reject') return Response.json({ rt_cd: '1', msg_cd: 'TEST_REJECT', msg1: 'secret upstream text' });
+      if (mode === 'error-code-only') return Response.json({ error_code: 'EGW00103', error_description: 'secret upstream text' });
       return Response.json({ rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } });
     }
     assert.fail(`unexpected endpoint: ${path}`);
@@ -74,6 +75,14 @@ test('ambiguous paper send stays unknown, same ID does not resend, new orders ar
 test('broker rejection is distinct from unknown and never leaks upstream body', async () => {
   const f = fixture('reject'); try {
     const result = await f.broker.submit(input()); assert.equal(result.status, 'rejected'); assert.match(result.message, /TEST_REJECT/); assert.ok(!result.message.includes('secret'));
+  } finally { f.store.close(); }
+});
+test('an undocumented order error_code-only response stays unknown and blocks retransmission', async () => {
+  const f = fixture('error-code-only'); try {
+    const order = input(); const result = await f.broker.submit(order);
+    assert.equal(result.status, 'unknown'); assert.ok(!result.message.includes('secret'));
+    assert.equal((await f.broker.submit(order)).status, 'unknown'); assert.equal(f.count(), 1);
+    await assert.rejects(f.broker.submit(input()), /응답 불명/); assert.equal(f.count(), 1);
   } finally { f.store.close(); }
 });
 test('paper risk limits fail before broker mutation and sell cannot exceed holdings', async () => {
