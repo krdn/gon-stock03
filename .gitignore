@@ -8,3 +8,10 @@
 *.pfx
 .local/
 __pycache__/
+node_modules/
+dist/
+playwright-report/
+test-results/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

@@ -2,6 +2,6 @@ version: 1
 general:
   domain: https://app.infisical.com
 secrets-management:
-  project-id: REPLACE_WITH_INFISICAL_PROJECT_ID
+  project-id: 5fdf34cd-9a4e-4992-a82f-1472fb0a61b5
   environment: dev
-  secret-path: /
+  secret-path: /kis
