@@ -39,3 +39,8 @@
 .data-detail details { padding: 12px 0; border-top: 1px solid var(--line); }
 .data-detail summary { cursor: pointer; }
 @media (max-width: 600px) { .data-facts { grid-template-columns: 1fr; } }
+
+.backtest-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.data-inventory .trade-grid > * { min-width: 0; }
+.backtest-fields .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.backtest-fields .field { min-width: 0; }

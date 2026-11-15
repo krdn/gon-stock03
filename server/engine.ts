@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { equity, type State, type BacktestInput, type BacktestResult, type Event } from '../shared/model.ts';
+import type { DailyPrice } from '../shared/market-data.ts';
 import type { OrderInput } from '../shared/contracts.ts';
 
 const fee = (amount: number, bps = 1.5) => Math.ceil(amount * bps / 10000);
@@ -97,25 +98,33 @@ export function signal(prices: number[], fast: number, slow: number): 'buy' | 's
   return before <= 0 && now > 0 ? 'buy' : before >= 0 && now < 0 ? 'sell' : 'hold';
 }
 export function backtest(prices: number[], input: BacktestInput): BacktestResult {
+  const result = simulate(prices, prices, input);
+  return { ...result, source: `합성 ${prices.length}봉 · 다음 봉 종가 체결 가정 · 세금 미포함` };
+}
+export function backtestDaily(bars: DailyPrice[], input: BacktestInput): BacktestResult {
+  const result = simulate(bars.map(b => b.close), bars.map(b => b.open), input);
+  return { ...result, trades: result.trades.map(t => ({ ...t, date: bars[t.bar].date, signalDate: bars[t.bar - 1].date })), source: `KIS 저장 일봉 ${bars.length}봉 · 다음 봉 시가 체결 가정 · 세금 미포함` };
+}
+function simulate(prices: number[], executionPrices: number[], input: BacktestInput): BacktestResult {
   if (prices.length <= input.slow + 1 || prices.some(p => !Number.isFinite(p) || p <= 0)) throw new Error('유효한 가격 표본이 부족합니다.');
-  let cash = input.capital, qty = 0, fees = 0, peak = input.capital, drawdown = 0;
+  let cash = input.capital, qty = 0, fees = 0, slippageCost = 0, peak = input.capital, drawdown = 0;
   const values: number[] = [], trades: BacktestResult['trades'] = [];
   for (let i = 0; i < prices.length; i++) {
     const direction = signal(prices.slice(0, i), input.fast, input.slow);
-    const price = prices[i] * (1 + (direction === 'buy' ? 1 : -1) * input.slippageBps / 10000);
+    const price = executionPrices[i] * (1 + (direction === 'buy' ? 1 : -1) * input.slippageBps / 10000);
     if (direction === 'buy' && qty === 0) {
       let units = Math.floor(cash / (price * (1 + input.feeBps / 10000)));
       if (units * price + fee(units * price, input.feeBps) > cash) units -= 1;
       if (units > 0) {
-        const cost = fee(units * price, input.feeBps); cash -= units * price + cost; qty = units; fees += cost;
+        const cost = fee(units * price, input.feeBps); cash -= units * price + cost; qty = units; fees += cost; slippageCost += Math.abs(price - executionPrices[i]) * units;
         trades.push({ bar: i, side: 'buy', price, qty: units, fee: cost });
       }
     } else if (direction === 'sell' && qty > 0) {
-      const cost = fee(qty * price, input.feeBps); cash += qty * price - cost; fees += cost;
+      const cost = fee(qty * price, input.feeBps); cash += qty * price - cost; fees += cost; slippageCost += Math.abs(price - executionPrices[i]) * qty;
       trades.push({ bar: i, side: 'sell', price, qty, fee: cost }); qty = 0;
     }
     const value = cash + qty * prices[i]; values.push(value); peak = Math.max(peak, value); drawdown = Math.max(drawdown, (peak - value) / peak * 100);
   }
   const finalEquity = values.at(-1)!;
-  return { equity: values, trades, finalEquity, returnPct: (finalEquity / input.capital - 1) * 100, maxDrawdown: drawdown, fees, source: `합성 ${prices.length}봉 · 다음 봉 종가 체결 가정 · 세금 미포함` };
+  return { equity: values, trades, finalEquity, returnPct: (finalEquity / input.capital - 1) * 100, maxDrawdown: drawdown, fees, slippageCost, source: '' };
 }
