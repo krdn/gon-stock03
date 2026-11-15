@@ -6,8 +6,9 @@
 - 목표·완료 조건: `/settings`에서 필수 값·KIS 인증·전체 잔고 조회를 구분하고 미주입·만료·권한·호출제한·네트워크 실패와 복구 방법을 표시한다. 실제 응답 전 성공, 실전 fallback, 비밀값 노출을 금지한다. 화면 수용 답변과 대상 SHA는 별도로 기록한다.
 - 범위: 설정 화면·공통 연결 상태의 필요한 확장·`src/specs.ts`·단위/HTTP/브라우저 검증. 주문·취소·전략·#9 등 다른 기능은 제외한다.
 - 선행: native #6 closed/completed, 통합 `8b280229`가 기준 main에 포함됨을 확인했다.
-- 이슈 / PR: #8 / 미생성
+- 이슈 / PR: [#8](https://github.com/krdn/gon-stock03/issues/8) / [PR #31](https://github.com/krdn/gon-stock03/pull/31), open / In Review.
 - 브랜치 / 기준 SHA: `feat/8-connection-settings` / `78f96ec3647cf9ef8c8ebf8562136eb1494b76d9`.
+- 구현·검증 SHA: `15e3dc6fb4f6721d8483ea3cb363ebcd4eec3ef2`. 후속 기록 커밋은 제품 코드를 바꾸지 않는다. 수용 대상은 [PR #31 최신 head](https://github.com/krdn/gon-stock03/pull/31)에서 확인한다.
 
 ## 먼저 읽을 자료
 
@@ -21,8 +22,9 @@
 ## 현재 결과
 
 - 2026-11-15 착수 전 원격 main SHA 일치, 열린 PR 없음, #8 Ready, #6 completed·통합 확인. main [앱 CI](https://github.com/krdn/gon-stock03/actions/runs/43675809174)·[구성 CI](https://github.com/krdn/gon-stock03/actions/runs/43675809187) SUCCESS. `gon-workflow ready .` 통과.
-- Project #8을 In Progress로 바꿨다. 부모 t6q가 이 세션의 Herdr 탭·세션·경로 일치와 저장소 수정 중단을 알렸다.
+- Project #8을 착수 시 In Progress, PR 준비 후 In Review로 바꿨다. 부모 t6q가 이 세션의 Herdr 탭·세션·경로 일치와 저장소 수정 중단을 알렸다.
 - 설계: 기존 토큰·페이징·호출 간격·재시도 경로를 확장한다. 별도 인증 클라이언트를 만들면 상태와 제한이 갈라지므로 사용하지 않는다. 환경변수 존재는 Infisical 출처·접근 성공 증거가 아니다.
+- 원격: 구현 SHA와 origin 브랜치 일치 확인. GitHub 연결 도구 PR 생성403 후 중복이 없음을 조회하고 기존 인증 gh로 PR #31을 생성했다. 필수 CI·최종 handoff는 PR/이슈의 최신 원격 기록을 따른다.
 - 보존: 미추적 `.codex/config.toml`은 수정·스테이징하지 않는다.
 - 구현: 단계별 상태·유형화 오류·복구 안내·서버 상태 재조회·토큰 재확인·이전 잔고 표기와 `src/specs.ts` 계약을 갱신했다. 새 상태 필드가 필수이므로 서버와 화면을 함께 갱신한다.
 - 검사: 새 단위7건과 오류표 확장 RED→GREEN, 브라우저 상태 부재 RED→GREEN. 단위58/58·브라우저33/33·타입/빌드 성공. 390px 안내 펼침에서 가로 넘침 없음, axe 0건. [검증 기록](../verification/2026-11-15-settings.md).
@@ -33,7 +35,7 @@
 
 ## 다음 행동
 
-리뷰 PASS를 기록했다. PR·CI·원격 인계를 완료하고 해당 SHA의 화면 수용 답변을 기다린다. #8은 수용·통합 전 open/In Review로 유지한다.
+[PR #31 checks](https://github.com/krdn/gon-stock03/pull/31/checks)의 최신 head·필수 CI를 재조회하고, 그 SHA의 `/settings` 화면 수용 답변을 확인한다. 사용자 수용 답변이 없으면 대기한다. 수용·통합 전 #8은 open/In Review로 유지하며 #9 등 다른 구현은 시작하지 않는다.
 
 ## 새 세션 시작 문구
 
