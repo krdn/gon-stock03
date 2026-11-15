@@ -151,7 +151,7 @@ test('stored daily backtest is separate from DEMO and replays a persisted experi
     await page.getByLabel('시작일', { exact: true }).fill('2026-01-22');
     await expect(result).toHaveCount(0);
     await page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true }).click();
-    await expect(page.getByRole('alert').filter({ hasText: '가격 표본이 부족' })).toBeVisible();
+    await expect(page.getByRole('main').getByRole('alert').filter({ hasText: '가격 표본이 부족' })).toBeVisible();
     await expect(result).toHaveCount(0);
     await page.getByRole('combobox', { name: '데이터 출처', exact: true }).selectOption('demo');
     await expect(page.getByText('현재 저장된 합성 봉으로 계산하는 기능 검증입니다.', { exact: false })).toBeVisible();
