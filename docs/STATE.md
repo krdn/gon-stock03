@@ -2,15 +2,10 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매.
 
-- **현재 개발 지시:** [#9 통합 후 #11 위험관리](tasks/11-risk-management.md). 사용자2026-11-16 요청으로 새 Herdr 세션에 단독 인계한다. PR54 최신CI4 PASS이나 아직 초안, #9/#11 Blocked다. 지정Fable5.2 또는 Gemini4Argon으로 완료근거를 검증하고 PR54 통합·#9 완료·#25 잔여이관 후 #11을 진행한다. 추가 주문·취소·예약 없음.
-
-- 통합 완료: [#50 전체 브랜치 대조](tasks/50-branch-integration.md). PR49·47 정상 merge, 제품 main `b9a12325ec1fcb683bced5911709d09b6814ffe4`. 기존21개 브랜치도 이미 반영됨을 검증했다. 최종 기록 PR·main SHA·CI는 [#50](https://github.com/krdn/gon-stock03/issues/50)의 종료 댓글 확인.
-- [#48 요청 간격](tasks/48-kis-pacing.md): 재현·수정·수용·통합 완료. 결합 단위/API99·빌드·브라우저67·이번 Argon MERGE PASS. [검증](verification/2026-11-16-branch-integration.md).
-- 최신 실증: [삼성전자 주문·취소](verification/2026-11-16-samsung-paper-run.md). 제품1d2030e에서195,800원·1주 모의 매수 접수 및 API취소 후 REST cancelled/체결0/잔량0 확인. 서버종료·정지·백업·원본보존 완료. 사용자 후속 지시는 매수만/취소는 모바일 직접이며15:30 종료 후 도착해 추가실행·예약 없음. 다음 장중 별도 수동시작 필요. #9/후속 차단은 별도 수용 전 유지.
-- 현재 추가 준비: [#9 API 전량취소 후보](operations/kis-cancel-probe.md), `feat/9-vts-cancel-probe`. [초안 PR54](https://github.com/krdn/gon-stock03/pull/54) 지정 Argon 준비 리뷰 PASS. 기본 차단·취소 시도 1회 영구 기록을 유지한다. [규격 재조사·공식 문의 초안](research/kis-order-recovery-2026-11.md#2026-11-16-전량취소-규격-재조사)을 작성했다. 문의는 미발송이다. 사용자가 직접 모의 주문·취소 테스트와09:00–15:30 시간창 확대를 지시하고 동일계좌·타API중지·앱잔량취소·현재장중을 확인했다. 시간창 보완121·브라우저67·빌드·지정Argon PASS. [실제 실행](verification/2026-11-16-paper-session-run.md)은 시세 guard에서 주문전 중단됐다. 모의 인증/조회 성공, 증권사 주문·취소0, 시도소비·정지·서버종료·백업 확인. 재시도 없음.
-- 기존 준비: [#9 KIS 주문·복구](tasks/9-kis-orders-recovery.md) 실행 준비. [검증 기록](verification/2026-11-16-paper-preflight.md)의 승인 제한 보완과 fixture110·브라우저67·빌드 PASS; 지정 리뷰·초안 PR·최종 CI는 #9 완료 인계 댓글 확인. 2026-11-16 사용자가 수동 취소 대안과 [최소 모의 주문 1회](operations/kis-minimum-paper-run.md)를 조건부 승인했다. 실행 전 조건·시간창 내 별도 수동 시작·실제 접수/조회 증거가 남아 OPEN/Blocked를 유지한다.
-- 기능 #9·11·12·13·14·17·18·19·22·25의 차단을 유지한다. 실제 KIS 인증·조회·주문·취소·전략 호출은 이번 통합에서 수행하지 않았다.
-- 준비 폴더: `/home/gon/llm-projects/gon-stock03-worktrees/9-paper-preflight`, 브랜치 `docs/9-paper-approval-preflight`, 기준 main `3f3bee6` CI2개 SUCCESS. t77 세션 `01a1e024-264c-7f20-b0a3-bf03559c62ba`의 실제 탭·cwd·Ready를 부모가 확인해 단독 착수했다. 지금 주문 실행/예약·상주 대기는 하지 않는다.
-- 원본 `/home/gon/llm-projects/gon-stock03`과 #48 폴더의 브랜치·미커밋·`.codex/`를 보존한다. 강제푸시·보호규칙 우회·추가 에이전트·부모 재위임 없음.
-- 재개: AGENTS → #9 작업 파일 → 필요한 승인안·관련 이슈/PR/CI. 통합 내역이 필요할 때만 #50 기록을 추가 확인한다.
-- 보존 한계: STE 기준 파일·graphify 부재, #8 Fable 한도 오류, #21 역사적 CI 정확 스케줄 복원 불가, 리뷰 서버 모델·effort 독립 확인 한계.
+- **현재 작업:** [#11 위험관리](tasks/11-risk-management.md), `feat/11-risk-management`. 불명 중 재개 차단, 환경별 사용량·산식, 저장 중 편집 보존 구현. [PR55](https://github.com/krdn/gon-stock03/pull/55)·제품e459e95. 지정Argon 위임수용 PASS. 최종 merge/main CI와 완료 상태는 #11 종료 댓글을 확인한다. 다음 후보는 #12/#17이며 별도 작업으로 남긴다.
+- **선행 완료:** PR54 main `5314e0203b47435600de9a51fbe839a0c327875b` 통합, main CI2 SUCCESS. 지정 Argon 위임 수용 후 #9 completed/Project Done. [#9 근거](tasks/9-kis-orders-recovery.md). #11 In Progress, #17 Ready, #12/#13은 남은 선행으로 Blocked.
+- **실증 경계:** [삼성전자 한 건](verification/2026-11-16-samsung-paper-run.md)은 매수 접수·REST 대조·취소·체결0/잔량0만 입증한다. 일반 웹 취소·정정409 차단과 공식 계약 미확정은 유지한다. 실제 체결·부분체결·취소경합·불명복구·연속전략·전체 사용자 화면 수용은 [#25](https://github.com/krdn/gon-stock03/issues/25) 미관측이다.
+- **거래 제한:** 현재 실제 KIS 업무API·주문·취소·예약 금지. 최신 거래 지시는 다음 별도 장중 시작 때 매수만/사용자 모바일 직접취소다. 소비된 원장 재설정 없음.
+- **보존:** `.local/` 원장·백업, `.codex/`, `graphify-out/`, 다른 worktree. 강제푸시·보호규칙 우회·추가 에이전트·부모 재위임 없음.
+- **재개:** 현재 작업 파일·필수 자료·관련 원격 이슈/PR/CI만 확인한다. 기존 통합 기록은 필요할 때만 [#50](tasks/50-branch-integration.md)을 읽는다.
+- **검증 한계:** STE 기준파일 부재(exit2), 기존 번들 크기 경고, 리뷰 요청/init 일치와 서버 내부 모델·effort 독립 확인의 차이를 유지한다.

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, Check, Link2, LockKeyhole, ShieldCheck, Square } from 'lucide-react';
 import { useWorkbench } from '../context';
@@ -7,12 +7,63 @@ import { equity, won, type ConnectionFailure } from '../../shared/model';
 import { authenticationStatus } from '../../shared/status';
 
 export function Risk() {
-  const { state, act, busy, available } = useWorkbench(); const [maxOrder, setMaxOrder] = useState(state.risk.maxOrder), [maxPosition, setMaxPosition] = useState(state.risk.maxPosition), [dailyLoss, setDailyLoss] = useState(state.risk.dailyLoss);
-  const [dirty, setDirty] = useState(false);
-  useEffect(() => { if (!dirty) { setMaxOrder(state.risk.maxOrder); setMaxPosition(state.risk.maxPosition); setDailyLoss(state.risk.dailyLoss); } }, [dirty, state.risk.maxOrder, state.risk.maxPosition, state.risk.dailyLoss]);
-  const loss = Math.max(0, state.startingEquity - equity(state));
-  async function save(e: React.FormEvent) { e.preventDefault(); try { await act('risk', { maxOrder, maxPosition, dailyLoss }); setDirty(false); } catch { /* Workspace displays the failure. */ } }
-  return <><div className="stats-grid three"><Stat label="1회 주문 한도" value={`${won(state.risk.maxOrder)}원`} sub="미체결 예약 금액 포함 검사" /><Stat label="종목별 한도" value={`${won(state.risk.maxPosition)}원`} sub="보유 + 미체결 매수" /><Stat label="데모 시작 대비 손실" value={`${won(loss)}원`} sub={`손실 한도 ${won(state.risk.dailyLoss)}원 · 일별 자동 초기화 없음`} /></div><div className="grid-main"><Panel title="매매 한도" action={<ShieldCheck size={20} />}><form onSubmit={save}><label className="field">1회 주문 한도 (원)<input type="number" min="10000" max="100000000" step="1" required disabled={!available} value={maxOrder} onChange={e => { setDirty(true); setMaxOrder(Number(e.target.value)); }} /></label><label className="field">종목별 최대 투자금 (원)<input type="number" min="10000" max="100000000" step="1" required disabled={!available} value={maxPosition} onChange={e => { setDirty(true); setMaxPosition(Number(e.target.value)); }} /></label><label className="field">공통 손실 한도 (원)<input type="number" min="1000" max="100000000" step="1" required disabled={!available} value={dailyLoss} onChange={e => { setDirty(true); setDailyLoss(Number(e.target.value)); }} /></label><p className="muted prose">금액 한도는 로컬 데모와 KIS 모의 주문에 공통 적용됩니다. 데모 손실은 시작 자산 대비, KIS 손실은 당일 첫 주문 전 총평가금액 대비로 검사합니다. 입출금은 보정하지 않습니다. 이미 접수된 주문은 한도 변경으로 취소되지 않습니다.</p><button className="button primary" disabled={!available || busy}>한도 저장</button></form></Panel><Panel title="긴급정지" className="risk-panel"><div className="risk-symbol"><AlertTriangle size={32} /></div><h3>{state.risk.halted ? '신규 주문 정지 중' : '신규 주문을 멈출 수 있어요'}</h3><p className="prose">정지하면 수동·전략의 신규 주문을 차단하고 모든 전략을 정지합니다. 보유자산을 매도하거나 접수된 주문을 취소하지는 않습니다.</p><button className={`button wide ${state.risk.halted ? 'secondary' : 'danger'}`} disabled={busy || !available} onClick={() => void act('risk/halt', { halted: !state.risk.halted }).catch(() => {})}><Square size={15} />{state.risk.halted ? '신규 주문 허용' : '신규 주문 긴급정지'}</button><Link to="/orders" className="subtle-link">미체결 주문 확인 →</Link><div className="soft-note">손실 한도를 계속 초과하면 주문 허용 후에도 매수·매도가 차단되고 다음 봉에서 다시 정지됩니다. 데모는 일별 초기화가 없으므로 한도와 잔고를 확인하세요. 재개해도 전략은 자동 시작되지 않습니다. 전략 스튜디오에서 개별적으로 시작하세요.</div></Panel></div></>;
+  const { state, act, busy, available, connection, paperRisk } = useWorkbench();
+  const [maxOrder, setMaxOrder] = useState(state.risk.maxOrder), [maxPosition, setMaxPosition] = useState(state.risk.maxPosition), [dailyLoss, setDailyLoss] = useState(state.risk.dailyLoss);
+  const [dirty, setDirty] = useState(false), [environment, setEnvironment] = useState<'demo' | 'kis'>('demo');
+  const editVersion = useRef(0);
+  useEffect(() => { if (!dirty && available) { setMaxOrder(state.risk.maxOrder); setMaxPosition(state.risk.maxPosition); setDailyLoss(state.risk.dailyLoss); } }, [dirty, available, state.risk.maxOrder, state.risk.maxPosition, state.risk.dailyLoss]);
+  const demo = environment === 'demo';
+  const ordersAge = paperRisk?.orders ? Date.now() - Date.parse(paperRisk.orders.observedAt) : Infinity;
+  const known = available && (demo || (connection.connected && connection.status.complete && connection.balance && paperRisk?.orders && ordersAge >= 0 && ordersAge < 60000 && paperRisk.unresolvedCount === 0));
+  const positions = demo ? state.positions.map(p => ({ ...p, price: state.instruments.find(s => s.code === p.code)?.price ?? p.average })) : connection.balance?.positions ?? [];
+  const orders = demo ? state.orders.filter(o => o.status === 'pending').map(o => ({ ...o, remaining: o.qty, cancelled: false })) : paperRisk?.orders?.rows ?? [];
+  const codes = [...new Set([...positions.map(p => p.code), ...orders.filter(o => !o.cancelled && o.remaining > 0).map(o => o.code)])];
+  const baseline = demo ? state.startingEquity : paperRisk?.baselineEquity;
+  const currentEquity = demo ? equity(state) : connection.balance?.totalEquity;
+  const loss = baseline != null && currentEquity != null ? Math.max(0, baseline - currentEquity) : null;
+  const resumeBlocked = state.risk.halted && (!paperRisk || paperRisk.unresolvedCount > 0);
+  const changes = state.events.filter(e => ['위험 한도 변경', '신규 주문 긴급정지', '신규 주문 허용', '위험관리 요청 차단', '주문 요청 차단', '전략 주문 차단'].includes(e.title)).slice(0, 5);
+  async function save(e: React.FormEvent) {
+    e.preventDefault(); const submittedVersion = editVersion.current;
+    try { await act('risk', { maxOrder, maxPosition, dailyLoss }); if (editVersion.current === submittedVersion) setDirty(false); } catch { /* Workspace displays the failure. */ }
+  }
+  const edit = () => { editVersion.current++; setDirty(true); };
+  return <>
+    <div className="stats-grid three"><Stat label="1회 주문 한도" value={available ? `${won(state.risk.maxOrder)}원` : '미확인'} sub="주문 1건의 지정가 × 수량" /><Stat label="종목별 한도" value={available ? `${won(state.risk.maxPosition)}원` : '미확인'} sub="보유 평가액 + 미체결 매수 + 신규 매수" /><Stat label="공통 손실 한도" value={available ? `${won(state.risk.dailyLoss)}원` : '미확인'} sub="매수·매도 모두 검사 · 환경별 기준 분리" /></div>
+    <div className="grid-main"><Panel title="매매 한도" action={<ShieldCheck size={20} />}><form onSubmit={save}>
+      <label className="field">1회 주문 한도 (원)<input type="number" min="10000" max="100000000" step="1" required disabled={!available} value={maxOrder} onChange={e => { edit(); setMaxOrder(Number(e.target.value)); }} /></label>
+      <label className="field">종목별 최대 투자금 (원)<input type="number" min="10000" max="100000000" step="1" required disabled={!available} value={maxPosition} onChange={e => { edit(); setMaxPosition(Number(e.target.value)); }} /></label>
+      <label className="field">공통 손실 한도 (원)<input type="number" min="1000" max="100000000" step="1" required disabled={!available} value={dailyLoss} onChange={e => { edit(); setDailyLoss(Number(e.target.value)); }} /></label>
+      <p className="muted prose">금액 한도는 DEMO 수동·전략과 KIS 모의 수동 주문에 공통 적용됩니다. KIS 전략의 검증은 별도입니다. 이미 접수된 주문은 한도 변경으로 취소되지 않습니다.</p>
+      {dirty && <p role="status">저장하지 않은 변경이 있습니다.</p>}<button className="button primary" disabled={!available || busy}>한도 저장</button>
+    </form></Panel><Panel title="긴급정지" className="risk-panel"><div className="risk-symbol"><AlertTriangle size={32} /></div><h3>{state.risk.halted ? '신규 주문 정지 중' : '신규 주문을 멈출 수 있어요'}</h3>
+      <p className="prose">정지하면 수동·전략의 신규 주문을 차단하고 모든 전략을 정지합니다. 보유자산을 매도하거나 접수된 주문을 취소하지는 않습니다. 정지 상태는 서버를 다시 시작해도 유지됩니다.</p>
+      {paperRisk && paperRisk.unresolvedCount > 0 && <p role="alert">KIS 불명·전송 중 {paperRisk.unresolvedCount}건 · 대조 전 재개 금지</p>}
+      {state.risk.halted && !paperRisk && <p role="status">주문 원장 상태 미확인 · 새로고침 후 재개하세요.</p>}
+      <button className={`button wide ${state.risk.halted ? 'secondary' : 'danger'}`} disabled={busy || !available || resumeBlocked} onClick={() => void act('risk/halt', { halted: !state.risk.halted }).catch(() => {})}><Square size={15} />{state.risk.halted ? '신규 주문 허용' : '신규 주문 긴급정지'}</button>
+      <Link to="/orders" className="subtle-link">DEMO 미체결 주문 확인 →</Link><Link to="/paper" className="subtle-link">KIS 주문 대조·불명 복구 →</Link>
+      <div className="soft-note">미체결과 한도를 확인한 뒤 재개하세요. 손실 한도에 도달하면 주문 허용 후에도 매수·매도가 차단됩니다. 재개해도 전략은 자동 시작되지 않습니다. KIS 취소는 공식 모의 앱에서 처리하고 대조해야 합니다.</div>
+    </Panel></div>
+    <Panel title="환경별 사용량과 차단 이유" className="top-gap" action={<div className="tabs"><button aria-pressed={demo} className={demo ? 'active' : ''} onClick={() => setEnvironment('demo')}>DEMO 사용량</button><button aria-pressed={!demo} className={!demo ? 'active' : ''} onClick={() => setEnvironment('kis')}>KIS 모의 사용량</button></div>}>
+      <p className="prose">{demo ? 'DEMO 시작 자산 − 현재 평가자산, 최솟값 0' : 'KIS 당일 첫 주문 전 총평가금액 − 조회 총평가금액, 최솟값 0'}</p>
+      <p className="muted prose">{demo ? 'DEMO는 일별 자동 초기화가 없습니다. 미체결 매수 금액은 현금·종목 한도에 예약되며 1회 주문 한도에는 합산하지 않습니다.' : 'KST 거래일별 기준이며 입출금을 보정하지 않습니다. 기준 미설정이면 첫 주문 검증 때 고정합니다. 조회 시점의 참고값이며 주문 때 최신 시세·미수 없는 가능수량으로 다시 검사합니다.'}</p>
+      {!known ? <Empty title={demo ? 'DEMO 사용량 미확인' : 'KIS 사용량 미확인'}>{demo ? '로컬 서버의 최신 상태를 확인하세요.' : '최신 전체 잔고·당일 주문 대조와 불명 해소가 필요합니다. 이 화면은 API를 호출하지 않습니다.'}</Empty> : <>
+        <div className="check-row"><span>손실 사용량 / 한도</span><strong>{loss === null ? '기준 미설정' : `${won(loss)}원 / ${won(state.risk.dailyLoss)}원`}</strong></div>
+        <div className="check-row"><span>기준 자산 / 현재 평가자산</span><span>{baseline == null ? '미설정' : `${won(baseline)}원`} / {currentEquity == null ? '미확인' : `${won(currentEquity)}원`}</span></div>
+        <p role="status">{state.risk.halted ? '긴급정지로 신규 주문 차단' : loss != null && loss >= state.risk.dailyLoss ? '손실 한도 도달 · 신규 매수·매도 차단' : '주문별 금액·현금·보유 수량을 추가 검사합니다.'}</p>
+        {!demo && <p className="muted">기준일 {paperRisk?.day} · 잔고 {connection.status.lastSuccessAt ? new Date(connection.status.lastSuccessAt).toLocaleString('ko-KR') : '미확인'} · 주문 {paperRisk?.orders ? new Date(paperRisk.orders.observedAt).toLocaleString('ko-KR') : '미확인'}</p>}
+        {codes.length ? <div className="table-scroll"><table><thead><tr><th>종목</th><th>보유 평가액</th><th>매수 예약액</th><th>종목 한도 사용량</th><th>한도</th><th>매도 가능 보유</th></tr></thead><tbody>{codes.map(code => {
+          const p = positions.find(p => p.code === code), qty = p?.qty ?? 0;
+          const held = qty === 0 ? 0 : p?.price == null ? null : qty * p.price;
+          const pendingBuy = orders.filter(o => o.code === code && o.side === 'buy' && !o.cancelled).reduce((sum, o) => sum + o.remaining * o.price, 0);
+          const reservedSell = orders.filter(o => o.code === code && o.side === 'sell' && !o.cancelled).reduce((sum, o) => sum + o.remaining, 0);
+          const used = held === null ? null : held + pendingBuy;
+          return <tr key={code}><td>{demo ? state.instruments.find(i => i.code === code)?.name : connection.balance?.positions.find(p => p.code === code)?.name} <small>{code}</small></td><td>{held === null ? '평가 불가' : won(held)}</td><td>{won(pendingBuy)}</td><td>{used === null ? '미확인' : won(used)}{used !== null && used >= state.risk.maxPosition && <Badge>추가 매수 한도 도달</Badge>}</td><td>{won(state.risk.maxPosition)}</td><td>{Math.max(0, qty - reservedSell)}주 / 보유 {qty}주</td></tr>;
+        })}</tbody></table></div> : <Empty title="보유·미체결 없음">조회한 환경에 보유와 미체결 주문이 없습니다.</Empty>}
+      </>}
+    </Panel>
+    <Panel title="최근 위험관리 이벤트" className="top-gap">{changes.length ? changes.map(e => <article className="event" key={e.id}><div><h3>{e.title}</h3><p>{e.detail}</p><time>{new Date(e.time).toLocaleString('ko-KR')}</time></div></article>) : <Empty title="위험관리 이벤트 없음">한도 변경·정지·재개·주문 차단을 이곳에서 확인합니다.</Empty>}</Panel>
+  </>;
 }
 export function Journal() {
   const { state, act, busy, available } = useWorkbench(); const [code, setCode] = useState('005930'), [text, setText] = useState(''), [query, setQuery] = useState('');

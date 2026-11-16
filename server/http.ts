@@ -34,7 +34,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
     try {
       if (path === '/api/state' && req.method === 'GET') {
         const now = new Date().toISOString();
-        const snapshot: StateSnapshot = { ...store.read(), instanceId, status: { ...emptyStatus('demo'), phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now }, connection: kis.connection() };
+        const snapshot: StateSnapshot = { ...store.read(), instanceId, status: { ...emptyStatus('demo'), phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now }, connection: kis.connection(), paperRisk: paper.riskSnapshot() };
         json(res, 200, snapshot); return;
       }
       if (path === '/api/kis/ledger' && req.method === 'GET') { json(res, 200, { orders: store.paperOrders(), minimumRun: paper.approvalStatus() }); return; }
@@ -121,7 +121,11 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
               strategy.active = !strategy.active; record(state, strategy.active ? '전략 시작' : '전략 정지', strategy.name); return {};
             }
             case '/api/risk': Object.assign(state.risk, riskInput.parse(input)); record(state, '위험 한도 변경', '새 주문부터 변경한 한도를 적용합니다.'); return {};
-            case '/api/risk/halt': halt(state, haltInput.parse(input).halted); return {};
+            case '/api/risk/halt': {
+              const { halted } = haltInput.parse(input);
+              if (!halted && store.paperOrders().some(o => o.status === 'unknown' || o.status === 'sending')) throw new Error('KIS 불명·전송 중 주문을 대조하기 전에는 재개할 수 없습니다.');
+              halt(state, halted); return {};
+            }
             case '/api/journal': {
               const entry = journalInput.parse(input);
               if (!state.instruments.some(s => s.code === entry.code)) throw new Error('지원하지 않는 종목입니다.');
@@ -141,10 +145,14 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       const type = ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' } as Record<string, string>)[extname(file)] ?? 'application/octet-stream';
       res.writeHead(200, { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' }); res.end(req.method === 'HEAD' ? undefined : bytes);
     } catch (error) {
-      if ((path === '/api/watchlist' || path === '/api/journal' || path.startsWith('/api/backtest/') || path.startsWith('/api/kis/')) && error instanceof Error && 'code' in error && error.code === 'ERR_SQLITE_ERROR') { json(res, 500, { error: storageErrorMessage }); return; }
+      if ((path === '/api/watchlist' || path === '/api/journal' || path.startsWith('/api/risk') || path.startsWith('/api/backtest/') || path.startsWith('/api/kis/')) && error instanceof Error && 'code' in error && error.code === 'ERR_SQLITE_ERROR') { json(res, 500, { error: storageErrorMessage }); return; }
       const message = error instanceof ZodError ? '입력값을 확인하세요. 범위·필수 항목 또는 단기/장기 기간이 올바르지 않습니다.' : error instanceof Error ? error.message : '요청 처리에 실패했습니다.';
       if (path === '/api/orders') {
         try { store.update(state => record(state, '주문 요청 차단', message, 'warning')); }
+        catch { json(res, 500, { error: storageErrorMessage }); return; }
+      }
+      if (path === '/api/risk' || path === '/api/risk/halt') {
+        try { store.update(state => record(state, '위험관리 요청 차단', message, 'warning')); }
         catch { json(res, 500, { error: storageErrorMessage }); return; }
       }
       json(res, 400, { error: message });
