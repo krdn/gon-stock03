@@ -18,3 +18,5 @@ STE strict는 `docs/conventions/ste100-writing.md` 부재로 exit2. 문서 기�
 지정 Gemini4Argon/high [리뷰](assets/orders-dashboard-integration/argon-review.json): INTEGRATION PASS, P0–P3 0건. 중앙 설정/dry-run은 지정 모델과 달라 사용하지 않고 `agy models` 확인 후 `gemini-4-argon-high --effort high`로 직접 호출했다. 요청/init 모델 일치, 서버 내부 모델·effort는 독립 확인 불가. 텍스트 리뷰이며 도구·재위임0회, 외부 이미지 리뷰 아님. 응답의 임시 경로 링크·줄 번호는 독립 파일 접근 증거가 아니다.
 
 [공급 파일 해시](assets/orders-dashboard-integration/review-manifest.json)는 리뷰 직후 모두 일치했다. 이후 변경은 결과·인계 문서뿐이다. git diff --check와 수정 문서 상대 링크 검사 PASS. 원격 main과 원본 PR head가 유지됨을 재확인했다.
+
+전달: [초안 PR60](https://github.com/krdn/gon-stock03/pull/60), 제품 `2bd44733f8b6923841b5fff46d358f13cdf36090`. 원본 두 head를 부모로 보존한 merge commit이다. GitHub connector 생성403 후 중복 없음 확인·인증된 gh REST로 초안을 생성했다. 최신 head CI 결과는 PR 본문에서 확인한다. 이 전달 추가는 제품·테스트 변경이 아니다. 커밋 훅이 생성한 graphify-out/과 node_modules 링크는 보존하며 clean-tree 인계를 주장하지 않는다.
