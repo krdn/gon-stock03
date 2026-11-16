@@ -1,5 +1,7 @@
 # 작업: PR58·59 결합 후보
 
+최신 상태: PR60 merge `46593c56abc5f6958f21e163bdd8d4758b79c2b6`, main CI2 SUCCESS. 반복된 사용자 진행 지시를 기술 수용·통합 후 #14 진행으로 해석해 #13/#18 completed/Done, #14 Ready로 갱신했다. 원본 PR58/59도 GitHub merged이며 원래 head를 보존한다. 아래 후보 단계의 보류는 당시 기록이다. 다음 작업은 [#14](14-paper.md)다.
+
 기준 main `bf158ccaf826ca4e91ba5b6d7a059700dfb15098`. `integration/13-18`, 전용 worktree `/home/gon/llm-projects/gon-stock03-worktrees/13-18-integration`.
 
 - 입력: [PR58](https://github.com/krdn/gon-stock03/pull/58) `38e6e402c640bdb19f550eb099dd6eb08a80302d`, [PR59](https://github.com/krdn/gon-stock03/pull/59) `6270faa0024433274930996300fb1e9e20cadc89`. 시작 시 원격 SHA·초안·CI4 SUCCESS 각각 재확인.
