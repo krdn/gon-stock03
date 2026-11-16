@@ -1,6 +1,6 @@
 # #9 최소 모의 실행 절차
 
-**실제 조회 후 주문전 guard 중단.** [실행 결과](../verification/2026-11-16-paper-session-run.md)를 확인한다. [2026-11-16 승인 기록](https://github.com/krdn/gon-stock03/issues/9#issuecomment-6897995215)에서 사용자는 아래 범위에 “수동 취소 대안에 동의”, “조건부 모의 주문 1회 승인”으로 각각 응답했다. 이 최초 기록은 준비 승인이다. 이후 사용자가 직접 API 주문·취소 테스트와 정규장 전체 시간창 확대를 지시했고, 동일 모의계좌·다른 API 중지·앱 잔량취소 대응 가능을 확인했다. 실제 전송은 아래 준비 검증과 장 상태·최신 데이터 확인 후 수행한다. 예약은 하지 않는다. [공식 계약·대안](../research/kis-order-recovery-2026-11.md)과 [검증](../verification/2026-11-15-kis-orders-recovery.md)을 먼저 확인한다.
+**최신 삼성전자 한정 주문·취소 실증 완료.** [삼성전자 결과와 최신 사용자 지시](../verification/2026-11-16-samsung-paper-run.md)를 우선한다. 다음 테스트는 API취소 없이 사용자 모바일 취소다. 아래 최초 KODEX 실행은 주문전 guard 중단이다. [실행 결과](../verification/2026-11-16-paper-session-run.md)를 확인한다. [2026-11-16 승인 기록](https://github.com/krdn/gon-stock03/issues/9#issuecomment-6897995215)에서 사용자는 아래 범위에 “수동 취소 대안에 동의”, “조건부 모의 주문 1회 승인”으로 각각 응답했다. 이 최초 기록은 준비 승인이다. 이후 사용자가 직접 API 주문·취소 테스트와 정규장 전체 시간창 확대를 지시했고, 동일 모의계좌·다른 API 중지·앱 잔량취소 대응 가능을 확인했다. 실제 전송은 아래 준비 검증과 장 상태·최신 데이터 확인 후 수행한다. 예약은 하지 않는다. [공식 계약·대안](../research/kis-order-recovery-2026-11.md)과 [검증](../verification/2026-11-15-kis-orders-recovery.md)을 먼저 확인한다.
 
 ## 승인 범위
 
