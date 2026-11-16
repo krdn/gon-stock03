@@ -1,0 +1,20 @@
+{
+  "requested_model": "gemini-4-argon-high",
+  "requested_effort": "high",
+  "init_model": "gemini-4-argon-high",
+  "result": {
+    "conversation_id": "2791266c-b002-4178-9d9a-1c925b76c8ec",
+    "status": "SUCCESS",
+    "response": "제공된 diff, 관련 소스 코드(`shared/contracts.ts`, `src/App.tsx`, `src/pages/Trading.tsx`, `src/specs.ts`, 서버 코드), 단위 테스트(`tests/orders.test.ts`), 브라우저 테스트(`tests/browser/orders.spec.ts`), 작업 및 검증 문서를 검토했습니다.\n\n### 검토 결과\n- **결함 발견 없음 (No P0/P1/P2/P3 findings)**\n- **판정: `ORDERS PASS`**\n\n### 주요 확인 사항\n1. **DEMO 주문 검색·수량/체결/수수료·취소 경합 안전성 (`src/pages/Trading.tsx`, `tests/orders.test.ts`, `tests/browser/orders.spec.ts`)**\n   - 종목명·코드(`query.trim().toLowerCase()`)와 상태 필터(`all`, `pending`, `filled`, `cancelled`) 조합 검색이 정상 동작합니다.\n   - 주문/체결/잔량 수량, 지정가/평균 체결가, 수수료(`o.fee`), 출처(수동 또는 전략명)가 명확히 표시됩니다.\n   - `cancelling` ref 및 `busy || !available` 조건으로 동기 중복 취소 클릭을 1회 요청으로 차단하며, 체결이 앞선 경합 상황에서 서버 거부 후 `refresh()`로 체결 상태·체결가·수수료를 반영합니다.\n2. **KIS 로컬 저장 원장 분리 및 읽기 전용 보장 (`src/pages/Trading.tsx`, `shared/contracts.ts`)**\n   - `DEMO 주문` / `KIS 모의 원장` 환경 전환 시 상태 필터를 초기화하고, KIS 환경에서는 `GET /api/kis/ledger`만 호출하며 KIS 업무 API 호출·주문·취소·자동 재전송이 발생하지 않습니다.\n   - `paperLedgerSchema`를 통해 응답 구조·수량 불변식(`filled + remaining <= qty`)·날짜 형식을 검증하고, 화면에 불필요한 `message`·`evidence`·`minimumRun` 필드를 제거합니다.\n   - `AbortController`와 cleanup 플래그(`active`)로 환경 전환·재요청·언마운트 시 이전 비동기 응답의 역전을 방지합니다.\n   - 초기 로딩/오류/이전 성공 데이터(`이전에 읽은 원장`)/빈 원장 상태를 구분하여, 초기 조회 실패나 재조회 실패 시 빈 원장으로 오인되지 않도록 이전 데이터와 시각을 보존합니다.\n   - KIS 주문 행의 관리 링크는 종목코드만 포함한 `/paper?code=${o.code}`로 이동합니다.\n3. **기존 서버 로직 보존 및 범위 준수**\n   - 서버 엔진·저장소·KIS 브로커(`server/*`) 동작 변경 없이 기존 API를 재사용했으며, WebSocket(#19) 및 장중 통합 수용(#25), 사용자 직접 화면 수용 미확인을 문서와 화면 안내에 정확히 구분해 기록했습니다.\n",
+    "duration_seconds": 58.03440615,
+    "num_turns": 1,
+    "usage": {
+      "input_tokens": 56057,
+      "output_tokens": 4213,
+      "thinking_tokens": 3564,
+      "cache_read_tokens": 0,
+      "total_tokens": 60270
+    }
+  },
+  "limitation": "Server-side model and effort not independently verified; images not supplied."
+}

@@ -1,0 +1,17 @@
+{
+  "requested_model": "gemini-4-argon-high",
+  "requested_effort": "high",
+  "server_model_effort_independently_verified": false,
+  "initial": {
+    "init_model": "gemini-4-argon-high",
+    "result": "### 검토 결과 (Findings)\n\n1. **[Medium] 비동기 주문 전송 중 후속 체결가 이벤트 수신 시 평가 이력(`evaluations`)의 정렬 순서가 뒤집히고 주문 완료 직후 기록이 유실됨**\n   - **위치**: `server/realtime.ts:248-290` (특히 `server/realtime.ts:274-275`, `server/realtime.ts:282-287`)\n   - **근거**:\n     ```ts\n     const history = strategy.evaluations ?? [];\n     strategy.evaluations = [evaluation, ...history.filter(e => e.status !== 'sending').slice(0, 98), ...history.filter(e => e.status === 'sending')];\n     ```\n     - **시간순(최신순) 역전**: 신호가 발생하여 `status: 'sending'`인 평가 항목(`E1`)이 생성된 뒤 `await this.paper.submit(...)`이 비동기로 실행되는 동안 다음 체결가 이벤트(`E2`)가 수신되면, `E1`은 `...history.filter(e => e.status === 'sending')`에 의해 기존 과거 기록들(`non-sending`)의 **맨 뒤**로 이동합니다. 이로 인해 `src/pages/Research.tsx:21`에서 렌더링되는 최근 평가 목록의 최신순 정렬이 깨집니다.\n     - **최신 주문 평가 기록의 조기 삭제**: 기존 평가 이력이 98건 이상 쌓인 상태에서 위와 같이 `E1`(`sending`)이 배열 맨 끝(인덱스 99)으로 밀려난 뒤 `this.paper.submit(...)`이 완료되면 `E1.status`가 `'accepted'` / `'rejected'` / `'unknown'` / `'blocked'`로 갱신됩니다(`server/realtime.ts:285`). 직후 다음 체결가 이벤트(`E3`)가 도착하면 `history.filter(e => e.status !== 'sending').slice(0, 98)`에 의해 인덱스 99에 위치한 **방금 완료된 최신 주문 평가(및 `requestId`·`brokerId` 연결 정보)가 가장 먼저 잘려 유실**됩니다.\n     - **보관 한도 오프바이원**: 진행 중인 `sending` 평가가 없을 때 `[evaluation, ...history.slice(0, 98)]`만 남게 되어 최대 100건이 아닌 99건까지만 유지됩니다.\n\n2. **[Low] 로컬 서버 상태 미확인(`!available`) 시에도 대시보드 KIS 전략 현황에 이전 스냅샷의 `'실시간 입력 준비'` 문구가 표시될 수 있음**\n   - **위치**: `src/pages/Workspace.tsx:44`\n   - **근거**:\n     ```tsx\n     <p>{available ? `${state.strategies.filter(s => s.environment === 'kis-paper' && s.active).length} / ${state.strategies.filter(s => s.environment === 'kis-paper').length}` : '미확인'} · {realtime?.ordersAllowed ? '실시간 입력 준비' : realtime?.message ?? '실시간 미확인'}</p>\n     ```\n     - 실행 전략 수는 `available` 여부를 확인하여 `'미확인'`으로 대체하지만, 뒤따르는 실시간 상태는 `available`을 확인하지 않고 마지막 스냅샷의 `realtime?.ordersAllowed`를 그대로 참조합니다. 로컬 서버 연결이 끊기거나 상태 확인에 실패해 `available === false`가 되었을 때 직전 스냅샷의 `ordersAllowed`가 `true`였다면 대시보드 명세(`src/specs.ts:16`, 로컬 상태 불명 시 준비 완료 표시 금지)와 달리 `'미확인 · 실시간 입력 준비'`가 표시될 수 있습니다.\n",
+    "status": "SUCCESS",
+    "tool_calls": 0
+  },
+  "fix_only": {
+    "init_model": "gemini-4-argon-high",
+    "result": "**PASS**\n\n이전 리뷰에서 지적된 두 가지 결함과 관련 회귀 테스트가 모두 정확하게 수정되었습니다.\n\n1. **평가 이력 순서 보존 및 100건 상한(`server/realtime.ts`)**: `evaluations.filter(e => e.status === 'sending' || remaining-- > 0)`를 통해 `sending` 상태인 항목은 단락 평가(short-circuit)로 원래 시간순 위치를 그대로 유지하고, 완료된 과거 항목들만 최신순으로 `100 - sendingCount`개까지 남겨 가장 오래된 완료 항목만 제거되도록 수정되었습니다.\n2. **실시간 준비 상태 및 조회 실패 표시(`src/pages/Workspace.tsx`, `src/pages/Research.tsx`)**: `!available` 시 S01과 S07 모두 `'상태 미확인'`을 표시하며, `quoteAge >= 0 && quoteAge <= 5000` 조건이 `realtimeReady`에 반영되어 체결가 수신 후 5초 경과 또는 연결 불능 시 실시간 입력 준비 표시와 전략 시작 버튼이 즉시 해제/비활성화됩니다.\n",
+    "status": "SUCCESS",
+    "tool_calls": 0
+  }
+}

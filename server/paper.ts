@@ -2,7 +2,7 @@ import { paperRecoveryInput, type OrderInput, type PaperRecoveryInput } from '..
 import type { PaperOrder, BrokerOrder, PaperEvidence, ConnectionState, PaperRiskSnapshot } from '../shared/model.ts';
 import { KisClient, KisRejected, KisNotSent, koreaDate } from './kis.ts';
 import { Store } from './store.ts';
-import { halt, record } from './engine.ts';
+import { halt } from './engine.ts';
 import { z } from 'zod';
 
 export const paperApprovalSchema = z.object({ date: z.iso.date(), requestId: z.uuid(), cancelProbe: z.literal(true).optional(), code: z.enum(['069500', '005930']).optional(), maxAmount: z.number().int().positive().max(200000).optional(), allowExistingHolding: z.literal(true).optional() }).strict();
@@ -20,6 +20,8 @@ const evidence = (tradeDate: string, orders: BrokerOrder[], connection: Connecti
   balance: { cash: connection.balance!.cash, totalEquity: connection.balance!.totalEquity, positions: connection.balance!.positions.map(({ code, qty }) => ({ code, qty })) } });
 
 export class PaperBroker {
+  private realtimeGuard?: (code: string) => () => void;
+  setRealtimeGuard(guard: (code: string) => () => void) { this.realtimeGuard = guard; }
   private queue: Promise<unknown> = Promise.resolve();
   private riskOrders: (NonNullable<PaperRiskSnapshot['orders']> & { day: string }) | null = null;
   constructor(private store: Store, private kis: KisClient, private approval?: PaperApproval) {
@@ -124,13 +126,16 @@ export class PaperBroker {
     if (!order || order.status !== 'unknown' || order.brokerId) throw new Error('주문번호 없는 응답 불명 주문만 명시적 복구할 수 있습니다.');
     return order;
   }
-  async submit(input: OrderInput): Promise<PaperOrder> {
+  async submit(input: OrderInput, checkSignal?: () => void, strategy?: PaperOrder['strategy']): Promise<PaperOrder> {
     return this.enqueue(async () => {
       const existing = this.store.paperOrders().find(o => o.requestId === input.requestId);
       if (existing) {
         if (existing.code !== input.code || existing.side !== input.side || existing.qty !== input.qty || existing.price !== input.price) throw new Error('동일 요청 ID의 주문 내용이 다릅니다.');
         return existing;
       }
+      if (this.store.realtimeRequired() && !this.realtimeGuard) throw new KisNotSent('실시간 대조 안전장치 없이 신규 주문을 실행할 수 없습니다.');
+      checkSignal?.();
+      const checkRealtime = this.realtimeGuard?.(input.code);
       if (this.approval) {
         if (input.requestId !== this.approval.requestId || input.code !== (this.approval.code ?? '069500') || input.side !== 'buy' || input.qty !== 1 || !Number.isSafeInteger(input.price) || input.price <= 0 || input.price > (this.approval.maxAmount ?? 100000)) throw new Error('조건부 1회 승인 범위와 주문이 다릅니다.');
         this.checkWindow();
@@ -172,11 +177,13 @@ export class PaperBroker {
       }
       const latestRisk = this.store.read().risk;
       if (latestRisk.halted || JSON.stringify(risk) !== JSON.stringify(latestRisk)) throw new Error('검증 중 위험 설정이 바뀌었습니다. 다시 확인하세요.');
-      const local: PaperOrder = { ...input, createdAt: new Date().toISOString(), tradeDate: koreaDate(), status: 'sending', filled: 0, remaining: input.qty, message: 'KIS 모의 전송 중' };
+      const local: PaperOrder = { ...input, ...(strategy ? { strategy } : {}), createdAt: new Date().toISOString(), tradeDate: koreaDate(), status: 'sending', filled: 0, remaining: input.qty, message: 'KIS 모의 전송 중' };
       this.store.savePaper(local, { actor: 'system', action: 'sending', before: null });
       this.riskOrders = null;
       try {
         const receipt = await this.kis.submit(input, () => {
+          checkSignal?.();
+          checkRealtime?.();
           this.checkWindow();
           if (this.approval && (performance.now() - quoteReceived > 5000 || Date.now() - Date.parse(quote.receivedAt) > 5000 || Date.now() < Date.parse(quote.receivedAt))) throw new KisNotSent('승인된 시세의 5초 유효기간이 지났습니다.');
           const currentRisk = this.store.read().risk;
@@ -188,7 +195,6 @@ export class PaperBroker {
         local.message = error instanceof Error ? error.message : '주문 응답 불명';
       }
       this.store.savePaper(local, { actor: 'system', action: 'response', before: 'sending' });
-      this.store.update(state => record(state, `KIS 모의 주문 ${local.status}`, local.message, local.status === 'accepted' ? 'info' : 'warning'));
       return local;
       } finally {
         if (this.approval) {

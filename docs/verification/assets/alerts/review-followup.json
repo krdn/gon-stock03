@@ -1,0 +1,25 @@
+{
+  "session_id": "1f4e7727-034e-4ac5-8a82-f0a8ae1cbbb8",
+  "is_error": false,
+  "result": "# 이슈 #17 후속 리뷰 (P2-1~7 한정)\n\n**결론:** 제공된 코드 기준으로 P2-1~7은 모두 해소됐습니다. 새 P0·P1은 없습니다. 남은 사항은 경미한 결함 1건, 확인 필요 2건, 설계 1건입니다. 다만 전체 unit 134개와 browser 76개는 아직 실행 중이므로 통과로 볼 수 없습니다.\n\n## P2별 해소 확인\n\n| 항목 | 판정 | 근거 |\n|---|---|---|\n| P2-1 중복 제거가 다음 실패를 삼킴 | 해소 | `/api/kis/orders` 성공 시 'KIS 주문 대조 확인'을 기록해 실패→성공→실패 전환이 남습니다. requestId가 없을 때는 `!e.requestId` 조건으로 requestId 있는 이벤트를 비교 대상에서 뺍니다. 테스트 2건(대조 이벤트 3건, 차단 이벤트 2건)이 이를 확인합니다. |\n| P2-2 '모두 읽음'이 못 본 감사까지 처리 | 해소 | `markPaperEventsRead(ids)`는 클라이언트가 보낸 `paper:` ID만 `paper_audit`과 대조해 기록합니다. 같은 `store.update` 트랜잭션 안에서 실행됩니다. 1000개 × 80자 상한은 128000바이트 안에 들어갑니다. unit 테스트 2건과 browser 테스트 3이 확인합니다. |\n| P2-3 기존 KIS 이벤트 이중 표시 | 해소 (아래 확인 필요 1 참고) | `events()`가 `^KIS 모의 주문 (accepted\\|unknown\\|rejected)$`와 일치하는 이벤트를 표시에서 뺍니다. 원본 JSON은 그대로 둡니다. 테스트 1에서 kis-paper 이벤트가 1건인지 확인합니다. |\n| P2-4 공유 상태로 실패 기록 | 해소 | 성공 경로는 이번 요청의 `connection`을 씁니다. 실패 경로는 `failed`를 넘기며, `ready = !failed && …`이므로 공유 상태가 'ready'여도 실패를 덮지 못합니다. |\n| P2-5 취소 시도 문구 '미전송' | 해소 | `before`가 null이면 `sending`일 때만 '미전송'으로, 나머지는 '이전 상태 미기록'으로 표시합니다. |\n| P2-6 안내 문구 충돌 | 해소 | 문구가 'WebSocket 실시간 연결·재연결 알림은 미연결'로 범위를 한정합니다. 함께 지적한 `unread-dot`도 `aria-hidden` 처리됐습니다. |\n| P2-7 차단 이벤트 경로 불일치 | 해소 | cancel-probe의 승인 없음(409)과 catch 경로를 모두 기록합니다. 형식이 잘못된 cancel·revise ID는 `endsWith('/cancel'\\|'/revise')`로 'KIS 정정·취소 요청 차단'으로 분류됩니다. 순서상 `/cancel-probe`를 먼저 판정하므로 서로 섞이지 않습니다. |\n\n## 남은 결함\n\n**경미-1. 로컬 입력 오류가 '외부 서버 오류'로 기록됨 (P2-4 수정에서 생김)**\n- 근거: catch에서 `error instanceof KisFailure ? error.kind : 'upstream'`를 씁니다.\n- `/api/kis/check`에 JSON이 아닌 본문이 오면 `body()`가 일반 `Error`를 던집니다. 이 오류가 `reasons.upstream`, 즉 '외부 서버 오류. 연결·설정 화면에서…'로 기록됩니다. `kis.balance()` 내부의 TypeError 같은 비KIS 예외도 같습니다.\n- 정상 UI는 `'{}'`를 보내므로 영향은 작습니다. KisFailure가 아닌 오류는 분류하지 않은 실패('전체 조회 미확인')로 남기는 편이 사실에 맞습니다.\n\n## 확인 필요 (근거 부족으로 결함 판정 보류)\n\n1. **기존 제목 패턴의 범위:** 정규식은 정확히 `KIS 모의 주문 accepted|unknown|rejected` 세 가지만 제외합니다. 이전 `paper.ts`가 다른 상태(예: 복구·취소 결과의 filled·cancelled)나 접미어가 붙은 제목으로도 기록했다면, 그 이벤트는 여전히 'KIS 모의 주문 기록'으로 감사 투영과 겹쳐 보입니다. 이전 코드의 `record(` 호출 목록을 대조해야 합니다.\n2. **전송 후 예외가 '차단'으로 기록될 가능성:** catch는 SQLite 오류만 먼저 제외합니다. 나머지 예외는 `/api/kis/order`·`/recovery/confirm`·`/cancel-probe`에서 모두 '… 요청 차단 / 검증을 통과하지 못했습니다'로 기록됩니다.\n   - `PaperBroker.submit`이나 `cancelProbe`가 KIS 전송 **후** 오류(네트워크·contract 등)를 반환값(`unknown`)이 아니라 예외로 던진다면, 실제로 전송된 주문이나 취소가 '차단'으로 표시됩니다.\n   - 이 위험은 `cancel-probe`가 catch 대상에 새로 추가되면서 생겼습니다. PaperBroker 코드를 보지 못해 판정을 보류합니다. 전송 후에는 항상 감사를 남기고 반환하는지 확인이 필요합니다.\n\n## 설계\n\n- **조회 성공 때마다 워크스페이스를 기록함:** `/api/kis/orders`가 성공할 때마다 `store.update`가 실행됩니다. 중복 제거로 이벤트를 남기지 않아도 `revision += 1`과 워크스페이스 JSON 전체 재기록은 일어납니다.\n  - 이 경로가 자동 폴링된다면 매 주기 쓰기가 생깁니다.\n  - 저장소 장애 시에는 KIS 조회가 성공했는데도 500을 반환합니다. 대조 화면 자체를 쓸 수 없게 되는 셈입니다.\n  - 중복으로 판정되면 쓰기를 건너뛰거나, 기록 실패와 조회 결과 응답을 분리하는 방안을 검토할 수 있습니다. 결함이 아니라 비용 판단의 문제입니다.\n\n## 검증 상태\n\n- 제공된 자료로 확인한 신규·변경 테스트 6건은 위 수정 의도와 일치합니다.\n- 전체 unit 134개와 browser 76개 결과는 아직 나오지 않았으므로 미검증입니다. browser 테스트 2는 실제 DB를 '모두 읽음'으로 바꾸므로, 순서 의존 문제가 없는지 전체 실행 결과로 확인해야 합니다.",
+  "modelUsage": {
+    "claude-opus-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 10022,
+      "cacheReadInputTokens": 3301,
+      "cacheCreationInputTokens": 30279,
+      "webSearchRequests": 0,
+      "costUSD": 0.4433402,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 7458,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 30279,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "requested_model": "claude-opus-5-5",
+  "requested_effort": "high"
+}

@@ -1,9 +1,10 @@
+import { RealtimeStatus } from '../components/RealtimeStatus';
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { ArrowRight, Info, ShieldCheck, X } from 'lucide-react';
 import { useWorkbench } from '../context';
 import { Badge, Change, Chart, Empty, Panel, Stat } from '../components/ui';
-import { orderInput, type OrderInput } from '../../shared/contracts';
+import { orderInput, paperLedgerSchema, type OrderInput, type PaperLedger } from '../../shared/contracts';
 import { orderStatus, won } from '../../shared/model';
 
 export function Trade() {
@@ -64,7 +65,51 @@ export function Trade() {
     <dialog ref={dialog} className="order-dialog" aria-labelledby="demo-order-confirm-title" onCancel={() => setConfirm(false)} onClose={() => setConfirm(false)}><div className="panel-head"><h2 id="demo-order-confirm-title">로컬 데모 주문 확인</h2><button className="icon-button" aria-label="주문 확인 닫기" onClick={() => setConfirm(false)}><X size={18} /></button></div><p>환경: DEMO · 합성 시세 {won(instrument.price)}원</p><p>{instrument.name} · {side === 'buy' ? '매수' : '매도'}</p><h3>{qty}주 × {won(Number(price))}원</h3><p>주문 금액 {won(amount)}원. KIS로 전송되지 않습니다.</p>{quoteChanged && <div className="notice warning"><p>시세가 변경되었습니다. 지정가는 유지됩니다. 현재 시세와 주문 가격을 다시 확인하세요.</p><button onClick={() => setReviewedQuote(instrument.price)}>변경된 시세 재확인</button></div>}{blocked && <p role="status">{state.risk.halted ? '신규 주문 정지 상태입니다.' : '최신 로컬 상태 확인 전 접수를 차단합니다.'}</p>}<div className="button-row"><button className="button secondary" onClick={() => setConfirm(false)}>돌아가기</button><button className="button primary" disabled={busy || blocked || quoteChanged || Boolean(unresolved)} onClick={() => void submit()}>데모 주문 접수</button></div></dialog></>;
 }
 export function Orders() {
-  const { state, act, busy, available } = useWorkbench(); const [filter, setFilter] = useState('all');
-  const rows = state.orders.filter(o => filter === 'all' || o.status === filter);
-  return <><div className="stats-grid three"><Stat label="전체 주문" value={`${state.orders.length}건`} sub="현재 데모 세션 누적" /><Stat label="미체결" value={`${state.orders.filter(o => o.status === 'pending').length}건`} sub="다음 봉에서 조건 평가" /><Stat label="체결 완료" value={`${state.orders.filter(o => o.status === 'filled').length}건`} sub="현금·보유수량 반영" /></div><Panel title="주문 내역" action={<button disabled={busy || !available} className="button secondary" onClick={() => void act('tick').catch(() => {})}>다음 데모 봉 재생</button>}><div className="toolbar"><div className="tabs">{[['all', '전체'], ['pending', '미체결'], ['filled', '체결'], ['cancelled', '취소']].map(([id, label]) => <button key={id} onClick={() => setFilter(id)} className={filter === id ? 'active' : ''}>{label}</button>)}</div><span className="muted">최신 주문순</span></div>{rows.length ? <div className="table-scroll"><table><thead><tr><th>시각 / ID</th><th>종목</th><th>구분</th><th>수량</th><th>가격</th><th>상태</th><th>출처</th><th>관리</th></tr></thead><tbody>{rows.map(o => <tr key={o.id}><td><span>{new Date(o.createdAt).toLocaleTimeString('ko-KR')}</span><small className="cell-small">{o.id.slice(0, 8)}</small></td><td><Link className="stock-name" to={`/trade?code=${o.code}`}>{state.instruments.find(s => s.code === o.code)?.name}</Link></td><td className={o.side === 'buy' ? 'up' : 'down'}>{o.side === 'buy' ? '매수' : '매도'}</td><td>{o.qty}주</td><td className="number">{won(o.filledPrice ?? o.price)}</td><td><Badge tone={o.status === 'filled' ? 'teal' : 'neutral'}>{orderStatus[o.status]}</Badge></td><td>{o.source === 'manual' ? '수동' : '전략'}</td><td>{o.status === 'pending' ? <button className="button small-button secondary" disabled={busy} onClick={() => void act('orders/cancel', { id: o.id }).catch(() => {})}>취소</button> : '—'}</td></tr>)}</tbody></table></div> : <Empty title="아직 주문이 없습니다"><Link to="/trade">트레이딩</Link>에서 데모 주문을 접수해 보세요.</Empty>}</Panel></>;
+  const { state, act, busy, available, realtime } = useWorkbench();
+  const [environment, setEnvironment] = useState<'demo' | 'kis'>('demo'), [filter, setFilter] = useState('all'), [query, setQuery] = useState('');
+  const [reload, setReload] = useState(0);
+  const [ledger, setLedger] = useState<{ orders: PaperLedger['orders'] | null; phase: 'loading' | 'ready' | 'error'; readAt: string | null }>({ orders: null, phase: 'loading', readAt: null });
+  const cancelling = useRef(false);
+  useEffect(() => {
+    if (environment !== 'kis') return;
+    const controller = new AbortController(); let active = true;
+    setLedger(old => ({ ...old, phase: 'loading' }));
+    void (async () => {
+      try {
+        const response = await fetch('/api/kis/ledger', { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]) });
+        if (!response.ok) throw new Error('ledger');
+        const result = paperLedgerSchema.parse(await response.json());
+        if (active) setLedger({ orders: result.orders, phase: 'ready', readAt: new Date().toISOString() });
+      } catch { if (active) setLedger(old => ({ ...old, phase: 'error' })); }
+    })();
+    return () => { active = false; controller.abort(); };
+  }, [environment, reload, realtime?.reconciledAt]);
+  function changeEnvironment(next: 'demo' | 'kis') { setEnvironment(next); setFilter('all'); }
+  async function cancel(id: string) {
+    if (cancelling.current || busy || !available) return;
+    cancelling.current = true;
+    try { await act('orders/cancel', { id }); } catch {} finally { cancelling.current = false; }
+  }
+  const matches = (code: string) => `${code} ${state.instruments.find(s => s.code === code)?.name ?? ''}`.toLowerCase().includes(query.trim().toLowerCase());
+  const rows = state.orders.filter(o => (filter === 'all' || o.status === filter) && matches(o.code));
+  const paperRows = ledger.orders?.filter(o => (filter === 'all' || o.status === filter) && matches(o.code)) ?? [];
+  const paperStatus = { sending: '전송 중', accepted: '접수 · 미체결', unknown: '응답 불명 · 대조 필요', rejected: '거부 · 미접수', partial: '부분체결', filled: '체결', cancelled: '취소' };
+  const filters = environment === 'demo' ? [['all', '전체'], ['pending', '미체결'], ['filled', '체결'], ['cancelled', '취소']] : [['all', '전체'], ['sending', '전송 중'], ['accepted', '미체결'], ['partial', '부분체결'], ['filled', '체결'], ['cancelled', '취소'], ['unknown', '불명'], ['rejected', '거부']];
+  return <><div className="tabs" aria-label="주문 환경"><button className={environment === 'demo' ? 'active' : ''} aria-pressed={environment === 'demo'} onClick={() => changeEnvironment('demo')}>DEMO 주문</button><button className={environment === 'kis' ? 'active' : ''} aria-pressed={environment === 'kis'} onClick={() => changeEnvironment('kis')}>KIS 모의 원장</button></div>
+    <p className="notice compact">{environment === 'demo' ? '합성 데이터 · 로컬 DEMO 주문입니다. 취소는 예약을 해제하며 실제 KIS 주문에 영향을 주지 않습니다.' : '저장된 KIS 모의 원장입니다. 이 화면은 KIS에 조회·주문·취소를 전송하지 않습니다. 대조·불명 복구는 KIS 모의 매매 화면에서 직접 진행하세요.'}</p>
+    {environment === 'kis' && <RealtimeStatus />}
+    {environment === 'demo' && <div className="stats-grid three"><Stat label="전체 주문" value={`${state.orders.length}건`} sub="저장된 DEMO 누적" /><Stat label="미체결" value={`${state.orders.filter(o => o.status === 'pending').length}건`} sub="다음 봉에서 조건 평가" /><Stat label="체결 완료" value={`${state.orders.filter(o => o.status === 'filled').length}건`} sub="현금·보유수량 반영" /></div>}
+    <Panel title={environment === 'demo' ? '주문 내역' : 'KIS 저장 원장'} action={environment === 'demo' ? <button disabled={busy || !available} className="button secondary" onClick={() => void act('tick').catch(() => {})}>다음 데모 봉 재생</button> : <button className="button secondary" disabled={ledger.phase === 'loading'} onClick={() => setReload(value => value + 1)}>원장 다시 읽기</button>}>
+      <label className="field">주문 종목 검색<input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="종목명 또는 코드" /></label>
+      <div className="toolbar"><div className="tabs">{filters.map(([id, label]) => <button key={id} onClick={() => setFilter(id)} className={filter === id ? 'active' : ''} aria-pressed={filter === id}>{label}</button>)}</div><span className="muted">{environment === 'demo' ? '최신 주문순' : '로컬 저장 원장'}</span></div>
+      {environment === 'demo' ? rows.length ? <div className="table-scroll"><table><thead><tr><th>시각 / ID</th><th>종목</th><th>구분</th><th>주문 / 체결 / 잔량</th><th>지정가 / 평균 체결가</th><th>상태</th><th>수수료</th><th>출처</th><th>관리</th></tr></thead><tbody>{rows.map(o => <tr key={o.id}><td><span>{new Date(o.createdAt).toLocaleString('ko-KR')}</span><small className="cell-small">{o.id}</small>{o.filledAt && <small className="cell-small">체결 {new Date(o.filledAt).toLocaleString('ko-KR')}</small>}</td><td><Link className="stock-name" to={`/trade?code=${o.code}`}>{state.instruments.find(s => s.code === o.code)?.name ?? o.code}</Link><small className="cell-small">{o.code}</small></td><td className={o.side === 'buy' ? 'up' : 'down'}>{o.side === 'buy' ? '매수' : '매도'}</td><td>{o.qty} / {o.status === 'filled' ? o.qty : 0} / {o.status === 'pending' ? o.qty : 0}주</td><td className="number">{won(o.price)} / {o.filledPrice === undefined ? '—' : won(o.filledPrice)}</td><td><Badge tone={o.status === 'filled' ? 'teal' : 'neutral'}>{orderStatus[o.status]}</Badge></td><td>{won(o.fee)}원</td><td>{o.source === 'manual' ? '수동 주문' : state.strategies.find(s => s.id === o.source)?.name ?? '전략'}</td><td>{o.status === 'pending' ? <button className="button small secondary" disabled={busy || !available} onClick={() => void cancel(o.id)}>취소</button> : '—'}</td></tr>)}</tbody></table></div> : <Empty title={state.orders.length ? '검색 조건에 맞는 주문이 없습니다' : '아직 주문이 없습니다'}><Link to="/trade">트레이딩</Link>에서 DEMO 주문을 확인하세요.</Empty> : <>
+        <p className="muted tiny">평균 체결가·수수료는 현재 원장에 미제공</p>
+        <p className="muted">KIS 대조 시각은 이 원장에 미제공입니다. 로컬 읽기 성공은 최신 KIS 상태 확인이 아닙니다. 재시작·다음 거래일에도 원래 주문일 기준으로 대조해야 합니다. 실시간 수신·대조 상태는 위 표시를 확인하세요.</p>
+        {ledger.phase === 'loading' && <p role="status">로컬 원장 읽는 중…</p>}
+        {ledger.phase === 'error' && <p role="alert">원장을 읽지 못했습니다. 연결을 확인하고 다시 읽으세요.</p>}
+        {ledger.readAt && <p role="status">{ledger.phase === 'ready' ? '로컬 원장 읽기 완료' : '마지막 로컬 읽기'} · {new Date(ledger.readAt).toLocaleString('ko-KR')}</p>}
+        {ledger.phase !== 'ready' && ledger.orders !== null && <p className="notice warning">이전에 읽은 원장</p>}
+        {paperRows.length ? <div className="table-scroll"><table><thead><tr><th>주문일 / 요청 ID</th><th>종목</th><th>방향 / 지정가</th><th>주문 / 체결 / 잔량</th><th>상태</th><th>증권사 주문번호</th><th>관리</th></tr></thead><tbody>{paperRows.map(o => <tr key={o.requestId}><td>{o.tradeDate}<small className="cell-small">{new Date(o.createdAt).toLocaleString('ko-KR')}</small><small className="cell-small">{o.requestId}</small></td><td>{state.instruments.find(s => s.code === o.code)?.name ?? o.code}<small className="cell-small">{o.code}</small></td><td>{o.side === 'buy' ? '매수' : '매도'} · {won(o.price)}원</td><td>{o.qty} / {o.filled} / {o.remaining}주</td><td><Badge tone={o.status === 'unknown' ? 'amber' : o.status === 'filled' ? 'teal' : 'neutral'}>{paperStatus[o.status]}</Badge></td><td>{o.brokerId ?? '미확인'}</td><td><Link to={`/paper?code=${o.code}`}>KIS 원장·복구 화면</Link></td></tr>)}</tbody></table></div> : ledger.phase === 'ready' && <Empty title={ledger.orders?.length ? '검색 조건에 맞는 주문이 없습니다' : '저장된 KIS 주문이 없습니다'}>로컬 원장에 없는 주문의 미접수·미체결을 뜻하지 않습니다. <Link to="/paper">KIS 모의 매매</Link>에서 별도로 확인하세요.</Empty>}
+      </>}
+    </Panel></>;
 }

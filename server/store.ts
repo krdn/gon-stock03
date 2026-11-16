@@ -1,17 +1,35 @@
 import { DatabaseSync } from 'node:sqlite';
+import { closeSync, constants, fchmodSync, fstatSync, openSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { initialState } from '../shared/fixtures.ts';
 import type { State, PaperOrder, PaperAudit } from '../shared/model.ts';
 import type { Experiment } from '../shared/backtest.ts';
+import { paperEvent, presentEvent } from './events.ts';
 import { record } from './engine.ts';
 import type { DailyRun, MasterInstrument, MasterSnapshot, MasterState, RemovedInstrument, StoredBar } from '../shared/market-data.ts';
 
 export class Store {
   private db: DatabaseSync;
   constructor(path: string) {
+    if (path !== ':memory:') for (const suffix of ['', '-wal', '-shm']) {
+      let fd: number;
+      try {
+        fd = openSync(path + suffix, constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK | (suffix ? 0 : constants.O_CREAT), 0o600);
+      } catch (error) {
+        if (suffix && (error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        throw error;
+      }
+      try {
+        const stat = fstatSync(fd);
+        if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid?.()) throw new Error('DB는 현재 사용자가 소유한 단일 일반 파일이어야 합니다. 원본을 보존하세요.');
+        fchmodSync(fd, 0o600);
+      } finally { closeSync(fd); }
+    }
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1), schema_version INTEGER NOT NULL, body TEXT NOT NULL);');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_orders (request_id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS paper_baseline (day TEXT PRIMARY KEY, equity REAL NOT NULL);');
+    this.db.exec('CREATE TABLE IF NOT EXISTS realtime_guard (id INTEGER PRIMARY KEY CHECK(id=1));');
+    this.db.exec('CREATE TABLE IF NOT EXISTS paper_event_read (id TEXT PRIMARY KEY);');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_audit (id TEXT PRIMARY KEY, request_id TEXT NOT NULL, body TEXT NOT NULL); CREATE INDEX IF NOT EXISTS paper_audit_request ON paper_audit(request_id);');
     this.db.exec('CREATE TABLE IF NOT EXISTS market_master (exchange TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS market_instruments (code TEXT PRIMARY KEY, exchange TEXT NOT NULL, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS daily_runs (id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS daily_bars (run_id TEXT NOT NULL, date TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(run_id,date));');
     this.db.exec('CREATE TABLE IF NOT EXISTS backtest_experiments (id TEXT PRIMARY KEY, body TEXT NOT NULL);');
@@ -22,13 +40,16 @@ export class Store {
     this.update(state => {
       state.playing = false;
       const active = state.strategies.filter(s => s.active);
-      active.forEach(s => { s.active = false; });
+      active.forEach(s => { s.active = false; s.run = (s.run ?? 0) + 1; });
+      for (const strategy of state.strategies) for (const evaluation of strategy.evaluations ?? []) if (evaluation.status === 'sending') { evaluation.status = 'unknown'; evaluation.reason = '평가 중 서버 재시작 · 주문 원장 대조 필요 · 자동 재전송 없음'; }
       if (active.length) record(state, '서버 재시작으로 전략 정지', '주문과 잔고를 확인한 뒤 개별 재개하세요.', 'warning');
     });
     for (const order of this.paperOrders()) if (order.status === 'sending') this.savePaper({ ...order, status: 'unknown', message: '전송 중 서버가 재시작되었습니다. KIS 계좌 대조가 필요합니다.' }, { actor: 'system', action: 'restart', before: 'sending' });
     for (const run of this.dailyRuns()) if (run.status.phase === 'loading') this.saveDaily({ ...run, status: { ...run.status, phase: 'partial', complete: false, error: '수집 중 서버가 재시작되었습니다. 마지막 저장 구간부터 재개하세요.' } });
     this.saveMasterStates(this.masterData().sources.filter(state => state.phase === 'loading').map(state => ({ ...state, phase: 'error', error: '마스터 수집 중 서버가 재시작되었습니다. 다시 수집하세요.' })));
   }
+  realtimeRequired() { return Boolean(this.db.prepare('SELECT id FROM realtime_guard WHERE id=1').get()); }
+  requireRealtime() { this.db.prepare('INSERT OR IGNORE INTO realtime_guard VALUES (1)').run(); }
   masterData() {
     return {
       sources: this.db.prepare('SELECT body FROM market_master ORDER BY exchange').all().map(row => JSON.parse(row.body as string) as MasterState),
@@ -122,6 +143,18 @@ export class Store {
     this.db.prepare('INSERT INTO paper_audit VALUES (?,?,?)').run(entry.id, entry.requestId, JSON.stringify(entry)); return entry;
   }
   paperAudit(requestId: string): PaperAudit[] { return this.db.prepare('SELECT body FROM paper_audit WHERE request_id=? ORDER BY rowid').all(requestId).map(row => JSON.parse(row.body as string) as PaperAudit); }
+  events() {
+    const read = new Set(this.db.prepare('SELECT id FROM paper_event_read').all().map(row => row.id));
+    const audits = this.db.prepare('SELECT body FROM paper_audit ORDER BY rowid DESC LIMIT 1000').all().map(row => {
+      const audit = JSON.parse(row.body as string) as PaperAudit;
+      return paperEvent(audit, read.has(audit.id));
+    });
+    return [...audits, ...this.read().events.filter(e => !/^KIS 모의 주문 (accepted|unknown|rejected)$/.test(e.title)).map(presentEvent)].sort((a, b) => b.time.localeCompare(a.time)).slice(0, 1000);
+  }
+  markPaperEventsRead(ids: string[]) {
+    const mark = this.db.prepare('INSERT OR IGNORE INTO paper_event_read SELECT id FROM paper_audit WHERE id=?');
+    for (const id of ids) if (id.startsWith('paper:')) mark.run(id.slice(6));
+  }
   paperBaseline(day: string, value: number) {
     this.db.prepare('INSERT OR IGNORE INTO paper_baseline (day,equity) VALUES (?,?)').run(day, value);
     return Number(this.db.prepare('SELECT equity FROM paper_baseline WHERE day=?').get(day)!.equity);

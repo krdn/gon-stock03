@@ -15,7 +15,7 @@ const balanceSchema = z.object({
   ctx_area_fk100: z.string().optional(), ctx_area_nk100: z.string().optional(),
 });
 interface Credentials { key: string; secret: string; account: string; product: string }
-class KisFailure extends Error { constructor(message: string, readonly kind: ConnectionFailure['kind']) { super(message); } }
+export class KisFailure extends Error { constructor(message: string, readonly kind: ConnectionFailure['kind']) { super(message); } }
 export class KisRejected extends KisFailure { constructor(message: string, kind: ConnectionFailure['kind'] = 'rejected') { super(message, kind); } }
 export class KisNotSent extends KisFailure { constructor(message: string, kind: ConnectionFailure['kind'] = 'rejected') { super(message, kind); } }
 export class KisDataError extends Error { constructor(readonly kind: 'request' | 'contract', message: string) { super(message); } }

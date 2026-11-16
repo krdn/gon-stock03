@@ -2,10 +2,10 @@
 
 기준 이슈: https://github.com/krdn/gon-stock03/issues/71 (기존 #8 후속).
 
-- 상태: 대기. 설계 등록 완료, 제품 구현 미착수.
+- 상태: 구현 착수 준비. 사용자 요청으로 다음 작업 실행이 허용됐다. 제품 구현은 새 세션이 소유한다.
 - 목표·완료 조건: 실행 서버 식별·미주입 진단, 유한한 조회 대기, 상태 새로고침 복구, 인증 대기 UI. 상세 체크리스트는 #71을 기준으로 한다.
 - 범위: 연결 진단/조회 경로·계약·UI·회귀 검사. 실제 KIS 업무 API·주문·취소·예약은 현재 STATE 제한을 유지한다.
-- 브랜치: `세부작업`. 최초 설계 기록 `6d7045b`. 후속 구현은 최신 main과 설계 PR의 통합 상태를 확인하고 별도 구현 브랜치에서 시작한다.
+- 브랜치: `세부작업`. 최초 설계 기록 `6d7045b`. 최신 기준 main `005a80e`를 병합해 설계 PR72의 STATE 충돌을 해결한다. PR72 통합 확인 후 별도 `feat/71-settings-recovery` 브랜치에서 시작한다.
 
 ## 먼저 읽을 자료
 
@@ -24,8 +24,21 @@
 
 ## 다음 행동
 
-#71과 설계 PR·CI를 조회해 원격 반영을 확인한다. 구현 요청을 받으면 설계 1단계부터 진행한다. 구현 완료 경계의 외부 리뷰와 실제 연결 검증은 각각 별도 증거로 남긴다.
+#71·설계 PR72·최신 main과 CI를 확인하고 설계 1단계부터 구현한다. `gon-workflow resume . --issue https://github.com/krdn/gon-stock03/issues/71 --task docs/tasks/71-settings-recovery.md --plan docs/plans/settings-recovery-2026-11.md --pr https://github.com/krdn/gon-stock03/pull/72`로 기록을 대조한다. 새 구현 브랜치도 먼저 푸시한다.
+
+현재 실제 KIS 인증·업무API·WebSocket·주문·취소·예약·외부알림은 금지다. 주입/인증 실행도 이번 요청으로 허용됐다고 해석하지 않는다. 서버 식별 UI와 fake transport·임시DB 기반 복구 구현은 가능하다. 실제 연결 검증 항목은 별도 승인 전 미검증으로 남긴다.
+
+완료 경계의 검증 모델은 `claude-fable-5-2`/high(사용자 표기 claude-fable-5-2-high) 또는 `gemini-4-argon-high`/high만 사용한다. 이번 부모에서 Fable 한도 소진을 확인했으므로 Argon을 사용할 수 있다. 다른 모델 자동 대체 없음. 요청/init과 실제 반환 모델·effort 확인 범위를 구분한다.
+
+부모가 탭·세션 ID·cwd를 확인한 뒤 구현 소유권을 새 세션에 넘긴다. 부모와 새 세션은 같은 파일을 동시에 수정하지 않는다. 추가 독립 에이전트·부모 검증 재위임은 하지 않는다. 원격 이슈·PR·CI와 작업 기록을 갱신하며 완료까지 진행한다.
 
 ## 새 세션 시작 문구
 
 > GitHub krdn/gon-stock03 #71과 연결된 설계 PR·CI, docs/tasks/71-settings-recovery.md 및 필수 자료를 확인하고 연결·설정 복구 구현을 진행해. 최신 main과 설계 통합 상태를 먼저 확인하고 실제 KIS API 실행 제한은 유지해.
+
+## 2026-11-17 다음 작업 점검
+
+- 원격 열린 구현 이슈는 #71이다. #25는 별도 장중 실증 Blocked이며 #1/#2/#3은 상위 묶음이다. 새 독립 결함 이슈를 추측으로 만들지 않는다.
+- 기존 main은 UI 초기/DEMO 표시·배치 수용을 포함한 005a80e다. PR72의 충돌은 STATE 한 파일이며 제품 코드는 최신 main 그대로 보존한다.
+- 중앙 gon-github-workflow PR28/main 81c87bc와 설치된 resume을 사용한다. 현재 worktree의 graphify-out/은 보존하며 새 구현은 별도 clean worktree에서 시작한다.
+- 인계 설계 검토: `gemini-4-argon-high`/요청 high, conversation `1a85854b-4934-4352-a343-3e79b9f35b88`, SUCCESS·PASS·차단0. 요청/init 모델 일치, 서버 내부 모델·effort는 결과에 별도 반환되지 않아 독립 확인 불가. 리뷰는 제공 diff만 검토했고 실제 제품 동작을 실행하지 않았다. 실제 연결 미검증 유지·PR72 통합/CI·clean worktree 원격 푸시·resume·탭/세션/cwd 확인 후 소유권 이전 순서를 확인했다.

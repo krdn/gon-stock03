@@ -2,15 +2,17 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { ZodError } from 'zod';
-import { backtestInput, codeSchema, haltInput, idInput, journalInput, orderInput, paperRecoveryInput, riskInput, storageErrorMessage, strategyInput } from '../shared/contracts.ts';
+import { z, ZodError } from 'zod';
+import { backtestInput, codeSchema, eventReadInput, haltInput, idInput, journalInput, orderInput, paperRecoveryInput, riskInput, storageErrorMessage, strategyInput } from '../shared/contracts.ts';
 import { advanceTick, backtest, cancelOrder, halt, placeOrder, record } from './engine.ts';
-import { KisClient } from './kis.ts';
+import { recordConnection, recordKisEvent } from './events.ts';
+import { KisClient, KisFailure } from './kis.ts';
 import { Store } from './store.ts';
 import { PaperBroker, paperCapabilities, type PaperApproval } from './paper.ts';
 import type { StateSnapshot } from '../shared/model.ts';
 import { emptyStatus } from '../shared/status.ts';
 import { createExperiment, replayExperiment } from './backtest.ts';
+import { Realtime, type RealtimeConfig, type SocketFactory } from './realtime.ts';
 import { MarketData } from './market-data.ts';
 import { marketQuoteInput, masterCodeSchema } from '../shared/market-data.ts';
 
@@ -22,19 +24,21 @@ async function body(req: IncomingMessage, limit = 16384) {
 function json(res: ServerResponse, status: number, data: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(data));
 }
-export function makeServer(store: Store, kis = KisClient.fromEnvironment(), ports = [4303, 4304], approval?: PaperApproval) {
+export function makeServer(store: Store, kis = KisClient.fromEnvironment(), ports = [4303, 4304], approval?: PaperApproval, realtimeOptions?: { config?: RealtimeConfig; connect?: SocketFactory; now?: () => number }) {
   const paper = new PaperBroker(store, kis, approval);
+  const realtime = new Realtime(store, paper, realtimeOptions?.config ?? Realtime.configuration(), realtimeOptions?.connect, realtimeOptions?.now);
   const market = new MarketData(store, kis);
   const instanceId = randomUUID();
   const origins = new Set(ports.flatMap(port => [`http://127.0.0.1:${port}`, `http://localhost:${port}`]));
   const hosts = new Set([...origins].map(origin => new URL(origin).host));
-  return createServer(async (req, res) => {
+  const server = createServer(async (req, res) => {
     if (!hosts.has(req.headers.host ?? '') || (req.headers.origin && !origins.has(req.headers.origin)) || req.headers['sec-fetch-site'] === 'cross-site') { json(res, 403, { error: '로컬 워크스페이스에서만 접근할 수 있습니다.' }); return; }
     const path = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
+    let eventRequestId: string | undefined;
     try {
       if (path === '/api/state' && req.method === 'GET') {
         const now = new Date().toISOString();
-        const snapshot: StateSnapshot = { ...store.read(), instanceId, status: { ...emptyStatus('demo'), phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now }, connection: kis.connection(), paperRisk: paper.riskSnapshot() };
+        const snapshot: StateSnapshot = { ...store.read(), events: store.events(), instanceId, status: { ...emptyStatus('demo'), phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now }, connection: kis.connection(), paperRisk: paper.riskSnapshot(), realtime: realtime.status() };
         json(res, 200, snapshot); return;
       }
       if (path === '/api/kis/ledger' && req.method === 'GET') { json(res, 200, { orders: store.paperOrders(), minimumRun: paper.approvalStatus() }); return; }
@@ -57,7 +61,9 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       if (path.startsWith('/api/')) {
         if (req.method !== 'POST') { json(res, 405, { error: '허용하지 않는 요청 방식입니다.' }); return; }
         if (req.headers['x-workbench'] !== 'local' || !req.headers['content-type']?.startsWith('application/json')) { json(res, 403, { error: '워크스페이스 요청 검증에 실패했습니다.' }); return; }
-        const input = await body(req, path === '/api/data/daily' ? 65536 : 16384);
+        const input = await body(req, path === '/api/events/read' ? 128000 : path === '/api/data/daily' ? 65536 : 16384);
+        const eventId = z.uuid().safeParse((input as { requestId?: unknown; id?: unknown } | null)?.requestId ?? (input as { id?: unknown } | null)?.id);
+        if (eventId.success) eventRequestId = eventId.data;
         if (path === '/api/data/master/refresh') { json(res, 200, await market.refreshMaster()); return; }
         if (path === '/api/data/daily') { json(res, 200, { run: market.start(input) }); return; }
         if (path === '/api/data/daily/step') { json(res, 200, { run: await market.step(idInput.parse(input).id) }); return; }
@@ -66,19 +72,23 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
           if (!store.masterData().instruments.some(row => row.code === code)) throw new Error('현재 마스터에 없는 종목입니다. 상장폐지·거래 가능 여부를 확인하세요.');
           json(res, 200, { quote: await kis.quote(code) }); return;
         }
-        if (path === '/api/kis/check') { const connection = await kis.balance(); json(res, 200, { connection, message: 'KIS 모의 잔고 조회를 확인했습니다.' }); return; }
+        if (path === '/api/kis/strategies/run') { const config = z.object({ id: z.string().min(1).max(80), active: z.boolean() }).strict().parse(input); realtime.setStrategyActive(config.id, config.active); json(res, 200, { message: config.active ? 'KIS 전략 평가를 시작했습니다. 전송은 공통 승인·위험 조건을 따릅니다.' : 'KIS 전략을 정지했습니다. 접수 주문은 별도 대조하세요.' }); return; }
+        if (path === '/api/kis/realtime/start') { realtime.start(codeSchema.parse((input as { code?: unknown })?.code)); json(res, 200, { message: '실시간 구독을 요청했습니다. 구독 확인 후 REST 대조가 필요합니다.' }); return; }
+        if (path === '/api/kis/realtime/stop') { realtime.stop(); json(res, 200, { message: '실시간 수신을 정지했습니다. 자동 거래 재개 없음.' }); return; }
+        if (path === '/api/kis/realtime/reconcile') { await realtime.reconcile(); json(res, 200, { message: '실시간 REST 대조를 확인했습니다.' }); return; }
+        if (path === '/api/kis/check') { const connection = await kis.balance(); store.update(state => recordConnection(state, connection)); json(res, 200, { connection, message: 'KIS 모의 잔고 조회를 확인했습니다.' }); return; }
         if (path === '/api/kis/market') {
           const code = codeSchema.parse((input as { code?: unknown })?.code);
           const quote = await kis.quote(code); const bars = await kis.bars(code);
           json(res, 200, { quote, bars, message: 'KIS 현재가와 최근 일봉을 조회했습니다. 수신 시각과 거래일을 구분하세요.' }); return;
         }
-        if (path === '/api/kis/orders') { json(res, 200, { ...await paper.refresh(), message: 'KIS 모의 계좌와 당일 주문을 조회했습니다.' }); return; }
+        if (path === '/api/kis/orders') { const result = await paper.refresh(); store.update(state => recordKisEvent(state, 'KIS 주문 대조 확인', 'REST 계좌·주문 대조를 확인했습니다.', 'paper', undefined, 'info')); json(res, 200, { ...result, message: 'KIS 모의 계좌와 당일 주문을 조회했습니다.' }); return; }
         if (path === '/api/kis/cancel-probe') {
           const { id } = idInput.parse(input);
-          if (!paper.cancelProbeEnabled()) { json(res, 409, { error: '전량취소 검증 승인이 없습니다.' }); return; }
+          if (!paper.cancelProbeEnabled()) { store.update(state => recordKisEvent(state, 'KIS 한정 취소 요청 차단', '전량취소 검증 승인이 없습니다.', 'paper', eventRequestId)); json(res, 409, { error: '전량취소 검증 승인이 없습니다.' }); return; }
           const order = await paper.cancelProbe(id); json(res, 200, { order, warning: true }); return;
         }
-        if (path === '/api/kis/cancel' || path === '/api/kis/revise') { idInput.parse(input); json(res, 409, { error: paperCapabilities.changeOrders.reason, code: 'vts-change-blocked' }); return; }
+        if (path === '/api/kis/cancel' || path === '/api/kis/revise') { idInput.parse(input); store.update(state => recordKisEvent(state, 'KIS 정정·취소 요청 차단', paperCapabilities.changeOrders.reason, 'paper', eventRequestId)); json(res, 409, { error: paperCapabilities.changeOrders.reason, code: 'vts-change-blocked' }); return; }
         if (path === '/api/kis/recovery/inspect') { json(res, 200, await paper.inspectRecovery(idInput.parse(input).id)); return; }
         if (path === '/api/kis/recovery/confirm') {
           const order = await paper.confirmRecovery(paperRecoveryInput.parse(input)); json(res, 200, { order, message: order.message }); return;
@@ -93,6 +103,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
           if (!instrument) throw new Error('지원하지 않는 종목입니다.');
           json(res, 200, { result: backtest(instrument.history, config), message: '합성 데이터 백테스트를 계산했습니다.' }); return;
         }
+        if (path === '/api/risk/halt' && haltInput.parse(input).halted) realtime.stop();
         const result = store.update(state => {
           switch (path) {
             case '/api/orders': return { order: placeOrder(state, orderInput.parse(input)), message: '데모 주문을 접수했습니다. 체결은 다음 봉에서 평가합니다.' };
@@ -111,12 +122,13 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
               const strategy = strategyInput.parse(input);
               if (!state.instruments.some(s => s.code === strategy.code)) throw new Error('지원하지 않는 종목입니다.');
               if (state.strategies.length >= 30) throw new Error('전략은 최대 30개까지 저장할 수 있습니다.');
-              state.strategies.push({ ...strategy, id: randomUUID(), active: false, lastSignal: 'hold', lastTick: -1 });
+              state.strategies.push({ ...strategy, id: randomUUID(), active: false, lastSignal: 'hold', lastTick: -1, revision: 1, run: 0, evaluations: [] });
               record(state, '전략 저장', strategy.name); return {};
             }
             case '/api/strategies/toggle': {
               const strategy = state.strategies.find(s => s.id === idInput.parse(input).id);
               if (!strategy) throw new Error('전략을 찾지 못했습니다.');
+              if (strategy.environment === 'kis-paper') throw new Error('KIS 전략 시작·정지 경로를 사용하세요.');
               if (!strategy.active && state.risk.halted) throw new Error('신규 주문 정지 상태입니다.');
               strategy.active = !strategy.active; record(state, strategy.active ? '전략 시작' : '전략 정지', strategy.name); return {};
             }
@@ -132,7 +144,10 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
               if (state.journal.length >= 2000) throw new Error('일지 보관 한도에 도달했습니다.');
               state.journal.unshift({ ...entry, id: randomUUID(), date: new Date().toISOString() }); return {};
             }
-            case '/api/events/read': state.events.forEach(e => { e.read = true; }); return {};
+            case '/api/events/read': {
+              const { ids } = eventReadInput.parse(input); const seen = new Set(ids);
+              state.events.forEach(e => { if (seen.has(e.id)) e.read = true; }); store.markPaperEventsRead(ids); return {};
+            }
             default: throw new Error('지원하지 않는 API입니다.');
           }
         });
@@ -141,11 +156,22 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       if (req.method !== 'GET' && req.method !== 'HEAD') { json(res, 405, { error: '지원하지 않는 요청 방식입니다.' }); return; }
       const root = resolve('dist'); const file = path.startsWith('/assets/') || path === '/project-map.html' ? resolve(root, '.' + path) : resolve(root, 'index.html');
       if (!file.startsWith(root + sep)) { json(res, 404, { error: '파일이 없습니다.' }); return; }
-      const bytes = await readFile(file);
+      let bytes: Buffer;
+      try { bytes = await readFile(file); }
+      catch (error) {
+        const missing = error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR');
+        json(res, missing ? 404 : 500, { error: missing ? '파일이 없습니다.' : '파일을 읽지 못했습니다.' }); return;
+      }
       const type = ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' } as Record<string, string>)[extname(file)] ?? 'application/octet-stream';
       res.writeHead(200, { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' }); res.end(req.method === 'HEAD' ? undefined : bytes);
     } catch (error) {
-      if ((path === '/api/watchlist' || path === '/api/journal' || path.startsWith('/api/risk') || path.startsWith('/api/backtest/') || path.startsWith('/api/kis/')) && error instanceof Error && 'code' in error && error.code === 'ERR_SQLITE_ERROR') { json(res, 500, { error: storageErrorMessage }); return; }
+      if ((path === '/api/watchlist' || path === '/api/journal' || path.startsWith('/api/strategies') || path.startsWith('/api/risk') || path.startsWith('/api/backtest/') || path.startsWith('/api/kis/') || path === '/api/events/read') && error instanceof Error && 'code' in error && error.code === 'ERR_SQLITE_ERROR') { json(res, 500, { error: storageErrorMessage }); return; }
+      if (path === '/api/kis/check' || ['/api/kis/order', '/api/kis/orders', '/api/kis/recovery/inspect', '/api/kis/recovery/confirm', '/api/kis/cancel', '/api/kis/revise', '/api/kis/cancel-probe'].includes(path)) {
+        try { store.update(state => {
+          if (path === '/api/kis/check') recordConnection(state, kis.connection(), error instanceof KisFailure ? error.kind : null);
+          else recordKisEvent(state, path.endsWith('/cancel-probe') ? 'KIS 한정 취소 요청 차단' : path.endsWith('/cancel') || path.endsWith('/revise') ? 'KIS 정정·취소 요청 차단' : path.endsWith('/inspect') ? 'KIS 불명 복구 조회 차단' : path.endsWith('/confirm') ? 'KIS 불명 복구 확인 차단' : path.endsWith('/orders') ? 'KIS 주문 대조 실패' : 'KIS 주문 요청 차단', '입력·승인·위험 한도 또는 조회 검증을 통과하지 못했습니다. 모의 매매 화면에서 원장과 제한을 확인하세요.', 'paper', eventRequestId);
+        }); } catch { json(res, 500, { error: storageErrorMessage }); return; }
+      }
       const message = error instanceof ZodError ? '입력값을 확인하세요. 범위·필수 항목 또는 단기/장기 기간이 올바르지 않습니다.' : error instanceof Error ? error.message : '요청 처리에 실패했습니다.';
       if (path === '/api/orders') {
         try { store.update(state => record(state, '주문 요청 차단', message, 'warning')); }
@@ -158,4 +184,6 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       json(res, 400, { error: message });
     }
   });
+  server.on('close', () => realtime.stop());
+  return server;
 }

@@ -1,3 +1,4 @@
+import { RealtimeStatus } from '../components/RealtimeStatus';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, Check, Link2, LockKeyhole, ShieldCheck, Square } from 'lucide-react';
@@ -34,7 +35,7 @@ export function Risk() {
       <label className="field">1회 주문 한도 (원)<input type="number" min="10000" max="100000000" step="1" required disabled={!available} value={maxOrder} onChange={e => { edit(); setMaxOrder(Number(e.target.value)); }} /></label>
       <label className="field">종목별 최대 투자금 (원)<input type="number" min="10000" max="100000000" step="1" required disabled={!available} value={maxPosition} onChange={e => { edit(); setMaxPosition(Number(e.target.value)); }} /></label>
       <label className="field">공통 손실 한도 (원)<input type="number" min="1000" max="100000000" step="1" required disabled={!available} value={dailyLoss} onChange={e => { edit(); setDailyLoss(Number(e.target.value)); }} /></label>
-      <p className="muted prose">금액 한도는 DEMO 수동·전략과 KIS 모의 수동 주문에 공통 적용됩니다. KIS 전략의 검증은 별도입니다. 이미 접수된 주문은 한도 변경으로 취소되지 않습니다.</p>
+      <p className="muted prose">금액 한도는 DEMO 수동·전략과 KIS 모의 수동·전략 주문에 공통 적용됩니다. KIS 전략은 실시간·승인 검사도 통과해야 합니다. 이미 접수된 주문은 한도 변경으로 취소되지 않습니다.</p>
       {dirty && <p role="status">저장하지 않은 변경이 있습니다.</p>}<button className="button primary" disabled={!available || busy}>한도 저장</button>
     </form></Panel><Panel title="긴급정지" className="risk-panel"><div className="risk-symbol"><AlertTriangle size={32} /></div><h3>{state.risk.halted ? '신규 주문 정지 중' : '신규 주문을 멈출 수 있어요'}</h3>
       <p className="prose">정지하면 수동·전략의 신규 주문을 차단하고 모든 전략을 정지합니다. 보유자산을 매도하거나 접수된 주문을 취소하지는 않습니다. 정지 상태는 서버를 다시 시작해도 유지됩니다.</p>
@@ -72,8 +73,20 @@ export function Journal() {
   return <div className="grid-main"><Panel title="나의 기록" action={<input className="compact-input" aria-label="일지 검색" placeholder="일지 검색" value={query} onChange={e => setQuery(e.target.value)} />}>{entries.length ? entries.map(j => <article className="journal-entry" key={j.id}><div><Badge>{state.instruments.find(s => s.code === j.code)?.name}</Badge><time>{new Date(j.date).toLocaleString('ko-KR')}</time></div><p>{j.text}</p></article>) : query ? <Empty title="검색 결과가 없습니다">다른 본문이나 종목코드로 검색하거나 검색어를 지워보세요.</Empty> : <Empty title="기록이 쌓이면 원칙이 보입니다">진입 이유, 지킨 규칙, 다음에 바꿀 행동을 남겨보세요.</Empty>}</Panel><Panel title="기록 작성"><form onSubmit={save}><label className="field">종목<select value={code} onChange={e => setCode(e.target.value)}>{state.instruments.map(s => <option value={s.code} key={s.code}>{s.name}</option>)}</select></label><label className="field">매매 메모<textarea rows={8} value={text} required maxLength={2000} onChange={e => setText(e.target.value)} placeholder="왜 이 종목을 관찰했나요? 어떤 조건에서 진입하고 청산할까요?" /></label><span className="muted tiny">{text.length} / 2,000</span><button className="button primary wide" disabled={!available || busy}>일지 저장</button></form></Panel></div>;
 }
 export function Alerts() {
-  const { state, act, available, busy } = useWorkbench(); const [filter, setFilter] = useState('all'); const rows = state.events.filter(e => filter === 'all' || e.level === filter);
-  return <Panel title="워크스페이스 이벤트" action={<button className="button secondary" disabled={!available || busy} onClick={() => void act('events/read').catch(() => {})}><Check size={16} />모두 읽음</button>}><div className="toolbar"><div className="tabs">{[['all', '전체'], ['info', '안내'], ['warning', '주의'], ['error', '오류']].map(([id, label]) => <button key={id} className={filter === id ? 'active' : ''} onClick={() => setFilter(id)}>{label}</button>)}</div><span className="muted">앱 내부 기록 · 외부 발송 없음</span></div>{rows.length ? rows.map(e => <article className={`event ${e.read ? 'read' : ''}`} key={e.id}><span className={`event-icon ${e.level}`}><AlertTriangle size={18} /></span><div><h3>{e.title}{!e.read && <span className="unread-dot" />}</h3><p>{e.detail}</p><time>{new Date(e.time).toLocaleString('ko-KR')}</time></div><Badge>{e.level === 'info' ? '안내' : e.level === 'warning' ? '주의' : '오류'}</Badge></article>) : <Empty title="해당 이벤트가 없습니다">주문·전략·위험관리 동작이 이곳에 기록됩니다.</Empty>}</Panel>;
+  const { state, act, available, busy } = useWorkbench(); const [filter, setFilter] = useState('all');
+  const rows = state.events.filter(e => filter === 'all' || e.level === filter);
+  const unread = state.events.filter(e => !e.read).length;
+  return <Panel title="워크스페이스 이벤트" action={<button className="button secondary" disabled={!available || busy || unread === 0} onClick={() => void act('events/read', { ids: state.events.filter(e => !e.read).map(e => e.id) }).catch(() => {})}><Check size={16} />모두 읽음</button>}>
+    <div className="toolbar"><div className="tabs">{[['all', '전체'], ['info', '안내'], ['warning', '주의'], ['error', '오류']].map(([id, label]) => <button key={id} aria-pressed={filter === id} className={filter === id ? 'active' : ''} onClick={() => setFilter(id)}>{label}</button>)}</div><span className="muted">미읽음 {unread}건 · 최근 최대 1,000건 · 외부 발송 없음</span></div>
+    <RealtimeStatus /><p className="muted tiny">KIS REST 이력과 실시간 연결·수신 중단·대조 이벤트를 표시합니다. 실제 장중 복구 검증은 별도입니다.</p>
+    {rows.length ? rows.map(e => <article className={`event ${e.read ? 'read' : ''}`} key={e.id}>
+      <span className={`event-icon ${e.level}`}><AlertTriangle size={18} /></span><div>
+        <h3>{e.title}{!e.read && <span className="unread-dot" aria-hidden="true" />}</h3>
+        <p>{e.detail}</p><p className="tiny muted">{e.environment === 'kis-paper' ? 'KIS 모의' : e.environment === 'shared' ? '공통 위험' : 'DEMO'} · {e.read ? '읽음' : '미읽음'}{e.requestId && <> · 요청 {e.requestId}</>}</p>
+        <time dateTime={e.time}>{new Date(e.time).toLocaleString('ko-KR')}</time>{e.target && <p><Link to={`/${e.target}`} className="text-link">원인 화면</Link></p>}
+      </div><Badge>{e.level === 'info' ? '안내' : e.level === 'warning' ? '주의' : '오류'}</Badge>
+    </article>) : <Empty title={state.events.length ? '해당 중요도의 이벤트가 없습니다' : '아직 이벤트가 없습니다'}>주문·전략·위험관리 동작이 이곳에 기록됩니다.</Empty>}
+  </Panel>;
 }
 export { DataStatus } from './DataInventory';
 const connectionRecovery: Record<ConnectionFailure['kind'], { label: string; action: string }> = {
