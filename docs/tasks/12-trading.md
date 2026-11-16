@@ -22,3 +22,5 @@ AGENTS·WORKFLOW·이슈 #12, `src/pages/Trading.tsx`의 Trade, `src/specs.ts`�
 ## 다음 행동
 
 커밋·PR CI를 확인하고 사용자 화면 수용을 받는다. 사용자 수용 미확인 상태에서는 완료로 닫지 않는다.
+
+전달: [초안 PR #56](https://github.com/krdn/gon-stock03/pull/56), 제품 `ed00cca`. 사용자 화면 수용과 원격 CI·통합 전에는 #12 완료나 #13 선행 해제로 처리하지 않는다. 독립 작업 #17은 별도 main 기반 worktree에서 진행한다.
