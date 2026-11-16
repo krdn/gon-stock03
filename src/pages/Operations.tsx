@@ -1,3 +1,4 @@
+import { RealtimeStatus } from '../components/RealtimeStatus';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, Check, Link2, LockKeyhole, ShieldCheck, Square } from 'lucide-react';
@@ -77,7 +78,7 @@ export function Alerts() {
   const unread = state.events.filter(e => !e.read).length;
   return <Panel title="워크스페이스 이벤트" action={<button className="button secondary" disabled={!available || busy || unread === 0} onClick={() => void act('events/read', { ids: state.events.filter(e => !e.read).map(e => e.id) }).catch(() => {})}><Check size={16} />모두 읽음</button>}>
     <div className="toolbar"><div className="tabs">{[['all', '전체'], ['info', '안내'], ['warning', '주의'], ['error', '오류']].map(([id, label]) => <button key={id} aria-pressed={filter === id} className={filter === id ? 'active' : ''} onClick={() => setFilter(id)}>{label}</button>)}</div><span className="muted">미읽음 {unread}건 · 최근 최대 1,000건 · 외부 발송 없음</span></div>
-    <p className="muted tiny">KIS 기록은 REST 조회·주문 서비스의 이력입니다. WebSocket 실시간 연결·재연결 알림은 미연결입니다. REST 주문 대조와 불명 복구는 아래 이력에 표시합니다.</p>
+    <RealtimeStatus /><p className="muted tiny">KIS REST 이력과 실시간 연결·수신 중단·대조 이벤트를 표시합니다. 실제 장중 복구 검증은 별도입니다.</p>
     {rows.length ? rows.map(e => <article className={`event ${e.read ? 'read' : ''}`} key={e.id}>
       <span className={`event-icon ${e.level}`}><AlertTriangle size={18} /></span><div>
         <h3>{e.title}{!e.read && <span className="unread-dot" aria-hidden="true" />}</h3>

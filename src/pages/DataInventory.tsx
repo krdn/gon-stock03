@@ -1,3 +1,4 @@
+import { RealtimeStatus } from '../components/RealtimeStatus';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Badge, Empty, Panel, Stat } from '../components/ui';
@@ -74,7 +75,7 @@ export function DataStatus() {
     ]).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [revision]);
-  return <div className="data-inventory">
+  return <div className="data-inventory"><RealtimeStatus />
     <div className="toolbar"><p className="prose">저장된 자료의 범위와 품질을 확인하세요. 새로고침은 저장소 조회이며 KIS 수집을 실행하지 않습니다.</p><button className="button secondary" disabled={loading} onClick={() => setRevision(value => value + 1)}>저장 상태 새로고침</button></div>
     {loading && <p role="status">저장 상태 조회 중 · 이전 표시는 최신 확인 전입니다.</p>}
     <section aria-label="공개 마스터 상태"><Panel title="국내 주식·ETF 마스터" eyebrow="KIS PUBLIC MASTER" action={<Link className="text-link" to="/market">시장 탐색·마스터 갱신 →</Link>}>

@@ -13,6 +13,7 @@ export class Store {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1), schema_version INTEGER NOT NULL, body TEXT NOT NULL);');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_orders (request_id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS paper_baseline (day TEXT PRIMARY KEY, equity REAL NOT NULL);');
+    this.db.exec('CREATE TABLE IF NOT EXISTS realtime_guard (id INTEGER PRIMARY KEY CHECK(id=1));');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_event_read (id TEXT PRIMARY KEY);');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_audit (id TEXT PRIMARY KEY, request_id TEXT NOT NULL, body TEXT NOT NULL); CREATE INDEX IF NOT EXISTS paper_audit_request ON paper_audit(request_id);');
     this.db.exec('CREATE TABLE IF NOT EXISTS market_master (exchange TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS market_instruments (code TEXT PRIMARY KEY, exchange TEXT NOT NULL, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS daily_runs (id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS daily_bars (run_id TEXT NOT NULL, date TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(run_id,date));');
@@ -31,6 +32,8 @@ export class Store {
     for (const run of this.dailyRuns()) if (run.status.phase === 'loading') this.saveDaily({ ...run, status: { ...run.status, phase: 'partial', complete: false, error: '수집 중 서버가 재시작되었습니다. 마지막 저장 구간부터 재개하세요.' } });
     this.saveMasterStates(this.masterData().sources.filter(state => state.phase === 'loading').map(state => ({ ...state, phase: 'error', error: '마스터 수집 중 서버가 재시작되었습니다. 다시 수집하세요.' })));
   }
+  realtimeRequired() { return Boolean(this.db.prepare('SELECT id FROM realtime_guard WHERE id=1').get()); }
+  requireRealtime() { this.db.prepare('INSERT OR IGNORE INTO realtime_guard VALUES (1)').run(); }
   masterData() {
     return {
       sources: this.db.prepare('SELECT body FROM market_master ORDER BY exchange').all().map(row => JSON.parse(row.body as string) as MasterState),

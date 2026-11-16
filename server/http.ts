@@ -12,6 +12,7 @@ import { PaperBroker, paperCapabilities, type PaperApproval } from './paper.ts';
 import type { StateSnapshot } from '../shared/model.ts';
 import { emptyStatus } from '../shared/status.ts';
 import { createExperiment, replayExperiment } from './backtest.ts';
+import { Realtime, type RealtimeConfig, type SocketFactory } from './realtime.ts';
 import { MarketData } from './market-data.ts';
 import { marketQuoteInput, masterCodeSchema } from '../shared/market-data.ts';
 
@@ -23,20 +24,21 @@ async function body(req: IncomingMessage, limit = 16384) {
 function json(res: ServerResponse, status: number, data: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(data));
 }
-export function makeServer(store: Store, kis = KisClient.fromEnvironment(), ports = [4303, 4304], approval?: PaperApproval) {
+export function makeServer(store: Store, kis = KisClient.fromEnvironment(), ports = [4303, 4304], approval?: PaperApproval, realtimeOptions?: { config?: RealtimeConfig; connect?: SocketFactory; now?: () => number }) {
   const paper = new PaperBroker(store, kis, approval);
+  const realtime = new Realtime(store, paper, realtimeOptions?.config ?? Realtime.configuration(), realtimeOptions?.connect, realtimeOptions?.now);
   const market = new MarketData(store, kis);
   const instanceId = randomUUID();
   const origins = new Set(ports.flatMap(port => [`http://127.0.0.1:${port}`, `http://localhost:${port}`]));
   const hosts = new Set([...origins].map(origin => new URL(origin).host));
-  return createServer(async (req, res) => {
+  const server = createServer(async (req, res) => {
     if (!hosts.has(req.headers.host ?? '') || (req.headers.origin && !origins.has(req.headers.origin)) || req.headers['sec-fetch-site'] === 'cross-site') { json(res, 403, { error: '로컬 워크스페이스에서만 접근할 수 있습니다.' }); return; }
     const path = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
     let eventRequestId: string | undefined;
     try {
       if (path === '/api/state' && req.method === 'GET') {
         const now = new Date().toISOString();
-        const snapshot: StateSnapshot = { ...store.read(), events: store.events(), instanceId, status: { ...emptyStatus('demo'), phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now }, connection: kis.connection(), paperRisk: paper.riskSnapshot() };
+        const snapshot: StateSnapshot = { ...store.read(), events: store.events(), instanceId, status: { ...emptyStatus('demo'), phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now }, connection: kis.connection(), paperRisk: paper.riskSnapshot(), realtime: realtime.status() };
         json(res, 200, snapshot); return;
       }
       if (path === '/api/kis/ledger' && req.method === 'GET') { json(res, 200, { orders: store.paperOrders(), minimumRun: paper.approvalStatus() }); return; }
@@ -70,6 +72,9 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
           if (!store.masterData().instruments.some(row => row.code === code)) throw new Error('현재 마스터에 없는 종목입니다. 상장폐지·거래 가능 여부를 확인하세요.');
           json(res, 200, { quote: await kis.quote(code) }); return;
         }
+        if (path === '/api/kis/realtime/start') { realtime.start(codeSchema.parse((input as { code?: unknown })?.code)); json(res, 200, { message: '실시간 구독을 요청했습니다. 구독 확인 후 REST 대조가 필요합니다.' }); return; }
+        if (path === '/api/kis/realtime/stop') { realtime.stop(); json(res, 200, { message: '실시간 수신을 정지했습니다. 자동 거래 재개 없음.' }); return; }
+        if (path === '/api/kis/realtime/reconcile') { await realtime.reconcile(); json(res, 200, { message: '실시간 REST 대조를 확인했습니다.' }); return; }
         if (path === '/api/kis/check') { const connection = await kis.balance(); store.update(state => recordConnection(state, connection)); json(res, 200, { connection, message: 'KIS 모의 잔고 조회를 확인했습니다.' }); return; }
         if (path === '/api/kis/market') {
           const code = codeSchema.parse((input as { code?: unknown })?.code);
@@ -97,6 +102,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
           if (!instrument) throw new Error('지원하지 않는 종목입니다.');
           json(res, 200, { result: backtest(instrument.history, config), message: '합성 데이터 백테스트를 계산했습니다.' }); return;
         }
+        if (path === '/api/risk/halt' && haltInput.parse(input).halted) realtime.stop();
         const result = store.update(state => {
           switch (path) {
             case '/api/orders': return { order: placeOrder(state, orderInput.parse(input)), message: '데모 주문을 접수했습니다. 체결은 다음 봉에서 평가합니다.' };
@@ -171,4 +177,6 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       json(res, 400, { error: message });
     }
   });
+  server.on('close', () => realtime.stop());
+  return server;
 }

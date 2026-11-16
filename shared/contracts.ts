@@ -54,5 +54,6 @@ export const stateSnapshotSchema = z.object({
   journal: z.array(z.object({ id: z.string(), date: z.string(), code: codeSchema, text: z.string() })),
   tick: z.number(), playing: z.boolean(), revision: z.number().int().nonnegative(), updatedAt: z.string(), instanceId: z.string().min(1),
   status: dataStatusSchema.extend({ environment: z.literal('demo'), source: z.literal('synthetic') }), connection: connectionSchema,
+  realtime: z.object({ phase: z.enum(['stopped', 'connecting', 'reconciling', 'ready', 'disconnected', 'error']), required: z.boolean(), ordersAllowed: z.boolean(), message: z.string(), code: codeSchema.nullable(), lastQuoteAt: z.iso.datetime().nullable(), lastNoticeAt: z.iso.datetime().nullable(), reconciledAt: z.iso.datetime().nullable(), price: z.number().positive().nullable(), fresh: z.boolean() }).optional(),
   paperRisk: z.object({ day: z.string().regex(/^\d{8}$/), baselineEquity: z.number().nonnegative().nullable(), unresolvedCount: z.number().int().nonnegative(), orders: z.object({ observedAt: z.iso.datetime(), rows: z.array(z.object({ code: codeSchema, side: z.enum(['buy', 'sell']), price: z.number().nonnegative(), remaining: z.number().int().nonnegative(), cancelled: z.boolean() })) }).nullable() }).optional(),
 }) satisfies z.ZodType<StateSnapshot>;
