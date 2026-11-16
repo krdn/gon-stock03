@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { initialState } from '../shared/fixtures.ts';
 import type { State, PaperOrder, PaperAudit } from '../shared/model.ts';
 import type { Experiment } from '../shared/backtest.ts';
+import { paperEvent, presentEvent } from './events.ts';
 import { record } from './engine.ts';
 import type { DailyRun, MasterInstrument, MasterSnapshot, MasterState, RemovedInstrument, StoredBar } from '../shared/market-data.ts';
 
@@ -12,6 +13,7 @@ export class Store {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1), schema_version INTEGER NOT NULL, body TEXT NOT NULL);');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_orders (request_id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS paper_baseline (day TEXT PRIMARY KEY, equity REAL NOT NULL);');
+    this.db.exec('CREATE TABLE IF NOT EXISTS paper_event_read (id TEXT PRIMARY KEY);');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_audit (id TEXT PRIMARY KEY, request_id TEXT NOT NULL, body TEXT NOT NULL); CREATE INDEX IF NOT EXISTS paper_audit_request ON paper_audit(request_id);');
     this.db.exec('CREATE TABLE IF NOT EXISTS market_master (exchange TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS market_instruments (code TEXT PRIMARY KEY, exchange TEXT NOT NULL, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS daily_runs (id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS daily_bars (run_id TEXT NOT NULL, date TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(run_id,date));');
     this.db.exec('CREATE TABLE IF NOT EXISTS backtest_experiments (id TEXT PRIMARY KEY, body TEXT NOT NULL);');
@@ -122,6 +124,18 @@ export class Store {
     this.db.prepare('INSERT INTO paper_audit VALUES (?,?,?)').run(entry.id, entry.requestId, JSON.stringify(entry)); return entry;
   }
   paperAudit(requestId: string): PaperAudit[] { return this.db.prepare('SELECT body FROM paper_audit WHERE request_id=? ORDER BY rowid').all(requestId).map(row => JSON.parse(row.body as string) as PaperAudit); }
+  events() {
+    const read = new Set(this.db.prepare('SELECT id FROM paper_event_read').all().map(row => row.id));
+    const audits = this.db.prepare('SELECT body FROM paper_audit ORDER BY rowid DESC LIMIT 1000').all().map(row => {
+      const audit = JSON.parse(row.body as string) as PaperAudit;
+      return paperEvent(audit, read.has(audit.id));
+    });
+    return [...audits, ...this.read().events.filter(e => !/^KIS 모의 주문 (accepted|unknown|rejected)$/.test(e.title)).map(presentEvent)].sort((a, b) => b.time.localeCompare(a.time)).slice(0, 1000);
+  }
+  markPaperEventsRead(ids: string[]) {
+    const mark = this.db.prepare('INSERT OR IGNORE INTO paper_event_read SELECT id FROM paper_audit WHERE id=?');
+    for (const id of ids) if (id.startsWith('paper:')) mark.run(id.slice(6));
+  }
   paperBaseline(day: string, value: number) {
     this.db.prepare('INSERT OR IGNORE INTO paper_baseline (day,equity) VALUES (?,?)').run(day, value);
     return Number(this.db.prepare('SELECT equity FROM paper_baseline WHERE day=?').get(day)!.equity);

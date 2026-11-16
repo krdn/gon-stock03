@@ -24,3 +24,7 @@ AGENTS·WORKFLOW·이슈 #12, `src/pages/Trading.tsx`의 Trade, `src/specs.ts`�
 커밋·PR CI를 확인하고 사용자 화면 수용을 받는다. 사용자 수용 미확인 상태에서는 완료로 닫지 않는다.
 
 전달: [초안 PR #56](https://github.com/krdn/gon-stock03/pull/56), 제품 `ed00cca`. 사용자 화면 수용과 원격 CI·통합 전에는 #12 완료나 #13 선행 해제로 처리하지 않는다. 독립 작업 #17은 별도 main 기반 worktree에서 진행한다.
+
+## 2026-11-16 통합 진행 승인
+
+수용·통합 대기 설명 후 사용자 “작업 진행” 및 통합·후속 순차 진행 지시가 전달됐다. 지정 Gemini4Argon/high MERGE PASS와 결합 단위134·브라우저83·빌드 PASS로 기술 수용을 검증했다. 사용자 직접 육안 관찰은 주장하지 않는다. [결합 검증](../verification/2026-11-16-trading-alerts-integration.md). 원격 통합·CI 확인 후 완료 상태를 반영한다.
