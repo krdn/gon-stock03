@@ -11,9 +11,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only', spacing = 0, approval?: { date: string; requestId: string; cancelProbe?: true }) {
+function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only', spacing = 0, approval?: { date: string; requestId: string; cancelProbe?: true; code?: '069500' | '005930'; maxAmount?: number }) {
   let submits = 0;
-  const response = { cancelMode: 'success', cash: '10000000', totalEquity: '10000000', nonCreditCash: '10000000', positions: [] as Record<string, string>[], price: '70000', tick: '100', rows: [] as Record<string, string>[], before: async (_path: string) => {}, receipt: { rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } } as unknown };
+  const response = { cancelMode: 'success', cash: '10000000', totalEquity: '10000000', nonCreditCash: '10000000', positions: [] as Record<string, string>[], price: '70000', upper: '91000', tick: '100', rows: [] as Record<string, string>[], before: async (_path: string) => {}, receipt: { rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } } as unknown };
   const requests: { url: URL; init: RequestInit | undefined; startedAt: number }[] = [];
   const transport: typeof fetch = async (url, init) => {
     requests.push({ url: new URL(String(url)), init, startedAt: performance.now() });
@@ -21,7 +21,7 @@ function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'erro
     await response.before(path);
     if (path.endsWith('/tokenP')) return Response.json({ access_token: 'test-token', expires_in: 86400 });
     if (path.endsWith('/inquire-balance')) return Response.json({ rt_cd: '0', output1: response.positions, output2: [{ dnca_tot_amt: response.cash, tot_evlu_amt: response.totalEquity }] });
-    if (path.endsWith('/inquire-price')) return Response.json({ rt_cd: '0', output: { stck_prpr: response.price, prdy_ctrt: '1.0', stck_mxpr: '91000', stck_llam: '49000', aspr_unit: response.tick, temp_stop_yn: 'N' } });
+    if (path.endsWith('/inquire-price')) return Response.json({ rt_cd: '0', output: { stck_prpr: response.price, prdy_ctrt: '1.0', stck_mxpr: response.upper, stck_llam: '49000', aspr_unit: response.tick, temp_stop_yn: 'N' } });
     if (path.endsWith('/inquire-psbl-order')) return Response.json({ rt_cd: '0', output: { nrcvb_buy_qty: '100', nrcvb_buy_amt: response.nonCreditCash, ord_psbl_cash: '10000000' } });
     if (path.endsWith('/inquire-daily-ccld')) return Response.json({ rt_cd: '0', output1: response.rows.filter(row => row.ord_dt === new URL(String(url)).searchParams.get('INQR_STRT_DT')) });
     if (path.endsWith('/order-rvsecncl')) {
@@ -724,4 +724,39 @@ test('restart before the first cancel probe cannot open a fresh broker request w
     assert.equal(fresh.requests.length, 0);
     assert.equal(f.store.paperAudit(order.requestId).filter(a => a.action === 'cancel-attempt').length, 1);
   } finally { f.store.close(); fresh.store.close(); }
+});
+
+
+test('Samsung approval pins symbol and cap across restart and supports one cancel probe', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T15:20:00+09:00') });
+  const order = { ...input(), price: 195900 };
+  const approval = { ...approvalFor(order), code: '005930' as const, maxAmount: 200000, cancelProbe: true as const };
+  const f = fixture('success', 0, approval);
+  try {
+    f.response.price = '195900'; f.response.upper = '250000';
+    assert.throws(() => new PaperBroker(f.store, f.client, { ...approval, code: '069500' }), /승인/);
+    assert.throws(() => new PaperBroker(f.store, f.client, { ...approval, maxAmount: 100000 }), /승인/);
+    for (const invalid of [{ ...order, code: '069500' }, { ...order, price: 200100 }, { ...order, qty: 2 }]) await assert.rejects(f.broker.submit(invalid), /승인/);
+    assert.equal(f.count(), 0);
+    assert.equal((await f.broker.submit(order)).status, 'accepted');
+    await f.broker.submit(order); assert.equal(f.count(), 1);
+    await f.broker.cancelProbe(order.requestId);
+    await assert.rejects(f.broker.cancelProbe(order.requestId));
+    assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 1);
+    assert.equal(f.store.read().risk.halted, true);
+  } finally { f.store.close(); }
+});
+
+test('approved quote failures distinguish price, tick and latency without submitting', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T15:20:00+09:00') });
+  for (const reason of ['지정가 불일치', '호가 단위 오류', '시세 조회 지연']) {
+    const order = approvedInput(); const f = fixture('success', 0, approvalFor(order));
+    try {
+      if (reason === '지정가 불일치') f.response.price = '70100';
+      if (reason === '호가 단위 오류') f.response.tick = '300';
+      if (reason === '시세 조회 지연') f.response.before = async path => { if (path.endsWith('/inquire-price')) t.mock.timers.tick(5001); };
+      await assert.rejects(f.broker.submit(order), new RegExp(reason));
+      assert.equal(f.count(), 0); assert.equal(f.store.read().risk.halted, true);
+    } finally { f.store.close(); }
+  }
 });
