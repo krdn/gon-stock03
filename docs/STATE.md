@@ -2,7 +2,7 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매.
 
-- **현재:** [#64 SQLite 원장 권한 보호](tasks/64-sqlite-permissions.md). `fix/64-sqlite-permissions`, 전용 worktree `64-sqlite-permissions`. #25 준비 PR66을 main `dae458093b664d872a23672f4b65aa9b229aa10c`에 통합했다. main CI2 SUCCESS. 새 Herdr 세션의 실제 경로·ID·Ready 화면을 확인했으며 단독 소유권을 인계한다.
+- **현재:** [#64 SQLite 원장 권한 보호](tasks/64-sqlite-permissions.md). `fix/64-sqlite-permissions`, 전용 worktree `64-sqlite-permissions`. #25 준비 PR66을 main `dae458093b664d872a23672f4b65aa9b229aa10c`에 통합했다. main CI2 SUCCESS. 새 세션이 단독 소유권을 인수해 생성 전 권한 보호를 구현했다. [격리 검증](verification/2026-11-16-sqlite-permissions.md): 전체182/182·build PASS, 지정 Argon 리뷰 PASS. 초안 PR·최종 CI 확인 중.
 - **수용:** 사용자 “다음작업 상태 확인…새 세션에서 다음 작업 진행” 지시로 검증된 준비 PR66을 통합했다. head `3db325c`, CI4 SUCCESS·단위166·브라우저113·build·지정 Argon 준비 검토 PASS. 실제 장중 수용은 아니다. [준비 증거](verification/2026-11-16-validation-prep.md).
 - **다음:** #64 수정·격리 회귀·지정 검토·초안 PR/CI. [#65 정적 경로 노출](https://github.com/krdn/gon-stock03/issues/65)은 별도 다음 작업. #1/#2/#3/#25를 일괄 완료하지 않는다.
 - **실증:** [#25](tasks/25-validation.md)는 Blocked 유지. [삼성전자 한 건](verification/2026-11-16-samsung-paper-run.md)은 접수·REST 대조·취소·체결0/잔량0만 입증한다. 실제 체결·부분체결·불명복구·연속전략·전체 화면 장중 수용은 미관측.

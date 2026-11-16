@@ -1,4 +1,4 @@
-import { mkdirSync, chmodSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { Store } from './store.ts';
 import { makeServer } from './http.ts';
@@ -10,7 +10,7 @@ const port = Number(process.env.STOCK_PORT ?? 4304);
 const path = process.env.STOCK_DB === ':memory:' ? ':memory:' : resolve(process.env.STOCK_DB ?? '.local/workspace.sqlite');
 if (approval && (path === ':memory:' || !process.env.STOCK_DB)) throw new Error('1회 실행에는 확인한 영구 STOCK_DB 경로가 필요합니다.');
 if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-const store = new Store(path); if (path !== ':memory:') chmodSync(path, 0o600);
+const store = new Store(path);
 const server = makeServer(store, undefined, [4303, port], approval);
 const playback = setInterval(() => {
   if (!store.read().playing) return;

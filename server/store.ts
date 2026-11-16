@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { closeSync, constants, fchmodSync, fstatSync, openSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { initialState } from '../shared/fixtures.ts';
 import type { State, PaperOrder, PaperAudit } from '../shared/model.ts';
@@ -10,6 +11,20 @@ import type { DailyRun, MasterInstrument, MasterSnapshot, MasterState, RemovedIn
 export class Store {
   private db: DatabaseSync;
   constructor(path: string) {
+    if (path !== ':memory:') for (const suffix of ['', '-wal', '-shm']) {
+      let fd: number;
+      try {
+        fd = openSync(path + suffix, constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK | (suffix ? 0 : constants.O_CREAT), 0o600);
+      } catch (error) {
+        if (suffix && (error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        throw error;
+      }
+      try {
+        const stat = fstatSync(fd);
+        if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid?.()) throw new Error('DB는 현재 사용자가 소유한 단일 일반 파일이어야 합니다. 원본을 보존하세요.');
+        fchmodSync(fd, 0o600);
+      } finally { closeSync(fd); }
+    }
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1), schema_version INTEGER NOT NULL, body TEXT NOT NULL);');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_orders (request_id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS paper_baseline (day TEXT PRIMARY KEY, equity REAL NOT NULL);');

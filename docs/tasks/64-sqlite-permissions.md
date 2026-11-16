@@ -28,8 +28,12 @@ AGENTS·WORKFLOW, 이슈 #64 최신 본문, [#25 P2 재현](../verification/2026
 
 부모 t7r의 컨텍스트 잔여량 조회값은140,559토큰이었다. 컨텍스트 부족 때문이 아니라 작업 경계를 나누기 위해 새 세션을 사용한다. 새 세션은 사용한도를 초기화하지 않는다.
 
-Herdr 탭 `tbd76b499fb01e26bf0000f1afe2a02d03` / 터미널 `t7s`. 현재는 준비만 허용하며 부모의 별도 소유권 메시지 전에는 구현하지 않는다. 새 Codex `01a1e4b0-31d2-7920-b7ab-e70b917e5e66`가 pwd/브랜치/ID를 실제 출력했다. 부모가 Herdr 실제 화면에서 같은 경로·ID·Ready와 활성 탭을 확인했다. main [앱 CI](https://github.com/krdn/gon-stock03/actions/runs/43882613633)·[구성 CI](https://github.com/krdn/gon-stock03/actions/runs/43882613847) SUCCESS 확인. 인계 뒤 부모는 저장소 편집을 중단한다.
+Herdr 탭 `tbd76b499fb01e26bf0000f1afe2a02d03` / 터미널 `t7s`. 부모 t7r의 별도 메시지로 단독 소유권을 인수하고 구현을 시작했다. 새 Codex `01a1e4b0-31d2-7920-b7ab-e70b917e5e66`가 pwd/브랜치/ID를 실제 출력했다. 부모가 Herdr 실제 화면에서 같은 경로·ID·Ready와 활성 탭을 확인했다. main [앱 CI](https://github.com/krdn/gon-stock03/actions/runs/43882613633)·[구성 CI](https://github.com/krdn/gon-stock03/actions/runs/43882613847) SUCCESS 확인. 인계 뒤 부모는 저장소 편집을 중단한다.
 
 STE 기준파일 부재와 기존 번들 경고는 유지한다. #25의 단위166·브라우저113·Argon PASS는 기준선 증거이며 #64 수정 검증을 대체하지 않는다.
 
 전달 문서 상대 링크·`git diff --check` PASS. STE는 기준파일 부재로 exit2다. 단순 인계 문서에 별도 모델 리뷰는 추가하지 않았으며 #64 제품 수정 리뷰는 새 세션에서 수행한다.
+
+## 구현·전달 상태
+
+Store의 생성 전 DB/WAL/SHM0600 보호와 실패 시 중단을 구현했다. [검증 기록](../verification/2026-11-16-sqlite-permissions.md): RED10건, 저장 회귀17/17·전체182/182·build PASS. 생성 시점은 임시 서버 strace로 확인했다. 준비 head 앱43883174622·구성43883174696 SUCCESS도 재확인했다. 지정 Argon 리뷰 PASS(요청/init 일치, 서버 내부 모델/effort 독립 미검증). STE 기준파일 부재 exit2. 초안 PR·최종 CI는 아래 전달 기록에서 갱신한다. 사용자 수용·통합 전 #64 open과 #25 Blocked를 유지한다.
