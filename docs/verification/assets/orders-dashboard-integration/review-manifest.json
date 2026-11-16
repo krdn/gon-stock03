@@ -1,0 +1,16 @@
+{
+  "src/App.tsx": "8839167db07f87a050fc33f33f4bf21a3d64de9d35ec3a0700680947a995cb9e",
+  "src/pages/Trading.tsx": "c1e9753b5c34b6dd243551dae75e4548b02ae4be66f8beb7aad3201313872fba",
+  "src/pages/Workspace.tsx": "3d09b5b5a608e7df9e6ec5eeb6a500ed4518be1db8e2c061f83493552ce1738c",
+  "src/context.tsx": "af75ca0ee7a2a4304893df41dab9d6dfecad28d090b16211b87cfeaf0e5c7b91",
+  "src/specs.ts": "8381b10ee919f8a195d32a3f41cf38839aaca94061063547c702dbbe7954df43",
+  "shared/contracts.ts": "5cf648e59051545852035011d48b635a674e0591b5731ca2e33f5b945922d254",
+  "shared/portfolio.ts": "f993f9556a3835f863e76336117263da12d2cb34110d5021fef6d4c2d60bfc1c",
+  "shared/status.ts": "6a14268e0ec8a56679f47587879713dc5f3cfdcfa10ea3eed1298ec855668952",
+  "tests/browser/orders.spec.ts": "e4240b5c44c4619b934368216870f328b58a5788131ea4715a1d73c742d3d817",
+  "tests/browser/dashboard.spec.ts": "9cf48ceb5a5fe5a1f459449e397d87c12a923622c1b997f558c7d7820358edab",
+  "tests/browser/orders-dashboard-integration.spec.ts": "5d9baf1e6c4874f9a5401a0fda5c4373b20f5759297a4f2546deaa9200253aa5",
+  "tests/orders.test.ts": "b45c8238f3f5545a1c623e488fe7771a62cd97e62b069a5915d8620274452dd1",
+  "docs/tasks/13-18-integration.md": "be182297739909c3c5f19bc72e4f22b00d76c1b90c6f714d6dbc3bb9add106ce",
+  "docs/verification/2026-11-16-orders-dashboard-integration.md": "0f30515c3e2a983b335c550c51e26aa85f630578403163cf075daa71197cd4f2"
+}

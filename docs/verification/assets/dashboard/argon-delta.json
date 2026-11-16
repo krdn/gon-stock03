@@ -1,0 +1,20 @@
+{
+  "requested_model": "gemini-4-argon-high",
+  "requested_effort": "high",
+  "init_model": "gemini-4-argon-high",
+  "result": {
+    "conversation_id": "d1d4a343-db35-4b83-be73-7ae9ccd4a3ec",
+    "status": "SUCCESS",
+    "response": "**DELTA PASS**\n\n`tests/browser/dashboard.spec.ts`에서 모바일 뷰포트(`390x844`) 전환 직후 `kis.screenshot` 캡처 전에 사이드바 오프스크린 전환 완료(`right <= 0`)를 대기하는 `expect.poll(...)` 한 줄만 추가된 것은 테스트 결정성(스크린샷 캡처 타이밍 안정성)을 높이는 변경이며, 프로덕션 코드 변경이나 기존 검증 조건 약화가 없으므로 이전 **DASHBOARD PASS** 판정을 유지합니다.\n",
+    "duration_seconds": 116.06396578,
+    "num_turns": 2,
+    "usage": {
+      "input_tokens": 43062,
+      "output_tokens": 4959,
+      "thinking_tokens": 3711,
+      "cache_read_tokens": 38086,
+      "total_tokens": 48021
+    }
+  },
+  "test_sha256": "9cf48ceb5a5fe5a1f459449e397d87c12a923622c1b997f558c7d7820358edab"
+}

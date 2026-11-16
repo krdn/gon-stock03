@@ -1,0 +1,16 @@
+{
+  "src/pages/Workspace.tsx": "3d09b5b5a608e7df9e6ec5eeb6a500ed4518be1db8e2c061f83493552ce1738c",
+  "src/App.tsx": "bebab6d9ad00ec05e1501ed0b3a4d26e4fd469ecd2f251b4dd7df56623d7cbe4",
+  "shared/portfolio.ts": "f993f9556a3835f863e76336117263da12d2cb34110d5021fef6d4c2d60bfc1c",
+  "shared/status.ts": "6a14268e0ec8a56679f47587879713dc5f3cfdcfa10ea3eed1298ec855668952",
+  "shared/model.ts": "8597c7cafd12a66e095094a6b52650c17529d641753d9d51efdb41c2abe86929",
+  "src/context.tsx": "af75ca0ee7a2a4304893df41dab9d6dfecad28d090b16211b87cfeaf0e5c7b91",
+  "src/components/ui.tsx": "3d62cad9a1320b385f42e1c477c70126bce712955442e2861cc9f2e2f7b6296b",
+  "tests/browser/dashboard.spec.ts": "9ebbac83c0691c85cddf4741d9b51f4be1e48a89827aaaebabd8662ee7524795",
+  "docs/tasks/18-dashboard.md": "e373fa158f7bcdd72db8d74c2efddb8840eca556b979d874259398230c985326",
+  "docs/verification/2026-11-16-dashboard.md": "2d0226d44182cb1f52892ef23aa88bc9d94f8ace1c43feb2a0e8d2194fb637fa",
+  "src/specs.ts": "0ccb7ca857604d353bf54e4395aeb4e722d27f4be4b590d01f769403779c00d7",
+  "server/paper.ts": "f22a79f7c387a54c334085103d684d2b37630f2f51f4fc1b40af4d3c498809d2",
+  "server/http.ts": "3c13e72cf4e82a96e578c32884fa4767c8402b187de6a02fc0bf4cfadabce13b",
+  "server/engine.ts": "ae778841524ca944c14d1d3de835aa0d8bf7971b7987ba8b6c057118cadc795d"
+}
