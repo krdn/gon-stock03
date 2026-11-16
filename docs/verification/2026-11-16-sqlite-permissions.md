@@ -32,4 +32,4 @@ Store가 SQLite를 열기 전에 DB와 기존 WAL/SHM을 0600으로 보호한다
 
 중앙 설정/dry-run은 `claude-opus-5-5/high`로 사용자 지정과 달랐다. 전역 설정을 보존하고 제공 목록의 `gemini-4-argon-high`, effort high를 명시해 이번 변경만 검토했다. [원 응답](assets/sqlite-permissions/review.json)은 PASS·구체적 결함 없음이다. 요청/init 모델 일치와 서버 내부 모델/effort 독립 미검증을 구분한다. 추가 에이전트·다른 이슈 리뷰 재사용은 없었다.
 
-`git diff --check`와 변경 문서 상대 링크 검사는 PASS다. STE는 기존 `docs/conventions/ste100-writing.md` 부재로 exit2이며 통과가 아니다. 원격 앱 CI에서 브라우저 회귀 결과도 확인한다.
+`git diff --check`와 변경 문서 상대 링크 검사는 PASS다. STE는 기존 `docs/conventions/ste100-writing.md` 부재로 exit2이며 통과가 아니다. [초안 PR67](https://github.com/krdn/gon-stock03/pull/67)의 앱 CI에서 브라우저 회귀도 실행한다. 최종 head 결과·실행 링크는 #64 전달 댓글에 남긴다.
