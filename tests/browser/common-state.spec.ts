@@ -76,8 +76,9 @@ test('local loading, disconnected, ready and stale states are explicit and block
   await expect(page.getByLabel('로컬 상태', { exact: true })).toContainText('오래됨');
   await expect(page.getByLabel('긴급정지 상태', { exact: true })).toContainText('미확인');
   let posts = 0; await page.route('**/api/orders', async route => { posts++; await route.fulfill({ json: {} }); });
-  await page.getByRole('button', { name: '데모 주문 접수', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('최신 로컬 상태'); expect(posts).toBe(0);
+  await expect(page.getByRole('button', { name: '데모 주문 접수', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: '데모 주문 접수', exact: true }).evaluate((button: HTMLButtonElement) => button.click());
+  await expect(page.getByRole('dialog')).toContainText('최신 로컬 상태'); expect(posts).toBe(0);
   await expect(page.locator('body')).not.toContainText('fixture-secret');
 });
 
@@ -150,7 +151,9 @@ test('known storage failure remains actionable while arbitrary JSON 5xx text sta
   await page.goto('/trade'); await page.getByRole('button', { name: '매수 주문 확인' }).click();
   await page.getByRole('button', { name: '데모 주문 접수', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('저장소 상태를 확인하세요');
-  safe = false; await page.getByRole('button', { name: '데모 주문 접수', exact: true }).click();
+  await expect(page.getByRole('button', { name: '매수 주문 확인' })).toBeDisabled();
+  safe = false; await page.getByRole('button', { name: '재시도 시세 확인' }).click();
+  await page.getByRole('button', { name: '같은 DEMO 요청 재시도', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('요청을 처리하지 못했습니다. 잠시 후 다시 확인하세요.');
   await expect(page.locator('body')).not.toContainText('fixture-secret');
 });

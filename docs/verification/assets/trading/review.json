@@ -1,0 +1,26 @@
+{
+  "session_id": "b43071c2-14be-4d06-b469-75992289320a",
+  "is_error": false,
+  "result": "# DEMO 트레이딩 변경(#12) 리뷰 결과\n\nP0·P1은 없습니다. P2가 2건입니다. 둘 다 이 diff만 읽고 코드 경로로 확인했고, 실행해 보지는 않았습니다.\n\n## 결함\n\n### [P2-1] 서버에 보내기 전에 막힌 요청이 \"응답 미확인\"으로 남음\n\n**근거**\n- `send()`는 먼저 `sessionStorage.setItem('demo-order-pending', …)`와 `setUnresolved(input)`을 실행하고, 그 뒤에 `act('orders', …)`를 호출합니다.\n- `act()`는 맨 앞에서 `freshness(localStatus).phase !== 'ready'`이면 `fetch` 전에 그냥 `throw new Error(message)`를 던집니다. `definitive` 속성이 없습니다.\n- 화면의 `blocked`는 1초마다 갱신되는 `now`로 계산한 `available`을 씁니다. `act()`는 그 시점의 실제 시각으로 다시 판정합니다. 그래서 상태가 막 \"오래됨\"으로 바뀌는 순간(최대 약 1초)이나, 렌더 뒤 클릭 전에 상태가 바뀌면 `send`의 `blocked` 검사는 통과하고 `act`에서 막힙니다.\n\n**결과**\n- 서버로 POST가 가지 않았는데도 \"DEMO 주문 응답 미확인\" 패널이 뜹니다. pending 기록이 sessionStorage에 남아 새로고침 뒤에도 신규 주문이 계속 막힙니다.\n- \"DEMO 주문 대조\"를 눌러도 원장에 해당 requestId가 없으니 아무 변화가 없습니다. 이 상태를 푸는 길은 \"같은 DEMO 요청 재시도\"로 실제로 접수하는 것뿐입니다.\n\n**수정안:** 사전 검사에서 던지는 오류에 `definitive: true`를 붙이거나, `send()`가 sessionStorage에 쓰기 전에 같은 freshness 검사를 하게 합니다.\n\n### [P2-2] 재시도 경로에서 시세 변경 재확인을 건너뜀\n\n**근거**\n- 패널의 \"같은 DEMO 요청 재시도\"는 `send(unresolved)`를 바로 부릅니다.\n- `quoteChanged`와 `reviewedQuote` 검사는 `submit()`에만 있습니다.\n- 처음 확인할 때의 시세는 저장하지 않습니다. 패널에는 원래 지정가만 나오고 현재 시세는 비교해 주지 않습니다.\n\n**결과**\n- \"시세가 바뀌면 다시 확인\" 요구사항이 재시도 경로에서는 지켜지지 않습니다. 새로고침 뒤 한참 지나 재시도하면, 바뀐 시세를 확인하는 단계 없이 예전 지정가로 접수될 수 있습니다.\n- P2-1과 겹치면 더 나빠집니다. 실제로는 보내지 않은 요청을 빠져나오려면 이 확인 없는 재시도로 접수하는 수밖에 없습니다.\n- 다만 DEMO 체결 규칙은 매수는 시장가 ≤ 지정가일 때, 매도는 시장가 ≥ 지정가일 때 시장가로 체결합니다. 그래서 금액상 피해는 제한적이라 P2로 봤습니다.\n\n**수정안:** 패널에 현재 시세를 함께 보여주고, 재시도 전에 시세 재확인 단계를 거치게 합니다(확인 다이얼로그를 다시 쓰는 방식).\n\n## 테스트·검증 근거의 한계 (결함 아님)\n\n- **`common-state.spec.ts` 수정:** 비활성 버튼에 `HTMLButtonElement.click()`을 호출하면 이벤트가 아예 발생하지 않습니다. 따라서 `posts === 0`은 당연히 통과합니다. 이전 테스트가 확인하던 `act()` 사전 차단 경로는 이제 어떤 테스트도 검증하지 않습니다. 바로 P2-1의 경로입니다.\n- **`/paper` 이동 뒤 POST 없음 확인:** `toHaveURL` 직후 바로 `expect(posts).toEqual([])`를 확인합니다. `/paper`가 마운트된 뒤 비동기로 보내는 POST는 놓칠 수 있습니다. \"/trade에서 POST 없음\"은 코드상 맞지만(`act('orders')` → `/api/orders`, 그리고 GET만 사용), \"/paper 자동 POST 없음\"의 근거로는 약합니다.\n- **아직 확인되지 않은 것:** 브라우저 테스트 78개 전체는 아직 진행 중이라 결과가 없습니다. 사용자 수용과 실제 KIS 동작은 미검증입니다. 이 리뷰도 사용자 수용을 대신하지 않습니다.\n\n## 요구사항 충족 확인 (diff 근거)\n\n- **/trade에서 KIS POST 없음:** 충족합니다.\n- **서버 위험·잔고 검사 유지:** `server/engine.ts`의 `placeOrder`가 바뀌지 않았고, 정지 → 손실 → 1회 한도 → 현금·노출 → 매도 수량 순서로 검사합니다.\n- **접수와 체결 구분:** 접수 시 `status: 'pending'`이고, 다음 봉 처리(`advanceTick`)에서 체결됩니다. 화면 문구는 `orderStatus` 그대로입니다.\n- **동기 중복 클릭:** `sending` ref가 `await` 전에 동기적으로 잠기므로 막힙니다.\n\n## 설계 검토 (숨은 가정·잠금 비용)\n\n1. **포기 경로 없음:** 서버가 받지 않은 것으로 확인된 요청도 버릴 수 없습니다. 실제로 접수하거나 4xx 거절을 받아야만 풀립니다. P2-1·P2-2를 고칠 때 \"미접수로 확인되면 폐기\" 경로를 넣을지 정해야 합니다. 나중에 넣으면 sessionStorage 형식과 화면 문구를 다시 바꿔야 합니다.\n2. **`definitive = 4xx` 가정:** 서버가 업무 거절(잔고·한도 등)을 4xx로 돌려준다는 가정에 기대고 있습니다. 서버 라우트의 상태 코드 매핑은 이 자료에 없어 확인하지 못했습니다. 거절을 5xx로 보내면 매번 \"미확인\"으로 남습니다. 반대로 접수가 끝난 뒤 4xx를 보내는 경로가 있다면 실제 접수를 놓치게 됩니다.\n3. **같은 탭 한정:** pending 기록이 sessionStorage에 있어 탭마다 따로입니다. 다른 탭에서는 새 주문이 막히지 않습니다. specs에 \"같은 탭\"으로 명시돼 있어 결함으로 보지는 않습니다.\n4. **sessionStorage를 쓸 수 없을 때:** `setItem`이 예외를 던지면 주문이 막히는 쪽(fail-closed)이라 안전합니다. 다만 `orderNotice`에 브라우저의 영문 예외 메시지가 그대로 노출됩니다.",
+  "modelUsage": {
+    "claude-opus-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 13537,
+      "cacheReadInputTokens": 1559,
+      "cacheCreationInputTokens": 45227,
+      "webSearchRequests": 0,
+      "costUSD": 0.6328758,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 10897,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 45227,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "requested_model": "claude-opus-5-5",
+  "requested_effort": "high",
+  "status": "P2 two findings; fixes pending"
+}
