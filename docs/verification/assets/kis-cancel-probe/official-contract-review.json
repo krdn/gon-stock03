@@ -1,0 +1,164 @@
+{
+  "checked_at": "2026-11-16T05:36:59.731597+00:00",
+  "scope": "Public documentation only; no KIS authenticated/business API, orders or cancellation",
+  "portal": [
+    {
+      "source": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/order-rvsecncl",
+      "sha256": "829a1f493ff81ab63624919d7b65cfa7ca2bd49f46b8cc1c2289d387c2623419",
+      "name": "주식주문(정정취소)[v1_국내주식-003]",
+      "virtualDomain": "https://openapivts.koreainvestment.com:29443",
+      "virtualTrId": "VTTC0013U",
+      "realTrId": "TTTC0013U",
+      "summary": "주문 건에 대하여 정정 및 취소하는 API입니다. 단, 이미 체결된 건은 정정 및 취소가 불가합니다.\r\n\r\n※ 정정은 원주문에 대한 주문단가 혹은 주문구분을 변경하는 사항으로, 정정이 가능한 수량은 원주문수량을 초과 할 수 없습니다.\r\n\r\n※ 주식주문(정정취소) 호출 전에 반드시 주식정정취소가능주문조회 호출을 통해 정정취소가능수량(output &gt; psbl_qty)을 확인하신 후 정정취소주문 내시기 바랍니다.\r\n\r\n※ POST API의 경우 BODY값의 key값들을 대문자로 작성하셔야 합니다.\r\n   (EX. \"CANO\" : \"12345678\", \"ACNT_PRDT_CD\": \"01\",...)",
+      "fields": [
+        {
+          "bodyType": "res_b",
+          "propertyCd": "odno",
+          "requireYn": "Y",
+          "description": " "
+        },
+        {
+          "bodyType": "req_b",
+          "propertyCd": "KRX_FWDG_ORD_ORGNO",
+          "requireYn": "Y",
+          "description": " "
+        },
+        {
+          "bodyType": "req_b",
+          "propertyCd": "ORGN_ODNO",
+          "requireYn": "Y",
+          "description": "원주문번호"
+        },
+        {
+          "bodyType": "req_b",
+          "propertyCd": "ORD_QTY",
+          "requireYn": "Y",
+          "description": "주문수량"
+        },
+        {
+          "bodyType": "req_b",
+          "propertyCd": "ORD_UNPR",
+          "requireYn": "Y",
+          "description": "주문단가"
+        },
+        {
+          "bodyType": "req_b",
+          "propertyCd": "QTY_ALL_ORD_YN",
+          "requireYn": "Y",
+          "description": "'Y@전량\r\nN@일부'"
+        }
+      ]
+    },
+    {
+      "source": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/inquire-psbl-rvsecncl",
+      "sha256": "c6f57c19bef293417cfc70a8d224a10883b09bd78ece3dd81669f895f025269e",
+      "name": "주식정정취소가능주문조회[v1_국내주식-004]",
+      "virtualDomain": "모의투자 미지원",
+      "virtualTrId": "모의투자 미지원",
+      "realTrId": "TTTC0084R",
+      "summary": "주식정정취소가능주문조회 API입니다. 한 번의 호출에 최대 50건까지 확인 가능하며, 이후의 값은 연속조회를 통해 확인하실 수 있습니다.\r\n\r\n※ 주식주문(정정취소) 호출 전에 반드시 주식정정취소가능주문조회 호출을 통해 정정취소가능수량(output &gt; psbl_qty)을 확인하신 후 정정취소주문 내시기 바랍니다.",
+      "fields": [
+        {
+          "bodyType": "res_b",
+          "propertyCd": "odno",
+          "requireYn": "Y",
+          "description": "주문시 한국투자증권 시스템에서 채번된 주문번호"
+        },
+        {
+          "bodyType": "res_b",
+          "propertyCd": "orgn_odno",
+          "requireYn": "Y",
+          "description": "정정/취소주문 인경우 원주문번호"
+        },
+        {
+          "bodyType": "res_b",
+          "propertyCd": "tot_ccld_qty",
+          "requireYn": "Y",
+          "description": "주문 수량 중 체결된 수량"
+        },
+        {
+          "bodyType": "res_b",
+          "propertyCd": "psbl_qty",
+          "requireYn": "Y",
+          "description": "정정/취소 주문 가능 수량"
+        }
+      ]
+    },
+    {
+      "source": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
+      "sha256": "5558b594895fa0721e713f2f1d755c4c5039657ffffc0eef4e6c892aa379c7e6",
+      "name": "주식일별주문체결조회[v1_국내주식-005]",
+      "virtualDomain": "https://openapivts.koreainvestment.com:29443",
+      "virtualTrId": "(3개월이내) VTTC0081R (3개월이전) VTSC9215R",
+      "realTrId": "(3개월이내) TTTC0081R (3개월이전) CTSC9215R",
+      "summary": "주식일별주문체결조회 API입니다. \r\n실전계좌의 경우, 한 번의 호출에 최대 100건까지 확인 가능하며, 이후의 값은 연속조회를 통해 확인하실 수 있습니다. \r\n모의계좌의 경우, 한 번의 호출에 최대 15건까지 확인 가능하며, 이후의 값은 연속조회를 통해 확인하실 수 있습니다. \r\n\r\n* 다만, 3개월 이전 체결내역 조회(CTSC9115R, CTSC9215R) 의 경우, \r\n장중에는 많은 거래량으로 인해 순간적으로 DB가 밀렸거나 응답을 늦게 받거나 하는 등의 이슈가 있을 수 있어\r\n① 가급적 장 종료 이후(15:30 이후) 조회하시고 \r\n② 조회기간(INQR_STRT_DT와 INQR_END_DT 사이의 간격)을 보다 짧게 해서 조회하는 것을\r\n권유드립니다.",
+      "fields": [
+        {
+          "bodyType": "res_b",
+          "propertyCd": "odno",
+          "requireYn": "Y",
+          "description": " "
+        },
+        {
+          "bodyType": "res_b",
+          "propertyCd": "orgn_odno",
+          "requireYn": "Y",
+          "description": " "
+        },
+        {
+          "bodyType": "res_b",
+          "propertyCd": "tot_ccld_qty",
+          "requireYn": "Y",
+          "description": " "
+        },
+        {
+          "bodyType": "res_b",
+          "propertyCd": "cncl_yn",
+          "requireYn": "Y",
+          "description": " "
+        },
+        {
+          "bodyType": "res_b",
+          "propertyCd": "rmn_qty",
+          "requireYn": "Y",
+          "description": " "
+        },
+        {
+          "bodyType": "res_b",
+          "propertyCd": "tot_ccld_qty",
+          "requireYn": "Y",
+          "description": " "
+        }
+      ]
+    }
+  ],
+  "official_repository": {
+    "head": "4a51f9126e719c352072b14b7df9222cb2691720",
+    "commit_date": "2026-11-13T04:55:29Z",
+    "has_issues": false,
+    "has_discussions": false,
+    "files": [
+      {
+        "url": "https://github.com/koreainvestment/open-trading-api/blob/4a51f9126e719c352072b14b7df9222cb2691720/examples_llm/domestic_stock/order_rvsecncl/order_rvsecncl.py",
+        "sha256": "7e2866c77ca32f3e8cd66d7f1d0ce7a788d9fb49b09be45c62af859d71eacd12"
+      },
+      {
+        "url": "https://github.com/koreainvestment/open-trading-api/blob/4a51f9126e719c352072b14b7df9222cb2691720/examples_llm/domestic_stock/order_rvsecncl/chk_order_rvsecncl.py",
+        "sha256": "8dc6fca921db28c91b066b09f7ec65b5567f4ae65f6c35a76e2a675b826d7fe6"
+      },
+      {
+        "url": "https://github.com/koreainvestment/open-trading-api/blob/4a51f9126e719c352072b14b7df9222cb2691720/backtester/kis_backtest/providers/kis/brokerage.py",
+        "sha256": "81cdd7080e02d88e6f9b9109c23368d5d48dd2d71298f93f766ca4f03ece2617"
+      },
+      {
+        "url": "https://github.com/koreainvestment/open-trading-api/blob/4a51f9126e719c352072b14b7df9222cb2691720/legacy/README.md",
+        "sha256": "0614d99031911818666c2908bf40516cd80b287fa99268ca0b96e612c4508796"
+      }
+    ]
+  },
+  "limits": [
+    "Web reader failed for portal detail URL; public documentation JSON fetched without authentication.",
+    "Unauthenticated FAQ/Q&A search returned empty results; unfiltered retrieval failed. This does not prove absence of an official answer.",
+    "No broker response, account matching or cancellation completion evidence."
+  ]
+}

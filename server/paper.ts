@@ -5,7 +5,7 @@ import { Store } from './store.ts';
 import { halt, record } from './engine.ts';
 import { z } from 'zod';
 
-export const paperApprovalSchema = z.object({ date: z.iso.date(), requestId: z.uuid() }).strict();
+export const paperApprovalSchema = z.object({ date: z.iso.date(), requestId: z.uuid(), cancelProbe: z.literal(true).optional(), code: z.enum(['069500', '005930']).optional(), maxAmount: z.number().int().positive().max(200000).optional(), allowExistingHolding: z.literal(true).optional() }).strict();
 export type PaperApproval = z.infer<typeof paperApprovalSchema>;
 
 export const paperCapabilities = {
@@ -31,7 +31,7 @@ export class PaperBroker {
   approvalStatus() { return this.approval ? { active: true, ...this.approval } : { active: false }; }
   private checkWindow() {
     const now = Date.now();
-    if (this.approval && (now < Date.parse(`${this.approval.date}T10:00:00+09:00`) || now >= Date.parse(`${this.approval.date}T10:10:00+09:00`))) throw new KisNotSent('승인된 수동 실행 시간창 밖입니다.');
+    if (this.approval && (now < Date.parse(`${this.approval.date}T09:00:00+09:00`) || now >= Date.parse(`${this.approval.date}T15:30:00+09:00`))) throw new KisNotSent('승인된 수동 실행 시간창 밖입니다.');
   }
   private enqueue<T>(run: () => Promise<T>): Promise<T> {
     const job = this.queue.catch(() => {}).then(run); this.queue = job; return job;
@@ -52,6 +52,30 @@ export class PaperBroker {
       if (next.status !== local.status || next.filled !== local.filled || next.remaining !== local.remaining) this.store.savePaper(next, { actor: 'system', action: 'reconcile', before: local.status, evidence: evidence(local.tradeDate, rows, connection) });
     }
     return { connection, brokerOrders: orders, orders: this.store.paperOrders() };
+  }
+  cancelProbeEnabled() { return this.approval?.cancelProbe === true; }
+  cancelProbe(id: string) {
+    return this.enqueue(async () => {
+      if (!this.cancelProbeEnabled() || id !== this.approval!.requestId) throw new Error('전량취소 검증 승인이 없습니다.');
+      const order = this.store.paperOrders().find(row => row.requestId === id);
+      if (!order || !order.brokerId || !order.organization || order.code !== (this.approval!.code ?? '069500') || order.side !== 'buy' || order.qty !== 1 || order.price <= 0 || order.price > (this.approval!.maxAmount ?? 100000) || !['accepted', 'partial'].includes(order.status) || order.remaining <= 0) throw new Error('승인된 미체결 원주문을 확인할 수 없습니다.');
+      const check = () => {
+        this.checkWindow();
+        const age = Date.now() - Date.parse(order.createdAt);
+        if (order.tradeDate !== koreaDate() || order.tradeDate !== this.approval!.date.replaceAll('-', '') || !Number.isFinite(age) || age < 0 || age >= 120000) throw new KisNotSent('전량취소 검증 시간이 종료되었습니다.');
+      };
+      check();
+      const pending: PaperOrder = { ...order, status: 'unknown', message: '전량취소 검증 시도. 최종 상태는 주문 조회로 확인하세요.' };
+      this.store.claimPaperCancel(pending);
+      try {
+        await this.kis.cancelAll(order.brokerId, order.organization, check);
+        pending.message = '전량취소 요청 접수. 취소 완료는 아직 확인되지 않았습니다.';
+      } catch (error) {
+        pending.message = error instanceof Error ? error.message : '전량취소 응답 불명';
+      }
+      this.store.savePaper(pending, { actor: 'system', action: 'cancel-response', before: 'unknown' });
+      return pending;
+    });
   }
   inspectRecovery(id: string) {
     return this.enqueue(async () => {
@@ -99,7 +123,7 @@ export class PaperBroker {
         return existing;
       }
       if (this.approval) {
-        if (input.requestId !== this.approval.requestId || input.code !== '069500' || input.side !== 'buy' || input.qty !== 1 || !Number.isSafeInteger(input.price) || input.price <= 0 || input.price > 100000) throw new Error('조건부 1회 승인 범위와 주문이 다릅니다.');
+        if (input.requestId !== this.approval.requestId || input.code !== (this.approval.code ?? '069500') || input.side !== 'buy' || input.qty !== 1 || !Number.isSafeInteger(input.price) || input.price <= 0 || input.price > (this.approval.maxAmount ?? 100000)) throw new Error('조건부 1회 승인 범위와 주문이 다릅니다.');
         this.checkWindow();
         this.store.claimPaperRun();
       }
@@ -109,11 +133,15 @@ export class PaperBroker {
       if (this.approval && this.store.read().risk.halted) throw new Error('신규 주문 정지 상태입니다.');
       const { connection, brokerOrders } = await this.refreshInsideQueue(true); const balance = connection.balance!;
       if (this.store.paperOrders().some(o => o.status === 'unknown')) throw new Error('계좌 대조 중 응답 불명 주문이 확인되었습니다.');
-      if (this.approval && (brokerOrders.some(o => o.remaining > 0) || balance.positions.some(p => p.code === input.code && p.qty > 0) || balance.cash <= input.price)) throw new Error('승인 조건의 빈 보유·미체결 없음·현금 여유를 충족하지 못했습니다.');
+      if (this.approval && (brokerOrders.some(o => o.remaining > 0) || (!this.approval.allowExistingHolding && balance.positions.some(p => p.code === input.code && p.qty > 0)) || balance.cash <= input.price)) throw new Error('승인 조건의 빈 보유·미체결 없음·현금 여유를 충족하지 못했습니다.');
       const quoteStarted = performance.now(), quoteStartedAt = Date.now();
       const quote = await this.kis.quote(input.code, true);
       const quoteReceived = performance.now();
-      if (this.approval && (quoteReceived - quoteStarted > 5000 || Date.now() - quoteStartedAt > 5000 || input.price !== quote.price || !Number.isSafeInteger(quote.tickSize) || quote.tickSize <= 0 || input.price % quote.tickSize !== 0)) throw new Error('승인 조건의 5초 내 현재가·지정가·호가 단위를 충족하지 못했습니다.');
+      if (this.approval) {
+        if (quoteReceived - quoteStarted > 5000 || Date.now() - quoteStartedAt > 5000) throw new Error('승인 시세 조회 지연: 5초를 초과했습니다.');
+        if (input.price !== quote.price) throw new Error(`승인 지정가 불일치: 지정가 ${input.price}원, 재조회 현재가 ${quote.price}원.`);
+        if (!Number.isSafeInteger(quote.tickSize) || quote.tickSize <= 0 || input.price % quote.tickSize !== 0) throw new Error(`승인 호가 단위 오류: 지정가 ${input.price}원, 호가 단위 ${quote.tickSize}원.`);
+      }
       const risk = this.store.read().risk;
       if (risk.halted) throw new Error('신규 주문 정지 상태입니다.');
       const value = balance.totalEquity;

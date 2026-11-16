@@ -81,16 +81,33 @@ export class Store {
   saveExperiment(experiment: Experiment) { this.db.prepare('INSERT OR IGNORE INTO backtest_experiments VALUES (?,?)').run(experiment.id, JSON.stringify(experiment)); }
   paperOrders(): PaperOrder[] { return this.db.prepare('SELECT body FROM paper_orders ORDER BY rowid DESC').all().map(row => JSON.parse(row.body as string) as PaperOrder); }
   hasPaperRun() { return Boolean(this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='paper_run'").get()); }
-  configurePaperRun(approval: { date: string; requestId: string }) {
+  configurePaperRun(approval: { date: string; requestId: string; code?: string; maxAmount?: number; allowExistingHolding?: true }) {
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_run (id INTEGER PRIMARY KEY CHECK(id=1), day TEXT NOT NULL, request_id TEXT NOT NULL, attempted INTEGER NOT NULL DEFAULT 0);');
-    this.db.prepare('INSERT OR IGNORE INTO paper_run (id,day,request_id) VALUES (1,?,?)').run(approval.date, approval.requestId);
-    const row = this.db.prepare('SELECT day,request_id,attempted FROM paper_run WHERE id=1').get()!;
-    if (row.day !== approval.date || row.request_id !== approval.requestId) throw new Error('저장된 1회 승인과 실행 설정이 다릅니다. 원장을 초기화하지 마세요.');
+    const columns = this.db.prepare('PRAGMA table_info(paper_run)').all();
+    if (!columns.some(column => column.name === 'code')) this.db.exec("ALTER TABLE paper_run ADD COLUMN code TEXT NOT NULL DEFAULT '069500';");
+    if (!columns.some(column => column.name === 'max_amount')) this.db.exec('ALTER TABLE paper_run ADD COLUMN max_amount INTEGER NOT NULL DEFAULT 100000;');
+    if (!columns.some(column => column.name === 'allow_holding')) this.db.exec('ALTER TABLE paper_run ADD COLUMN allow_holding INTEGER NOT NULL DEFAULT 0;');
+    this.db.prepare('INSERT OR IGNORE INTO paper_run (id,day,request_id,code,max_amount,allow_holding) VALUES (1,?,?,?,?,?)').run(approval.date, approval.requestId, approval.code ?? '069500', approval.maxAmount ?? 100000, Number(approval.allowExistingHolding === true));
+    const row = this.db.prepare('SELECT day,request_id,attempted,code,max_amount,allow_holding FROM paper_run WHERE id=1').get()!;
+    if (row.day !== approval.date || row.request_id !== approval.requestId || row.code !== (approval.code ?? '069500') || row.max_amount !== (approval.maxAmount ?? 100000) || row.allow_holding !== Number(approval.allowExistingHolding === true)) throw new Error('저장된 1회 승인과 실행 설정이 다릅니다. 원장을 초기화하지 마세요.');
     return Boolean(row.attempted);
   }
   claimPaperRun() {
     const result = this.db.prepare('UPDATE paper_run SET attempted=1 WHERE id=1 AND attempted=0').run();
     if (result.changes !== 1) throw new Error('1회 실행 승인을 이미 사용했습니다. 재전송하지 마세요.');
+  }
+  claimPaperCancel(order: PaperOrder) {
+    this.db.exec('CREATE TABLE IF NOT EXISTS paper_cancel_attempt (request_id TEXT PRIMARY KEY);');
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const run = this.db.prepare('SELECT request_id,attempted FROM paper_run WHERE id=1').get();
+      if (run?.request_id !== order.requestId || run.attempted !== 1) throw new Error('사용된 원주문 승인이 없습니다.');
+      const result = this.db.prepare('INSERT OR IGNORE INTO paper_cancel_attempt VALUES (?)').run(order.requestId);
+      if (result.changes !== 1) throw new Error('전량취소를 이미 시도했습니다. 재전송하지 마세요.');
+      this.db.prepare('UPDATE paper_orders SET body=? WHERE request_id=?').run(JSON.stringify(order), order.requestId);
+      this.appendPaperAudit({ requestId: order.requestId, actor: 'local-user', action: 'cancel-attempt', before: null, after: 'unknown' });
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
   savePaper(order: PaperOrder, audit?: Omit<PaperAudit, 'id' | 'at' | 'requestId' | 'after'>) {
     this.db.exec('BEGIN IMMEDIATE');

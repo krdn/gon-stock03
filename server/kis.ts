@@ -189,6 +189,15 @@ export class KisClient {
     }
     throw new Error('KIS 주문 전체 조회를 마치지 못했습니다.');
   }
+  async cancelAll(id: string, organization: string, beforeSend: () => void) {
+    brokerId.parse(id); organizationId.parse(organization);
+    const { data } = await this.request('/uapi/domestic-stock/v1/trading/order-rvsecncl', 'VTTC0013U', {
+      ...this.accountParams(), KRX_FWDG_ORD_ORGNO: organization, ORGN_ODNO: id,
+      ORD_DVSN: '00', RVSE_CNCL_DVSN_CD: '02', ORD_QTY: '0', ORD_UNPR: '0', QTY_ALL_ORD_YN: 'Y', EXCG_ID_DVSN_CD: 'KRX',
+    }, true, '', beforeSend);
+    const receipt = z.object({ rt_cd: z.literal('0'), output: z.object({ ODNO: brokerId, KRX_FWDG_ORD_ORGNO: organizationId }) }).safeParse(data);
+    if (!receipt.success) throw new Error('취소 응답을 확정할 수 없습니다. 재전송하지 마세요.');
+  }
   async submit(input: OrderInput, beforeSend?: () => void) {
     const { data } = await this.request('/uapi/domestic-stock/v1/trading/order-cash', input.side === 'buy' ? 'VTTC0012U' : 'VTTC0011U', { ...this.accountParams(), PDNO: input.code, ORD_DVSN: '00', ORD_QTY: String(input.qty), ORD_UNPR: String(input.price), EXCG_ID_DVSN_CD: 'KRX', SLL_TYPE: input.side === 'sell' ? '01' : '', CNDT_PRIC: '' }, true, '', beforeSend);
     const parsed = z.object({ rt_cd: z.literal('0'), output: z.object({ ODNO: brokerId, KRX_FWDG_ORD_ORGNO: organizationId }) }).safeParse(data);
