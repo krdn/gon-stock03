@@ -39,3 +39,7 @@ STE 기준파일 부재와 기존 번들 경고는 유지한다. #25의 단위16
 Store의 생성 전 DB/WAL/SHM0600 보호와 실패 시 중단을 구현했다. [검증 기록](../verification/2026-11-16-sqlite-permissions.md): RED10건, 저장 회귀17/17·전체182/182·build PASS. 생성 시점은 임시 서버 strace로 확인했다. 준비 head 앱43883174622·구성43883174696 SUCCESS도 재확인했다. 지정 Argon 리뷰 PASS(요청/init 일치, 서버 내부 모델/effort 독립 미검증). STE 기준파일 부재 exit2. 초안 PR67로 전달했으며 최종 head CI 결과는 PR Checks와 #64 전달 댓글이 기준이다. 사용자 수용·통합 전 #64 open과 #25 Blocked를 유지한다.
 
 구현 커밋 `2edfe9d654b1c7f9e6880c23613419008e777a98`을 원격과 대조했다. [초안 PR67](https://github.com/krdn/gon-stock03/pull/67), base main. 최종 기록 커밋은 제품 코드를 변경하지 않는다. PR 생성 connector403 후 중복 없음 확인과 기존 gh로 생성했다. 기존 커밋 훅이 생성한 미추적 `graphify-out/`은 보존했으며 추적 변경과 구분한다. 다음 단계는 최신 head CI와 사용자 수용·통합 판단이다. #65로 자동 확장하지 않는다.
+
+## 통합 후 상태
+
+사용자 최신 다음 작업 진행 지시로 PR67을 squash merge했다. main `961f470036eafbadce5d18d9b772705f1f4c5ca3`, 기존 head CI4 SUCCESS·미해결 리뷰 스레드0 확인. 다음 독립 작업은 [#65](65-static-errors.md)다. main 앱43885535648·구성43885535909 SUCCESS, 단위182·브라우저113 PASS 확인. #64 종료 기록은 이슈에 남기며 실제 장중 수용과 구분한다.
