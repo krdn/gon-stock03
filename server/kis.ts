@@ -34,11 +34,17 @@ export class KisClient {
   private accountState = disconnectedConnection();
   private quotes = new Map<string, KisQuote>();
   private quoteRequests = new Map<string, Promise<KisQuote>>();
+  private requestDeadline = Infinity;
+  private requestWallDeadline = Infinity;
   constructor(private credentials: Credentials, private transport: typeof fetch = fetch, private spacing = 1100) {}
   static fromEnvironment() {
     return new KisClient({ key: process.env.KIS_APP_KEY ?? '', secret: process.env.KIS_APP_SECRET ?? '', account: process.env.KIS_CANO ?? '', product: process.env.KIS_ACNT_PRDT_CD ?? '' });
   }
   configured() { const c = this.credentials; return Boolean(c.key.trim() && c.secret.trim() && /^\d{8}$/.test(c.account) && /^\d{2}$/.test(c.product)); }
+  limitRequestsFor(ms: number) {
+    this.requestDeadline = Math.min(this.requestDeadline, performance.now() + ms);
+    this.requestWallDeadline = Math.min(this.requestWallDeadline, Date.now() + ms);
+  }
   private injection(): ConnectionState['injection'] {
     const c = this.credentials;
     const fields = { KIS_APP_KEY: c.key, KIS_APP_SECRET: c.secret, KIS_CANO: c.account, KIS_ACNT_PRDT_CD: c.product };
@@ -50,8 +56,10 @@ export class KisClient {
     this.pending++;
     const job = this.queue.catch(() => {}).then(async () => {
       for (let wait = this.spacing - (performance.now() - this.lastCall); wait > 0; wait = this.spacing - (performance.now() - this.lastCall)) await new Promise(resolve => setTimeout(resolve, wait));
-      const options: RequestInit = { ...init, redirect: 'error', signal: AbortSignal.timeout(15000) };
       beforeSend?.();
+      const remaining = Math.min(this.requestDeadline - performance.now(), this.requestWallDeadline - Date.now());
+      if (remaining <= 0) throw new KisNotSent('승인된 조회 시간이 종료되었습니다. 자동 재조회하지 마세요.');
+      const options: RequestInit = { ...init, redirect: 'error', signal: AbortSignal.timeout(Math.max(1, Math.floor(Math.min(15000, remaining)))) };
       let response: Response;
       try {
         let pendingResponse: Promise<Response>;

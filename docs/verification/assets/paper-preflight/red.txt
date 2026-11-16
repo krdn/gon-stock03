@@ -1,0 +1,93 @@
+✖ approved paper run allows only the fixed ID, symbol, buy, one share and 100000 ceiling (31.865788ms)
+✖ approved paper run checks the actual send window again after quote and buying-power wait (5.243041ms)
+✖ approved paper run rejects stale quote and never retries a failed preflight (3.763687ms)
+✖ approved paper run rejects existing holdings, pending orders, cash equality and invalid quote ticks (3.755989ms)
+✖ approved paper run halts after success, rejection or unknown and stops all KIS reads at 120 seconds (3.375998ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 0
+ℹ fail 5
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 366.380949
+
+✖ failing tests:
+
+test at tests/paper.test.ts:357:1
+✖ approved paper run allows only the fixed ID, symbol, buy, one share and 100000 ceiling (31.865788ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/home/gon/llm-projects/gon-stock03-worktrees/9-paper-preflight/tests/paper.test.ts:362:7)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /승인/,
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/paper.test.ts:374:1
+✖ approved paper run checks the actual send window again after quote and buying-power wait (5.243041ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/home/gon/llm-projects/gon-stock03-worktrees/9-paper-preflight/tests/paper.test.ts:378:5)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /시간/,
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/paper.test.ts:386:1
+✖ approved paper run rejects stale quote and never retries a failed preflight (3.763687ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'accepted'
+  - 'rejected'
+
+      at TestContext.<anonymous> (/home/gon/llm-projects/gon-stock03-worktrees/9-paper-preflight/tests/paper.test.ts:391:12)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'accepted',
+    expected: 'rejected',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/paper.test.ts:397:1
+✖ approved paper run rejects existing holdings, pending orders, cash equality and invalid quote ticks (3.755989ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/home/gon/llm-projects/gon-stock03-worktrees/9-paper-preflight/tests/paper.test.ts:409:7)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /승인/,
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at tests/paper.test.ts:418:1
+✖ approved paper run halts after success, rejection or unknown and stops all KIS reads at 120 seconds (3.375998ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  false !== true
+
+      at TestContext.<anonymous> (/home/gon/llm-projects/gon-stock03-worktrees/9-paper-preflight/tests/paper.test.ts:425:14)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

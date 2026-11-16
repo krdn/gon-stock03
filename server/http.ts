@@ -7,7 +7,7 @@ import { backtestInput, codeSchema, haltInput, idInput, journalInput, orderInput
 import { advanceTick, backtest, cancelOrder, halt, placeOrder, record } from './engine.ts';
 import { KisClient } from './kis.ts';
 import { Store } from './store.ts';
-import { PaperBroker, paperCapabilities } from './paper.ts';
+import { PaperBroker, paperCapabilities, type PaperApproval } from './paper.ts';
 import type { StateSnapshot } from '../shared/model.ts';
 import { emptyStatus } from '../shared/status.ts';
 import { createExperiment, replayExperiment } from './backtest.ts';
@@ -22,8 +22,8 @@ async function body(req: IncomingMessage, limit = 16384) {
 function json(res: ServerResponse, status: number, data: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(data));
 }
-export function makeServer(store: Store, kis = KisClient.fromEnvironment(), ports = [4303, 4304]) {
-  const paper = new PaperBroker(store, kis);
+export function makeServer(store: Store, kis = KisClient.fromEnvironment(), ports = [4303, 4304], approval?: PaperApproval) {
+  const paper = new PaperBroker(store, kis, approval);
   const market = new MarketData(store, kis);
   const instanceId = randomUUID();
   const origins = new Set(ports.flatMap(port => [`http://127.0.0.1:${port}`, `http://localhost:${port}`]));
@@ -37,7 +37,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         const snapshot: StateSnapshot = { ...store.read(), instanceId, status: { ...emptyStatus('demo'), phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now }, connection: kis.connection() };
         json(res, 200, snapshot); return;
       }
-      if (path === '/api/kis/ledger' && req.method === 'GET') { json(res, 200, { orders: store.paperOrders() }); return; }
+      if (path === '/api/kis/ledger' && req.method === 'GET') { json(res, 200, { orders: store.paperOrders(), minimumRun: paper.approvalStatus() }); return; }
       if (path === '/api/kis/capabilities' && req.method === 'GET') { json(res, 200, paperCapabilities); return; }
       if (path === '/api/kis/audit' && req.method === 'GET') {
         const id = idInput.parse({ id: new URL(req.url!, 'http://127.0.0.1').searchParams.get('requestId') }).id;

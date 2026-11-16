@@ -1,0 +1,6 @@
+{
+  "server/paper.ts": "f32348e062652564711f637a5f3e90d8fff5dd1952ad442aa20e51e60bdc0223",
+  "server/engine.ts": "1d1982f6c70047e57ab6de7fc9eb93242205d13022304d6d908b38f193dcca67",
+  "tests/paper.test.ts": "489aecc609795d8f0af9e46a7c637ae9ba59aa5e2c5b3359e576f7f5046b86b3",
+  "docs/verification/2026-11-16-paper-preflight.md": "f17e51e814b6b35a54d70139b63d27ef98f4ad7c056d1e555cb8d34cd8ad9cb1"
+}

@@ -3,12 +3,15 @@ import { dirname, resolve } from 'node:path';
 import { Store } from './store.ts';
 import { makeServer } from './http.ts';
 import { advanceTick, halt, record } from './engine.ts';
+import { paperApprovalSchema } from './paper.ts';
 
+const approval = process.env.KIS_PAPER_APPROVAL === undefined ? undefined : paperApprovalSchema.parse(JSON.parse(process.env.KIS_PAPER_APPROVAL));
 const port = Number(process.env.STOCK_PORT ?? 4304);
 const path = process.env.STOCK_DB === ':memory:' ? ':memory:' : resolve(process.env.STOCK_DB ?? '.local/workspace.sqlite');
+if (approval && (path === ':memory:' || !process.env.STOCK_DB)) throw new Error('1회 실행에는 확인한 영구 STOCK_DB 경로가 필요합니다.');
 if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 const store = new Store(path); if (path !== ':memory:') chmodSync(path, 0o600);
-const server = makeServer(store, undefined, [4303, port]);
+const server = makeServer(store, undefined, [4303, port], approval);
 const playback = setInterval(() => {
   if (!store.read().playing) return;
   try { store.update(advanceTick); }

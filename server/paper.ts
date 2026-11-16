@@ -2,7 +2,11 @@ import { paperRecoveryInput, type OrderInput, type PaperRecoveryInput } from '..
 import type { PaperOrder, BrokerOrder, PaperEvidence, ConnectionState } from '../shared/model.ts';
 import { KisClient, KisRejected, KisNotSent, koreaDate } from './kis.ts';
 import { Store } from './store.ts';
-import { record } from './engine.ts';
+import { halt, record } from './engine.ts';
+import { z } from 'zod';
+
+export const paperApprovalSchema = z.object({ date: z.iso.date(), requestId: z.uuid() }).strict();
+export type PaperApproval = z.infer<typeof paperApprovalSchema>;
 
 export const paperCapabilities = {
   changeOrders: { status: 'blocked', reason: '정정취소 전 필수 가능수량 조회는 모의투자 미지원입니다. KIS 모의 앱에서 수동 처리 후 주문을 대조하세요.', source: 'https://apiportal.koreainvestment.com/apiservice-apiservice?/uapi/domestic-stock/v1/trading/inquire-psbl-rvsecncl' },
@@ -17,7 +21,18 @@ const evidence = (tradeDate: string, orders: BrokerOrder[], connection: Connecti
 
 export class PaperBroker {
   private queue: Promise<unknown> = Promise.resolve();
-  constructor(private store: Store, private kis: KisClient) {}
+  constructor(private store: Store, private kis: KisClient, private approval?: PaperApproval) {
+    if (!approval && store.hasPaperRun()) throw new Error('저장된 1회 승인 설정이 필요합니다. 제한 없이 재시작할 수 없습니다.');
+    if (approval && store.configurePaperRun(paperApprovalSchema.parse(approval))) {
+      kis.limitRequestsFor(0);
+      store.update(state => halt(state, true));
+    }
+  }
+  approvalStatus() { return this.approval ? { active: true, ...this.approval } : { active: false }; }
+  private checkWindow() {
+    const now = Date.now();
+    if (this.approval && (now < Date.parse(`${this.approval.date}T10:00:00+09:00`) || now >= Date.parse(`${this.approval.date}T10:10:00+09:00`))) throw new KisNotSent('승인된 수동 실행 시간창 밖입니다.');
+  }
   private enqueue<T>(run: () => Promise<T>): Promise<T> {
     const job = this.queue.catch(() => {}).then(run); this.queue = job; return job;
   }
@@ -83,11 +98,22 @@ export class PaperBroker {
         if (existing.code !== input.code || existing.side !== input.side || existing.qty !== input.qty || existing.price !== input.price) throw new Error('동일 요청 ID의 주문 내용이 다릅니다.');
         return existing;
       }
+      if (this.approval) {
+        if (input.requestId !== this.approval.requestId || input.code !== '069500' || input.side !== 'buy' || input.qty !== 1 || !Number.isSafeInteger(input.price) || input.price <= 0 || input.price > 100000) throw new Error('조건부 1회 승인 범위와 주문이 다릅니다.');
+        this.checkWindow();
+        this.store.claimPaperRun();
+      }
+      try {
       if (this.store.paperOrders().some(o => ['unknown', 'sending'].includes(o.status))) throw new Error('응답 불명 주문이 있습니다. KIS 계좌 대조 전 추가 주문을 차단합니다.');
       if (this.store.paperOrders().length >= 1000) throw new Error('KIS 주문 기록 한도에 도달했습니다.');
+      if (this.approval && this.store.read().risk.halted) throw new Error('신규 주문 정지 상태입니다.');
       const { connection, brokerOrders } = await this.refreshInsideQueue(true); const balance = connection.balance!;
       if (this.store.paperOrders().some(o => o.status === 'unknown')) throw new Error('계좌 대조 중 응답 불명 주문이 확인되었습니다.');
+      if (this.approval && (brokerOrders.some(o => o.remaining > 0) || balance.positions.some(p => p.code === input.code && p.qty > 0) || balance.cash <= input.price)) throw new Error('승인 조건의 빈 보유·미체결 없음·현금 여유를 충족하지 못했습니다.');
+      const quoteStarted = performance.now(), quoteStartedAt = Date.now();
       const quote = await this.kis.quote(input.code, true);
+      const quoteReceived = performance.now();
+      if (this.approval && (quoteReceived - quoteStarted > 5000 || Date.now() - quoteStartedAt > 5000 || input.price !== quote.price || !Number.isSafeInteger(quote.tickSize) || quote.tickSize <= 0 || input.price % quote.tickSize !== 0)) throw new Error('승인 조건의 5초 내 현재가·지정가·호가 단위를 충족하지 못했습니다.');
       const risk = this.store.read().risk;
       if (risk.halted) throw new Error('신규 주문 정지 상태입니다.');
       const value = balance.totalEquity;
@@ -101,6 +127,7 @@ export class PaperBroker {
         const pending = brokerOrders.filter(o => o.code === input.code && o.side === 'buy' && !o.cancelled).reduce((a, o) => a + o.remaining * o.price, 0);
         if ((holding?.qty ?? 0) * quote.price + pending + amount > risk.maxPosition) throw new Error('KIS 종목별 투자 한도를 초과했습니다.');
         const power = await this.kis.buyingPower(input.code, input.price);
+        if (this.approval && amount >= power.cash) throw new Error('승인 조건의 미수 없는 현금 여유가 부족합니다.');
         if (input.qty > power.qty || amount > power.cash) throw new Error('KIS 미수 없는 매수 가능 수량 또는 현금이 부족합니다.');
       } else {
         const reserved = brokerOrders.filter(o => o.code === input.code && o.side === 'sell' && !o.cancelled).reduce((a, o) => a + o.remaining, 0);
@@ -112,6 +139,8 @@ export class PaperBroker {
       this.store.savePaper(local, { actor: 'system', action: 'sending', before: null });
       try {
         const receipt = await this.kis.submit(input, () => {
+          this.checkWindow();
+          if (this.approval && (performance.now() - quoteReceived > 5000 || Date.now() - Date.parse(quote.receivedAt) > 5000 || Date.now() < Date.parse(quote.receivedAt))) throw new KisNotSent('승인된 시세의 5초 유효기간이 지났습니다.');
           const currentRisk = this.store.read().risk;
           if (currentRisk.halted || JSON.stringify(currentRisk) !== JSON.stringify(risk)) throw new KisNotSent('전송 직전 위험 설정 변경으로 주문을 보내지 않았습니다.');
         });
@@ -123,6 +152,12 @@ export class PaperBroker {
       this.store.savePaper(local, { actor: 'system', action: 'response', before: 'sending' });
       this.store.update(state => record(state, `KIS 모의 주문 ${local.status}`, local.message, local.status === 'accepted' ? 'info' : 'warning'));
       return local;
+      } finally {
+        if (this.approval) {
+          this.kis.limitRequestsFor(120000);
+          this.store.update(state => halt(state, true));
+        }
+      }
     });
   }
 }

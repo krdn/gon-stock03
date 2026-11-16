@@ -1,0 +1,13 @@
+{
+  "server/paper.ts": "5d6d3290ba0e52ce006847993f9b046f8d6be0bba349da68f1c87972d48e38be",
+  "server/kis.ts": "fb6b43da27d4b2da8e3fe380945776bb7c0bfe0702da84eb9d352442691b498c",
+  "server/store.ts": "e6d3b29a3e467569f59874cf7b6d8417bb2f79985464299deab19a4b27f4eae3",
+  "server/http.ts": "6bc04371d713433338ed711512f0dfda411ac107065da13c7f6c05d6435785a7",
+  "server/index.ts": "e19c7082968d0837f598d4d8861ac90179b8e9a83aaed3619a4ff1244c94ceb6",
+  "shared/contracts.ts": "063f06413ed4cdefefdef55cd257c8fcd6efdca489c93856e553ddc4bd97dc70",
+  "tests/paper.test.ts": "0a5a7288bca80008f9d46d78359ed17feef221a25fe56f3e8a1b2f2041f2c3e7",
+  "docs/operations/kis-minimum-paper-run.md": "1b770bd214fd8c3b32c0feed6889c708bf574f2c7f2cdb1fc81b82544196e2a1",
+  "docs/tasks/9-kis-orders-recovery.md": "ba2e88a2bc4d0e980ecc356522deebbd4fa5a78ea5333073137f1bad4fcf5889",
+  "docs/STATE.md": "4c2786df9e9a44651c4069e79c5e47f81009fe3bbc2ccac0a69dbe087ff48325",
+  "docs/verification/2026-11-16-paper-preflight.md": "4fb88aaae9042eb5fb1020321ad64fe71bebf8dbd9b17248fd1921ec8c6aa4b5"
+}
