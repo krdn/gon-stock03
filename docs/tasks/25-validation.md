@@ -2,7 +2,7 @@
 
 [이슈 #25](https://github.com/krdn/gon-stock03/issues/25). 기준 main `134118eff0b0575be231d9dd34929ab45a290125`(PR63), `chore/25-validation-prep`, `/home/gon/llm-projects/gon-stock03-worktrees/25-validation`.
 
-- 상태: 준비 검증 완료, 초안 PR로 전달. 실제 장중 실행은 Blocked. 사용자 후속 작업 진행 지시는 준비·격리 검증 범위이며 주문 전송·예약 승인이 아니다.
+- 상태: 준비 검증 완료, PR66을 main `dae458093b664d872a23672f4b65aa9b229aa10c`에 통합. 실제 장중 실행은 Blocked. 사용자 후속 작업 진행 지시는 준비·격리 검증 범위이며 주문 전송·예약 승인이 아니다.
 - 목표: #25 각 완료 조건의 기존 증거·미관측·실행 전제·중단 조건을 정리하고, 별도 장중 시작 때 검토할 실행안을 만든다. 문서 작성과 실제 실증 완료를 구분한다.
 - 선행: native 선행 15개 중 #22가 마지막이었다. PR63 통합 후 native 선행 15개 전부 closed/completed를 확인했다. #22 Project Done·main CI2 SUCCESS 확인. #25 Project Blocked 유지.
 - 범위: 저장소/공식 공개 자료 읽기, 필요한 fake transport·메모리/임시DB 회귀, 실증 준비 문서. 실제 KIS 업무API·WebSocket·인증·주문·취소·예약·외부알림 금지. 원장/보유/백업 재설정 금지.
@@ -18,7 +18,7 @@ AGENTS·WORKFLOW·이슈 #25/PR63 최신 상태, `docs/operations/local.md`, `do
 - [증거·실행 전제·중단 조건](../verification/2026-11-16-validation-prep.md)에 #25 완료 조건을 실제 관측/격리 회귀/미관측으로 구분했다.
 - #2 P2를 임시 DB·loopback HTTP로 모두 재현했다. [#64 WAL/SHM 권한](https://github.com/krdn/gon-stock03/issues/64), [#65 정적 파일 경로 노출](https://github.com/krdn/gon-stock03/issues/65)로 수정 범위를 분리했다. 이번에는 제품 코드 수정 없음.
 - 원격 기준 main·PR63·선행15 completed·#22 Done·#25 Blocked 및 준비 head a2b7826 CI2 SUCCESS 확인. 단위166·브라우저113·build·지정 Argon/high 준비 검토 PASS. STE exit2 한계 유지. 초안 PR의 최종 SHA·CI는 #25 전달 댓글을 기준으로 확인한다.
-- 다음 개발은 #64/#65의 수정·회귀 범위를 별도로 인수한다. 실제 실증은 실행일·대상 SHA·원장/ID·장 상태·앱 직접 취소 대응을 확정하고 별도 장중 수동 시작 지시가 있어야 한다.
+- 다음 개발은 [#64 권한 보호](64-sqlite-permissions.md)의 수정·회귀다. #65는 그 다음 독립 작업이다. 실제 실증은 실행일·대상 SHA·원장/ID·장 상태·앱 직접 취소 대응을 확정하고 별도 장중 수동 시작 지시가 있어야 한다.
 - 기존 삼성전자1회/120초 승인과 연속전략을 혼동하지 않는다. API 취소 없이 사용자 모바일 취소라는 최신 지시를 유지한다. #1/#2/#3/#25 완료 금지.
 
 ## 세션 인계
