@@ -2,7 +2,7 @@
 
 [이슈 #22](https://github.com/krdn/gon-stock03/issues/22). 시작 main `54754f81e831cf3a6b24085229ca68c485dc8c86`(PR62), `feat/22-strategies`, `/home/gon/llm-projects/gon-stock03-worktrees/22-strategies`.
 
-- 현재: t7m 소유권 인계 후 #22 구현·격리 검증 진행. main CI2 SUCCESS, #19/#21 completed·통합·Done을 재확인했다. 초안 PR·최신 head CI·사용자 수용은 아직 미완료.
+- 현재: t7m 소유권 인계 후 #22 구현·격리 검증·리뷰 완료. 구현 `2c71353` 원격 확인, [초안 PR63](https://github.com/krdn/gon-stock03/pull/63). #22 Open/In Review. 최신 head CI는 PR63/이슈 전달 댓글에서 확인한다. 사용자 수용·통합은 미완료.
 - 범위: 검증된 실시간 입력과 공통 주문 경로에 KIS 모의 전략 연결. 주문 없는 평가도 신호·차단 이유 기록. S01 실행 전략 집계와 위험관리 KIS 전략 경로 재검증 포함.
 - 필수 읽기: AGENTS·WORKFLOW·#22, `src/pages/Research.tsx`, `server/engine.ts`·`paper.ts`·`realtime.ts`, `src/pages/Workspace.tsx`·`Operations.tsx`, `src/specs.ts`, `tests/browser/workbench.spec.ts`와 관련 회귀. 전체 이력 재독 없음.
 - 완료 조건: 동일 이벤트 중복 주문 없음, 정지/재시작 후 신규 주문 없음, 전략 revision·신호·주문 ID 연결, 수동 보유 매도 정책, 공통 금액·손실·종목 한도·긴급정지, S01 상태/차단 이유, 모의 도메인/TR·승인 범위 고정, 행동/API/실패/완료 계약과 회귀 갱신.
@@ -25,4 +25,6 @@
 - 공통 PaperBroker의 위험·모의 도메인/TR·고정 승인 검사를 재사용한다. 별도 연속 전송 승인을 만들지 않았다.
 - S01 KIS 전략 집계·S07 이력·위험관리 설명과 `src/specs.ts` 계약을 갱신했다.
 - 자세한 실행 결과·실패·미검증: [#22 검증 기록](../verification/2026-11-16-strategies.md).
-- 다음: 지정 Argon 리뷰 수정분 PASS·단위166·브라우저111 및 후속 회귀 확인. 다음: 커밋/푸시 → 초안 PR·head CI 확인 → 사용자 화면 수용·통합. #22 completed/Done과 #25 해제는 아직 금지한다.
+- 검증: 지정 Argon 리뷰 수정분 PASS·단위166·전체 브라우저111 및 후속 S07 5개 회귀 PASS. 다음: 최신 head CI 확인 → 사용자 화면 수용·통합. #22 completed/Done과 #25 해제는 아직 금지한다.
+
+전달 예외: `gon-workflow handoff --dry-run`은 기존 미추적 `graphify-out/` 때문에 거부됐다. 폴더·전역 훅을 보존하고 고정 SHA의 STATE/작업/검증 링크와 최신 CI 결과를 #22에 직접 기록한다. PR 생성 connector403은 중복 없음 확인 후 인증된 gh로 처리했다.

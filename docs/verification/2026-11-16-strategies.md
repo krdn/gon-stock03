@@ -34,4 +34,6 @@ KIS 체결가 이벤트와 저장 전략을 연결했다. 검증은 fake REST/We
 
 중앙 설정/dry-run 기본은 `claude-opus-5-5/high`로 사용자 지정과 다르다. 전역 설정을 바꾸지 않고 제공 목록에서 확인한 `gemini-4-argon-high`, effort high를 명시해 읽기 전용 리뷰를 요청했다. 요청/init 모델 일치를 확인했다. 초기 리뷰는 평가 순서/조기 삭제 Medium과 S01 서버 불명 준비 표시 Low를 지적했다. 두 RED를 재현해 수정했다. 수정분만 1회 후속 리뷰에서 PASS를 받았다. [리뷰 결과](assets/strategies/review.json). 서버 내부 모델/effort는 독립 검증하지 않았다.
 
-로컬 검증·리뷰를 완료했다. 커밋·초안 PR·최신 head CI는 전달 단계에서 기록한다. #22 사용자 수용·통합 전 completed/Done 처리하지 않는다. #25 장중 실증·연속전략 실제 전송 승인은 별도다.
+구현 커밋 `2c71353b99e1a3f289416960d8ff68446a7e3a5e`를 원격 확인하고 [초안 PR63](https://github.com/krdn/gon-stock03/pull/63)을 생성했다. 이 문서 갱신 뒤 최신 head CI 결과는 PR63과 #22 전달 댓글에 남긴다. #22 사용자 수용·통합 전 completed/Done 처리하지 않는다. #25 장중 실증·연속전략 실제 전송 승인은 별도다.
+
+PR 생성 connector403은 중복 확인 후 gh로 처리했다. 표준 handoff dry-run은 기존 미추적 `graphify-out/` 때문에 실패했다. 폴더를 보존하고 고정 링크로 직접 전달한다. 커밋 시 `GRAPHIFY_SKIP_HOOK=1`로 선택적 그래프 재생성만 생략했으며 검증 훅과 전역 설정은 변경하지 않았다.

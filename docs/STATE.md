@@ -2,7 +2,7 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매.
 
-- **현재:** [#22 KIS 전략 스튜디오](tasks/22-strategies.md). `feat/22-strategies`, main `54754f81e831cf3a6b24085229ca68c485dc8c86` 기반 전용 worktree. 선행 #19/#21 completed·Project Done 확인 후 Ready. t7m 소유권 인계 후 t7n에서 구현·격리 검증 진행. 초안 PR·head CI와 사용자 수용·통합은 미완료. [검증 기록](verification/2026-11-16-strategies.md).
+- **현재:** [#22 KIS 전략 스튜디오](tasks/22-strategies.md). `feat/22-strategies`, main `54754f81e831cf3a6b24085229ca68c485dc8c86` 기반 전용 worktree. 선행 #19/#21 completed·Project Done 확인 후 Ready. t7m 소유권 인계 후 구현 커밋 `2c71353` 푸시·[초안 PR63](https://github.com/krdn/gon-stock03/pull/63) 생성. 단위166·Argon 수정분 PASS. #22 Open/In Review. 최신 head CI는 PR63/이슈의 전달 기록에서 확인하며 사용자 수용·통합은 미완료. [검증 기록](verification/2026-11-16-strategies.md).
 - **통합:** [PR62](https://github.com/krdn/gon-stock03/pull/62) merged. head `2e7ea61` CI4·main `54754f8` CI2 SUCCESS. [#19 검증](verification/2026-11-16-realtime.md): 단위154·브라우저108·build·Argon 수정분 PASS. #19 completed/Done.
 - **수용 범위:** 사용자 다음 작업 점검·새 세션 진행 지시를 #19의 기술 수용·통합과 #22 진행으로 해석했다. 직접 사용자 육안·장중 수용을 주장하지 않는다.
 - **다음:** #22 구현·검증·수용·통합 후 #25 장중 통합 실증. #25는 Blocked이며 실제 거래는 별도 시작 지시 필요. #2의 기존 비차단 P2(DB/WAL/SHM 권한, 정적 파일 누락 경로 노출)는 별도 후속 점검. #1/#2/#3을 일괄 완료하지 않는다.
