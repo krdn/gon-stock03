@@ -126,7 +126,7 @@ export class PaperBroker {
     if (!order || order.status !== 'unknown' || order.brokerId) throw new Error('주문번호 없는 응답 불명 주문만 명시적 복구할 수 있습니다.');
     return order;
   }
-  async submit(input: OrderInput, checkSignal?: () => void): Promise<PaperOrder> {
+  async submit(input: OrderInput, checkSignal?: () => void, strategy?: PaperOrder['strategy']): Promise<PaperOrder> {
     return this.enqueue(async () => {
       const existing = this.store.paperOrders().find(o => o.requestId === input.requestId);
       if (existing) {
@@ -177,7 +177,7 @@ export class PaperBroker {
       }
       const latestRisk = this.store.read().risk;
       if (latestRisk.halted || JSON.stringify(risk) !== JSON.stringify(latestRisk)) throw new Error('검증 중 위험 설정이 바뀌었습니다. 다시 확인하세요.');
-      const local: PaperOrder = { ...input, createdAt: new Date().toISOString(), tradeDate: koreaDate(), status: 'sending', filled: 0, remaining: input.qty, message: 'KIS 모의 전송 중' };
+      const local: PaperOrder = { ...input, ...(strategy ? { strategy } : {}), createdAt: new Date().toISOString(), tradeDate: koreaDate(), status: 'sending', filled: 0, remaining: input.qty, message: 'KIS 모의 전송 중' };
       this.store.savePaper(local, { actor: 'system', action: 'sending', before: null });
       this.riskOrders = null;
       try {

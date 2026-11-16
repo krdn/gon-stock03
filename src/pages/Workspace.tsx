@@ -13,7 +13,9 @@ export function InstrumentTable({ instruments }: { instruments: Instrument[] }) 
   return <div className="table-scroll"><table><thead><tr><th>관심</th><th>종목명 / 코드</th><th>현재가</th><th>등락률</th><th className="spark-header">가격 흐름 <span className="muted">· 합성</span></th><th>거래량</th><th><span className="sr-only">종목 열기</span></th></tr></thead><tbody>{instruments.map(s => <tr key={s.code}><td><button className={`star-button ${state.watchlist.includes(s.code) ? 'selected' : ''}`} aria-label={`${s.name} 관심 ${state.watchlist.includes(s.code) ? '해제' : '등록'}`} disabled={busy || !available} onClick={() => void act('watchlist', { code: s.code }).catch(() => {})}><Star size={17} /></button></td><td><Link className="stock-name" to={`/trade?code=${s.code}`}>{s.name}<small>{s.code}<span>{s.market}</span></small></Link></td><td className="number">{won(s.price)}</td><td><Change value={s.change} /></td><td className="spark-cell"><Chart values={s.history.slice(-30)} height={35} color={s.change >= 0 ? 'var(--red)' : 'var(--blue)'} area={false} label={`${s.name} 합성 가격 추이`} /></td><td className="number muted">{(s.volume / 10000).toFixed(1)}만</td><td><Link className="table-action" to={`/trade?code=${s.code}`} aria-label={`${s.name} 트레이딩`}><ArrowUpRight size={17} /></Link></td></tr>)}</tbody></table></div>;
 }
 export function Dashboard() {
-  const { state, status, connection, paperRisk, available } = useWorkbench();
+  const { state, status, connection, paperRisk, available, realtime } = useWorkbench();
+  const quoteAge = realtime?.lastQuoteAt ? Date.now() - Date.parse(realtime.lastQuoteAt) : Infinity;
+  const realtimeReady = available && realtime?.fresh && realtime.ordersAllowed && quoteAge >= 0 && quoteAge <= 5000;
   const demo = portfolioValue(state.cash, state.positions.map(p => ({ ...p, name: p.code, price: state.instruments.find(s => s.code === p.code)?.price ?? null })));
   const kis = connection.balance ? portfolioValue(connection.balance.cash, connection.balance.positions) : null;
   const money = (value: number | null) => value === null ? '평가 불가' : `${won(value)}원`;
@@ -27,7 +29,7 @@ export function Dashboard() {
       <h2>DEMO 계좌 · 합성 시나리오</h2>
       <DataStatusLine label="대시보드 DEMO 조회 상태" status={status} />
       {!available && <p className="notice warning">{status.lastSuccessAt ? '이전 DEMO 확인값 · 최신 아님' : 'DEMO 미리보기 · 서버 미확인'}</p>}
-      <div className="stats-grid"><Stat label="총 평가자산" value={money(demo.total)} sub="보유 현금 + 보유종목 평가액" /><Stat label="보유 평가손익" value={profit(demo.profit)} sub="수수료 차감 전 평가손익" /><Stat label="보유 현금" value={money(demo.cash)} sub="예약액은 현금에서 아직 차감되지 않음" /><Stat label="실행 전략" value={`${state.strategies.filter(s => s.active).length} / ${state.strategies.length}`} sub="DEMO · 로컬 봉 재생 시 평가" /></div>
+      <div className="stats-grid"><Stat label="총 평가자산" value={money(demo.total)} sub="보유 현금 + 보유종목 평가액" /><Stat label="보유 평가손익" value={profit(demo.profit)} sub="수수료 차감 전 평가손익" /><Stat label="보유 현금" value={money(demo.cash)} sub="예약액은 현금에서 아직 차감되지 않음" /><Stat label="실행 전략" value={`${state.strategies.filter(s => s.environment !== 'kis-paper' && s.active).length} / ${state.strategies.filter(s => s.environment !== 'kis-paper').length}`} sub="DEMO · 로컬 봉 재생 시 평가" /></div>
       <p className="muted">DEMO 주문 가능액은 보유 현금에서 미체결 매수 예약액(지정가 × 수량 + 예상 수수료)을 제외합니다. 현금은 체결 시 차감됩니다.</p>
       <div className="button-row"><PageLink to="/orders">DEMO 주문 확인</PageLink><span>미체결 {state.orders.filter(o => o.status === 'pending').length}건{!available && ' · 현재 상태 미확인'}</span><PageLink to="/strategies">DEMO 전략 확인</PageLink></div>
     </section>
@@ -41,7 +43,7 @@ export function Dashboard() {
       <div className="check-row"><span>KIS 주문 대조</span><strong>{ordersKnown ? `미체결 ${pending}건` : '미체결 미확인'}</strong></div>
       <p className="muted">주문 최종 전체 성공 {paperRisk?.orders ? new Date(paperRisk.orders.observedAt).toLocaleString('ko-KR') : '없음'} · 60초가 지나면 미확인으로 표시합니다. 잔고 성공과 주문 대조 성공은 별개입니다.</p>
       <p>{available && paperRisk ? `불명·전송 중 ${paperRisk.unresolvedCount}건` : '불명·전송 중 미확인'} · 불명 주문은 미체결 수와 별도로 확인하세요.</p>
-      <p className="muted">KIS 전략 현황은 아직 제공하지 않습니다. 저장된 조회 결과만 표시하며 새 조회는 연결·주문 화면에서 직접 실행합니다.</p>
+      <div aria-label="KIS 전략 현황"><h3>KIS 실행 전략</h3><p>{available ? `${state.strategies.filter(s => s.environment === 'kis-paper' && s.active).length} / ${state.strategies.filter(s => s.environment === 'kis-paper').length}` : '미확인'} · {!available ? '상태 미확인' : realtimeReady ? '실시간 입력 준비' : '실시간 입력 차단 · ' + (realtime?.message ?? '실시간 미확인')}</p>{state.strategies.filter(s => s.environment === 'kis-paper').map(s => <p key={s.id}>{s.name} · {available ? s.active ? '실행 중' : '정지' : '이전 확인값'} · revision {s.revision ?? 1} · {s.evaluations?.[0] ? `${s.evaluations[0].signal} · ${s.evaluations[0].reason}` : '평가 기록 없음'}</p>)}<PageLink to="/strategies">KIS 전략 평가 확인</PageLink></div>
       <div className="button-row"><PageLink to="/settings">KIS 연결 원인 확인</PageLink><PageLink to="/paper">KIS 주문 대조</PageLink><PageLink to="/portfolio">계좌 상세</PageLink></div>
     </section>
     <section aria-label="대시보드 거래 상태" className="notice top-gap"><strong>{!available ? '상태 미확인 · 신규 작업 차단' : state.risk.halted ? '신규 주문 정지' : '긴급정지 꺼짐 · 환경별 주문 조건 확인 필요'}</strong><p>이미 접수한 주문은 별도 확인이 필요합니다.</p><PageLink to="/risk">위험·정지 원인 확인</PageLink></section>

@@ -72,6 +72,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
           if (!store.masterData().instruments.some(row => row.code === code)) throw new Error('현재 마스터에 없는 종목입니다. 상장폐지·거래 가능 여부를 확인하세요.');
           json(res, 200, { quote: await kis.quote(code) }); return;
         }
+        if (path === '/api/kis/strategies/run') { const config = z.object({ id: z.string().min(1).max(80), active: z.boolean() }).strict().parse(input); realtime.setStrategyActive(config.id, config.active); json(res, 200, { message: config.active ? 'KIS 전략 평가를 시작했습니다. 전송은 공통 승인·위험 조건을 따릅니다.' : 'KIS 전략을 정지했습니다. 접수 주문은 별도 대조하세요.' }); return; }
         if (path === '/api/kis/realtime/start') { realtime.start(codeSchema.parse((input as { code?: unknown })?.code)); json(res, 200, { message: '실시간 구독을 요청했습니다. 구독 확인 후 REST 대조가 필요합니다.' }); return; }
         if (path === '/api/kis/realtime/stop') { realtime.stop(); json(res, 200, { message: '실시간 수신을 정지했습니다. 자동 거래 재개 없음.' }); return; }
         if (path === '/api/kis/realtime/reconcile') { await realtime.reconcile(); json(res, 200, { message: '실시간 REST 대조를 확인했습니다.' }); return; }
@@ -121,12 +122,13 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
               const strategy = strategyInput.parse(input);
               if (!state.instruments.some(s => s.code === strategy.code)) throw new Error('지원하지 않는 종목입니다.');
               if (state.strategies.length >= 30) throw new Error('전략은 최대 30개까지 저장할 수 있습니다.');
-              state.strategies.push({ ...strategy, id: randomUUID(), active: false, lastSignal: 'hold', lastTick: -1 });
+              state.strategies.push({ ...strategy, id: randomUUID(), active: false, lastSignal: 'hold', lastTick: -1, revision: 1, run: 0, evaluations: [] });
               record(state, '전략 저장', strategy.name); return {};
             }
             case '/api/strategies/toggle': {
               const strategy = state.strategies.find(s => s.id === idInput.parse(input).id);
               if (!strategy) throw new Error('전략을 찾지 못했습니다.');
+              if (strategy.environment === 'kis-paper') throw new Error('KIS 전략 시작·정지 경로를 사용하세요.');
               if (!strategy.active && state.risk.halted) throw new Error('신규 주문 정지 상태입니다.');
               strategy.active = !strategy.active; record(state, strategy.active ? '전략 시작' : '전략 정지', strategy.name); return {};
             }
@@ -158,7 +160,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       const type = ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' } as Record<string, string>)[extname(file)] ?? 'application/octet-stream';
       res.writeHead(200, { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' }); res.end(req.method === 'HEAD' ? undefined : bytes);
     } catch (error) {
-      if ((path === '/api/watchlist' || path === '/api/journal' || path.startsWith('/api/risk') || path.startsWith('/api/backtest/') || path.startsWith('/api/kis/') || path === '/api/events/read') && error instanceof Error && 'code' in error && error.code === 'ERR_SQLITE_ERROR') { json(res, 500, { error: storageErrorMessage }); return; }
+      if ((path === '/api/watchlist' || path === '/api/journal' || path.startsWith('/api/strategies') || path.startsWith('/api/risk') || path.startsWith('/api/backtest/') || path.startsWith('/api/kis/') || path === '/api/events/read') && error instanceof Error && 'code' in error && error.code === 'ERR_SQLITE_ERROR') { json(res, 500, { error: storageErrorMessage }); return; }
       if (path === '/api/kis/check' || ['/api/kis/order', '/api/kis/orders', '/api/kis/recovery/inspect', '/api/kis/recovery/confirm', '/api/kis/cancel', '/api/kis/revise', '/api/kis/cancel-probe'].includes(path)) {
         try { store.update(state => {
           if (path === '/api/kis/check') recordConnection(state, kis.connection(), error instanceof KisFailure ? error.kind : null);

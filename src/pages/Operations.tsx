@@ -35,7 +35,7 @@ export function Risk() {
       <label className="field">1회 주문 한도 (원)<input type="number" min="10000" max="100000000" step="1" required disabled={!available} value={maxOrder} onChange={e => { edit(); setMaxOrder(Number(e.target.value)); }} /></label>
       <label className="field">종목별 최대 투자금 (원)<input type="number" min="10000" max="100000000" step="1" required disabled={!available} value={maxPosition} onChange={e => { edit(); setMaxPosition(Number(e.target.value)); }} /></label>
       <label className="field">공통 손실 한도 (원)<input type="number" min="1000" max="100000000" step="1" required disabled={!available} value={dailyLoss} onChange={e => { edit(); setDailyLoss(Number(e.target.value)); }} /></label>
-      <p className="muted prose">금액 한도는 DEMO 수동·전략과 KIS 모의 수동 주문에 공통 적용됩니다. KIS 전략의 검증은 별도입니다. 이미 접수된 주문은 한도 변경으로 취소되지 않습니다.</p>
+      <p className="muted prose">금액 한도는 DEMO 수동·전략과 KIS 모의 수동·전략 주문에 공통 적용됩니다. KIS 전략은 실시간·승인 검사도 통과해야 합니다. 이미 접수된 주문은 한도 변경으로 취소되지 않습니다.</p>
       {dirty && <p role="status">저장하지 않은 변경이 있습니다.</p>}<button className="button primary" disabled={!available || busy}>한도 저장</button>
     </form></Panel><Panel title="긴급정지" className="risk-panel"><div className="risk-symbol"><AlertTriangle size={32} /></div><h3>{state.risk.halted ? '신규 주문 정지 중' : '신규 주문을 멈출 수 있어요'}</h3>
       <p className="prose">정지하면 수동·전략의 신규 주문을 차단하고 모든 전략을 정지합니다. 보유자산을 매도하거나 접수된 주문을 취소하지는 않습니다. 정지 상태는 서버를 다시 시작해도 유지됩니다.</p>

@@ -7,7 +7,7 @@ export const storageErrorMessage = '요청과 이벤트 저장에 실패했습�
 export const codeSchema = z.string().regex(/^\d{6}$/);
 const integer = (min: number, max: number) => z.number().int().min(min).max(max);
 export const orderInput = z.object({ code: codeSchema, side: z.enum(['buy', 'sell']), qty: integer(1, 100000), price: integer(1, 10000000), requestId: z.uuid() }).strict();
-export const strategyInput = z.object({ name: z.string().trim().min(1).max(60), code: codeSchema, fast: integer(2, 60), slow: integer(3, 100), qty: integer(1, 10000) }).strict().refine(v => v.fast < v.slow, '단기 기간은 장기 기간보다 작아야 합니다.');
+export const strategyInput = z.object({ name: z.string().trim().min(1).max(60), code: codeSchema, fast: integer(2, 60), slow: integer(3, 100), qty: integer(1, 10000), environment: z.enum(['demo', 'kis-paper']).default('demo') }).strict().refine(v => v.fast < v.slow, '단기 기간은 장기 기간보다 작아야 합니다.');
 export const backtestInput = z.object({ code: codeSchema, fast: integer(2, 60), slow: integer(3, 100), capital: integer(100000, 100000000), feeBps: z.number().min(0).max(100), slippageBps: z.number().min(0).max(100) }).strict().refine(v => v.fast < v.slow, '단기 기간은 장기 기간보다 작아야 합니다.');
 export const riskInput = z.object({ maxOrder: integer(10000, 100000000), maxPosition: integer(10000, 100000000), dailyLoss: integer(1000, 100000000) }).strict();
 export const journalInput = z.object({ code: codeSchema, text: z.string().trim().min(1).max(2000) }).strict();
@@ -19,6 +19,7 @@ export const haltInput = z.object({ halted: z.boolean() }).strict();
 export type OrderInput = z.infer<typeof orderInput>;
 
 export const paperLedgerSchema = z.object({ orders: z.array(z.object({
+  strategy: z.object({ id: z.string(), revision: z.number().int().positive(), event: z.string(), signal: z.enum(['buy', 'sell']) }).optional(),
   requestId: z.string().min(1).max(80), code: codeSchema, side: z.enum(['buy', 'sell']),
   qty: z.number().int().positive(), price: z.number().positive(),
   createdAt: z.string().refine(value => Number.isFinite(Date.parse(value))), tradeDate: z.string().regex(/^\d{8}$/),
@@ -48,7 +49,7 @@ export const stateSnapshotSchema = z.object({
   positions: z.array(z.object({ code: codeSchema, qty: z.number(), average: z.number() })),
   orders: z.array(z.object({ id: z.string(), code: codeSchema, side: z.enum(['buy', 'sell']), qty: z.number(), price: z.number(), filledPrice: z.number().optional(), status: z.enum(['pending', 'filled', 'cancelled']), createdAt: z.string(), filledAt: z.string().optional(), source: z.string(), fee: z.number(), requestId: z.string() })),
   watchlist: z.array(masterCodeSchema),
-  strategies: z.array(z.object({ id: z.string(), name: z.string(), code: codeSchema, fast: z.number(), slow: z.number(), qty: z.number(), active: z.boolean(), lastSignal: z.enum(['buy', 'sell', 'hold']), lastTick: z.number() })),
+  strategies: z.array(z.object({ id: z.string(), name: z.string(), code: codeSchema, fast: z.number(), slow: z.number(), qty: z.number(), active: z.boolean(), lastSignal: z.enum(['buy', 'sell', 'hold']), lastTick: z.number(), environment: z.enum(['demo', 'kis-paper']).optional(), revision: z.number().int().positive().optional(), run: z.number().int().nonnegative().optional(), lastEvent: z.string().optional(), evaluations: z.array(z.object({ event: z.string(), at: z.iso.datetime(), revision: z.number().int().positive(), signal: z.enum(['buy', 'sell', 'hold']), status: z.enum(['hold', 'blocked', 'sending', 'accepted', 'unknown', 'rejected']), reason: z.string(), requestId: z.uuid().optional(), brokerId: z.string().optional() })).optional() })),
   risk: riskInput.extend({ halted: z.boolean() }),
   events: z.array(z.object({ id: z.string(), time: z.string(), level: z.enum(['info', 'warning', 'error']), title: z.string(), detail: z.string(), read: z.boolean(), environment: z.enum(['demo', 'kis-paper', 'shared']).optional(), target: z.enum(['orders', 'paper', 'settings', 'risk', 'strategies']).optional(), requestId: z.uuid().optional() })),
   journal: z.array(z.object({ id: z.string(), date: z.string(), code: codeSchema, text: z.string() })),
