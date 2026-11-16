@@ -2,6 +2,8 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매.
 
+- **현재 개발 지시:** [#9 통합 후 #11 위험관리](tasks/11-risk-management.md). 사용자2026-11-16 요청으로 새 Herdr 세션에 단독 인계한다. PR54 최신CI4 PASS이나 아직 초안, #9/#11 Blocked다. 지정Fable5.2 또는 Gemini4Argon으로 완료근거를 검증하고 PR54 통합·#9 완료·#25 잔여이관 후 #11을 진행한다. 추가 주문·취소·예약 없음.
+
 - 통합 완료: [#50 전체 브랜치 대조](tasks/50-branch-integration.md). PR49·47 정상 merge, 제품 main `b9a12325ec1fcb683bced5911709d09b6814ffe4`. 기존21개 브랜치도 이미 반영됨을 검증했다. 최종 기록 PR·main SHA·CI는 [#50](https://github.com/krdn/gon-stock03/issues/50)의 종료 댓글 확인.
 - [#48 요청 간격](tasks/48-kis-pacing.md): 재현·수정·수용·통합 완료. 결합 단위/API99·빌드·브라우저67·이번 Argon MERGE PASS. [검증](verification/2026-11-16-branch-integration.md).
 - 최신 실증: [삼성전자 주문·취소](verification/2026-11-16-samsung-paper-run.md). 제품1d2030e에서195,800원·1주 모의 매수 접수 및 API취소 후 REST cancelled/체결0/잔량0 확인. 서버종료·정지·백업·원본보존 완료. 사용자 후속 지시는 매수만/취소는 모바일 직접이며15:30 종료 후 도착해 추가실행·예약 없음. 다음 장중 별도 수동시작 필요. #9/후속 차단은 별도 수용 전 유지.
