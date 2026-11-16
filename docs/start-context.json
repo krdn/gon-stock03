@@ -107,6 +107,30 @@
         }
       ],
       "decisions": "승인 ID·날짜를 고정한 opt-in 제한을 기존 주문 경로에 적용. 공식 개장·API/앱 계좌 일치·취소 가능성은 사용자 사실확인으로 남김. KRX URL 이번 재조회403; 특정 실행일 개장 확인 아님. 모델은 사용자 지정 Argon/high, 중앙 설정은 변경하지 않음."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/9",
+      "checked_at": "2026-11-16T05:36:59.731597+00:00",
+      "objective": "PR54 모의 전량취소 사전조회 모순 재조사와 공식 문의 초안; 업무 API와 외부 문의 발송 없음",
+      "sources": [
+        {
+          "url": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/order-rvsecncl",
+          "finding": "공개 상세 응답 확인. 선택 필드·해시는 docs/verification/assets/kis-cancel-probe/official-contract-review.json에 보존."
+        },
+        {
+          "url": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/inquire-psbl-rvsecncl",
+          "finding": "공개 상세 응답 확인. 선택 필드·해시는 docs/verification/assets/kis-cancel-probe/official-contract-review.json에 보존."
+        },
+        {
+          "url": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
+          "finding": "공개 상세 응답 확인. 선택 필드·해시는 docs/verification/assets/kis-cancel-probe/official-contract-review.json에 보존."
+        },
+        {
+          "url": "https://github.com/koreainvestment/open-trading-api/blob/4a51f9126e719c352072b14b7df9222cb2691720/examples_llm/domestic_stock/order_rvsecncl/chk_order_rvsecncl.py",
+          "finding": "최신 실행 예제는 real·수량1·전량Y. 모의 수량0의 수락 근거가 아니다."
+        }
+      ],
+      "decisions": "사전조회 면제·수량0 수락 계약은 미확정. 공식 답변 확보 우선, 문의 초안 미발송. 초안PR·#9/후속차단 유지; 시간창 변경·실증은 별도 조건 판단."
     }
   ],
   "integration_scope": "기존 두 조사 기록과 checked_at 보존. 실제 KIS 호출 없이 결합 회귀·독립 리뷰·PR 통합만 수행. #9 승인 및 후속 차단 유지."

@@ -43,3 +43,32 @@
 사용자 범위 결정 전 웹 취소를 완료로 표시하지 않는다. [최소 모의 실행안](../operations/kis-minimum-paper-run.md)의 접수·조회 증거도 없다. 따라서 #9 전체와 후속 native 선행은 해제하지 않는다. UI는 #14 소유이며 이번 변경에는 조작 화면을 추가하지 않았다.
 
 한계: 조회·잔고는 순차 스냅샷이며 거래소의 원자적 스냅샷이 아니다. 현재 서비스는 한 프로세스·한 모의 계좌 운용을 전제로 한다. 계좌를 변경한 기존 원장을 그대로 복구에 사용하지 않는다. 3개월 이전 조회·실제 장중 경합·부분체결·수동 취소·연속 운영은 이번 fixture 증거에 포함되지 않는다.
+
+
+## 2026-11-16 전량취소 규격 재조사
+
+**결론: 모의 취소 지원 표시는 확인했지만, 사전조회 면제와 수량0의 수락은 확정하지 못했다.** [PR54](https://github.com/krdn/gon-stock03/pull/54)는 준비 후보로 유지한다. 아래는 공개 문서 조사이며 KIS 업무 API를 호출한 결과가 아니다.
+
+| 근거 | 확인 범위와 한계 |
+| --- | --- |
+| [포털 공개 응답·필드·해시](../verification/assets/kis-cancel-probe/official-contract-review.json) | `VTTC0013U` 모의 지원과 사전 `psbl_qty` 조회 필수 문구가 공존한다. 해당 조회의 모의 domain/TR은 미지원이다. `ORD_QTY`는 필수이고 전량 `Y`를 제공하지만, 수량0 또는 조회 생략 예외 설명은 없다. |
+| [최신 취소 함수](https://github.com/koreainvestment/open-trading-api/blob/4a51f9126e719c352072b14b7df9222cb2691720/examples_llm/domestic_stock/order_rvsecncl/order_rvsecncl.py) | 모의 TR 분기와 동일한 사전조회 필수 설명이 있다. 함수가 0을 금지하지 않는 것은 서버 수락 증거가 아니다. |
+| [같은 버전의 실행 예제](https://github.com/koreainvestment/open-trading-api/blob/4a51f9126e719c352072b14b7df9222cb2691720/examples_llm/domestic_stock/order_rvsecncl/chk_order_rvsecncl.py) | 실전 환경·수량1·전량Y다. 모의 수량0의 검증 사례로 사용할 수 없다. 예제를 실행하지 않았다. |
+| [brokerage 구현](https://github.com/koreainvestment/open-trading-api/blob/4a51f9126e719c352072b14b7df9222cb2691720/backtester/kis_backtest/providers/kis/brokerage.py) | 구형 TR·수량0·전량Y·빈 조직번호를 사용한다. 최신 계약의 사전조회 면제 근거로 채택하지 않는다. |
+| [공식 Q&A](https://apiportal.koreainvestment.com/community/10000000-0000-0011-0000-000000000003) | 공식 저장소의 legacy 안내가 연결하는 문의 경로다. 비로그인 검색에서 답변을 확보하지 못했다. 빈 검색 결과와 목록 조회 오류를 답변 부재의 증거로 쓰지 않는다. GitHub Issues·Discussions는 비활성이다. |
+
+판단: 우선 공식 답변으로 예외 규격을 확인한다. 문서 간 모순을 실제 주문으로 바로 시험하면 이미 승인된 1회 주문을 소비하면서도 미체결 취소를 관측하지 못할 수 있다. 전부 체결되면 취소 실증은 미수행으로 남기고 두 번째 주문을 만들지 않는다. 한정 검증 경로는 폐기하지 않되, 동일 계좌·실행 시 잔량 대응·시간창과 별도 수동 시작을 확인할 후속 단계로 둔다. 일반 취소409·실전 대체 금지·후속9개 차단을 유지한다.
+
+### 공식 문의 초안 — 미발송
+
+제목: 국내주식 모의 전량취소 VTTC0013U의 사전조회 요건과 요청·조회 규격 확인
+
+국내주식 모의 API 문서에서 정정취소 `VTTC0013U`는 지원되지만, 사전에 필수로 안내하는 정정취소가능주문조회는 모의 미지원입니다. 아래 계약을 확인 부탁드립니다. 실전 호출이나 실제 모의 주문·취소는 수행하지 않았습니다.
+
+1. 모의 원주문의 번호와 조직번호를 알고 있는 경우 `QTY_ALL_ORD_YN=Y` 전량취소는 사전 가능수량 조회 없이 허용됩니까? 허용된다면 공식 예외 문서나 권장 절차를 부탁드립니다. 불가하다면 모의에서 지원되는 대체 조회/취소 절차가 있습니까?
+2. `RVSE_CNCL_DVSN_CD=02`, `ORD_DVSN=00`, `ORD_QTY=0`, `ORD_UNPR=0`, `QTY_ALL_ORD_YN=Y`, `EXCG_ID_DVSN_CD=KRX` 조합이 현재 모의 `VTTC0013U`에서 유효합니까? `KRX_FWDG_ORD_ORGNO`는 원주문 접수 응답의 값을 그대로 사용합니까?
+3. 취소 접수 ACK 이후 `VTTC0081R`에서 최종 취소를 확정할 권장 조건은 무엇입니까? 원주문/취소주문 행 연결(`odno`·`orgn_odno`), `cncl_yn`·`rmn_qty`·`tot_ccld_qty`의 변화와 모의 조회 지연 주의사항을 부탁드립니다.
+
+계좌번호·키·토큰·잔고를 포함하지 않는 규격 문의다. 초안 작성과 외부 게시·답변 수신은 별개이며, 아직 게시하지 않았다.
+
+검증: 지정 Argon/high [근거·판단 리뷰](../verification/assets/kis-cancel-probe/argon-contract-review.json)는 CONTRACT-RESEARCH PASS이며 요청/init 일치·정상 본문을 확인했다. 이는 KIS의 공식 답변이 아니다. 서버 내부 모델·effort 독립 확인 한계, STE 기준파일 부재 exit2는 유지한다. 문서/JSON·diff·상대링크만 검사했으며 제품·테스트 코드는 바뀌지 않아 로컬118·브라우저67·빌드 검사를 반복하지 않았다.

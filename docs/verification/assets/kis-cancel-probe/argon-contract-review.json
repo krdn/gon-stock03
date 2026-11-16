@@ -1,0 +1,23 @@
+{
+  "requested_model": "gemini-4-argon-high",
+  "requested_effort": "high (model ID)",
+  "returned_init_model": "gemini-4-argon-high",
+  "server_model_effort_independently_verified": false,
+  "scope": "Research findings, inquiry draft and operations decision only; not verification of broker contract or execution",
+  "input_sha256": "61afd0c292ec4009f4e8ddb00f70749d58b820875b448162b6c88f4b45e62083",
+  "result": {
+    "conversation_id": "5facacb5-0b7e-493d-8b8a-1084a087b1ec",
+    "status": "SUCCESS",
+    "response": "**CONTRACT-RESEARCH PASS**\n\n제공된 공개 근거와 문서 변경분 검토 결과, 결함(Finding)은 없으며 모든 검증 기준을 충족합니다.\n\n### 검토 요약\n1. **미확정 유지 및 공식 문의 우선 판단의 타당성**:\n   - 포털 공개 명세에서 모의 정정·취소(`VTTC0013U`)는 지원되나, 사전 호출이 필수로 명시된 정정취소가능주문조회(`inquire-psbl-rvsecncl`, `psbl_qty`)는 `모의투자 미지원`으로 상충합니다.\n   - 최신 공식 예제(`order_rvsecncl.py`, `chk_order_rvsecncl.py`)는 실전(`real`)·`ORD_QTY=\"1\"` 기준이며, 구형 백테스터(`brokerage.py`)는 구형 TR(`VTTC0803U`)과 빈 조직번호를 사용하므로 현행 `VTTC0013U`의 사전조회 면제나 `ORD_QTY=0` 서버 수락 근거가 될 수 없습니다.\n   - 승인된 모의 주문 1회를 불확실한 상태에서 소진하면 체결 위험으로 취소 실증을 관측하지 못할 수 있으므로, 한정 실험 전 공식 문의를 우선하고 취소 규격 미확정 상태를 유지하는 판단이 합리적입니다.\n2. **승인 범위 및 운영 제약 준수**:\n   - KIS 업무 API 호출 미수행, 기존 시간창(10:00–10:10) 유지, 공식 문의 미발송 상태, 프로덕션 코드 미변경(문서 2건만 수정)이 정확히 반영되어 있습니다.\n   - 스마트폰 잔량취소 가능 승인과 별개로 API·스마트폰 동일 계좌 여부 및 실행 시점 대응 가능 상태를 미검증 선결 조건으로 명확히 분리했습니다.\n3. **공식 문의 초안의 정확성 및 과장 방지**:\n   - 3개 질의 항목이 사전조회 면제/대체 절차, `VTTC0013U` 필수 요청 필드 조합(`ORD_QTY=0`, `KRX_FWDG_ORD_ORGNO` 등), `VTTC0081R` 최종 취소 확정 조건(`odno`·`orgn_odno`, `cncl_yn`·`rmn_qty`·`tot_ccld_qty`)을 정확히 특정하며, 확인되지 않은 API 지원이나 런타임 성공을 주장하지 않았습니다.\n",
+    "duration_seconds": 38.325482403,
+    "num_turns": 1,
+    "usage": {
+      "input_tokens": 21072,
+      "output_tokens": 2539,
+      "thinking_tokens": 1990,
+      "cache_read_tokens": 0,
+      "total_tokens": 23611
+    }
+  },
+  "interpretation": "The generic order_rvsecncl function supports real/demo; only chk_order_rvsecncl runnable example is configured real and quantity1. This review does not establish a KIS contract exception."
+}
