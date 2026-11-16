@@ -18,7 +18,7 @@ AGENTS·WORKFLOW·이슈 #25/PR63 최신 상태, `docs/operations/local.md`, `do
 - [증거·실행 전제·중단 조건](../verification/2026-11-16-validation-prep.md)에 #25 완료 조건을 실제 관측/격리 회귀/미관측으로 구분했다.
 - #2 P2를 임시 DB·loopback HTTP로 모두 재현했다. [#64 WAL/SHM 권한](https://github.com/krdn/gon-stock03/issues/64), [#65 정적 파일 경로 노출](https://github.com/krdn/gon-stock03/issues/65)로 수정 범위를 분리했다. 이번에는 제품 코드 수정 없음.
 - 원격 기준 main·PR63·선행15 completed·#22 Done·#25 Blocked 및 준비 head a2b7826 CI2 SUCCESS 확인. 단위166·브라우저113·build·지정 Argon/high 준비 검토 PASS. STE exit2 한계 유지. 초안 PR의 최종 SHA·CI는 #25 전달 댓글을 기준으로 확인한다.
-- 다음 개발은 [#64 권한 보호](64-sqlite-permissions.md)의 수정·회귀다. #65는 그 다음 독립 작업이다. 실제 실증은 실행일·대상 SHA·원장/ID·장 상태·앱 직접 취소 대응을 확정하고 별도 장중 수동 시작 지시가 있어야 한다.
+- 후속 결함 [#64 권한 보호](64-sqlite-permissions.md)와 [#65 정적 경로 보호](65-static-errors.md)는 PR67·PR68로 통합했다. PR68 통합 main은 `50b958db9c8ee63f72e164ace5f3576b8fddfbfb`다. #65 사용자 통합·완료 승인을 확인했고, 추가 열린 개발 결함은 없다. 실제 실증은 실행일·대상 SHA·원장/ID·장 상태·앱 직접 취소 대응을 확정하고 별도 장중 수동 시작 지시가 있어야 한다.
 - 기존 삼성전자1회/120초 승인과 연속전략을 혼동하지 않는다. API 취소 없이 사용자 모바일 취소라는 최신 지시를 유지한다. #1/#2/#3/#25 완료 금지.
 
 ## 세션 인계
