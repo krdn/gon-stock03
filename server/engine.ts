@@ -4,8 +4,8 @@ import type { DailyPrice } from '../shared/market-data.ts';
 import type { OrderInput } from '../shared/contracts.ts';
 
 const fee = (amount: number, bps = 1.5) => Math.ceil(amount * bps / 10000);
-export function record(state: State, title: string, detail: string, level: Event['level'] = 'info') {
-  state.events.unshift({ id: randomUUID(), time: new Date().toISOString(), title, detail, level, read: false });
+export function record(state: State, title: string, detail: string, level: Event['level'] = 'info', context: Pick<Event, 'environment' | 'target' | 'requestId'> = {}) {
+  state.events.unshift({ id: randomUUID(), time: new Date().toISOString(), title, detail, level, read: false, ...context });
   state.events = state.events.slice(0, 1000);
 }
 export function halt(state: State, stopped: boolean) {

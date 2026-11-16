@@ -1,6 +1,6 @@
 {
   "checked_at": "2026-11-16T07:38:47.223616+00:00",
-  "objective": "DEMO 트레이딩 확인·시세 변경 재확인·중복 방지와 KIS 화면 이동",
+  "objective": "PR56 트레이딩·PR57 알림 공통 변경 보존 및 통합 검증",
   "sources": [
     {
       "url": "https://apiportal.koreainvestment.com/apiservice-apiservice?/uapi/domestic-stock/v1/trading/order-rvsecncl",
@@ -171,7 +171,19 @@
         }
       ],
       "decisions": "기존 DEMO 주문 서버 검증과 requestId 멱등성을 재사용한다. /trade는 KIS API를 호출하지 않는다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/17",
+      "checked_at": "2026-11-16T07:53:04.350433+00:00",
+      "objective": "KIS 감사 이벤트·안전한 연결 실패 분류·원인 화면·읽음 보존",
+      "sources": [
+        {
+          "url": "https://react.dev/learn/rendering-lists",
+          "finding": "React 공식 목록 문서: DB ID 등 안정된 key를 사용하고 렌더링 중 새 key를 생성하지 않는다."
+        }
+      ],
+      "decisions": "paper_audit ID를 이벤트 ID로 재사용. 원문 evidence와 계좌/주문번호는 알림에 복사하지 않는다. 실제 KIS 호출 없음."
     }
   ],
-  "integration_scope": "기존 두 조사 기록과 checked_at 보존. 실제 KIS 호출 없이 결합 회귀·독립 리뷰·PR 통합만 수행. #9 승인 및 후속 차단 유지."
+  "integration_scope": "PR56 3f5366c와 PR57 d89e97a의 task_contexts와 원래 checked_at 보존. 이번 세션의 공식자료 재조회 기록이 아님. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."
 }

@@ -2,7 +2,7 @@ import { paperRecoveryInput, type OrderInput, type PaperRecoveryInput } from '..
 import type { PaperOrder, BrokerOrder, PaperEvidence, ConnectionState, PaperRiskSnapshot } from '../shared/model.ts';
 import { KisClient, KisRejected, KisNotSent, koreaDate } from './kis.ts';
 import { Store } from './store.ts';
-import { halt, record } from './engine.ts';
+import { halt } from './engine.ts';
 import { z } from 'zod';
 
 export const paperApprovalSchema = z.object({ date: z.iso.date(), requestId: z.uuid(), cancelProbe: z.literal(true).optional(), code: z.enum(['069500', '005930']).optional(), maxAmount: z.number().int().positive().max(200000).optional(), allowExistingHolding: z.literal(true).optional() }).strict();
@@ -188,7 +188,6 @@ export class PaperBroker {
         local.message = error instanceof Error ? error.message : '주문 응답 불명';
       }
       this.store.savePaper(local, { actor: 'system', action: 'response', before: 'sending' });
-      this.store.update(state => record(state, `KIS 모의 주문 ${local.status}`, local.message, local.status === 'accepted' ? 'info' : 'warning'));
       return local;
       } finally {
         if (this.approval) {

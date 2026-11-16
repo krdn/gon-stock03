@@ -1,0 +1,14 @@
+{
+  "src/App.tsx": "4c69f481824cf2d36295552683b980a7a1e542db10e9a8bb00a907df940aa23e",
+  "src/pages/Trading.tsx": "27a42d77429084c0271cf4b32373a2108d9dd2a49fa865fcd81a8e5886169eeb",
+  "src/pages/Operations.tsx": "8b550de3f5a6f24ad30239686383671c5bf377cec15276215632a56c65fcdb86",
+  "server/events.ts": "217bab52a83a2b38624a57e269d77de4f1cb52c0d921588b18c2ce17fef8e561",
+  "server/store.ts": "309117ea0c434101f97b8775a2222432ae06c34124f65ab667760d3b7aa32990",
+  "server/http.ts": "3c13e72cf4e82a96e578c32884fa4767c8402b187de6a02fc0bf4cfadabce13b",
+  "server/engine.ts": "ae778841524ca944c14d1d3de835aa0d8bf7971b7987ba8b6c057118cadc795d",
+  "shared/model.ts": "8597c7cafd12a66e095094a6b52650c17529d641753d9d51efdb41c2abe86929",
+  "shared/contracts.ts": "96f2f02c82386d5b30467d05db0a99d630f5bebfb131116c5a2e578ec3fdbc75",
+  "tests/events.test.ts": "9909e1967dfdba82992757c82a9195661381cee96d2b659f693deea035f2cdfe",
+  "tests/browser/trade.spec.ts": "e51303ca583ae91a6e9d50221571869451b5000c92f64b300100ae2e7cea8e1e",
+  "tests/browser/alerts.spec.ts": "d16bcfcaa9c620473564e872848f30cc4a0b30a285720a48041b2497664f6049"
+}
