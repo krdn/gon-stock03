@@ -1,6 +1,6 @@
 {
-  "checked_at": "2026-11-16T06:46:51.023573+00:00",
-  "objective": "위험관리 화면·불명 중 재개 차단·사용량/산식·편집 보존, 실제 KIS 업무API 없음",
+  "checked_at": "2026-11-16T07:53:04.350433+00:00",
+  "objective": "KIS 감사 이벤트·안전한 연결 실패 분류·원인 화면·읽음 보존",
   "sources": [
     {
       "url": "https://apiportal.koreainvestment.com/apiservice-apiservice?/uapi/domestic-stock/v1/trading/order-rvsecncl",
@@ -159,6 +159,18 @@
         }
       ],
       "decisions": "기존 금액 규칙을 유지한다. 서버 재개 경계에서 sending/unknown 차단. 로컬 GET state로 위험 스냅샷만 전달하며 브로커 호출 없음. KIS 데이터 신선도/기준 미설정을 명시하고 가용 금액을 추정하지 않는다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/17",
+      "checked_at": "2026-11-16T07:53:04.350433+00:00",
+      "objective": "KIS 감사 이벤트·안전한 연결 실패 분류·원인 화면·읽음 보존",
+      "sources": [
+        {
+          "url": "https://react.dev/learn/rendering-lists",
+          "finding": "React 공식 목록 문서: DB ID 등 안정된 key를 사용하고 렌더링 중 새 key를 생성하지 않는다."
+        }
+      ],
+      "decisions": "paper_audit ID를 이벤트 ID로 재사용. 원문 evidence와 계좌/주문번호는 알림에 복사하지 않는다. 실제 KIS 호출 없음."
     }
   ],
   "integration_scope": "기존 두 조사 기록과 checked_at 보존. 실제 KIS 호출 없이 결합 회귀·독립 리뷰·PR 통합만 수행. #9 승인 및 후속 차단 유지."

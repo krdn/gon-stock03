@@ -4,7 +4,7 @@ export interface Position { code: string; qty: number; average: number }
 export interface Order { id: string; code: string; side: 'buy' | 'sell'; qty: number; price: number; filledPrice?: number; status: 'pending' | 'filled' | 'cancelled'; createdAt: string; filledAt?: string; source: string; fee: number; requestId: string }
 export interface Strategy { id: string; name: string; code: string; fast: number; slow: number; qty: number; active: boolean; lastSignal: 'buy' | 'sell' | 'hold'; lastTick: number }
 export interface Risk { maxOrder: number; maxPosition: number; dailyLoss: number; halted: boolean }
-export interface Event { id: string; time: string; level: 'info' | 'warning' | 'error'; title: string; detail: string; read: boolean }
+export interface Event { id: string; time: string; level: 'info' | 'warning' | 'error'; title: string; detail: string; read: boolean; environment?: 'demo' | 'kis-paper' | 'shared'; target?: 'orders' | 'paper' | 'settings' | 'risk' | 'strategies'; requestId?: string }
 export interface Journal { id: string; date: string; code: string; text: string }
 export interface State { cash: number; startingEquity: number; instruments: Instrument[]; positions: Position[]; orders: Order[]; watchlist: string[]; strategies: Strategy[]; risk: Risk; events: Event[]; journal: Journal[]; tick: number; playing: boolean; revision: number; updatedAt: string }
 export interface BacktestInput { code: string; fast: number; slow: number; capital: number; feeBps: number; slippageBps: number }
