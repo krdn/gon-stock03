@@ -14,4 +14,4 @@
 
 PR60 기술 수용·통합과 #13/#18 완료는 이번 사용자 다음 작업 진행 지시에 따른 처리다. 직접 화면 관찰이나 실제 KIS 실행 승인을 뜻하지 않는다. #19/#22/#25는 계속 Blocked다. root와 다른 worktree, .codex·graphify-out·node_modules 및 전역 hook 설정을 보존한다.
 
-구현: 가격/수량 보존·늦은 시세 응답 폐기, 요청 ID/내용의 탭 저장 및 미확인 차단, 서버 저장 원장 대조, 명시적 불명 복구 확인. 기존 서버 안전장치는 변경하지 않았다. 단위137 PASS·build PASS·전체 브라우저103 PASS(최종 paper8 재확인 PASS). 지정 Argon/high 리뷰 PASS(P0–P3 지적0), 요청/init 모델 일치·서버 내부 모델/effort 미검증. 커밋·초안 PR/CI 전달 단계이며 사용자 수용·통합은 남아 있다.
+구현: 가격/수량 보존·늦은 시세 응답 폐기, 요청 ID/내용의 탭 저장 및 미확인 차단, 서버 저장 원장 대조, 명시적 불명 복구 확인. 기존 서버 안전장치는 변경하지 않았다. 단위137 PASS·build PASS·전체 브라우저103 PASS(최종 paper8 재확인 PASS). 지정 Argon/high 리뷰 PASS(P0–P3 지적0), 요청/init 모델 일치·서버 내부 모델/effort 미검증. 제품 커밋 `f5426bb4628b0496fc4632a8cc3540b34a13666e`를 푸시하고 [초안 PR61](https://github.com/krdn/gon-stock03/pull/61)을 생성했다. 최신 head CI 결과는 PR checks와 이슈 인계 댓글로 확인한다. 사용자 화면 수용·통합 전이며 #14 open/In Progress·후속 Blocked를 유지한다.
