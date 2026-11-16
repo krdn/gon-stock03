@@ -632,3 +632,40 @@ test('HTTP cancel probe is opt-in while ordinary cancel and revise remain blocke
     assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 1);
   } finally { server.closeAllConnections(); server.close(); await once(server, 'close'); f.store.close(); }
 });
+
+test('cancel probe expires while queued for transport and consumes its attempt without sending', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const order = approvedInput(); const f = fixture('success', 0, { ...approvalFor(order), cancelProbe: true });
+  const entered = deferred(), release = deferred();
+  try {
+    await f.broker.submit(order);
+    f.response.before = async path => { if (path.endsWith('/inquire-price')) { entered.resolve(); await release.promise; } };
+    const quote = f.client.quote('069500', true); await entered.promise;
+    const cancellation = f.broker.cancelProbe(order.requestId);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(f.store.paperOrders()[0].status, 'unknown');
+    t.mock.timers.setTime(new Date('2026-11-16T10:03:00+09:00').getTime());
+    release.resolve(); await quote;
+    const result = await cancellation;
+    assert.equal(result.status, 'unknown'); assert.match(result.message, /검증 시간이 종료/);
+    assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 0);
+    assert.equal(f.store.paperAudit(order.requestId).filter(a => a.action === 'cancel-attempt').length, 1);
+  } finally { release.resolve(); f.store.close(); }
+});
+
+test('restart before the first cancel probe cannot open a fresh broker request window', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const order = approvedInput(); const approval = { ...approvalFor(order), cancelProbe: true as const };
+  const f = fixture('success', 0, approval); const fresh = fixture('success');
+  try {
+    await f.broker.submit(order);
+    const restarted = new PaperBroker(f.store, fresh.client, approval);
+    const result = await restarted.cancelProbe(order.requestId);
+    assert.equal(result.status, 'unknown'); assert.match(result.message, /인증을 완료하지 못해/);
+    assert.equal(fresh.requests.length, 0);
+    assert.equal(f.store.read().risk.halted, true);
+    await assert.rejects(restarted.cancelProbe(order.requestId));
+    assert.equal(fresh.requests.length, 0);
+    assert.equal(f.store.paperAudit(order.requestId).filter(a => a.action === 'cancel-attempt').length, 1);
+  } finally { f.store.close(); fresh.store.close(); }
+});

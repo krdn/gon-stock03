@@ -1,0 +1,30 @@
+{
+  "base": "0f53eaa285d42517c4331675f904cf6112d5ab52",
+  "reviewed_head": "9461a0d06441a78ac5c9a8194defd0e8d51e4886",
+  "requested_model": "gemini-4-argon-high",
+  "requested_effort": "high (model ID)",
+  "returned_init_model": "gemini-4-argon-high",
+  "server_model_effort_independently_verified": false,
+  "input_sha256": "a29294c65076e2f71058a118aef29ebb82632e5bc3d591b7b293e0b9bd0da2f0",
+  "product_sha256": {
+    "server/http.ts": "5b299654ec2f9ffac7534831c72e218f0059427b37bb892ecd762555198c1d68",
+    "server/kis.ts": "3086f09535d9962cc030402594bfe4ccd1ef6c6747914ddd87ee5bee80fa81f1",
+    "server/paper.ts": "5d1269b2e10e97bca56bb33699a3a2b6a15731d285a497252dfccbedbbcbc6dd",
+    "server/store.ts": "312c933bbe542cc9f6f25ee9f19bde25eb7b944cd967469d8fcb1d8348c2b77a",
+    "shared/model.ts": "71c6f83d037d6d99219492ed88f234f2e14c66a2f9523eaffe8294cbb6939eb1"
+  },
+  "result": {
+    "conversation_id": "b66abadf-4563-40f7-b55c-e48ee2aaafdb",
+    "status": "SUCCESS",
+    "response": "결함이나 취약점 발견 사항 없음 (**No findings — `PREPARATION PASS`**).\n\n### 검토 요약 (PR54 `main...9461a0d`)\n\n1. **동시성 (Concurrency)**\n   - `PaperBroker.cancelProbe` 전체 경로가 `this.enqueue(...)` 큐를 통해 직렬화되어 `submit`, `refresh`, 복구 경로 및 중복 `cancelProbe` 호출과 경합하지 않습니다 (`server/paper.ts:57-77`).\n   - `KisClient.send` 내부 큐 및 1,100ms 호출 간격 제어가 동일하게 적용됩니다.\n\n2. **영속성 및 원자성 (Persistence & Atomicity)**\n   - `Store.claimPaperCancel`이 `BEGIN IMMEDIATE` 트랜잭션 내에서 ① `paper_run` 원주문 승인 사용 여부(`attempted = 1`) 확인, ② `paper_cancel_attempt` 단일 시도 기록 삽입, ③ `paper_orders`의 `unknown` 상태 전이, ④ `paper_audit`(`cancel-attempt`) 기록을 원자적으로 수행합니다 (`server/store.ts:95-107`).\n   - 감사 로그 기록 등이 실패하면 즉시 롤백되어 브로커 전송이 차단되며, 프로세스 재시작 후에도 `paper_cancel_attempt` 테이블을 통해 재전송이 영구 차단됩니다.\n\n3. **승인 및 인증 경계 (Auth & Opt-in Boundaries)**\n   - `paperApprovalSchema`의 명시적 `cancelProbe: true` 옵트인이 없으면 HTTP 계층(`409`)과 브로커 계층 모두에서 즉시 차단되며, 일반 `/api/kis/cancel` 및 `/api/kis/revise`는 기존과 동일하게 차단(`vts-change-blocked`)됩니다 (`server/http.ts:76-81`, `server/paper.ts:56-61`).\n   - 승인된 `requestId`, 종목(`069500`), 매수(`buy`), 수량(`1`), 가격 범위(`1..100000`), 미체결 상태(`accepted`/`partial`, `remaining > 0`), `brokerId`/`organization` 존재 여부를 모두 검증한 뒤에만 진행합니다.\n\n4. **기한 제어 (Deadline & Window Budget)**\n   - 원주문 생성 시각(`order.createdAt`) 기준 `0 <= age < 120000` (120초) 및 당일 거래일 일치 여부를 `claimPaperCancel` 직전과 `KisClient.send` 대기 후 실제 전송 직전(`beforeSend` 훅) 두 지점에서 모두 검증하며, 기존 `KisClient` 120초 요청 예산(`requestDeadline`/`requestWallDeadline`)과 함께 동작합니다 (`server/paper.ts:62-70`).\n\n5. **불확실 응답 및 재시도 안전성 (Uncertain Response & Retry Safety)**\n   - 전송 전 주문 상태를 `unknown`으로 먼저 고정하고, 취소 접수 응답(ACK) 수신 시에도 즉시 취소 완료로 단정하지 않고 `unknown`을 유지한 채 원주문의 `brokerId`를 보존하여 이후 `refresh()` 대조를 통해서만 상태가 확정됩니다 (`server/paper.ts:67-76`, `server/kis.ts:192-200`).\n   - `this.request(..., true, '', beforeSend)`(`post = true`)로 호출되어 토큰 만료(`KisAuthExpired`) 시 자동 재전송이 발생하지 않으며, 네트워크 오류·거부·비정상 응답 시에도 민감 정보 노출 없이 1회 시도가 소진됩니다.\n\n**판정: `PREPARATION PASS`** (초안 준비 검증 통과, 실제 KIS 호출 및 운영 활성화 승인 아님)\n",
+    "duration_seconds": 88.57712206,
+    "num_turns": 1,
+    "usage": {
+      "input_tokens": 26277,
+      "output_tokens": 6730,
+      "thinking_tokens": 5915,
+      "cache_read_tokens": 0,
+      "total_tokens": 33007
+    }
+  }
+}
