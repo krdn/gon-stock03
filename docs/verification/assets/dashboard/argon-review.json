@@ -1,0 +1,21 @@
+{
+  "requested_model": "gemini-4-argon-high",
+  "requested_effort": "high",
+  "init_model": "gemini-4-argon-high",
+  "result": {
+    "conversation_id": "d1d4a343-db35-4b83-be73-7ae9ccd4a3ec",
+    "status": "SUCCESS",
+    "response": "### 독립 리뷰 결과: **DASHBOARD PASS**\n\n제공된 변경분(`src/App.tsx`, `src/pages/Workspace.tsx`, `src/specs.ts`, `tests/browser/dashboard.spec.ts`, 관련 공유 모듈·서버 코드 및 작업/검증 문서)을 기반으로 도구 실행 없이 텍스트 전용 독립 리뷰를 수행했습니다. (스크린샷은 제공되지 않았으므로 시각 검사는 수행하지 않았습니다.)\n\n#### 1. 심각도별 발견 사항 (P0–P3)\n- **지적 사항 없음 (P0–P3: 0건)**\n\n#### 2. 주요 검증 항목 확인\n- **DEMO / KIS 저장 잔고 분리 및 합산 정확성 (`src/pages/Workspace.tsx:17-20`, `26-46`, `shared/portfolio.ts:4-14`)**\n  - DEMO(`state.cash`, `state.positions`)와 KIS(`connection.balance`)를 별도 `<section>`(`DEMO 계좌 요약`, `KIS 계좌 요약`)으로 분리하고, 공통 `portfolioValue()`를 통해 `총 평가자산 = 현금(예수금) + 보유종목 평가액`, `보유 평가손익 = 현재 평가액 − 매입금액`으로 일관되게 산출합니다.\n  - KIS API 참고값인 `totalEquity`를 화면 합계로 사용하지 않고 실제 예수금+보유종목 평가액을 사용함을 확인했습니다.\n- **미연결·실패·가격 누락 시 0원 대체 방지 (`src/pages/Workspace.tsx:18-20`, `36-40`, `shared/portfolio.ts:5-11`)**\n  - `connection.balance`가 없을 때 `0원`을 생성하지 않고 상태(`disconnected` 여부)에 따라 `미연결` 또는 `잔고 미확인` 안내를 표시합니다.\n  - 부분 실패·로딩·오래됨(`!connection.connected || !connection.status.complete`) 시 이전 전체 성공 잔고와 `lastSuccessAt`을 유지하며 `이전 전체 성공값 · 최신 아님` 경고를 노출합니다.\n  - 보유 종목(`qty > 0`) 중 현재가 누락(`price === null || price <= 0`)이 있으면 `invested`, `profit`, `total` 모두 `null`로 처리하여 `평가 불가`로 표시하고, 실제 잔고 조회 결과가 0원인 경우에만 `0원`을 표시합니다.\n- **DEMO 보유 현금 및 미체결 예약액 문구 정합성 (`src/pages/Workspace.tsx:29-30`, `server/engine.ts:31-32`)**\n  - `server/engine.ts`의 매수 가능 현금 계산식(`state.cash - reserved`, `reserved = 지정가 × 수량 + 예상 수수료`, 체결 시 현금 차감)과 일치하도록 보유 현금 보조 문구(`예약액은 현금에서 아직 차감되지 않음`)와 주문 가능액 안내 문구를 정정했습니다.\n  - KIS 예수금에도 `주문 가능 금액이 아닙니다` 안내를 명시했습니다.\n- **연결·정지·미체결·최종 성공 시각·원인 링크 (`src/pages/Workspace.tsx:21-24`, `28-52`, `src/App.tsx:88`)**\n  - 주문 대조(`paperRisk.orders`)는 `available` 및 `observedAt` 기준 60초(`BALANCE_STALE_MS`) 이내일 때만 미체결 건수를 표시하고, 만료·미확인 시 `미체결 미확인`으로 전환합니다(`ordersAge >= 0 && ordersAge < BALANCE_STALE_MS`로 시계 역전 및 `NaN` 방어 포함).\n  - 로컬 원장의 `불명·전송 중`(`unresolvedCount`) 건수를 미체결 수와 분리해 표시합니다.\n  - 로컬 서버 미확인(`!available`) 시 거래 상태 영역과 매매 준비 상태(`PRE-FLIGHT`) 패널 모두 준비 완료 대신 `상태 미확인`을 표시하며, 긴급정지(`state.risk.halted`) 상태를 반영합니다.\n  - 원인 확인 링크(`/orders`, `/strategies`, `/settings`, `/paper`, `/portfolio`, `/risk`, 중요 알림 `/{e.target}`)가 모두 읽기 전용 라우팅으로만 동작합니다.\n- **안전성·작업 경계·최소주의 (`src/pages/Workspace.tsx:44`, `src/specs.ts:16`, `docs/tasks/18-dashboard.md`)**\n  - 대시보드 진입·폴링·링크 이동 시 `POST`나 KIS 업무 API 자동 호출이 발생하지 않음을 코드와 브라우저 테스트(`tests/browser/dashboard.spec.ts:17-33`, `67-88`)에서 확인했습니다.\n  - KIS 운영 전략 집계는 `#22(S07)`, 장중 통합 실증은 `#25(V01)`로 경계가 명시되어 있고, `#13` 초안 PR 수용 대기 상태를 침범하지 않습니다.\n",
+    "duration_seconds": 64.984547625,
+    "num_turns": 1,
+    "usage": {
+      "input_tokens": 38085,
+      "output_tokens": 4640,
+      "thinking_tokens": 3510,
+      "cache_read_tokens": 0,
+      "total_tokens": 42725
+    }
+  },
+  "limits": "Server-internal model and effort independently unverified. Text-only review; no screenshots supplied.",
+  "tool_steps": []
+}

@@ -1,0 +1,33 @@
+import { test, expect } from '@playwright/test';
+import { snapshot } from '../snapshot';
+
+test('dashboard and orders retain both environment contracts across navigation without mutations', async ({ page }) => {
+  const posts: string[] = [];
+  page.on('request', request => { if (request.method() === 'POST') posts.push(request.url()); });
+  await page.route('**/api/state', route => route.fulfill({ json: snapshot() }));
+  await page.route('**/api/kis/ledger', route => route.fulfill({ json: { orders: [] } }));
+  await page.goto('/dashboard');
+  await expect(page.locator('.top-actions')).toContainText('DEMO / KIS 모의 · 계좌 요약');
+  await expect(page.getByRole('region', { name: 'DEMO 계좌 요약' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'KIS 계좌 요약' })).toContainText('미연결');
+  await page.getByRole('link', { name: 'DEMO 주문 확인', exact: true }).click();
+  await expect(page).toHaveURL(/\/orders$/);
+  await expect(page.locator('.top-actions')).toContainText('DEMO / KIS 모의 · 환경 선택');
+  await expect(page.getByRole('button', { name: 'DEMO 주문', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'KIS 모의 원장', exact: true }).click();
+  await expect(page.getByText('저장된 KIS 주문이 없습니다')).toBeVisible();
+  await expect(page.getByText('로컬 읽기 성공은 최신 KIS 상태 확인이 아닙니다.', { exact: false })).toBeVisible();
+  await page.screenshot({ path: 'docs/verification/assets/orders-dashboard-integration/orders-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => page.locator('.sidebar').evaluate(el => el.getBoundingClientRect().right)).toBeLessThanOrEqual(0);
+  await page.screenshot({ path: 'docs/verification/assets/orders-dashboard-integration/orders-mobile.png', fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: '메뉴 열기' }).click();
+  await page.getByRole('navigation', { name: '주 메뉴' }).getByRole('link', { name: '대시보드', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'DEMO 계좌 요약' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'KIS 계좌 요약' })).toContainText('미연결');
+  await expect.poll(() => page.locator('.sidebar').evaluate(el => el.getBoundingClientRect().right)).toBeLessThanOrEqual(0);
+  await page.screenshot({ path: 'docs/verification/assets/orders-dashboard-integration/dashboard-mobile.png', fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(posts).toEqual([]);
+});
