@@ -26,6 +26,8 @@ function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'erro
     if (path.endsWith('/inquire-daily-ccld')) return Response.json({ rt_cd: '0', output1: response.rows.filter(row => row.ord_dt === new URL(String(url)).searchParams.get('INQR_STRT_DT')) });
     if (path.endsWith('/order-rvsecncl')) {
       if (response.cancelMode === 'timeout') throw new Error('secret transport error');
+      if (response.cancelMode === 'unauthorized') return new Response('secret upstream', { status: 401 });
+      if (response.cancelMode === 'error-code-only') return Response.json({ error_code: 'EGW00103', error_description: 'secret upstream' });
       if (response.cancelMode === 'reject') return Response.json({ rt_cd: '1', msg_cd: 'CANCEL_REJECT', msg1: 'secret upstream' });
       if (response.cancelMode === 'malformed') return Response.json({ rt_cd: '0' });
       return Response.json({ rt_cd: '0', output: { ODNO: '002', KRX_FWDG_ORD_ORGNO: '12345' } });
@@ -378,14 +380,48 @@ test('approved paper run allows only the fixed ID, symbol, buy, one share and 10
 });
 
 test('approved paper run checks the actual send window again after quote and buying-power wait', async t => {
-  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T09:59:59+09:00') });
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T08:59:59+09:00') });
   const order = approvedInput(); const f = fixture('success', 0, approvalFor(order));
   try {
     await assert.rejects(f.broker.submit(order), /시간/); assert.equal(f.requests.length, 0);
-    t.mock.timers.tick(600000);
+    t.mock.timers.setTime(new Date('2026-11-16T15:29:59+09:00').getTime());
     f.response.before = async path => { if (path.endsWith('/inquire-psbl-order')) t.mock.timers.tick(1001); };
     assert.equal((await f.broker.submit(order)).status, 'rejected');
     assert.equal(f.count(), 0); assert.equal(f.store.read().risk.halted, true);
+  } finally { f.store.close(); }
+});
+
+test('approved paper run admits the regular session and rejects pre-open, close and wrong dates', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T09:00:00+09:00') });
+  for (const [at, allowed] of [
+    ['2026-11-16T08:59:59.999+09:00', false], ['2026-11-16T09:00:00+09:00', true],
+    ['2026-11-16T10:10:00+09:00', true], ['2026-11-16T12:00:00+09:00', true],
+    ['2026-11-16T15:29:59.999+09:00', true], ['2026-11-16T15:30:00+09:00', false],
+    ['2026-11-15T12:00:00+09:00', false], ['2026-11-17T12:00:00+09:00', false],
+  ] as const) {
+    t.mock.timers.setTime(new Date(at).getTime());
+    const order = approvedInput(); const f = fixture('success', 0, approvalFor(order));
+    try {
+      if (allowed) {
+        assert.equal((await f.broker.submit(order)).status, 'accepted', at);
+        assert.equal(f.count(), 1); assert.equal(f.store.read().risk.halted, true);
+        await f.broker.submit(order); assert.equal(f.count(), 1);
+      } else {
+        await assert.rejects(f.broker.submit(order), /시간/, at); assert.equal(f.requests.length, 0, at);
+      }
+    } finally { f.store.close(); }
+  }
+});
+
+test('cancel probe cannot send after regular-session close even within its 120-second budget', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T15:29:58+09:00') });
+  const order = approvedInput(); const f = fixture('success', 0, { ...approvalFor(order), cancelProbe: true });
+  try {
+    await f.broker.submit(order);
+    t.mock.timers.setTime(new Date('2026-11-16T15:30:00+09:00').getTime());
+    await assert.rejects(f.broker.cancelProbe(order.requestId), /시간/);
+    assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 0);
+    assert.equal(f.store.paperOrders()[0].status, 'accepted');
   } finally { f.store.close(); }
 });
 
@@ -566,7 +602,7 @@ test('cancel probe sends one VTS full-cancel and ACK stays unknown until REST re
 
 test('cancel rejection, lost response and malformed ACK consume attempt without retry or secret disclosure', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
-  for (const mode of ['reject', 'timeout', 'malformed']) {
+  for (const mode of ['reject', 'timeout', 'malformed', 'unauthorized', 'error-code-only']) {
     const order = approvedInput(); const approval = { ...approvalFor(order), cancelProbe: true as const };
     const f = fixture('success', 0, approval);
     try {
@@ -579,6 +615,26 @@ test('cancel rejection, lost response and malformed ACK consume attempt without 
       assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 1);
     } finally { f.store.close(); }
   }
+});
+
+test('cancel probe rechecks regular-session close after waiting in the transport queue', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T15:29:58+09:00') });
+  const order = approvedInput(); const f = fixture('success', 0, { ...approvalFor(order), cancelProbe: true });
+  const entered = deferred(), release = deferred();
+  try {
+    await f.broker.submit(order);
+    f.response.before = async path => { if (path.endsWith('/inquire-price')) { entered.resolve(); await release.promise; } };
+    const quote = f.client.quote('069500', true); await entered.promise;
+    const cancellation = f.broker.cancelProbe(order.requestId);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(f.store.paperOrders()[0].status, 'unknown');
+    t.mock.timers.setTime(new Date('2026-11-16T15:30:00+09:00').getTime());
+    release.resolve(); await quote;
+    const result = await cancellation;
+    assert.equal(result.status, 'unknown'); assert.match(result.message, /시간창/);
+    assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 0);
+    assert.equal(f.store.paperAudit(order.requestId).filter(a => a.action === 'cancel-attempt').length, 1);
+  } finally { release.resolve(); f.store.close(); }
 });
 
 test('cancel probe rejects wrong identity, finished orders and expired attempts before sending', async t => {

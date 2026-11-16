@@ -31,7 +31,7 @@ export class PaperBroker {
   approvalStatus() { return this.approval ? { active: true, ...this.approval } : { active: false }; }
   private checkWindow() {
     const now = Date.now();
-    if (this.approval && (now < Date.parse(`${this.approval.date}T10:00:00+09:00`) || now >= Date.parse(`${this.approval.date}T10:10:00+09:00`))) throw new KisNotSent('승인된 수동 실행 시간창 밖입니다.');
+    if (this.approval && (now < Date.parse(`${this.approval.date}T09:00:00+09:00`) || now >= Date.parse(`${this.approval.date}T15:30:00+09:00`))) throw new KisNotSent('승인된 수동 실행 시간창 밖입니다.');
   }
   private enqueue<T>(run: () => Promise<T>): Promise<T> {
     const job = this.queue.catch(() => {}).then(run); this.queue = job; return job;
@@ -60,6 +60,7 @@ export class PaperBroker {
       const order = this.store.paperOrders().find(row => row.requestId === id);
       if (!order || !order.brokerId || !order.organization || order.code !== '069500' || order.side !== 'buy' || order.qty !== 1 || order.price <= 0 || order.price > 100000 || !['accepted', 'partial'].includes(order.status) || order.remaining <= 0) throw new Error('승인된 미체결 원주문을 확인할 수 없습니다.');
       const check = () => {
+        this.checkWindow();
         const age = Date.now() - Date.parse(order.createdAt);
         if (order.tradeDate !== koreaDate() || order.tradeDate !== this.approval!.date.replaceAll('-', '') || !Number.isFinite(age) || age < 0 || age >= 120000) throw new KisNotSent('전량취소 검증 시간이 종료되었습니다.');
       };
