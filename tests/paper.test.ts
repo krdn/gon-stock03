@@ -50,6 +50,27 @@ const input = () => ({ code: '005930', side: 'buy' as const, qty: 1, price: 7000
 const brokerRow = (overrides: Record<string, string> = {}) => ({ odno: '0000000001', ord_dt: koreaDate(), pdno: '005930', prdt_name: '삼성전자', sll_buy_dvsn_cd: '02', ord_qty: '1', ord_unpr: '70000', tot_ccld_qty: '0', rmn_qty: '1', cncl_yn: 'N', ord_gno_brno: '12345', ...overrides });
 const deferred = () => { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; };
 
+test('risk order snapshot requires complete REST evidence and is invalidated by failure, submission and restart', async () => {
+  const f = fixture('success');
+  try {
+    assert.equal(f.broker.riskSnapshot().orders, null);
+    assert.equal(f.broker.riskSnapshot().baselineEquity, null);
+    assert.equal(f.requests.length, 0);
+    f.response.rows = [brokerRow({ ord_qty: '3', rmn_qty: '2', tot_ccld_qty: '1' })];
+    await f.broker.refresh();
+    assert.deepEqual(f.broker.riskSnapshot().orders?.rows, [{ code: '005930', side: 'buy', price: 70000, remaining: 2, cancelled: false }]);
+    const requestCount = f.requests.length; f.broker.riskSnapshot(); assert.equal(f.requests.length, requestCount);
+    f.response.before = async path => { if (path.endsWith('/inquire-daily-ccld')) throw new Error('fixture failure'); };
+    await assert.rejects(f.broker.refresh(), /KIS 모의 서버 통신 실패/);
+    assert.equal(f.broker.riskSnapshot().orders, null);
+    f.response.before = async () => {}; f.response.rows = [];
+    await f.broker.submit(input());
+    assert.equal(f.broker.riskSnapshot().orders, null);
+    assert.equal(f.broker.riskSnapshot().baselineEquity, 10000000);
+    assert.equal(new PaperBroker(f.store, f.client).riskSnapshot().orders, null);
+  } finally { f.store.close(); }
+});
+
 test('external refresh waits for the complete submit preflight without internal refresh deadlock', { timeout: 3000 }, async () => {
   const f = fixture('success', 20);
   const quoteEntered = deferred(), releaseQuote = deferred();

@@ -126,6 +126,10 @@ export class Store {
     this.db.prepare('INSERT OR IGNORE INTO paper_baseline (day,equity) VALUES (?,?)').run(day, value);
     return Number(this.db.prepare('SELECT equity FROM paper_baseline WHERE day=?').get(day)!.equity);
   }
+  paperBaselineValue(day: string) {
+    const row = this.db.prepare('SELECT equity FROM paper_baseline WHERE day=?').get(day);
+    return row ? Number(row.equity) : null;
+  }
   read(): State {
     const row = this.db.prepare('SELECT body FROM workspace WHERE id=1').get();
     return JSON.parse(row!.body as string) as State;

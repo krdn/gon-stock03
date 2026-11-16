@@ -1,0 +1,38 @@
+{
+  "requested_model": "gemini-4-argon-high",
+  "requested_effort": "high",
+  "returned_init_model": "gemini-4-argon-high",
+  "server_model_effort_independently_verified": false,
+  "reviewed_files": {
+    "src/pages/Operations.tsx": "bc0e18097c33b7ddca6f9a557a5fc3552851ca43834fde1981b2d8a8f3941b5b",
+    "src/App.tsx": "0f605ec780ade236f6fe15cf336023b6ba063192e57130b1fd05f8609e88f0ff",
+    "src/context.tsx": "af75ca0ee7a2a4304893df41dab9d6dfecad28d090b16211b87cfeaf0e5c7b91",
+    "src/specs.ts": "c731b6a31d30bbcd3c71f6d3d24cca17f3e40c44fa317e91b45196af26bc24ec",
+    "server/http.ts": "fdba7568e6aec397ac164cb3a0f44c55d03a9fe99d3a4eef1633d7ff0a5f083d",
+    "server/engine.ts": "1d1982f6c70047e57ab6de7fc9eb93242205d13022304d6d908b38f193dcca67",
+    "server/paper.ts": "b5136c15240d2063587458cbb7dfa28c213e0ad3541a585eeeb9e0a8ac4de973",
+    "server/store.ts": "19e31c05fcb0a1e2e526f473fedf3ccce656d7e148f3d420754daad98ac8a8ed",
+    "shared/model.ts": "2787bb90afd53cb0ddaabc1bf528dfe2926da91866be1bf7c7e39b777d0ad4c1",
+    "shared/contracts.ts": "fc425a068f8593ded12e52af205410269edf382fd093b8e2dfea07757c48d1d0",
+    "shared/status.ts": "6a14268e0ec8a56679f47587879713dc5f3cfdcfa10ea3eed1298ec855668952",
+    "tests/risk.test.ts": "b249c637042f2d373e9441fe0c3e8de62e7735e3b6e46bf8117ad5bd62b454f0",
+    "tests/browser/risk.spec.ts": "7d44308371e221cdfbaa67507d99ba5651917e81a8214b7671c673239fa8c806",
+    "tests/paper.test.ts": "a573c2b566578222b5064bed33193a19538838e7ac0a628e6e9713d691e11316",
+    "docs/verification/2026-11-16-risk-management.md": "ca12696fbe368c0588fa7ae73e2027e2347decaf6065163bdcc6c24616d8c60c"
+  },
+  "image_review": "Reviewer read desktop.png and mobile.png; tool events confirmed. Delegated model acceptance, not direct human visual acceptance.",
+  "result": {
+    "conversation_id": "2dee8ca2-c938-4957-bd22-8eec7fb8abd1",
+    "status": "SUCCESS",
+    "response": "**판정: `RISK ACCEPTANCE PASS`** (차단 결함 P0/P1/P2 없음)\n\n제공된 코드 및 diff와 함께 [desktop.png](file:///tmp/stock03-risk-review/desktop.png), [mobile.png](file:///tmp/stock03-risk-review/mobile.png) 두 이미지를 직접 확인하여 이슈 #11(S09 `/risk`)의 기술·범위 수용을 검토했습니다. 본 검토는 사용자 위임에 따른 독립 모델 수용 판정이며, 인간의 직접 시각 수용 주장이나 실제 KIS 브로커 주문·체결 실증을 의미하지 않습니다.\n\n### 항목별 검증 근거\n\n1. **긴급정지 영속 및 재시작 후 상태 유지**\n   - [server/http.ts](file:///tmp/stock03-risk-review/server/http.ts#L124-L128)의 `/api/risk/halt`는 [server/store.ts](file:///tmp/stock03-risk-review/server/store.ts#L137-L144)의 `store.update()` 트랜잭션(`BEGIN IMMEDIATE`)을 통해 SQLite `workspace` 테이블에 `state.risk.halted`를 즉시 영속화합니다.\n   - 서버 재시작 시([server/store.ts](file:///tmp/stock03-risk-review/server/store.ts#L20-L27)) 기존 `state.risk.halted` 값은 보존되며, 전송 중(`sending`)이던 KIS 모의 주문은 자동으로 `unknown`으로 전환되어 대조 전 재개 및 추가 주문을 차단합니다([tests/risk.test.ts](file:///tmp/stock03-risk-review/tests/risk.test.ts#L14-L42)).\n\n2. **KIS 불명(`unknown`)·전송 중(`sending`) 해소 전 재개 차단 (API·UI 이중 방어)**\n   - **서버**: [server/http.ts](file:///tmp/stock03-risk-review/server/http.ts#L126)에서 `!halted && store.paperOrders().some(o => o.status === 'unknown' || o.status === 'sending')` 조건일 때 예외를 발생시키고, [server/http.ts](file:///tmp/stock03-risk-review/server/http.ts#L154-L157)에서 `'위험관리 요청 차단'` 경고 이벤트를 기록한 뒤 HTTP 400을 반환하여 클라이언트 우회 재개를 차단합니다. (반면 `halted: true`로의 정지 요청은 불명 주문 존재 여부와 무관하게 허용됩니다.)\n   - **UI**: [src/pages/Operations.tsx](file:///tmp/stock03-risk-review/src/pages/Operations.tsx#L24-L43)에서 `resumeBlocked = state.risk.halted && (!paperRisk || paperRisk.unresolvedCount > 0)`으로 재개 버튼을 비활성화하고 `role=\"alert\"`(`KIS 불명·전송 중 N건 · 대조 전 재개 금지`) 및 `/paper` 복구 링크를 제공합니다.\n\n3. **기접수 주문 자동 취소 없음 및 전략 자동 재시작 없음**\n   - [server/engine.ts](file:///tmp/stock03-risk-review/server/engine.ts#L12-L16)의 `halt()`와 [server/http.ts](file:///tmp/stock03-risk-review/server/http.ts#L123)의 `/api/risk`는 DEMO 미체결 주문이나 KIS 원장 주문을 자동 취소하지 않습니다.\n   - 정지 시 `state.playing = false` 및 모든 전략 `active = false`로 전환하며, 주문 허용(`halted: false`) 시나 서버 재시작 후에도 전략이 자동 재시작되지 않습니다.\n   - 화면 상단 배너([src/App.tsx](file:///tmp/stock03-risk-review/src/App.tsx#L90))와 위험관리 패널([src/pages/Operations.tsx](file:///tmp/stock03-risk-review/src/pages/Operations.tsx#L37-L45))에 기접수 주문 별도 취소 필요 및 전략 수동 재시작 안내가 명시되어 있습니다.\n\n4. **DEMO 수동·전략 공통 한도 및 매도 예약 수량 적용 (기존 매매 규칙 불변)**\n   - [server/engine.ts](file:///tmp/stock03-risk-review/server/engine.ts#L17-L42)의 `placeOrder()`를 수동 주문(`/api/orders`)과 전략 신호 주문(`advanceTick()`)이 공통으로 호출하여 1회 주문 한도(`price * qty`), 종목별 한도(`보유 평가액 + 미체결 매수 + 신규 매수`), 손실 한도(`startingEquity - equity(state) >= dailyLoss`), 매도 가능 수량(`(position?.qty ?? 0) - reserved`)을 동일하게 검증합니다([tests/risk.test.ts](file:///tmp/stock03-risk-review/tests/risk.test.ts#L60-L81)).\n   - 기존 매매·체결·백테스트·KIS 주문 검증 로직은 변경되지 않았습니다.\n\n5. **환경별 사용량·손실 산식·시각 표시 및 미확인 데이터 0원 대체 금지 (Opus P2 후속 반영 포함)**\n   - **Opus P2 정정 반영**: [src/pages/Operations.tsx](file:///tmp/stock03-risk-review/src/pages/Operations.tsx#L32)에서 `1회 주문 한도` 보조 문구를 `\"주문 1건의 지정가 × 수량\"`으로 정정하고, [src/pages/Operations.tsx](file:///tmp/stock03-risk-review/src/pages/Operations.tsx#L49)에서 현금·종목 한도 예약액과 1회 주문 한도의 차이를 명확히 구분했습니다.\n   - **무호출·0원 대체 금지**: `GET /api/state`는 [server/paper.ts](file:///tmp/stock03-risk-review/server/paper.ts#L33-L36)의 `paper.riskSnapshot()`과 [server/store.ts](file:///tmp/stock03-risk-review/server/store.ts#L129-L132)의 읽기 전용 `paperBaselineValue()`만 사용하여 KIS API를 호출하지 않으며 미설정 기준자산을 초기화하지도 않습니다.\n   - 오프라인(`!available`), KIS 미연결·미완전 잔고, 주문 스냅샷 누락·60초 경과(`ordersAge >= 60000`), 불명 주문 존재 시 `known`이 `false`가 되어 0원 대신 `DEMO 사용량 미확인` / `KIS 사용량 미확인` 빈 상태를 표시합니다([src/pages/Operations.tsx](file:///tmp/stock03-risk-review/src/pages/Operations.tsx#L15-L50)). 기준 미설정(`baseline == null`)이나 보유 종목 현재가 누락(`price == null`) 시에도 각각 `'기준 미설정'`, `'평가 불가'`, `'미확인'`으로 표시합니다.\n   - KIS 주문 스냅샷(`riskOrders`)은 전체 조회·대조(`refreshInsideQueue`) 완료 시에만 기록되고 재조회 시작·취소 프로브·신규 전송·재시작·날짜 변경 시 즉시 `null`로 무효화됩니다([server/paper.ts](file:///tmp/stock03-risk-review/server/paper.ts#L46-L61), [tests/paper.test.ts](file:///tmp/stock03-risk-review/tests/paper.test.ts#L53-L72)).\n\n6. **폴링·저장 대기·오프라인 중 편집 초안 보존**\n   - [src/pages/Operations.tsx](file:///tmp/stock03-risk-review/src/pages/Operations.tsx#L11-L30)에서 `dirty` 상태와 `editVersion` ref를 함께 사용하여 3초 주기 폴링 중에는 사용자 입력이 덮어써지지 않으며, 저장 요청(`act('risk', ...)`) 대기 중 추가 편집이 발생하면 `editVersion.current === submittedVersion`이 거짓이 되어 응답 도착 후에도 새 편집값과 `dirty` 안내(`저장하지 않은 변경이 있습니다.`)를 유지합니다([tests/browser/risk.spec.ts](file:///tmp/stock03-risk-review/tests/browser/risk.spec.ts#L4-L24)). 저장 실패나 오프라인 전환 시에도 입력 초안이 유지됩니다.\n\n7. **입력 검증·DB 오류 처리·동시성**\n   - [shared/contracts.ts](file:///tmp/stock03-risk-review/shared/contracts.ts#L11-L15)의 `riskInput`, `haltInput`(`strict()`)이 범위·타입 오류를 걸러내며, [server/http.ts](file:///tmp/stock03-risk-review/server/http.ts#L148-L158)에서 `/api/risk*` 경로의 `ERR_SQLITE_ERROR` 및 차단 이벤트 기록 실패 시 HTTP 500(`storageErrorMessage`)을 반환합니다.\n\n8. **반응형 레이아웃·접근성 및 범위 경계 (`src/specs.ts`)**\n   - [desktop.png](file:///tmp/stock03-risk-review/desktop.png)와 [mobile.png](file:///tmp/stock03-risk-review/mobile.png) 확인 결과 데스크톱 2열 배치와 모바일(390px) 단일 열 배치가 가로 넘침 없이 렌더링되며, 환경 전환 탭의 `aria-pressed`, 상태/경고의 `role=\"status\"`·`role=\"alert\"`, 폼 레이블 연결이 적절합니다.\n   - [src/specs.ts](file:///tmp/stock03-risk-review/src/specs.ts#L24)에 변경된 목적·행동·데이터·실패·완료·API 계약이 동기화되었으며, KIS 전략 실행 검증(#22)과 장중 통합 실증(#25 / V01) 경계가 명확히 분리되어 있습니다.\n",
+    "duration_seconds": 93.153797574,
+    "num_turns": 1,
+    "usage": {
+      "input_tokens": 69077,
+      "output_tokens": 7360,
+      "thinking_tokens": 4958,
+      "cache_read_tokens": 66115,
+      "total_tokens": 76437
+    }
+  }
+}

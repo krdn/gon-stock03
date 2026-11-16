@@ -1,5 +1,5 @@
 import { paperRecoveryInput, type OrderInput, type PaperRecoveryInput } from '../shared/contracts.ts';
-import type { PaperOrder, BrokerOrder, PaperEvidence, ConnectionState } from '../shared/model.ts';
+import type { PaperOrder, BrokerOrder, PaperEvidence, ConnectionState, PaperRiskSnapshot } from '../shared/model.ts';
 import { KisClient, KisRejected, KisNotSent, koreaDate } from './kis.ts';
 import { Store } from './store.ts';
 import { halt, record } from './engine.ts';
@@ -21,6 +21,7 @@ const evidence = (tradeDate: string, orders: BrokerOrder[], connection: Connecti
 
 export class PaperBroker {
   private queue: Promise<unknown> = Promise.resolve();
+  private riskOrders: (NonNullable<PaperRiskSnapshot['orders']> & { day: string }) | null = null;
   constructor(private store: Store, private kis: KisClient, private approval?: PaperApproval) {
     if (!approval && store.hasPaperRun()) throw new Error('저장된 1회 승인 설정이 필요합니다. 제한 없이 재시작할 수 없습니다.');
     if (approval && store.configurePaperRun(paperApprovalSchema.parse(approval))) {
@@ -29,6 +30,10 @@ export class PaperBroker {
     }
   }
   approvalStatus() { return this.approval ? { active: true, ...this.approval } : { active: false }; }
+  riskSnapshot(): PaperRiskSnapshot {
+    const day = koreaDate();
+    return { day, baselineEquity: this.store.paperBaselineValue(day), unresolvedCount: this.store.paperOrders().filter(o => o.status === 'unknown' || o.status === 'sending').length, orders: this.riskOrders?.day === day ? this.riskOrders : null };
+  }
   private checkWindow() {
     const now = Date.now();
     if (this.approval && (now < Date.parse(`${this.approval.date}T09:00:00+09:00`) || now >= Date.parse(`${this.approval.date}T15:30:00+09:00`))) throw new KisNotSent('승인된 수동 실행 시간창 밖입니다.');
@@ -38,8 +43,10 @@ export class PaperBroker {
   }
   refresh(freshBalance = false) { return this.enqueue(() => this.refreshInsideQueue(freshBalance)); }
   private async refreshInsideQueue(freshBalance = false) {
-    const connection = await this.kis.balance(freshBalance); const orders = await this.kis.dailyOrders();
-    const byDay = new Map([[koreaDate(), orders]]);
+    this.riskOrders = null;
+    const day = koreaDate();
+    const connection = await this.kis.balance(freshBalance); const orders = await this.kis.dailyOrders(day);
+    const byDay = new Map([[day, orders]]);
     const pending = this.store.paperOrders().filter(local => local.brokerId && !['filled', 'cancelled', 'rejected'].includes(local.status));
     for (const local of pending) {
       if (!byDay.has(local.tradeDate)) byDay.set(local.tradeDate, await this.kis.dailyOrders(local.tradeDate));
@@ -51,6 +58,7 @@ export class PaperBroker {
       const next: PaperOrder = row && row.filled >= local.filled && !(row.cancelled && row.remaining > 0) ? reconciled(local, row) : { ...local, status: 'unknown', message: '저장한 주문과 KIS 조회가 일치하지 않습니다. 추가 주문을 차단합니다.' };
       if (next.status !== local.status || next.filled !== local.filled || next.remaining !== local.remaining) this.store.savePaper(next, { actor: 'system', action: 'reconcile', before: local.status, evidence: evidence(local.tradeDate, rows, connection) });
     }
+    this.riskOrders = { day, observedAt: new Date().toISOString(), rows: orders.map(({ code, side, price, remaining, cancelled }) => ({ code, side, price, remaining, cancelled })) };
     return { connection, brokerOrders: orders, orders: this.store.paperOrders() };
   }
   cancelProbeEnabled() { return this.approval?.cancelProbe === true; }
@@ -67,6 +75,7 @@ export class PaperBroker {
       check();
       const pending: PaperOrder = { ...order, status: 'unknown', message: '전량취소 검증 시도. 최종 상태는 주문 조회로 확인하세요.' };
       this.store.claimPaperCancel(pending);
+      this.riskOrders = null;
       try {
         await this.kis.cancelAll(order.brokerId, order.organization, check);
         pending.message = '전량취소 요청 접수. 취소 완료는 아직 확인되지 않았습니다.';
@@ -165,6 +174,7 @@ export class PaperBroker {
       if (latestRisk.halted || JSON.stringify(risk) !== JSON.stringify(latestRisk)) throw new Error('검증 중 위험 설정이 바뀌었습니다. 다시 확인하세요.');
       const local: PaperOrder = { ...input, createdAt: new Date().toISOString(), tradeDate: koreaDate(), status: 'sending', filled: 0, remaining: input.qty, message: 'KIS 모의 전송 중' };
       this.store.savePaper(local, { actor: 'system', action: 'sending', before: null });
+      this.riskOrders = null;
       try {
         const receipt = await this.kis.submit(input, () => {
           this.checkWindow();

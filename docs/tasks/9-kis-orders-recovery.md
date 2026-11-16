@@ -2,7 +2,7 @@
 
 기준 이슈: https://github.com/krdn/gon-stock03/issues/9
 
-- 상태: 2026-11-16 한정 실증과 위임된 지정 모델 수용 검증 완료. PR54 통합·main CI 확인 후 #9 completed/Project Done 처리한다. 아래 준비 기록은 과거 시점이다.
+- 상태: 2026-11-16 한정 실증과 위임된 지정 모델 수용 검증 완료. PR54는 main5314e02로 통합됐고 main CI2 SUCCESS 후 #9 completed/Project Done을 확인했다. [종료 근거](https://github.com/krdn/gon-stock03/issues/9#issuecomment-6909656654). 아래 준비 기록은 과거 시점이다.
 - 목표·완료 조건: 공통 주문 큐, 명시적 불명 복구와 감사 기록, 재시작·다음 거래일·경합 fixture 검증. 전체 완료에는 승인된 최소 실제 모의 접수·조회 증거가 필요하다.
 - 허용된 작업·제외 범위: 현재는 승인 기록·실행 준비 점검·필요한 fixture 검증·PR/인계. 실제 주문은 실행안의 조건부 1회만 승인됐지만 지금 실행하거나 예약하지 않는다. 실제 웹 정정·취소·매도·전략은 승인하지 않았다. UI는 S15/#14 소유. 자동 재전송·실전 fallback·미지원 API 우회 금지.
 - 선행: #6/#8 completed, PR #27/#31 main 포함, #9 Project Ready를 2026-11-15 확인.
