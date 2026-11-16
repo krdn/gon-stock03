@@ -65,19 +65,20 @@ export default function App() {
   async function act<T>(path: string, body?: unknown): Promise<T> {
     if (freshness(localStatus).phase !== 'ready') {
       const message = '최신 로컬 상태를 확인한 뒤 다시 시도하세요.';
-      setNotice({ text: message, error: true }); throw new Error(message);
+      setNotice({ text: message, error: true }); throw Object.assign(new Error(message), { definitive: true, notSent: true });
     }
     setBusy(true);
     if (path === 'kis/check' || path === 'kis/orders') setConnection(old => ({ ...old, connected: false, status: { ...old.status, phase: 'loading', complete: false, error: null } }));
     let message = '요청을 처리하지 못했습니다. 잠시 후 다시 확인하세요.';
+    let definitive = false;
     try {
       const response = await fetch('/api/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(body ?? {}) });
       const result = await response.json();
       if (!result || typeof result !== 'object') throw new Error(message);
-      if (!response.ok) { if ((response.status < 500 || result.error === storageErrorMessage) && typeof result.error === 'string') message = result.error; throw new Error(message); }
+      if (!response.ok) { definitive = response.status >= 400 && response.status < 500; if ((response.status < 500 || result.error === storageErrorMessage) && typeof result.error === 'string') message = result.error; throw new Error(message); }
       await refresh(); setNotice({ text: result.message ?? '변경 사항을 저장했습니다.', error: Boolean(result.warning) });
       return result as T;
-    } catch { setNotice({ text: message, error: true }); await refresh(); throw new Error(message); }
+    } catch { setNotice({ text: message, error: true }); await refresh(); throw Object.assign(new Error(message), { definitive }); }
     finally { setBusy(false); }
   }
   const routes = [Dashboard, Market, WatchlistPage, Trade, Orders, Portfolio, Strategies, Backtest, Risk, Journal, Alerts, DataStatus, Settings, Design, Paper];

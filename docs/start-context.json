@@ -1,6 +1,6 @@
 {
-  "checked_at": "2026-11-16T06:46:51.023573+00:00",
-  "objective": "위험관리 화면·불명 중 재개 차단·사용량/산식·편집 보존, 실제 KIS 업무API 없음",
+  "checked_at": "2026-11-16T07:38:47.223616+00:00",
+  "objective": "DEMO 트레이딩 확인·시세 변경 재확인·중복 방지와 KIS 화면 이동",
   "sources": [
     {
       "url": "https://apiportal.koreainvestment.com/apiservice-apiservice?/uapi/domestic-stock/v1/trading/order-rvsecncl",
@@ -159,6 +159,18 @@
         }
       ],
       "decisions": "기존 금액 규칙을 유지한다. 서버 재개 경계에서 sending/unknown 차단. 로컬 GET state로 위험 스냅샷만 전달하며 브로커 호출 없음. KIS 데이터 신선도/기준 미설정을 명시하고 가용 금액을 추정하지 않는다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/12",
+      "checked_at": "2026-11-16T07:38:47.223616+00:00",
+      "objective": "DEMO 트레이딩 확인·시세 변경 재확인·중복 방지와 KIS 화면 이동",
+      "sources": [
+        {
+          "url": "https://react.dev/reference/react/useRef",
+          "finding": "React 공식 문서: ref는 렌더 사이 값을 보존하며 이벤트 핸들러에서 동기 잠금으로 사용할 수 있다. 표시 상태는 state로 관리한다."
+        }
+      ],
+      "decisions": "기존 DEMO 주문 서버 검증과 requestId 멱등성을 재사용한다. /trade는 KIS API를 호출하지 않는다."
     }
   ],
   "integration_scope": "기존 두 조사 기록과 checked_at 보존. 실제 KIS 호출 없이 결합 회귀·독립 리뷰·PR 통합만 수행. #9 승인 및 후속 차단 유지."
