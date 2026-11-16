@@ -2,7 +2,7 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매.
 
-- **현재 작업:** [#13 주문·체결](tasks/13-orders.md), `feat/13-orders`, main `bf158cc` 기반. DEMO 관리·검색과 읽기 전용 KIS 원장 분리. 단위137·브라우저88·빌드·Argon ORDERS PASS, PR/CI 전달 중.
+- **현재 작업:** [#13 주문·체결](tasks/13-orders.md), `feat/13-orders`, main `bf158cc` 기반. DEMO 관리·검색과 읽기 전용 KIS 원장 분리. 단위137·브라우저88·빌드·Argon ORDERS PASS, [초안 PR58](https://github.com/krdn/gon-stock03/pull/58), 제품 `8ca0d245`, 사용자 수용·통합 대기.
 - **선행:** #9·#12 completed/Done, PR56 merge `d678e31` main CI2 SUCCESS. PR57 merge `bf158cc`, head CI4·main CI2 SUCCESS, #17 completed/Done. [#12·#17 결합 검증](verification/2026-11-16-trading-alerts-integration.md):134/83/빌드·Argon MERGE PASS.
 - **수용 근거:** 사용자 “작업 진행”과 지정 모델 검증·통합 지시에 따른 기술 수용. 사용자 직접 육안 관찰·장중 수용을 주장하지 않는다. #13은 후속 구현·검증 범위.
 - **다음:** #13 전달 후 #14, #18 선행 #16/#11/#17 completed, Ready. #19는 #14/#17/#18, #22는 #19, #25는 전체 선행 대기.
