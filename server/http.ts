@@ -156,7 +156,12 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       if (req.method !== 'GET' && req.method !== 'HEAD') { json(res, 405, { error: '지원하지 않는 요청 방식입니다.' }); return; }
       const root = resolve('dist'); const file = path.startsWith('/assets/') || path === '/project-map.html' ? resolve(root, '.' + path) : resolve(root, 'index.html');
       if (!file.startsWith(root + sep)) { json(res, 404, { error: '파일이 없습니다.' }); return; }
-      const bytes = await readFile(file);
+      let bytes: Buffer;
+      try { bytes = await readFile(file); }
+      catch (error) {
+        const missing = error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR');
+        json(res, missing ? 404 : 500, { error: missing ? '파일이 없습니다.' : '파일을 읽지 못했습니다.' }); return;
+      }
       const type = ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' } as Record<string, string>)[extname(file)] ?? 'application/octet-stream';
       res.writeHead(200, { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' }); res.end(req.method === 'HEAD' ? undefined : bytes);
     } catch (error) {
