@@ -19,7 +19,7 @@ export interface ConnectionState extends Connection {
   failure: ConnectionFailure | null;
 }
 export interface PaperRiskSnapshot { day: string; baselineEquity: number | null; unresolvedCount: number; orders: { observedAt: string; rows: Pick<BrokerOrder, 'code' | 'side' | 'price' | 'remaining' | 'cancelled'>[] } | null }
-export interface StateSnapshot extends State { instanceId: string; status: DataStatus; connection: ConnectionState; paperRisk?: PaperRiskSnapshot }
+export interface StateSnapshot extends State { realtime?: import('./realtime.ts').RealtimeStatus; instanceId: string; status: DataStatus; connection: ConnectionState; paperRisk?: PaperRiskSnapshot }
 export interface KisQuote { code: string; price: number; change: number; upper: number; lower: number; tickSize: number; stopped: boolean; receivedAt: string; volume?: number; sector?: string; liquidation?: boolean }
 export interface KisBar { date: string; close: number }
 export interface BrokerOrder { brokerId: string; date: string; code: string; name: string; side: 'buy' | 'sell'; qty: number; price: number; filled: number; remaining: number; cancelled: boolean; organization: string }
