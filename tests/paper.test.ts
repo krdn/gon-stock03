@@ -11,17 +11,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only', spacing = 0) {
+function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only', spacing = 0, approval?: { date: string; requestId: string }) {
   let submits = 0;
-  const response = { cash: '10000000', totalEquity: '10000000', nonCreditCash: '10000000', rows: [] as Record<string, string>[], before: async (_path: string) => {}, receipt: { rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } } as unknown };
+  const response = { cash: '10000000', totalEquity: '10000000', nonCreditCash: '10000000', positions: [] as Record<string, string>[], price: '70000', tick: '100', rows: [] as Record<string, string>[], before: async (_path: string) => {}, receipt: { rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } } as unknown };
   const requests: { url: URL; init: RequestInit | undefined; startedAt: number }[] = [];
   const transport: typeof fetch = async (url, init) => {
     requests.push({ url: new URL(String(url)), init, startedAt: performance.now() });
     const path = new URL(String(url)).pathname;
     await response.before(path);
     if (path.endsWith('/tokenP')) return Response.json({ access_token: 'test-token', expires_in: 86400 });
-    if (path.endsWith('/inquire-balance')) return Response.json({ rt_cd: '0', output1: [], output2: [{ dnca_tot_amt: response.cash, tot_evlu_amt: response.totalEquity }] });
-    if (path.endsWith('/inquire-price')) return Response.json({ rt_cd: '0', output: { stck_prpr: '70000', prdy_ctrt: '1.0', stck_mxpr: '91000', stck_llam: '49000', aspr_unit: '100', temp_stop_yn: 'N' } });
+    if (path.endsWith('/inquire-balance')) return Response.json({ rt_cd: '0', output1: response.positions, output2: [{ dnca_tot_amt: response.cash, tot_evlu_amt: response.totalEquity }] });
+    if (path.endsWith('/inquire-price')) return Response.json({ rt_cd: '0', output: { stck_prpr: response.price, prdy_ctrt: '1.0', stck_mxpr: '91000', stck_llam: '49000', aspr_unit: response.tick, temp_stop_yn: 'N' } });
     if (path.endsWith('/inquire-psbl-order')) return Response.json({ rt_cd: '0', output: { nrcvb_buy_qty: '100', nrcvb_buy_amt: response.nonCreditCash, ord_psbl_cash: '10000000' } });
     if (path.endsWith('/inquire-daily-ccld')) return Response.json({ rt_cd: '0', output1: response.rows.filter(row => row.ord_dt === new URL(String(url)).searchParams.get('INQR_STRT_DT')) });
     if (path.endsWith('/order-cash')) {
@@ -36,7 +36,7 @@ function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'erro
   };
   const store = new Store(':memory:');
   const client = new KisClient({ key: 'key', secret: 'secret', account: '00000000', product: '01' }, transport, spacing);
-  return { store, client, broker: new PaperBroker(store, client), count: () => submits, response, requests };
+  return { store, client, broker: new PaperBroker(store, client, approval), count: () => submits, response, requests };
 }
 const input = () => ({ code: '005930', side: 'buy' as const, qty: 1, price: 70000, requestId: randomUUID() });
 const brokerRow = (overrides: Record<string, string> = {}) => ({ odno: '0000000001', ord_dt: koreaDate(), pdno: '005930', prdt_name: '삼성전자', sll_buy_dvsn_cd: '02', ord_qty: '1', ord_unpr: '70000', tot_ccld_qty: '0', rmn_qty: '1', cncl_yn: 'N', ord_gno_brno: '12345', ...overrides });
@@ -348,5 +348,179 @@ test('HTTP 401 on the order POST preserves unknown classification and prevents a
     assert.equal(result.status, 'unknown'); assert.ok(!result.message.includes('fixture-secret'));
     await f.broker.submit(order); assert.equal(f.count(), 1);
     await assert.rejects(f.broker.submit(input()), /응답 불명/); assert.equal(f.count(), 1);
+  } finally { f.store.close(); }
+});
+
+const approvedInput = () => ({ ...input(), code: '069500' });
+const approvalFor = (order: ReturnType<typeof input>) => ({ date: '2026-11-16', requestId: order.requestId });
+
+test('approved paper run allows only the fixed ID, symbol, buy, one share and 100000 ceiling', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const order = approvedInput(); const f = fixture('success', 0, approvalFor(order));
+  try {
+    for (const invalid of [{ ...order, code: '005930' }, { ...order, qty: 2 }, { ...order, side: 'sell' as const }, { ...order, price: 100001 }, { ...order, requestId: randomUUID() }]) {
+      await assert.rejects(f.broker.submit(invalid), /승인/);
+    }
+    assert.equal(f.requests.length, 0);
+    assert.equal((await f.broker.submit(order)).status, 'accepted'); assert.equal(f.count(), 1);
+    assert.equal(f.store.read().risk.halted, true);
+    assert.equal((await f.broker.submit(order)).status, 'accepted'); assert.equal(f.count(), 1);
+    await assert.rejects(f.broker.submit({ ...order, requestId: randomUUID() }), /승인/);
+    await assert.rejects(new PaperBroker(f.store, f.client, approvalFor(order)).submit({ ...order, price: 70100 }), /동일/);
+    assert.throws(() => new PaperBroker(f.store, f.client, { ...approvalFor(order), requestId: randomUUID() }), /승인/);
+  } finally { f.store.close(); }
+});
+
+test('approved paper run checks the actual send window again after quote and buying-power wait', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T09:59:59+09:00') });
+  const order = approvedInput(); const f = fixture('success', 0, approvalFor(order));
+  try {
+    await assert.rejects(f.broker.submit(order), /시간/); assert.equal(f.requests.length, 0);
+    t.mock.timers.tick(600000);
+    f.response.before = async path => { if (path.endsWith('/inquire-psbl-order')) t.mock.timers.tick(1001); };
+    assert.equal((await f.broker.submit(order)).status, 'rejected');
+    assert.equal(f.count(), 0); assert.equal(f.store.read().risk.halted, true);
+  } finally { f.store.close(); }
+});
+
+test('approved paper run rejects stale quote and never retries a failed preflight', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const order = approvedInput(); const f = fixture('success', 0, approvalFor(order));
+  try {
+    f.response.before = async path => { if (path.endsWith('/inquire-psbl-order')) t.mock.timers.tick(5001); };
+    assert.equal((await f.broker.submit(order)).status, 'rejected');
+    assert.equal(f.count(), 0); assert.equal(f.store.read().risk.halted, true);
+    await f.broker.submit(order); assert.equal(f.count(), 0);
+  } finally { f.store.close(); }
+});
+
+test('approved paper run rejects existing holdings, pending orders, cash equality and invalid quote ticks', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  for (const scenario of ['holding', 'pending', 'cash', 'power', 'price', 'tick', 'slow-quote']) {
+    const order = approvedInput(); const f = fixture('success', 0, approvalFor(order));
+    try {
+      if (scenario === 'holding') f.response.positions = [{ pdno: '069500', prdt_name: 'fixture', hldg_qty: '1', pchs_avg_pric: '70000' }];
+      if (scenario === 'pending') f.response.rows = [brokerRow()];
+      if (scenario === 'cash') f.response.cash = '70000';
+      if (scenario === 'power') f.response.nonCreditCash = '70000';
+      if (scenario === 'price') f.response.price = '70100';
+      if (scenario === 'tick') f.response.tick = '300';
+      if (scenario === 'slow-quote') f.response.before = async path => { if (path.endsWith('/inquire-price')) t.mock.timers.tick(5001); };
+      await assert.rejects(f.broker.submit(order), /승인/); assert.equal(f.count(), 0, scenario);
+      assert.equal(f.store.read().risk.halted, true);
+      f.store.update(state => { state.risk.halted = false; });
+      await assert.rejects(new PaperBroker(f.store, f.client, approvalFor(order)).submit(order), /사용/);
+      assert.equal(f.count(), 0);
+    } finally { f.store.close(); }
+  }
+});
+
+test('approved paper run halts after success, rejection or unknown and stops all KIS reads at 120 seconds', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  for (const mode of ['success', 'reject', 'timeout'] as const) {
+    const order = approvedInput(); const f = fixture(mode, 0, approvalFor(order));
+    try {
+      const result = await f.broker.submit(order);
+      assert.equal(result.status, mode === 'success' ? 'accepted' : mode === 'reject' ? 'rejected' : 'unknown');
+      assert.equal(f.store.read().risk.halted, true); assert.equal(f.count(), 1);
+      f.response.rows = [brokerRow({ pdno: '069500', tot_ccld_qty: '1', rmn_qty: '0' })];
+      await f.broker.refresh();
+      t.mock.timers.tick(120000); const calls = f.requests.length;
+      await assert.rejects(f.broker.refresh(), /조회 시간/); assert.equal(f.requests.length, calls);
+      await assert.rejects(f.client.quote('069500', true), /조회 시간/); assert.equal(f.requests.length, calls);
+    } finally { f.store.close(); }
+  }
+});
+
+test('approved attempt and halt survive SQLite restart, with no unguarded server or new approval ID', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const directory = mkdtempSync(join(tmpdir(), 'paper-approval-')); const path = join(directory, 'ledger.sqlite');
+  const order = approvedInput(); const approval = approvalFor(order); const f = fixture('success'); let store = new Store(path);
+  try {
+    const broker = new PaperBroker(store, f.client, approval);
+    const results = await Promise.all([broker.submit(order), broker.submit(order)]);
+    assert.deepEqual(results.map(row => row.status), ['accepted', 'accepted']); assert.equal(f.count(), 1);
+    store.close(); store = new Store(path);
+    assert.equal(store.read().risk.halted, true);
+    assert.throws(() => new PaperBroker(store, f.client), /승인 설정/);
+    assert.throws(() => new PaperBroker(store, f.client, { ...approval, date: '2026-11-17' }), /승인/);
+    const restarted = new PaperBroker(store, f.client, approval); const calls = f.requests.length;
+    assert.equal((await restarted.submit(order)).status, 'accepted');
+    await assert.rejects(restarted.refresh(), /조회 시간/); assert.equal(f.requests.length, calls); assert.equal(f.count(), 1);
+  } finally { store.close(); f.store.close(); rmSync(directory, { recursive: true }); }
+});
+
+test('approved HTTP order path exposes the active restriction and persists halt without enabling cancel', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const order = approvedInput(); const f = fixture('success'); const port = apiPort++;
+  const server = makeServer(f.store, f.client, [port], approvalFor(order));
+  server.listen(port, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${port}`;
+  const headers = { 'content-type': 'application/json', 'x-workbench': 'local' };
+  try {
+    const ledgerResponse = await fetch(`${base}/api/kis/ledger`, { headers }); assert.equal(ledgerResponse.status, 200);
+    const ledger = await ledgerResponse.json();
+    assert.deepEqual(ledger.minimumRun, { active: true, ...approvalFor(order) }); assert.equal(f.requests.length, 0);
+    const response = await fetch(`${base}/api/kis/order`, { method: 'POST', headers, body: JSON.stringify(order) });
+    assert.equal(response.status, 200); assert.equal((await response.json()).order.status, 'accepted');
+    assert.equal(f.store.read().risk.halted, true); assert.equal(f.count(), 1);
+    const blocked = await fetch(`${base}/api/kis/cancel`, { method: 'POST', headers, body: JSON.stringify({ id: order.requestId }) });
+    assert.equal(blocked.status, 409); assert.equal(f.count(), 1);
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); f.store.close(); }
+});
+
+test('approved run cannot send when durable claim fails', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const directory = mkdtempSync(join(tmpdir(), 'paper-claim-')); const path = join(directory, 'ledger.sqlite');
+  const order = approvedInput(); const f = fixture('success'); const store = new Store(path); const db = new DatabaseSync(path);
+  try {
+    const broker = new PaperBroker(store, f.client, approvalFor(order));
+    db.exec("CREATE TRIGGER fail_claim BEFORE UPDATE ON paper_run BEGIN SELECT RAISE(FAIL, 'claim full'); END;");
+    await assert.rejects(broker.submit(order), /claim full/); assert.equal(f.requests.length, 0); assert.equal(f.count(), 0);
+  } finally { db.close(); store.close(); f.store.close(); rmSync(directory, { recursive: true }); }
+});
+
+test('read deadline aborts an in-flight response and a monotonic expiry survives a backwards wall clock', async t => {
+  const credentials = { key: 'key', secret: 'secret', account: '00000000', product: '01' };
+  let calls = 0;
+  const client = new KisClient(credentials, async (_url, init) => {
+    calls++;
+    await new Promise((_resolve, reject) => init!.signal!.addEventListener('abort', () => reject(new Error('aborted')), { once: true }));
+    throw new Error('unreachable');
+  }, 0);
+  const keepAlive = setTimeout(() => {}, 1000);
+  try {
+    client.limitRequestsFor(30);
+    await assert.rejects(client.balance(), /통신 실패/); assert.equal(calls, 1);
+    let mono = 10; t.mock.method(performance, 'now', () => mono);
+    const other = new KisClient(credentials, async () => { calls++; return Response.json({}); }, 0);
+    other.limitRequestsFor(120000); mono += 120001;
+    t.mock.timers.enable({ apis: ['Date'], now: new Date('2000-01-01') });
+    await assert.rejects(other.balance(), /조회 시간/); assert.equal(calls, 1);
+  } finally { clearTimeout(keepAlive); }
+});
+
+test('approved interrupted attempt restores the visible halt as well as preventing more requests', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const directory = mkdtempSync(join(tmpdir(), 'paper-interrupted-')); const path = join(directory, 'ledger.sqlite');
+  const order = approvedInput(); const f = fixture('success'); let store = new Store(path);
+  try {
+    new PaperBroker(store, f.client, approvalFor(order)); store.claimPaperRun();
+    store.savePaper({ ...order, createdAt: new Date().toISOString(), tradeDate: koreaDate(), status: 'sending', filled: 0, remaining: 1, message: 'fixture interrupted' });
+    store.close(); store = new Store(path);
+    const broker = new PaperBroker(store, f.client, approvalFor(order));
+    assert.equal(store.read().risk.halted, true); assert.equal(store.paperOrders()[0].status, 'unknown');
+    assert.equal((await broker.submit(order)).status, 'unknown'); assert.equal(f.count(), 0);
+    await assert.rejects(broker.refresh(), /조회 시간/); assert.equal(f.requests.length, 0);
+  } finally { store.close(); f.store.close(); rmSync(directory, { recursive: true }); }
+});
+
+test('approved paper run fits the quote budget with production 1100ms pacing and isolated fixture traffic', { timeout: 20000 }, async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const order = approvedInput(); const f = fixture('success', 1100, approvalFor(order));
+  try {
+    assert.equal((await f.broker.submit(order)).status, 'accepted'); assert.equal(f.count(), 1);
+    assert.equal(f.store.read().risk.halted, true);
+    for (let i = 1; i < f.requests.length; i++) assert.ok(f.requests[i].startedAt - f.requests[i - 1].startedAt >= 1100);
   } finally { f.store.close(); }
 });

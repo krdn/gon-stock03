@@ -1,0 +1,34 @@
+{
+  "base_sha": "3f3bee605100287490704f825fca8d95ac05e2cc",
+  "seed_sha": "84220d19ac5095311c037b0de9fb6d69abf7bbc4",
+  "unit_api": {
+    "passed": 110,
+    "failed": 0,
+    "log_sha256": "9a6236f44c9026da2070f24f04432b2e874c89ddbb50e985ccb2209dcc75e627"
+  },
+  "build": "PASS with existing bundle warning",
+  "browser": {
+    "passed": 67,
+    "failed": 0,
+    "seconds": 48.7
+  },
+  "backup_lock_fixture": "PASS; actual ledger backup NOT_RUN",
+  "ste_strict": "FAIL exit2 missing docs/conventions/ste100-writing.md",
+  "graphify": "NOT_AVAILABLE",
+  "ready": "FAIL exit1 branch differs from remote default main",
+  "implementation_ready": "PASS",
+  "relative_links": 20,
+  "diff_check": "PASS",
+  "actual_kis_business_calls": 0,
+  "execution_or_schedule": "NOT_RUN",
+  "user_facts_pending": [
+    "execution date and official opening",
+    "same API and app mock account",
+    "manual remainder cancellation possible",
+    "current master, quote, balance and ledger",
+    "separate manual start in 10:00-10:10 KST"
+  ],
+  "review_followup_red": "Interrupted attempt retained false risk.halted; 109 pass/1 fail before repair",
+  "red_artifact": "Captured assertion failures; trailing whitespace normalized only",
+  "review": "Argon/high preparation PASS and delta PASS; server model/effort not independently verified"
+}

@@ -87,6 +87,22 @@
         }
       ],
       "decisions": "#48: fake transport로만 재현한다. 간격 기준을 단조 고해상도 시계로 측정하고 전송 함수의 동기 호출 직후를 다음 허용 시각의 기준으로 잡는다. 조기 타이머 깨움은 반복 재검사한다. 간격1100ms, 큐, guard 순서, 인증/POST 재전송 정책은 보존한다. 최초 CI의 정확한 스케줄은 로그만으로 확정하지 않는다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/9",
+      "checked_at": "2026-11-15T17:02:34.067213+00:00",
+      "objective": "조건부 승인 1회 실행 준비: 기존 HTTP 경로의 범위·시간·중복·정지·조회 종료 보완. 현재 실제 KIS 호출 없음.",
+      "sources": [
+        {
+          "url": "https://raw.githubusercontent.com/koreainvestment/open-trading-api/refs/heads/main/examples_llm/domestic_stock/order_cash/order_cash.py",
+          "finding": "공개 공식 예제 재조회: demo buy VTTC0012U, KRX, 지정가00, 수량/단가 문자열."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/koreainvestment/open-trading-api/refs/heads/main/examples_llm/domestic_stock/inquire_psbl_order/inquire_psbl_order.py",
+          "finding": "공개 공식 예제 재조회: VTTC8908R, 미수 없는 수량 ORD_DVSN01/nrcvb_buy_qty, nrcvb_buy_amt."
+        }
+      ],
+      "decisions": "승인 ID·날짜를 고정한 opt-in 제한을 기존 주문 경로에 적용. 공식 개장·API/앱 계좌 일치·취소 가능성은 사용자 사실확인으로 남김. KRX URL 이번 재조회403; 특정 실행일 개장 확인 아님. 모델은 사용자 지정 Argon/high, 중앙 설정은 변경하지 않음."
     }
   ],
   "integration_scope": "기존 두 조사 기록과 checked_at 보존. 실제 KIS 호출 없이 결합 회귀·독립 리뷰·PR 통합만 수행. #9 승인 및 후속 차단 유지."
