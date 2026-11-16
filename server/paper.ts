@@ -5,7 +5,7 @@ import { Store } from './store.ts';
 import { halt, record } from './engine.ts';
 import { z } from 'zod';
 
-export const paperApprovalSchema = z.object({ date: z.iso.date(), requestId: z.uuid(), cancelProbe: z.literal(true).optional(), code: z.enum(['069500', '005930']).optional(), maxAmount: z.number().int().positive().max(200000).optional() }).strict();
+export const paperApprovalSchema = z.object({ date: z.iso.date(), requestId: z.uuid(), cancelProbe: z.literal(true).optional(), code: z.enum(['069500', '005930']).optional(), maxAmount: z.number().int().positive().max(200000).optional(), allowExistingHolding: z.literal(true).optional() }).strict();
 export type PaperApproval = z.infer<typeof paperApprovalSchema>;
 
 export const paperCapabilities = {
@@ -133,7 +133,7 @@ export class PaperBroker {
       if (this.approval && this.store.read().risk.halted) throw new Error('신규 주문 정지 상태입니다.');
       const { connection, brokerOrders } = await this.refreshInsideQueue(true); const balance = connection.balance!;
       if (this.store.paperOrders().some(o => o.status === 'unknown')) throw new Error('계좌 대조 중 응답 불명 주문이 확인되었습니다.');
-      if (this.approval && (brokerOrders.some(o => o.remaining > 0) || balance.positions.some(p => p.code === input.code && p.qty > 0) || balance.cash <= input.price)) throw new Error('승인 조건의 빈 보유·미체결 없음·현금 여유를 충족하지 못했습니다.');
+      if (this.approval && (brokerOrders.some(o => o.remaining > 0) || (!this.approval.allowExistingHolding && balance.positions.some(p => p.code === input.code && p.qty > 0)) || balance.cash <= input.price)) throw new Error('승인 조건의 빈 보유·미체결 없음·현금 여유를 충족하지 못했습니다.');
       const quoteStarted = performance.now(), quoteStartedAt = Date.now();
       const quote = await this.kis.quote(input.code, true);
       const quoteReceived = performance.now();

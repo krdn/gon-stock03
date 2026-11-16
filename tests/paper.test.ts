@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only', spacing = 0, approval?: { date: string; requestId: string; cancelProbe?: true; code?: '069500' | '005930'; maxAmount?: number }) {
+function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only', spacing = 0, approval?: { date: string; requestId: string; cancelProbe?: true; code?: '069500' | '005930'; maxAmount?: number; allowExistingHolding?: true }) {
   let submits = 0;
   const response = { cancelMode: 'success', cash: '10000000', totalEquity: '10000000', nonCreditCash: '10000000', positions: [] as Record<string, string>[], price: '70000', upper: '91000', tick: '100', rows: [] as Record<string, string>[], before: async (_path: string) => {}, receipt: { rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } } as unknown };
   const requests: { url: URL; init: RequestInit | undefined; startedAt: number }[] = [];
@@ -759,4 +759,18 @@ test('approved quote failures distinguish price, tick and latency without submit
       assert.equal(f.count(), 0); assert.equal(f.store.read().risk.halted, true);
     } finally { f.store.close(); }
   }
+});
+
+
+test('explicit holding approval preserves existing positions and remains pinned on restart', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T15:22:00+09:00') });
+  const order = input(); const approval = { ...approvalFor(order), code: '005930' as const, allowExistingHolding: true as const };
+  const f = fixture('success', 0, approval);
+  try {
+    f.response.positions = [{ pdno: '005930', prdt_name: 'fixture', hldg_qty: '2', pchs_avg_pric: '70000' }];
+    assert.throws(() => new PaperBroker(f.store, f.client, { ...approval, allowExistingHolding: undefined }), /승인/);
+    assert.equal((await f.broker.submit(order)).status, 'accepted');
+    assert.equal(f.count(), 1); assert.equal(f.store.read().risk.halted, true);
+    assert.equal(f.response.positions[0].hldg_qty, '2');
+  } finally { f.store.close(); }
 });
