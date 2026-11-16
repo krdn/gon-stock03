@@ -126,7 +126,7 @@ export class PaperBroker {
     if (!order || order.status !== 'unknown' || order.brokerId) throw new Error('주문번호 없는 응답 불명 주문만 명시적 복구할 수 있습니다.');
     return order;
   }
-  async submit(input: OrderInput): Promise<PaperOrder> {
+  async submit(input: OrderInput, checkSignal?: () => void): Promise<PaperOrder> {
     return this.enqueue(async () => {
       const existing = this.store.paperOrders().find(o => o.requestId === input.requestId);
       if (existing) {
@@ -134,6 +134,7 @@ export class PaperBroker {
         return existing;
       }
       if (this.store.realtimeRequired() && !this.realtimeGuard) throw new KisNotSent('실시간 대조 안전장치 없이 신규 주문을 실행할 수 없습니다.');
+      checkSignal?.();
       const checkRealtime = this.realtimeGuard?.(input.code);
       if (this.approval) {
         if (input.requestId !== this.approval.requestId || input.code !== (this.approval.code ?? '069500') || input.side !== 'buy' || input.qty !== 1 || !Number.isSafeInteger(input.price) || input.price <= 0 || input.price > (this.approval.maxAmount ?? 100000)) throw new Error('조건부 1회 승인 범위와 주문이 다릅니다.');
@@ -181,6 +182,7 @@ export class PaperBroker {
       this.riskOrders = null;
       try {
         const receipt = await this.kis.submit(input, () => {
+          checkSignal?.();
           checkRealtime?.();
           this.checkWindow();
           if (this.approval && (performance.now() - quoteReceived > 5000 || Date.now() - Date.parse(quote.receivedAt) > 5000 || Date.now() < Date.parse(quote.receivedAt))) throw new KisNotSent('승인된 시세의 5초 유효기간이 지났습니다.');

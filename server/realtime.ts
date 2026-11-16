@@ -29,6 +29,7 @@ export class Realtime {
   private seen = new Set<string>();
   private quoteTime = 0;
   private volume = -1;
+  private stopped = false;
   private history: number[] = [];
   private consumed = 0;
   private retry?: ReturnType<typeof setTimeout>;
@@ -38,15 +39,16 @@ export class Realtime {
   private required: boolean;
   constructor(private store: Store, private paper: PaperBroker, private config?: RealtimeConfig, private connect: SocketFactory = socketFactory, private now = Date.now) {
     this.required = store.realtimeRequired();
-    paper.setRealtimeGuard(code => {
-      const generation = this.generation, revision = this.revision, quoteTime = this.quoteTime;
-      const check = () => {
-        if (!this.required) return;
-        this.assertReady(code);
-        if (generation !== this.generation || revision !== this.revision || this.now() - quoteTime > 5000 || this.now() < quoteTime) throw new KisNotSent('주문 검증 중 실시간 상태가 바뀌었습니다. 다시 확인하세요.');
-      };
-      check(); return check;
-    });
+    paper.setRealtimeGuard(code => this.orderGuard(code));
+  }
+  private orderGuard(code: string) {
+    const generation = this.generation, revision = this.revision, quoteTime = this.quoteTime;
+    const check = () => {
+      if (!this.required) return;
+      this.assertReady(code);
+      if (generation !== this.generation || revision !== this.revision || this.now() - quoteTime > 5000 || this.now() < quoteTime) throw new KisNotSent('주문 검증 중 실시간 상태가 바뀌었습니다. 다시 확인하세요.');
+    };
+    check(); return check;
   }
   static configuration(): RealtimeConfig | undefined {
     if (!process.env.KIS_WS_SESSION) return undefined;
@@ -64,7 +66,7 @@ export class Realtime {
   }
   status(): RealtimeStatus {
     const age = this.now() - this.quoteTime;
-    const fresh = this.quoteTime > 0 && age >= 0 && age <= 5000 && this.sessionOpen();
+    const fresh = !this.stopped && this.quoteTime > 0 && age >= 0 && age <= 5000 && this.sessionOpen();
     const ordersAllowed = this.state.phase === 'ready' && fresh && this.reconciledRevision === this.revision && !this.store.read().risk.halted;
     return { ...this.state, required: this.required, fresh, ordersAllowed, message: this.state.phase === 'ready' && !ordersAllowed ? '신규 주문 차단 · 시세 지연/장외 또는 긴급정지를 확인하세요.' : this.state.message };
   }
@@ -77,8 +79,9 @@ export class Realtime {
   }
   start(code: string) {
     if (!/^\d{6}$/.test(code) || !this.config?.approvalKey.trim() || !this.config.htsId.trim() || !this.sessionOpen()) throw new Error('실시간 시작에는 서버 비밀주입과 당일 개장·거래시간 확인이 필요합니다.');
-    if (this.socket || this.retry) throw new Error('실시간 수신이 이미 시작되었습니다.');
+    if (this.socket) throw new Error('실시간 수신이 이미 시작되었습니다.');
     if (this.store.read().risk.halted) throw new Error('긴급정지 상태에서는 실시간 수신을 시작할 수 없습니다.');
+    clearTimeout(this.retry); this.retry = undefined;
     this.store.requireRealtime(); this.required = true;
     this.state = { ...initial(), code }; this.attempts = 0; this.history = []; this.consumed = 0;
     this.open();
@@ -87,7 +90,7 @@ export class Realtime {
     if (!this.sessionOpen() || this.store.read().risk.halted) { this.stop(); return; }
     const generation = ++this.generation;
     this.acknowledgements.clear(); this.key = undefined; this.iv = undefined;
-    this.quoteTime = 0; this.volume = -1; this.history = []; this.seen.clear();
+    this.quoteTime = 0; this.volume = -1; this.stopped = false; this.history = []; this.seen.clear();
     this.invalidate('구독 확인과 REST 대조 전 신규 주문 차단'); this.state.phase = 'connecting';
     this.lastFrame = this.now();
     let socket: Socket;
@@ -141,6 +144,7 @@ export class Realtime {
       const tr = message.header?.tr_id;
       if (tr === 'PINGPONG') { if (Buffer.byteLength(raw) > 125) throw new Error(); this.socket!.pong(raw); return; }
       if (String(message.body?.msg1 ?? '').startsWith('UNSUB') || ![PRICE, NOTICE].includes(tr) || message.body?.rt_cd !== '0' || message.header?.tr_key !== (tr === PRICE ? this.state.code : this.config!.htsId)) throw new Error();
+      if (this.acknowledgements.has(tr)) throw new Error();
       if (tr === NOTICE) {
         const key = message.body.output?.key, iv = message.body.output?.iv;
         if (typeof key !== 'string' || typeof iv !== 'string' || Buffer.byteLength(key) !== 32 || Buffer.byteLength(iv) !== 16) throw new Error();
@@ -182,9 +186,11 @@ export class Realtime {
     const time = Date.parse(`${date}T${row[1].slice(0, 2)}:${row[1].slice(2, 4)}:${row[1].slice(4)}+09:00`);
     const price = Number(row[2]), volume = Number(row[13]), age = this.now() - time;
     if (!Number.isSafeInteger(price) || price <= 0 || !Number.isSafeInteger(volume) || !Number.isFinite(time)) throw new Error();
-    if (row[35] === 'Y') { this.quoteTime = 0; return; }
     if (time < Date.parse(`${this.config!.session.date}T${this.config!.session.open}:00+09:00`)) return;
-    if (!this.sessionOpen() || date !== this.config!.session.date || age < 0 || age > 5000 || time < this.quoteTime || volume <= this.volume) return;
+    if (!this.sessionOpen() || date !== this.config!.session.date || age < 0 || age > 5000 || time < this.quoteTime || volume < this.volume) return;
+    if (row[35] === 'Y') { this.quoteTime = time; this.volume = volume; this.stopped = true; return; }
+    if (volume === this.volume) return;
+    this.stopped = false;
     this.quoteTime = time; this.volume = volume; this.state.price = price; this.state.lastQuoteAt = new Date(time).toISOString();
     this.history.push(price); this.history = this.history.slice(-500);
   }
@@ -199,7 +205,7 @@ export class Realtime {
       this.state.phase = 'ready'; this.state.message = 'REST 대조 완료 · 신선한 시세에서만 주문 허용';
       this.event('KIS 실시간 REST 대조 완료', '대조를 확인했습니다. 전략은 자동 재개하지 않습니다.', 'info');
     } catch {
-      if (generation === this.generation) this.invalidate('REST 대조 실패 또는 대조 중 통보 수신 · 다시 대조 필요');
+      if (generation === this.generation && revision === this.revision) this.invalidate('REST 대조 실패 또는 대조 중 통보 수신 · 다시 대조 필요');
       throw new Error('실시간 대조를 완료하지 못했습니다. 신규 주문 차단을 유지합니다.');
     }
   }
@@ -209,10 +215,11 @@ export class Realtime {
   async submitSignal(input: Pick<OrderInput, 'requestId' | 'qty'> & { fast: number; slow: number }) {
     this.assertReady(this.state.code!);
     if (!Number.isInteger(input.fast) || !Number.isInteger(input.slow) || input.fast < 1 || input.slow <= input.fast || input.slow > 499) throw new Error('전략 기간을 확인하세요.');
+    const validated = orderInput.pick({ requestId: true, qty: true }).parse({ requestId: input.requestId, qty: input.qty });
     if (this.volume <= this.consumed) return null;
     this.consumed = this.volume;
     const side = signal(this.history, input.fast, input.slow);
     if (side === 'hold') return null;
-    return this.paper.submit(orderInput.parse({ requestId: input.requestId, qty: input.qty, code: this.state.code!, price: this.state.price!, side }));
+    return this.paper.submit(orderInput.parse({ ...validated, code: this.state.code!, price: this.state.price!, side }), this.orderGuard(this.state.code!));
   }
 }

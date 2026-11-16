@@ -36,3 +36,23 @@ test('모의 화면은 명시적 실시간 시작 실패를 표시하며 자동 
   await expect(panel).toContainText('미연결');
   await expect(panel.getByRole('button', { name: '실시간 REST 대조' })).toBeDisabled();
 });
+
+test('실시간 차단과 다른 구독 종목은 모의 주문 확인을 비활성화한다', async ({ page }) => {
+  const state = snapshot();
+  state.realtime = { phase: 'ready', required: true, ordersAllowed: false, message: '시세 지연', code: '005930', lastQuoteAt: new Date().toISOString(), lastNoticeAt: null, reconciledAt: null, price: 70000, fresh: false };
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.route('**/api/kis/ledger', route => route.fulfill({ json: { orders: [] } }));
+  await page.route('**/api/kis/market', route => route.fulfill({ json: { quote: { code: '005930', price: 70000, change: 0, stopped: false, receivedAt: new Date().toISOString() }, bars: [] } }));
+  await page.goto('/paper'); await page.getByRole('button', { name: '시세·일봉 조회' }).click();
+  await expect(page.getByRole('button', { name: 'KIS 모의 주문 확인', exact: true })).toBeDisabled();
+  state.realtime = { ...state.realtime, ordersAllowed: true, fresh: true, code: '000660' };
+  await page.reload(); await page.getByRole('button', { name: '시세·일봉 조회' }).click();
+  await expect(page.getByRole('button', { name: 'KIS 모의 주문 확인', exact: true })).toBeDisabled();
+  state.realtime = { ...state.realtime, code: '005930', lastQuoteAt: new Date().toISOString() };
+  await page.reload(); await page.getByRole('button', { name: '시세·일봉 조회' }).click();
+  await page.getByRole('button', { name: 'KIS 모의 주문 확인', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'KIS 모의 주문 전송', exact: true })).toBeEnabled();
+  state.realtime = { ...state.realtime, ordersAllowed: false, fresh: false };
+  await expect(page.getByRole('button', { name: 'KIS 모의 주문 전송', exact: true })).toBeDisabled();
+
+});

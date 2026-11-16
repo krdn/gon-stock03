@@ -2,7 +2,7 @@
 
 [이슈 #19](https://github.com/krdn/gon-stock03/issues/19). 시작 main `af159134162b5aaa9aeabdbdf4f8c36ccbea4e11`(PR61), `feat/19-realtime`, `/home/gon/llm-projects/gon-stock03-worktrees/19-realtime`.
 
-- 현재: t7k 소유권 인계 후 착수. 선행 completed·PR61 merged·main CI2 SUCCESS 재조회, #19 Blocked(지정 리뷰 미완료). 실시간 수신·대조 안전장치 구현, 단위148·브라우저107·build PASS. 지정 Argon 리뷰는240초 timeout/exit3으로 미완료. [초안 PR62](https://github.com/krdn/gon-stock03/pull/62), 제품 SHA `e52731d34ac8eaf98186d75d7da43acdef13d32e`. 최신 head CI는 PR checks와 #19 원격 인계 기록에서 확인한다. 지정 리뷰 결과 확보가 필요하다. [검증 기록](../verification/2026-11-16-realtime.md).
+- 현재: #19 구현과 Argon 지적 수정 완료, 사용자 수용·통합 대기. 단위154·브라우저108·build PASS, Argon 수정분 PASS(요청/init 일치, 서버 내부 모델·effort 미검증). 최초 timeout 이후 기존 리뷰 FAIL을 확보했고, 수정 후 재검토 PASS를 받았다. [초안 PR62](https://github.com/krdn/gon-stock03/pull/62). [검증 기록](../verification/2026-11-16-realtime.md). 최신 head CI는 PR checks에서 확인한다.
 - 범위: 공식 모의 WebSocket·거래시간 계약 확인, 시세/체결통보 수신·중복 제거·순서 역전·끊김 후 REST 대조. 신호·주문은 기존 공통 경로에 연결하고 주문/알림/데이터 화면의 상태를 함께 갱신한다.
 - 필수 읽기: AGENTS·WORKFLOW·#19, server/kis.ts·paper.ts·index.ts·engine.ts, src/pages/Trading.tsx·Operations.tsx·Workspace.tsx의 관련 심볼, src/specs.ts, tests/browser/workbench.spec.ts와 관련 회귀만 확인한다.
 - 완료 조건: 지연/장외 입력 통제, 재연결 후 대조 전 신규 주문 차단, 중복 통보의 중복 주문 방지, 재시작 자동 거래 재개 없음, 긴급정지/끊김 장애 주입, 모의 도메인/TR 전용, 승인키·체결 식별값 서버 비밀주입/비노출, S05/S11/S12 상태 연결. 공식 모의 미지원은 추정 구현하지 않고 범위 조정·Blocked 근거를 기록한다.
@@ -17,6 +17,6 @@
 
 세션: Herdr 탭 `tb15271d00c65ed94d14a9a4fc101b1a36` / 터미널 `t7m`, Codex `01a1e3db-402a-7b90-b865-fad44630ae2a`. 실제 화면·pwd·세션 ID 일치 및 준비 응답을 t7k가 확인했다. t7k의 명시 소유권 메시지를 받고 구현을 시작했다. 부모 편집 중단·추가 에이전트 금지를 유지한다.
 
-남은 조건: 지정 모델 독립 리뷰 결과와 지적 처리 → 사용자 수용·통합. #19 completed/Done 처리와 #22/#25 해제 없음. 이번 작업에서 실제 KIS 연결·인증·주문·취소는 하지 않았다.
+남은 조건: 최신 head CI 확인 → 사용자 수용·통합. 지정 모델 지적 처리·수정분 재검토 PASS. #19 completed/Done 처리와 #22/#25 해제 없음. 이번 작업에서 실제 KIS 연결·인증·주문·취소는 하지 않았다.
 
 전달: 제품 커밋을 origin/feat/19-realtime에 푸시했다. 표준 handoff dry-run은 기존 미추적 graphify-out 때문에 exit1이었다. 해당 폴더를 삭제·숨김·커밋하지 않고 기록 파일 고정 링크와 CI 결과를 #19에 직접 남긴다.

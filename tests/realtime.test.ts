@@ -1,14 +1,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
+import { request } from 'node:http';
+import type { StateSnapshot } from '../shared/model.ts';
 import { Store } from '../server/store.ts';
 import { makeServer } from '../server/http.ts';
 
 test('실시간은 재시작 시 미연결이며 GET 상태는 비밀값이나 네트워크 호출 없이 차단 사유를 제공한다', async () => {
   const store = new Store(':memory:'); const server = makeServer(store, undefined, [4319]);
-  server.listen(4319, '127.0.0.1'); await once(server, 'listening');
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
   try {
-    const state = await (await fetch('http://127.0.0.1:4319/api/state')).json();
+    const port = (server.address() as AddressInfo).port;
+    const state = await new Promise<StateSnapshot>((resolve, reject) => {
+      const req = request(`http://127.0.0.1:${port}/api/state`, { headers: { Host: '127.0.0.1:4319' } }, res => {
+        const chunks: Buffer[] = []; res.on('data', chunk => chunks.push(chunk)); res.on('error', reject);
+        res.on('end', () => { try { assert.equal(res.statusCode, 200); resolve(JSON.parse(Buffer.concat(chunks).toString())); } catch (error) { reject(error); } });
+      });
+      req.on('error', reject); req.end();
+    });
     assert.equal(state.realtime?.phase, 'stopped');
     assert.equal(state.realtime?.ordersAllowed, false);
     assert.equal(state.realtime?.lastQuoteAt, null);
@@ -208,5 +218,79 @@ test('구독 거부·재연결 한도·수신 타임아웃은 주문 차단을 �
     }
     assert.equal(f.sockets.length, 4); t.mock.timers.tick(60000); assert.equal(f.sockets.length, 4);
     assert.equal(JSON.stringify(f.store.events()).includes('private broker rejection'), false);
+  } finally { f.close(); }
+});
+
+test('REST 큐에서 오래 대기한 전략 신호는 새 시세가 와도 전송하지 않는다', async () => {
+  const f = fixture();
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  try {
+    const ws = f.start(); await f.realtime.reconcile();
+    for (const [index, price] of [70000, 69000, 71000].entries()) ws.frame(priceFrame(index + 1, price));
+    let waiting = true;
+    f.response.before = async path => { if (waiting && path.endsWith('/inquire-balance')) { waiting = false; entered(); await gate; } };
+    const refresh = f.paper.refresh(true); await started;
+    const pending = f.realtime.submitSignal({ requestId: randomUUID(), qty: 1, fast: 1, slow: 2 });
+    const rejected = assert.rejects(pending, /시세|실시간|신호/);
+    f.setNow(base + 6000); ws.frame(priceFrame(4, 72000, '100006'));
+    release(); await refresh; await rejected;
+    assert.equal(f.requests.some(path => path.endsWith('/order-cash')), false);
+  } finally { release?.(); f.close(); }
+});
+
+test('거래정지 워터마크는 과거 시세로 해제되지 않고 같은 거래량의 정지도 적용한다', async () => {
+  const f = fixture();
+  try {
+    const ws = f.start(); await f.realtime.reconcile(); f.setNow(base + 5000);
+    ws.frame(priceFrame(4, 70100, '100005'));
+    ws.frame(priceFrame(5, 70100, '100005', '20261116', 'Y'));
+    ws.frame(priceFrame(6, 70000, '100002'));
+    assert.equal(f.realtime.status().ordersAllowed, false);
+    ws.frame(priceFrame(6, 70200, '100005')); assert.equal(f.realtime.status().ordersAllowed, true);
+    ws.frame(priceFrame(6, 70200, '100005', '20261116', 'Y')); assert.equal(f.realtime.status().ordersAllowed, false);
+    ws.frame(priceFrame(6, 70200, '100005')); assert.equal(f.realtime.status().ordersAllowed, false);
+    f.setNow(base + 6000); ws.frame(priceFrame(7, 70300, '100006')); assert.equal(f.realtime.status().ordersAllowed, true);
+    ws.frame(priceFrame(8, 70300, '100000', '20261115', 'Y')); assert.equal(f.realtime.status().ordersAllowed, true);
+  } finally { f.close(); }
+});
+
+test('이전 대조의 실패는 통보 이후 시작한 대조를 무효화하지 않는다', async () => {
+  const f = fixture(); let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let entered!: () => void; const started = new Promise<void>(resolve => { entered = resolve; });
+  try {
+    const ws = f.start(); ws.frame(priceFrame()); let waiting = true;
+    f.response.before = async path => { if (waiting && path.endsWith('/inquire-balance')) { waiting = false; entered(); await gate; } };
+    const first = assert.rejects(f.realtime.reconcile(), /완료하지/); await started;
+    ws.frame(noticeFrame()); const second = f.realtime.reconcile(); release();
+    await first; await second; assert.equal(f.realtime.status().ordersAllowed, true);
+  } finally { release?.(); f.close(); }
+});
+
+test('잘못된 전략 입력은 유효한 같은 시세 신호를 소모하지 않는다', async () => {
+  const f = fixture();
+  try {
+    const ws = f.start(); await f.realtime.reconcile();
+    for (const [index, price] of [70000, 69000, 71000].entries()) ws.frame(priceFrame(index + 1, price));
+    await assert.rejects(f.realtime.submitSignal({ requestId: randomUUID(), qty: 0, fast: 1, slow: 2 }));
+    assert.ok(await f.realtime.submitSignal({ requestId: randomUUID(), qty: 1, fast: 1, slow: 2 }));
+  } finally { f.close(); }
+});
+
+test('중복 구독 ACK는 기존 대조를 해제하고 연결을 닫는다', async () => {
+  const f = fixture();
+  try {
+    const ws = f.start(); await f.realtime.reconcile(); ws.frame(priceFrame()); ws.acknowledge();
+    assert.equal(ws.closed, true); assert.equal(f.realtime.status().ordersAllowed, false);
+  } finally { f.close(); }
+});
+
+test('끊김 뒤 명시적 시작은 대기 중인 재연결 타이머를 대체한다', () => {
+  const f = fixture();
+  try {
+    const ws = f.start(); ws.emit('close'); f.start();
+    assert.equal(f.sockets.length, 2); assert.equal(f.realtime.status().phase, 'reconciling');
   } finally { f.close(); }
 });
