@@ -15,6 +15,8 @@ AGENTS·WORKFLOW·이슈 #25/PR63 최신 상태, `docs/operations/local.md`, `do
 
 ## 준비 결과와 다음 행동
 
+- 2026-11-17: main `99f6730`의 [15개 화면 초기/DEMO 표시·배치 부분 수용](../verification/2026-11-17-ui-acceptance.md)을 기록했다. PC/모바일 캡처36개·지정 Argon 검토와 사용자 답변을 보존한다. 실제 장중/동적 오류·복구 흐름은 미수용이다.
+
 - [증거·실행 전제·중단 조건](../verification/2026-11-16-validation-prep.md)에 #25 완료 조건을 실제 관측/격리 회귀/미관측으로 구분했다.
 - #2 P2를 임시 DB·loopback HTTP로 모두 재현했다. [#64 WAL/SHM 권한](https://github.com/krdn/gon-stock03/issues/64), [#65 정적 파일 경로 노출](https://github.com/krdn/gon-stock03/issues/65)로 수정 범위를 분리했다. 이번에는 제품 코드 수정 없음.
 - 원격 기준 main·PR63·선행15 completed·#22 Done·#25 Blocked 및 준비 head a2b7826 CI2 SUCCESS 확인. 단위166·브라우저113·build·지정 Argon/high 준비 검토 PASS. STE exit2 한계 유지. 초안 PR의 최종 SHA·CI는 #25 전달 댓글을 기준으로 확인한다.
