@@ -2,7 +2,7 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매.
 
-- **현재:** [#14 KIS 모의 매매 화면](tasks/14-paper.md). `feat/14-paper`, 최신 main `46593c56abc5f6958f21e163bdd8d4758b79c2b6` 기반 전용 worktree. 선행 #8/#13/#11 closed/completed·Project Done, #14 Ready 확인. 새 세션 소유권 전달 전 제품 구현은 시작하지 않았다.
+- **현재:** [#14 KIS 모의 매매 화면](tasks/14-paper.md). `feat/14-paper`, 최신 main `46593c56abc5f6958f21e163bdd8d4758b79c2b6` 기반 전용 worktree. 선행 #8/#13/#11 completed·PR60/main CI를 재조회하고 소유권 인계 후 #14 In Progress. 요청 보존·입력 보존·불명 복구 화면 구현, 단위137·브라우저103·Argon 리뷰 PASS. 초안 PR/CI 전달 단계. [검증 기록](verification/2026-11-16-paper.md).
 - **통합:** [PR60](https://github.com/krdn/gon-stock03/pull/60) merge `46593c5`, head `e1ab060` CI4·main CI2 SUCCESS. [#13·#18 결합 검증](verification/2026-11-16-orders-dashboard-integration.md): 단위137·브라우저95·빌드·Argon INTEGRATION PASS. 원본 PR58/59는 원래 head를 보존한 채 GitHub merged. #13/#18 completed/Done.
 - **수용 범위:** 반복된 사용자 다음 작업 진행 지시를 PR60 기술 수용·통합 후 #14 진행으로 해석했다. 사용자 직접 육안 관찰·장중 수용을 주장하지 않는다. 과거 후보 단계의 완료·선행 해제 보류는 이번 통합 상태로 갱신했다.
 - **다음:** #14 구현·격리검증·지정 리뷰·PR/CI 전달. #19는 #14 open 때문에 Blocked, #22는 #19, #25는 #14/#22 대기. 선행 완료 전에 착수하지 않는다.

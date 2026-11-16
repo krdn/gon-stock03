@@ -2,7 +2,7 @@
 
 [이슈 #14](https://github.com/krdn/gon-stock03/issues/14). 시작 main `46593c56abc5f6958f21e163bdd8d4758b79c2b6`, `feat/14-paper`, `/home/gon/llm-projects/gon-stock03-worktrees/14-paper`.
 
-- 현재: 인계 준비. 제품 구현 미시작. 선행 #8/#13/#11 closed/completed·Project Done, PR60 main CI2 SUCCESS 확인 후 #14 Ready로 변경했다.
+- 현재: 소유권 인계 후 #14 In Progress. 원격 선행 completed·PR60/main CI 성공 재조회. 구현과 격리 검증을 진행하며 [검증 기록](../verification/2026-11-16-paper.md)에 결과를 남긴다.
 - 범위: /paper의 KIS 환경·접수/부분체결/체결/취소/불명 표시, 요청 ID 보존·재전송 방지, 조회 중 입력 보존, #12/#13의 종목·원장 맥락 연결. 기존 C03 안전장치·일반 웹 취소/정정409 차단을 유지한다.
 - 필수 읽기: AGENTS·WORKFLOW·#14, src/pages/Paper.tsx, server/paper.ts의 저장/조회/불명복구, src/specs.ts paper, tests/browser/workbench.spec.ts 및 관련 paper 회귀. 기존 #9 실증 전체 로그를 재독하지 않고 필요하면 검증 문서의 해당 절만 확인한다.
 - 완료 조건: 이슈 계약을 확인해 미구현·회귀 위험을 구분한다. fake transport/격리 DB의 단위·브라우저·모바일·지정 리뷰·CI 증거를 남긴다. 실제 조회 대조·부분체결·장중 복구는 #25와 구분하며 fixture PASS로 대신하지 않는다.
@@ -13,3 +13,5 @@
 - 전달: 구현·검증 후 작업 파일/STATE·검증 기록을 갱신하고 커밋·푸시·초안 PR·최신 head CI 확인. #14 자체 수용/통합 전 completed/Done·#19 선행 해제를 주장하지 않는다.
 
 PR60 기술 수용·통합과 #13/#18 완료는 이번 사용자 다음 작업 진행 지시에 따른 처리다. 직접 화면 관찰이나 실제 KIS 실행 승인을 뜻하지 않는다. #19/#22/#25는 계속 Blocked다. root와 다른 worktree, .codex·graphify-out·node_modules 및 전역 hook 설정을 보존한다.
+
+구현: 가격/수량 보존·늦은 시세 응답 폐기, 요청 ID/내용의 탭 저장 및 미확인 차단, 서버 저장 원장 대조, 명시적 불명 복구 확인. 기존 서버 안전장치는 변경하지 않았다. 단위137 PASS·build PASS·전체 브라우저103 PASS(최종 paper8 재확인 PASS). 지정 Argon/high 리뷰 PASS(P0–P3 지적0), 요청/init 모델 일치·서버 내부 모델/effort 미검증. 커밋·초안 PR/CI 전달 단계이며 사용자 수용·통합은 남아 있다.

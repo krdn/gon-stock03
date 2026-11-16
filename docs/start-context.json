@@ -1,17 +1,17 @@
 {
-  "checked_at": "2026-11-16T09:24:58.070873+00:00",
-  "objective": "PR58·59 결합 후보: 환경 표기와 기존 기능 보존, 격리 검증",
+  "checked_at": "2026-11-16T09:53:44.564084+00:00",
+  "objective": "#14 요청 ID 보존·입력 보존·로컬 원장·명시적 불명 복구 화면",
   "sources": [
     {
-      "url": "https://react.dev/reference/react/useEffect",
-      "finding": "의존성 변경과 unmount에서 cleanup 실행. 주문 화면의 이전 응답 폐기 보존."
+      "url": "https://react.dev/reference/react/useRef",
+      "finding": "렌더 사이 ref 보존 및 이벤트 핸들러에서 동기 잠금 가능. 표시 상태는 state로 관리한다."
     },
     {
-      "url": "https://react.dev/learn/you-might-not-need-an-effect",
-      "finding": "기존 상태의 파생값은 렌더 중 계산. 대시보드에 별도 KIS 요청을 추가하지 않는다."
+      "url": "https://react.dev/reference/react/useEffect",
+      "finding": "의존 변경·unmount에서 cleanup 실행. 비동기 조회의 늦은 응답을 폐기한다."
     }
   ],
-  "decisions": "두 원본 PR 기능과 기록 보존. App 환경 표기는 dashboard/orders 모두 유지. 실제 KIS 업무 호출 금지.",
+  "decisions": "기존 C03 서비스와 원장 스키마 재사용. 실제 KIS 업무API 호출 없이 격리 검증. 고정 승인과 웹 취소409 유지.",
   "status": "reviewed",
   "task_contexts": [
     {
@@ -198,6 +198,22 @@
         }
       ],
       "decisions": "두 원본 PR 기능과 기록 보존. App 환경 표기는 dashboard/orders 모두 유지. 실제 KIS 업무 호출 금지."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/14",
+      "checked_at": "2026-11-16T09:53:44.564084+00:00",
+      "objective": "#14 요청 ID 보존·입력 보존·로컬 원장·명시적 불명 복구 화면",
+      "sources": [
+        {
+          "url": "https://react.dev/reference/react/useRef",
+          "finding": "렌더 사이 ref 보존 및 이벤트 핸들러에서 동기 잠금 가능. 표시 상태는 state로 관리한다."
+        },
+        {
+          "url": "https://react.dev/reference/react/useEffect",
+          "finding": "의존 변경·unmount에서 cleanup 실행. 비동기 조회의 늦은 응답을 폐기한다."
+        }
+      ],
+      "decisions": "기존 C03 서비스와 원장 스키마 재사용. 실제 KIS 업무API 호출 없이 격리 검증. 고정 승인과 웹 취소409 유지."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."
