@@ -2,7 +2,7 @@
 
 [이슈 #22](https://github.com/krdn/gon-stock03/issues/22). 시작 main `54754f81e831cf3a6b24085229ca68c485dc8c86`(PR62), `feat/22-strategies`, `/home/gon/llm-projects/gon-stock03-worktrees/22-strategies`.
 
-- 현재: 전용 worktree·Herdr 탭 준비 완료. main CI2 SUCCESS, #19/#21 completed·통합·Done 확인. t7m의 명시적 소유권 인계 전 구현 금지.
+- 현재: t7m 소유권 인계 후 #22 구현·격리 검증 진행. main CI2 SUCCESS, #19/#21 completed·통합·Done을 재확인했다. 초안 PR·최신 head CI·사용자 수용은 아직 미완료.
 - 범위: 검증된 실시간 입력과 공통 주문 경로에 KIS 모의 전략 연결. 주문 없는 평가도 신호·차단 이유 기록. S01 실행 전략 집계와 위험관리 KIS 전략 경로 재검증 포함.
 - 필수 읽기: AGENTS·WORKFLOW·#22, `src/pages/Research.tsx`, `server/engine.ts`·`paper.ts`·`realtime.ts`, `src/pages/Workspace.tsx`·`Operations.tsx`, `src/specs.ts`, `tests/browser/workbench.spec.ts`와 관련 회귀. 전체 이력 재독 없음.
 - 완료 조건: 동일 이벤트 중복 주문 없음, 정지/재시작 후 신규 주문 없음, 전략 revision·신호·주문 ID 연결, 수동 보유 매도 정책, 공통 금액·손실·종목 한도·긴급정지, S01 상태/차단 이유, 모의 도메인/TR·승인 범위 고정, 행동/API/실패/완료 계약과 회귀 갱신.
@@ -13,6 +13,16 @@
 - 보존: 다른 worktree, .local 원장/백업/보유, .codex·graphify-out·node_modules·전역 hook. 강제푸시·보호 우회 없음. 추가 에이전트·부모에게 검증 재위임 없음.
 - 전달: 작업/STATE·검증/실패/미검증을 저장하고 커밋·푸시·초안 PR·CI 확인. 사용자 수용·통합 전 completed/Done·#25 해제 금지. 표준 handoff가 graphify-out 때문에 거부되면 폴더를 보존하고 고정 링크와 실패를 원격 기록한다.
 
-세션 준비: Herdr 탭 `tb549e07dd4cb4400b2e67f6eb549093b2`, 터미널 `t7n`. 새 세션 `01a1e468-8ee9-7970-88cd-b192f2e2bf0d`의 실제 pwd·ID·Herdr 화면을 t7m이 확인했다. 선행/main CI 확인 뒤 별도 시작 메시지로 소유권을 넘긴다. 인계 뒤 부모는 제품 편집을 중단한다.
+세션 준비: Herdr 탭 `tb549e07dd4cb4400b2e67f6eb549093b2`, 터미널 `t7n`. 새 세션 `01a1e468-8ee9-7970-88cd-b192f2e2bf0d`의 실제 pwd·ID·Herdr 화면을 t7m이 확인했다. 선행/main CI 확인 뒤 별도 시작 메시지로 소유권을 넘긴다. 인계 뒤 부모는 제품 편집을 중단했다.
 
 기타 점검: #2에 SQLite DB/WAL/SHM 권한과 정적 파일 누락 시 절대경로 노출에 대한 기존 비차단 P2가 남았다. #22의 필수 구현과 섞지 말고 기존 #2 기록에서 후속 처리한다. #2/#3/#1 상위 이슈를 일괄 완료하지 않는다.
+
+## 구현과 검증
+
+- KIS 체결가 이벤트 전략과 DEMO 봉 전략을 분리했다. 설정은 새 ID의 revision 1로 고정한다. 수신 시작·REST 대조·전략 시작은 각각 명시적 행동이다.
+- 전략별 영업일/누적거래량 워터마크를 저장한다. 실행 세대 변경은 큐에 남은 신호를 무효화한다. 연결 중단·재시작 후 자동 재개하지 않는다.
+- 관망·차단·접수·불명과 요청 ID를 최근 최대 100건 보관한다. 주문 원장의 전략 ID/revision/이벤트는 목록 만료 뒤에도 보존한다. 매도는 수동 보유를 포함한 계좌의 가용 수량으로 제한한다.
+- 공통 PaperBroker의 위험·모의 도메인/TR·고정 승인 검사를 재사용한다. 별도 연속 전송 승인을 만들지 않았다.
+- S01 KIS 전략 집계·S07 이력·위험관리 설명과 `src/specs.ts` 계약을 갱신했다.
+- 자세한 실행 결과·실패·미검증: [#22 검증 기록](../verification/2026-11-16-strategies.md).
+- 다음: 지정 Argon 리뷰 수정분 PASS·단위166·브라우저111 및 후속 회귀 확인. 다음: 커밋/푸시 → 초안 PR·head CI 확인 → 사용자 화면 수용·통합. #22 completed/Done과 #25 해제는 아직 금지한다.

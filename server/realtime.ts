@@ -1,10 +1,11 @@
-import { createDecipheriv, createHash } from 'node:crypto';
+import { createDecipheriv, createHash, randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { z } from 'zod';
 import { Store } from './store.ts';
 import { PaperBroker } from './paper.ts';
 import { KisNotSent } from './kis.ts';
 import { record, signal } from './engine.ts';
+import type { StrategyEvaluation } from '../shared/model.ts';
 import type { RealtimeStatus } from '../shared/realtime.ts';
 import { orderInput, type OrderInput } from '../shared/contracts.ts';
 
@@ -125,6 +126,7 @@ export class Realtime {
   private failed(generation: number, message = '실시간 연결끊김 · REST 대조 필요') {
     if (generation !== this.generation) return;
     this.detach(); this.invalidate(message); this.state.phase = 'disconnected';
+    this.pauseStrategies();
     this.event('KIS 실시간 수신 중단', message);
     if (this.attempts < 3 && this.sessionOpen() && !this.store.read().risk.halted) {
       this.retry = setTimeout(() => { this.retry = undefined; this.open(); }, 1000 * 2 ** this.attempts++);
@@ -134,6 +136,7 @@ export class Realtime {
   stop() {
     const wasStarted = Boolean(this.socket || this.retry);
     this.detach(); this.quoteTime = 0; this.invalidate('실시간 중단 · REST 대조 필요 · 자동 거래 재개 없음'); this.state.phase = 'stopped';
+    this.pauseStrategies();
     if (wasStarted) this.event('KIS 실시간 수신 정지', this.state.message);
   }
   private receive(raw: string) {
@@ -193,6 +196,10 @@ export class Realtime {
     this.stopped = false;
     this.quoteTime = time; this.volume = volume; this.state.price = price; this.state.lastQuoteAt = new Date(time).toISOString();
     this.history.push(price); this.history = this.history.slice(-500);
+    void this.evaluateStrategies(`${row[33]}:${volume}`).catch(() => {
+      this.detach(); this.quoteTime = 0; this.state.phase = 'error'; this.state.message = '전략 평가 저장 실패 · 신규 주문 차단 · 서버 점검 필요';
+      try { this.pauseStrategies(); } catch { /* The in-memory guard remains closed if storage is unavailable. */ }
+    });
   }
   async reconcile() {
     if (this.acknowledgements.size !== 2 || !this.socket) throw new Error('실시간 구독 확인 후 대조하세요.');
@@ -211,6 +218,78 @@ export class Realtime {
   }
   private assertReady(code: string) {
     if (code !== this.state.code || !this.status().ordersAllowed) throw new KisNotSent('실시간 구독·시세·거래시간·REST 대조를 확인하기 전 신규 주문을 차단합니다.');
+  }
+  setStrategyActive(id: string, active: boolean) {
+    try { this.store.update(state => {
+      const strategy = state.strategies.find(s => s.id === id && s.environment === 'kis-paper');
+      if (!strategy) throw new Error('KIS 전략을 찾지 못했습니다.');
+      if (active) this.assertReady(strategy.code);
+      if (strategy.active === active) return;
+      strategy.active = active; strategy.run = (strategy.run ?? 0) + 1;
+      if (active) {
+        const event = `${this.config!.session.date.replaceAll('-', '')}:${this.volume}`;
+        if (!strategy.lastEvent || strategy.lastEvent.split(':')[0] < event.split(':')[0] || (strategy.lastEvent.split(':')[0] === event.split(':')[0] && Number(strategy.lastEvent.split(':')[1]) < this.volume)) strategy.lastEvent = event;
+      }
+      record(state, active ? 'KIS 전략 시작' : 'KIS 전략 정지', `${strategy.name} · revision ${strategy.revision ?? 1} · 접수 주문은 별도 대조하세요.`, 'info', { environment: 'kis-paper', target: 'strategies' });
+    }); } catch (error) {
+      if (!active) this.stop();
+      throw error;
+    }
+  }
+  private pauseStrategies() {
+    if (!this.store.read().strategies.some(s => s.environment === 'kis-paper' && s.active)) return;
+    this.store.update(state => {
+      for (const strategy of state.strategies) if (strategy.environment === 'kis-paper' && strategy.active) {
+        strategy.active = false; strategy.run = (strategy.run ?? 0) + 1;
+      }
+      record(state, 'KIS 전략 정지', '실시간 중단 · 대조 후 개별 시작 필요', 'warning', { environment: 'kis-paper', target: 'strategies' });
+    });
+  }
+  private async evaluateStrategies(event: string) {
+    if (!this.store.read().strategies.some(s => s.active && s.environment === 'kis-paper' && s.code === this.state.code)) return;
+    const jobs: { id: string; input: OrderInput; check: () => void }[] = [];
+    const prices = [...this.history], price = this.state.price!, code = this.state.code!;
+    this.store.update(state => {
+      for (const strategy of state.strategies) {
+        if (!strategy.active || strategy.environment !== 'kis-paper' || strategy.code !== code) continue;
+        if (strategy.lastEvent && (strategy.lastEvent.split(':')[0] > event.split(':')[0] || (strategy.lastEvent.split(':')[0] === event.split(':')[0] && Number(strategy.lastEvent.split(':')[1]) >= this.volume))) continue;
+        strategy.lastEvent = event;
+        const direction = signal(prices, strategy.fast, strategy.slow);
+        strategy.lastSignal = direction;
+        const evaluation: StrategyEvaluation = { event, at: new Date(this.now()).toISOString(), revision: strategy.revision ?? 1, signal: direction, status: 'hold', reason: prices.length < strategy.slow + 1 ? '표본 부족' : '교차 없음' };
+        const run = strategy.run ?? 0;
+        try {
+          const ready = this.orderGuard(code);
+          if (direction !== 'hold') {
+            if (strategy.evaluations?.some(e => e.status === 'sending')) throw new KisNotSent('이전 전략 주문 검사 중 · 이번 신호는 재전송하지 않습니다.');
+            const input = orderInput.parse({ code, price, qty: strategy.qty, side: direction, requestId: randomUUID() });
+            evaluation.status = 'sending'; evaluation.reason = '공통 승인·위험 검사 대기'; evaluation.requestId = input.requestId;
+            jobs.push({ id: strategy.id, input, check: () => {
+              ready();
+              const current = this.store.read().strategies.find(s => s.id === strategy.id);
+              if (!current?.active || (current.run ?? 0) !== run || current.revision !== strategy.revision) throw new KisNotSent('전략 정지 또는 실행 변경으로 전송을 차단했습니다.');
+            } });
+          }
+        } catch (error) { evaluation.status = 'blocked'; evaluation.reason = error instanceof Error ? error.message : '평가 차단'; }
+        const evaluations = [evaluation, ...(strategy.evaluations ?? [])];
+        let remaining = 100 - evaluations.filter(e => e.status === 'sending').length;
+        strategy.evaluations = evaluations.filter(e => e.status === 'sending' || remaining-- > 0);
+      }
+    });
+    for (const job of jobs) {
+      let result: Partial<StrategyEvaluation>;
+      try {
+        const strategy = this.store.read().strategies.find(s => s.id === job.id)!;
+        const order = await this.paper.submit(job.input, job.check, { id: job.id, revision: strategy.revision ?? 1, event, signal: job.input.side });
+        result = { status: order.status === 'accepted' ? 'accepted' : order.status === 'rejected' ? 'rejected' : 'unknown', reason: order.message, brokerId: order.brokerId };
+      } catch (error) { result = { status: 'blocked', reason: error instanceof Error ? error.message : '공통 주문 검사 실패' }; }
+      this.store.update(state => {
+        const strategy = state.strategies.find(s => s.id === job.id)!;
+        const evaluation = strategy.evaluations?.find(e => e.requestId === job.input.requestId);
+        if (evaluation) Object.assign(evaluation, result);
+        record(state, result.status === 'accepted' ? 'KIS 전략 주문 접수' : 'KIS 전략 주문 차단', `${strategy.name} · revision ${strategy.revision ?? 1} · ${result.reason}`, result.status === 'accepted' ? 'info' : 'warning', { environment: 'kis-paper', target: 'strategies', requestId: job.input.requestId });
+      });
+    }
   }
   async submitSignal(input: Pick<OrderInput, 'requestId' | 'qty'> & { fast: number; slow: number }) {
     this.assertReady(this.state.code!);

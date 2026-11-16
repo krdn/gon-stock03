@@ -25,7 +25,8 @@ export class Store {
     this.update(state => {
       state.playing = false;
       const active = state.strategies.filter(s => s.active);
-      active.forEach(s => { s.active = false; });
+      active.forEach(s => { s.active = false; s.run = (s.run ?? 0) + 1; });
+      for (const strategy of state.strategies) for (const evaluation of strategy.evaluations ?? []) if (evaluation.status === 'sending') { evaluation.status = 'unknown'; evaluation.reason = '평가 중 서버 재시작 · 주문 원장 대조 필요 · 자동 재전송 없음'; }
       if (active.length) record(state, '서버 재시작으로 전략 정지', '주문과 잔고를 확인한 뒤 개별 재개하세요.', 'warning');
     });
     for (const order of this.paperOrders()) if (order.status === 'sending') this.savePaper({ ...order, status: 'unknown', message: '전송 중 서버가 재시작되었습니다. KIS 계좌 대조가 필요합니다.' }, { actor: 'system', action: 'restart', before: 'sending' });
