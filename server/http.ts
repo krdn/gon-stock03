@@ -73,6 +73,11 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
           json(res, 200, { quote, bars, message: 'KIS 현재가와 최근 일봉을 조회했습니다. 수신 시각과 거래일을 구분하세요.' }); return;
         }
         if (path === '/api/kis/orders') { json(res, 200, { ...await paper.refresh(), message: 'KIS 모의 계좌와 당일 주문을 조회했습니다.' }); return; }
+        if (path === '/api/kis/cancel-probe') {
+          const { id } = idInput.parse(input);
+          if (!paper.cancelProbeEnabled()) { json(res, 409, { error: '전량취소 검증 승인이 없습니다.' }); return; }
+          const order = await paper.cancelProbe(id); json(res, 200, { order, warning: true }); return;
+        }
         if (path === '/api/kis/cancel' || path === '/api/kis/revise') { idInput.parse(input); json(res, 409, { error: paperCapabilities.changeOrders.reason, code: 'vts-change-blocked' }); return; }
         if (path === '/api/kis/recovery/inspect') { json(res, 200, await paper.inspectRecovery(idInput.parse(input).id)); return; }
         if (path === '/api/kis/recovery/confirm') {

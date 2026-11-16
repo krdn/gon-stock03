@@ -11,9 +11,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only', spacing = 0, approval?: { date: string; requestId: string }) {
+function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only', spacing = 0, approval?: { date: string; requestId: string; cancelProbe?: true }) {
   let submits = 0;
-  const response = { cash: '10000000', totalEquity: '10000000', nonCreditCash: '10000000', positions: [] as Record<string, string>[], price: '70000', tick: '100', rows: [] as Record<string, string>[], before: async (_path: string) => {}, receipt: { rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } } as unknown };
+  const response = { cancelMode: 'success', cash: '10000000', totalEquity: '10000000', nonCreditCash: '10000000', positions: [] as Record<string, string>[], price: '70000', tick: '100', rows: [] as Record<string, string>[], before: async (_path: string) => {}, receipt: { rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } } as unknown };
   const requests: { url: URL; init: RequestInit | undefined; startedAt: number }[] = [];
   const transport: typeof fetch = async (url, init) => {
     requests.push({ url: new URL(String(url)), init, startedAt: performance.now() });
@@ -24,6 +24,12 @@ function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'erro
     if (path.endsWith('/inquire-price')) return Response.json({ rt_cd: '0', output: { stck_prpr: response.price, prdy_ctrt: '1.0', stck_mxpr: '91000', stck_llam: '49000', aspr_unit: response.tick, temp_stop_yn: 'N' } });
     if (path.endsWith('/inquire-psbl-order')) return Response.json({ rt_cd: '0', output: { nrcvb_buy_qty: '100', nrcvb_buy_amt: response.nonCreditCash, ord_psbl_cash: '10000000' } });
     if (path.endsWith('/inquire-daily-ccld')) return Response.json({ rt_cd: '0', output1: response.rows.filter(row => row.ord_dt === new URL(String(url)).searchParams.get('INQR_STRT_DT')) });
+    if (path.endsWith('/order-rvsecncl')) {
+      if (response.cancelMode === 'timeout') throw new Error('secret transport error');
+      if (response.cancelMode === 'reject') return Response.json({ rt_cd: '1', msg_cd: 'CANCEL_REJECT', msg1: 'secret upstream' });
+      if (response.cancelMode === 'malformed') return Response.json({ rt_cd: '0' });
+      return Response.json({ rt_cd: '0', output: { ODNO: '002', KRX_FWDG_ORD_ORGNO: '12345' } });
+    }
     if (path.endsWith('/order-cash')) {
       submits += 1;
       if (mode === 'unauthorized') return new Response('fixture-secret', { status: 401 });
@@ -523,4 +529,106 @@ test('approved paper run fits the quote budget with production 1100ms pacing and
     assert.equal(f.store.read().risk.halted, true);
     for (let i = 1; i < f.requests.length; i++) assert.ok(f.requests[i].startedAt - f.requests[i - 1].startedAt >= 1100);
   } finally { f.store.close(); }
+});
+
+test('experimental cancellation requires explicit approval before any broker traffic', async () => {
+  await apiFixture(async (f, post) => {
+    const response = await post('cancel-probe', { id: randomUUID() });
+    assert.equal(response.status, 409);
+    assert.equal(f.requests.length, 0);
+  });
+});
+
+test('cancel probe sends one VTS full-cancel and ACK stays unknown until REST reconciliation', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const order = approvedInput(); const f = fixture('success', 0, { ...approvalFor(order), cancelProbe: true });
+  try {
+    await f.broker.submit(order);
+    const results = await Promise.allSettled([f.broker.cancelProbe(order.requestId), f.broker.cancelProbe(order.requestId)]);
+    assert.equal(results[0].status, 'fulfilled'); assert.equal(results[1].status, 'rejected');
+    assert.equal(f.store.paperOrders()[0].status, 'unknown'); assert.equal(f.store.read().risk.halted, true);
+    const calls = f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl'));
+    assert.equal(calls.length, 1); assert.equal(calls[0].url.origin, 'https://openapivts.koreainvestment.com:29443');
+    assert.equal(new Headers(calls[0].init?.headers).get('tr_id'), 'VTTC0013U');
+    const body = JSON.parse(String(calls[0].init?.body));
+    assert.equal(body.QTY_ALL_ORD_YN, 'Y'); assert.equal(body.ORD_QTY, '0'); assert.equal(body.ORD_UNPR, '0');
+    assert.equal(body.ORGN_ODNO, '001'); assert.equal(body.KRX_FWDG_ORD_ORGNO, '12345');
+    assert.equal(body.RVSE_CNCL_DVSN_CD, '02'); assert.equal(body.EXCG_ID_DVSN_CD, 'KRX');
+    f.response.rows = [brokerRow({ pdno: '069500' })];
+    await f.broker.refresh();
+    await assert.rejects(f.broker.cancelProbe(order.requestId), /이미 시도/);
+    f.response.rows = [brokerRow({ pdno: '069500', rmn_qty: '0', cncl_yn: 'Y' })];
+    assert.equal((await f.broker.refresh()).orders[0].status, 'cancelled');
+    assert.equal(f.count(), 1);
+    assert.equal(f.store.paperAudit(order.requestId).filter(a => a.action === 'cancel-attempt').length, 1);
+  } finally { f.store.close(); }
+});
+
+test('cancel rejection, lost response and malformed ACK consume attempt without retry or secret disclosure', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  for (const mode of ['reject', 'timeout', 'malformed']) {
+    const order = approvedInput(); const approval = { ...approvalFor(order), cancelProbe: true as const };
+    const f = fixture('success', 0, approval);
+    try {
+      await f.broker.submit(order); f.response.cancelMode = mode;
+      const result = await f.broker.cancelProbe(order.requestId);
+      assert.equal(result.status, 'unknown'); assert.doesNotMatch(result.message, /secret/);
+      f.response.rows = [brokerRow({ pdno: '069500' })]; await f.broker.refresh();
+      const restarted = new PaperBroker(f.store, f.client, approval);
+      await assert.rejects(restarted.cancelProbe(order.requestId), /이미 시도/);
+      assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 1);
+    } finally { f.store.close(); }
+  }
+});
+
+test('cancel probe rejects wrong identity, finished orders and expired attempts before sending', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const order = approvedInput(); const f = fixture('success', 0, { ...approvalFor(order), cancelProbe: true });
+  try {
+    await f.broker.submit(order);
+    await assert.rejects(f.broker.cancelProbe(randomUUID()), /승인/);
+    t.mock.timers.setTime(new Date('2026-11-16T10:03:00+09:00').getTime());
+    await assert.rejects(f.broker.cancelProbe(order.requestId), /시간/);
+    f.store.savePaper({ ...f.store.paperOrders()[0], status: 'filled', filled: 1, remaining: 0 });
+    await assert.rejects(f.broker.cancelProbe(order.requestId), /미체결/);
+    assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 0);
+  } finally { f.store.close(); }
+});
+
+test('cancel attempt survives disk reopen and a failed atomic audit prevents transmission', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const directory = mkdtempSync(join(tmpdir(), 'cancel-probe-')); const path = join(directory, 'ledger.sqlite');
+  const order = approvedInput(); const approval = { ...approvalFor(order), cancelProbe: true as const };
+  const f = fixture('success'); let store = new Store(path); const db = new DatabaseSync(path);
+  try {
+    const broker = new PaperBroker(store, f.client, approval); await broker.submit(order);
+    db.exec("CREATE TRIGGER fail_cancel_audit BEFORE INSERT ON paper_audit WHEN json_extract(NEW.body,'$.action')='cancel-attempt' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END;");
+    await assert.rejects(broker.cancelProbe(order.requestId), /audit unavailable/);
+    assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 0);
+    assert.equal(store.paperOrders()[0].status, 'accepted');
+    db.exec('DROP TRIGGER fail_cancel_audit;');
+    await broker.cancelProbe(order.requestId);
+    f.response.rows = [brokerRow({ pdno: '069500' })]; await broker.refresh();
+    store.close(); store = new Store(path);
+    const restarted = new PaperBroker(store, f.client, approval);
+    await assert.rejects(restarted.cancelProbe(order.requestId), /이미 시도/);
+    assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 1);
+  } finally { db.close(); store.close(); f.store.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('HTTP cancel probe is opt-in while ordinary cancel and revise remain blocked', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const order = approvedInput(); const approval = { ...approvalFor(order), cancelProbe: true as const };
+  const f = fixture('success'); const port = 15429;
+  const server = makeServer(f.store, f.client, [port], approval);
+  server.listen(port, '127.0.0.1'); await once(server, 'listening');
+  const post = (path: string, body: unknown) => fetch(`http://127.0.0.1:${port}/api/kis/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(body) });
+  try {
+    assert.equal((await post('order', order)).status, 200);
+    for (const path of ['cancel', 'revise']) assert.equal((await post(path, { id: order.requestId })).status, 409);
+    const response = await post('cancel-probe', { id: order.requestId });
+    assert.equal(response.status, 200); assert.equal((await response.json()).order.status, 'unknown');
+    assert.equal((await post('cancel-probe', { id: order.requestId })).status, 400);
+    assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 1);
+  } finally { server.closeAllConnections(); server.close(); await once(server, 'close'); f.store.close(); }
 });

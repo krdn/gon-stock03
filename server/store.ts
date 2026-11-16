@@ -92,6 +92,19 @@ export class Store {
     const result = this.db.prepare('UPDATE paper_run SET attempted=1 WHERE id=1 AND attempted=0').run();
     if (result.changes !== 1) throw new Error('1회 실행 승인을 이미 사용했습니다. 재전송하지 마세요.');
   }
+  claimPaperCancel(order: PaperOrder) {
+    this.db.exec('CREATE TABLE IF NOT EXISTS paper_cancel_attempt (request_id TEXT PRIMARY KEY);');
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const run = this.db.prepare('SELECT request_id,attempted FROM paper_run WHERE id=1').get();
+      if (run?.request_id !== order.requestId || run.attempted !== 1) throw new Error('사용된 원주문 승인이 없습니다.');
+      const result = this.db.prepare('INSERT OR IGNORE INTO paper_cancel_attempt VALUES (?)').run(order.requestId);
+      if (result.changes !== 1) throw new Error('전량취소를 이미 시도했습니다. 재전송하지 마세요.');
+      this.db.prepare('UPDATE paper_orders SET body=? WHERE request_id=?').run(JSON.stringify(order), order.requestId);
+      this.appendPaperAudit({ requestId: order.requestId, actor: 'local-user', action: 'cancel-attempt', before: null, after: 'unknown' });
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
   savePaper(order: PaperOrder, audit?: Omit<PaperAudit, 'id' | 'at' | 'requestId' | 'after'>) {
     this.db.exec('BEGIN IMMEDIATE');
     try {

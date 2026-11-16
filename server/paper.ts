@@ -5,7 +5,7 @@ import { Store } from './store.ts';
 import { halt, record } from './engine.ts';
 import { z } from 'zod';
 
-export const paperApprovalSchema = z.object({ date: z.iso.date(), requestId: z.uuid() }).strict();
+export const paperApprovalSchema = z.object({ date: z.iso.date(), requestId: z.uuid(), cancelProbe: z.literal(true).optional() }).strict();
 export type PaperApproval = z.infer<typeof paperApprovalSchema>;
 
 export const paperCapabilities = {
@@ -52,6 +52,29 @@ export class PaperBroker {
       if (next.status !== local.status || next.filled !== local.filled || next.remaining !== local.remaining) this.store.savePaper(next, { actor: 'system', action: 'reconcile', before: local.status, evidence: evidence(local.tradeDate, rows, connection) });
     }
     return { connection, brokerOrders: orders, orders: this.store.paperOrders() };
+  }
+  cancelProbeEnabled() { return this.approval?.cancelProbe === true; }
+  cancelProbe(id: string) {
+    return this.enqueue(async () => {
+      if (!this.cancelProbeEnabled() || id !== this.approval!.requestId) throw new Error('전량취소 검증 승인이 없습니다.');
+      const order = this.store.paperOrders().find(row => row.requestId === id);
+      if (!order || !order.brokerId || !order.organization || order.code !== '069500' || order.side !== 'buy' || order.qty !== 1 || order.price <= 0 || order.price > 100000 || !['accepted', 'partial'].includes(order.status) || order.remaining <= 0) throw new Error('승인된 미체결 원주문을 확인할 수 없습니다.');
+      const check = () => {
+        const age = Date.now() - Date.parse(order.createdAt);
+        if (order.tradeDate !== koreaDate() || order.tradeDate !== this.approval!.date.replaceAll('-', '') || !Number.isFinite(age) || age < 0 || age >= 120000) throw new KisNotSent('전량취소 검증 시간이 종료되었습니다.');
+      };
+      check();
+      const pending: PaperOrder = { ...order, status: 'unknown', message: '전량취소 검증 시도. 최종 상태는 주문 조회로 확인하세요.' };
+      this.store.claimPaperCancel(pending);
+      try {
+        await this.kis.cancelAll(order.brokerId, order.organization, check);
+        pending.message = '전량취소 요청 접수. 취소 완료는 아직 확인되지 않았습니다.';
+      } catch (error) {
+        pending.message = error instanceof Error ? error.message : '전량취소 응답 불명';
+      }
+      this.store.savePaper(pending, { actor: 'system', action: 'cancel-response', before: 'unknown' });
+      return pending;
+    });
   }
   inspectRecovery(id: string) {
     return this.enqueue(async () => {

@@ -1,6 +1,6 @@
 {
-  "checked_at": "2026-11-15T14:47:52.779351+00:00",
-  "objective": "#9 KIS 주문·복구와 #48 요청 간격의 결합 검증·main 통합",
+  "checked_at": "2026-11-16T05:06:51.730748+00:00",
+  "objective": "#9 명시적 opt-in 모의 전량취소 후보의 로컬 검증; 업무 API 미호출",
   "sources": [
     {
       "url": "https://apiportal.koreainvestment.com/apiservice-apiservice?/uapi/domestic-stock/v1/trading/order-rvsecncl",
@@ -29,6 +29,10 @@
     {
       "url": "https://securities.koreainvestment.com/main/customer/support/_static/TF04fg000000.jsp?mctgr=04",
       "finding": "KIS 공식 FAQ는 eFriend Plus 및 한국투자 앱 모의투자 접속을 안내한다. 현재 API 모의 계좌와 앱 계좌 연결·수동 취소 가능 여부는 별도 확인 전 미검증."
+    },
+    {
+      "url": "https://github.com/koreainvestment/open-trading-api/blob/main/backtester/kis_backtest/providers/kis/brokerage.py",
+      "finding": "cancel_order는 QTY_ALL_ORD_YN=Y, ORD_QTY=0, ORD_UNPR=0을 사용해 사전조회 없이 POST한다. 구형 TR이며 최신 포털의 필수 사전조회 문구와 충돌한다. 모의 실제 수락은 미검증이다."
     }
   ],
   "decisions": "#9 공통 조회·주문 큐와 명시적 복구·감사만 구현. 필수 가능수량 조회 모의 미지원으로 웹 정정취소 전송 차단. 일봉·달력 수집·실전 기능 변경 없음. 실제 모의 접수·조회는 구체적 승인 후 별도 증거가 필요.",
