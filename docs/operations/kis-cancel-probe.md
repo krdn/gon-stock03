@@ -33,3 +33,5 @@ HTTP 기본 차단 RED(400 대신409) 후 GREEN. 중복·거부·응답 불명·
 최초 Gemini 4 Argon/high 리뷰는 init 이후 본문 없이 8분 경과해 종료한 미완료다. 2026-11-16 새 세션에서 최신 `main...9461a0d` diff와 관련 경로로 입력을 재구성해 재개했다. [반환 기록](../verification/assets/kis-cancel-probe/argon-review.json)은 지적 없음·PREPARATION PASS다. 중앙 기본값 Opus5.5/high·Gemini3.8Flash는 수정하지 않고 사용자 지정 `gemini-4-argon-high`를 명시했다. 요청/init 일치와 정상 본문을 확인했으며, 서버 내부 모델·effort는 독립 확인하지 못했다. 제품 파일 해시는 리뷰 당시와 동일하다. 초안 PR과 실제 실행 보류를 유지한다.
 
 후속 검증: 단위/API118·브라우저67·빌드 PASS. [수정분 리뷰](../verification/assets/kis-cancel-probe/argon-delta-review.json)는 지정 Argon/high 요청/init 일치·DELTA PASS다. diff·상대링크 검사 PASS. STE strict는 `docs/conventions/ste100-writing.md` 부재로 exit2, 기존 번들 크기 경고는 유지한다. 실제 KIS 업무 호출은 0회다.
+
+실행 결과: [2026-11-16 실제 모의 조회 후 시세 guard 중단](../verification/2026-11-16-paper-session-run.md). 증권사 주문·취소POST0이며 전량취소 수락/완료는 여전히 미검증이다.

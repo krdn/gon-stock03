@@ -56,3 +56,5 @@ AGENTS·WORKFLOW, #9 최신 승인/인계 댓글, [조건부 승인 실행안](.
 ## 2026-11-16 정규장 확대와 실제 테스트 지시
 
 사용자가 직접 모의 주문·취소 테스트,09:00–15:30 정규장 전체 시간창 확대를 지시하고 동일 모의계좌·타API중지·앱 잔량취소 대응·현재069500 장중을 확인했다. [갱신 실행안](../operations/kis-minimum-paper-run.md#2026-11-16-실행-지시-갱신)을 따른다. 시간창 진입/전송직전 경계와 취소 마감·401/비정상응답을 검증해121·브라우저67·빌드 PASS, [지정 Argon SESSION-WINDOW PASS](../verification/assets/kis-cancel-probe/argon-session-window-review.json). 기존1주/10만원/주문1회·취소최대1회·120초·재전송금지 유지. 아직 실제 접수 결과가 없으므로 #9/후속차단 유지.
+
+[실제 실행 결과](../verification/2026-11-16-paper-session-run.md):15:07 모의 인증/잔고/주문조회/시세조회 통과 후 로컬주문경로1회가 시세 guard에서400으로 중단됐다. 증권사 주문/취소POST0, attempted1·risk.halted=true, 서버종료·전후백업·원본보존 확인. 재시도없음. 다음은 개별 guard 실패 진단 보완 검토이며 소비된 원장 재설정 금지.
