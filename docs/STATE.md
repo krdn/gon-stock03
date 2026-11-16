@@ -2,9 +2,10 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매.
 
-- **현재 작업:** [#12 트레이딩](tasks/12-trading.md) PR56 `3f5366c`와 [#17 알림·이벤트](tasks/17-alerts.md) PR57 `d89e97a` 통합 검증. 별도 `integration/12-17` worktree에서 공통 변경을 보존한다.
-- **진행 근거:** 수용·통합 대기 설명 후 사용자 “작업 진행” 지시가 전달됐다. 통합 작업 승인으로 기록하며 사용자 직접 화면 관찰을 주장하지 않는다. 지정 Gemini4Argon/high MERGE PASS, 결합 단위134·브라우저83·빌드 PASS. 원격 통합·CI 확인 중. #13 착수 전 원격 선행 해제를 재확인한다.
-- **선행 완료:** #9·#11 closed/completed, PR54·55 통합, main `23c7b519` CI2 SUCCESS. #12·#17 선행 완료. #13은 #12, #14는 #13, #18은 #17, #19는 #14/#17/#18, #22는 #19, #25는 전체 선행 대기.
+- **현재 작업:** [#13 주문·체결](tasks/13-orders.md), `feat/13-orders`, main `bf158cc` 기반. DEMO 관리·검색과 읽기 전용 KIS 원장 분리. 단위137·브라우저88·빌드·Argon ORDERS PASS, PR/CI 전달 중.
+- **선행:** #9·#12 completed/Done, PR56 merge `d678e31` main CI2 SUCCESS. PR57 merge `bf158cc`, head CI4·main CI2 SUCCESS, #17 completed/Done. [#12·#17 결합 검증](verification/2026-11-16-trading-alerts-integration.md):134/83/빌드·Argon MERGE PASS.
+- **수용 근거:** 사용자 “작업 진행”과 지정 모델 검증·통합 지시에 따른 기술 수용. 사용자 직접 육안 관찰·장중 수용을 주장하지 않는다. #13은 후속 구현·검증 범위.
+- **다음:** #13 전달 후 #14, #18 선행 #16/#11/#17 completed, Ready. #19는 #14/#17/#18, #22는 #19, #25는 전체 선행 대기.
 - **실증 경계:** [삼성전자 한 건](verification/2026-11-16-samsung-paper-run.md)은 매수 접수·REST 대조·취소·체결0/잔량0만 입증한다. 일반 웹 취소·정정409 차단과 공식 계약 미확정은 유지한다. 실제 체결·부분체결·취소경합·불명복구·연속전략·전체 사용자 화면 수용은 [#25](https://github.com/krdn/gon-stock03/issues/25) 미관측이다.
 - **거래 제한:** 현재 실제 KIS 업무API·주문·취소·예약 금지. 최신 거래 지시는 다음 별도 장중 시작 때 매수만/사용자 모바일 직접취소다. 소비된 원장 재설정 없음.
 - **보존:** `.local/` 원장·백업, `.codex/`, `graphify-out/`, 다른 worktree. 강제푸시·보호규칙 우회·추가 에이전트·부모 재위임 없음.

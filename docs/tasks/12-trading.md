@@ -28,3 +28,5 @@ AGENTS·WORKFLOW·이슈 #12, `src/pages/Trading.tsx`의 Trade, `src/specs.ts`�
 ## 2026-11-16 통합 진행 승인
 
 수용·통합 대기 설명 후 사용자 “작업 진행” 및 통합·후속 순차 진행 지시가 전달됐다. 지정 Gemini4Argon/high MERGE PASS와 결합 단위134·브라우저83·빌드 PASS로 기술 수용을 검증했다. 사용자 직접 육안 관찰은 주장하지 않는다. [결합 검증](../verification/2026-11-16-trading-alerts-integration.md). 원격 통합·CI 확인 후 완료 상태를 반영한다.
+
+통합 완료: PR56 `d678e31`, PR57 `bf158cc`, 양쪽 main CI2 SUCCESS. #12·#17 completed/Done 확인. 기존 대기 문구는 통합 전 기록이며 현재는 [#13](13-orders.md)을 순차 진행한다.

@@ -18,6 +18,15 @@ export type PaperRecoveryInput = z.infer<typeof paperRecoveryInput>;
 export const haltInput = z.object({ halted: z.boolean() }).strict();
 export type OrderInput = z.infer<typeof orderInput>;
 
+export const paperLedgerSchema = z.object({ orders: z.array(z.object({
+  requestId: z.string().min(1).max(80), code: codeSchema, side: z.enum(['buy', 'sell']),
+  qty: z.number().int().positive(), price: z.number().positive(),
+  createdAt: z.string().refine(value => Number.isFinite(Date.parse(value))), tradeDate: z.string().regex(/^\d{8}$/),
+  status: z.enum(['sending', 'accepted', 'unknown', 'rejected', 'partial', 'filled', 'cancelled']),
+  brokerId: z.string().regex(/^\d{1,10}$/).optional(), filled: z.number().int().nonnegative(), remaining: z.number().int().nonnegative(),
+}).refine(order => order.filled + order.remaining <= order.qty)) });
+export type PaperLedger = z.infer<typeof paperLedgerSchema>;
+
 export const dataStatusSchema = z.object({
   environment: z.enum(['demo', 'kis-paper']), source: z.enum(['synthetic', 'kis-rest']),
   phase: z.enum(['disconnected', 'loading', 'ready', 'stale', 'partial', 'error']),
