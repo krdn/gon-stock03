@@ -20,3 +20,5 @@ STE strict는 `docs/conventions/ste100-writing.md` 부재로 exit2. 문서 기�
 [공급 파일 해시](assets/orders-dashboard-integration/review-manifest.json)는 리뷰 직후 모두 일치했다. 이후 변경은 결과·인계 문서뿐이다. git diff --check와 수정 문서 상대 링크 검사 PASS. 원격 main과 원본 PR head가 유지됨을 재확인했다.
 
 전달: [초안 PR60](https://github.com/krdn/gon-stock03/pull/60), 제품 `2bd44733f8b6923841b5fff46d358f13cdf36090`. 원본 두 head를 부모로 보존한 merge commit이다. GitHub connector 생성403 후 중복 없음 확인·인증된 gh REST로 초안을 생성했다. 최신 head CI 결과는 PR 본문에서 확인한다. 이 전달 추가는 제품·테스트 변경이 아니다. 커밋 훅이 생성한 graphify-out/과 node_modules 링크는 보존하며 clean-tree 인계를 주장하지 않는다.
+
+2026-11-16 후속: 사용자 반복 진행 지시를 기술 수용·통합 후 #14 진행으로 해석했다. PR60은 main `46593c56abc5f6958f21e163bdd8d4758b79c2b6`로 병합됐고 [앱 CI](https://github.com/krdn/gon-stock03/actions/runs/43842565697)·[구성 CI](https://github.com/krdn/gon-stock03/actions/runs/43842565636) 모두 SUCCESS다. #13/#18 completed/Done, #14 native 선행 완료·Ready 확인. 원본 PR58/59는 GitHub가 포함 커밋을 기준으로 merged 처리했다. 사용자 직접 화면 수용·장중 실증은 여전히 미확인이다.

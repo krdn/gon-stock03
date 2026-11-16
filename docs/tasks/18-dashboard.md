@@ -1,5 +1,7 @@
 # 작업: #18 대시보드
 
+최신 상태: PR60 main `46593c5` 통합·main CI2 SUCCESS 후 사용자 다음 작업 진행 지시에 따른 기술 수용으로 completed/Done. 직접 육안·장중 수용은 미확인이다. 아래 수용 대기 문구는 이전 전달 시점 기록이다.
+
 [이슈 #18](https://github.com/krdn/gon-stock03/issues/18). 기준 main `bf158ccaf826ca4e91ba5b6d7a059700dfb15098`, `feat/18-dashboard`, 전용 worktree.
 
 - 상태: 구현·격리검증·지정 리뷰 완료, 초안 PR 전달, 사용자 수용·통합 대기. native 선행 #16/#11/#17 closed/completed·Project Done, main CI2 SUCCESS 재확인.

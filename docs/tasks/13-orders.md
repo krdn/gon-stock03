@@ -1,5 +1,7 @@
 # 작업: #13 주문·체결
 
+최신 상태: PR60 main `46593c5` 통합·main CI2 SUCCESS 후 사용자 다음 작업 진행 지시에 따른 기술 수용으로 completed/Done. 직접 육안·장중 수용은 미확인이다. 아래 수용 대기 문구는 이전 전달 시점 기록이다.
+
 [이슈 #13](https://github.com/krdn/gon-stock03/issues/13). 시작 main `bf158ccaf826ca4e91ba5b6d7a059700dfb15098`, `feat/13-orders`, 별도 worktree.
 
 - 선행: native blocked_by #9·#12 closed/completed, Project Done, PR54·56 main 통합 확인. PR57도 병합, 결합134/83/빌드·Argon PASS.

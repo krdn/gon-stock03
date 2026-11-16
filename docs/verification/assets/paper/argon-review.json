@@ -1,0 +1,22 @@
+{
+  "requested_model": "gemini-4-argon-high",
+  "requested_effort": "high",
+  "init_model": "gemini-4-argon-high",
+  "input_sha256": "1dfc8184ea78b8d307a210b487fb258a7faa53b881d5fbb9d631d69daab0cb88",
+  "result": {
+    "conversation_id": "2df4615c-816e-4657-a8e3-7b9c6e138ed5",
+    "status": "SUCCESS",
+    "response": "### 독립 리뷰 결과: **PASS** (P0–P3 결함 없음)\n\n제공된 텍스트(`src/pages/Paper.tsx`, `src/App.tsx`, `shared/model.ts`, `server/paper.ts`, `tests/browser/paper.spec.ts`, `docs/verification/2026-11-16-paper.md`)만을 기준으로 검토한 결과, P0–P3 수준의 결함이 발견되지 않았습니다.\n\n---\n\n### 주요 검토 항목별 확인 결과\n\n1. **최초 확정적 4xx 거절 vs 이전 불명(Ambiguous) 요청의 재시도 구분**\n   - `src/pages/Paper.tsx`의 `submit()`은 실행 시점 클로저의 `!pending` 여부와 `App.tsx`의 `act()`가 부여하는 `error.definitive`(`response.status >= 400 && response.status < 500` 또는 전송 전 로컬 상태 미준비)를 함께 검사합니다.\n   - **최초 전송(`!pending`) 시 4xx 사전 검증 거절**: `server/paper.ts`에서 `savePaper(..., 'sending')` 및 `kis.submit()` 호출 이전에 발생한 확정적 거절이므로 `sessionStorage`와 `pending`을 해제하고 `draft`를 유지해 사용자가 가격·수량을 수정한 뒤 새 `requestId`로 재시도할 수 있습니다.\n   - **이전에 전송 결과가 불명이었던 요청(`pending !== null`)의 재시도 시 4xx**: 재시도 과정에서 KIS 시세·잔고 재조회 실패 등으로 400이 반환되더라도 `!pending`이 거짓이므로 `sessionStorage`와 `pending`을 해제하지 않고 동일 요청(`requestId` 및 페이로드)을 고정 유지합니다.\n\n2. **동일 탭 `sessionStorage` 영속성 및 중복 주문 안전성**\n   - `act('kis/order', input)` 호출 직전에 `sessionStorage.setItem('kis-paper-pending', JSON.stringify(input))`을 동기 기록하며, 저장소 읽기/쓰기 실패 또는 스키마 파싱 실패 시 `storageError = true`로 전환해 주문 전송을 즉시 차단(Fail-closed)합니다.\n   - `pending` 존재 시 신규 주문 폼 제출 및 확인 버튼이 비활성화되며, 자동 재전송 없이 사용자가 명시적으로 **동일 요청 확인** 대화상자를 통해 같은 `requestId`·종목·방향·수량·가격으로만 재전송하거나 원장을 다시 읽을 수 있습니다.\n   - 위험 정지(`state.risk.halted`)가 활성화된 이후에도 이미 `pending` 상태인 요청은 확인 대화상자에서 전송 버튼(`!pending && state.risk.halted`)이 허용되어 서버의 멱등 조회 경로를 통해 기존 접수 결과를 회수할 수 있습니다.\n\n3. **로컬 원장(`GET /api/kis/ledger`) 대조를 통한 무전송 해소**\n   - `loadLedger()`가 `/api/kis/ledger` 응답을 `paperLedgerSchema`로 검증한 뒤, `sessionStorage`의 `pending` 요청과 `requestId`, `code`, `side`, `qty`, `price`가 모두 일치하는 원장 레코드가 존재하면 추가 `POST /api/kis/order` 없이 `sessionStorage`와 `pending`, `draft`, `confirmed`를 정리합니다.\n   - 원장 조회 전(`ledger !== 'ready'`)이거나 원장 내 `sending`/`unknown` 상태 주문이 존재할 때(`unknown === true`) 신규 주문 생성을 차단합니다.\n\n4. **서버 멱등성 및 불명 주문의 명시적 복구(`server/paper.ts`, `src/pages/Paper.tsx`)**\n   - `PaperBroker.submit()`은 직렬 큐(`enqueue`) 최상단에서 동일 `requestId` 존재 여부를 확인하여 페이로드가 일치하면 기존 주문을 반환하고, 불일치하면 에러를 던집니다.\n   - 주문번호가 없는 `unknown` 주문(`o.status === 'unknown' && !o.brokerId`)에 한해 `불명 복구 조회`(`kis/recovery/inspect`) → 단일 후보(`recovery.candidates.length === 1`) 및 사용자 체크박스 확인(`recoveryConfirmed`) → `선택 주문 연결`(`kis/recovery/confirm`, `{ id, evidenceId, brokerId, organization, confirmed: true }`)의 3단계 명시적 복구만 허용합니다. 후보가 없거나 복수인 경우, 5분 유효기간 만료, 재조회 불일치 시 불명 상태를 유지합니다.\n\n5. **비동기 경합 제어 및 입력 보존**\n   - `marketVersion` ref를 통해 종목코드 변경 또는 언마운트 이후 도착한 지연 시세 응답을 폐기하여 다른 종목이나 편집 중인 상태를 덮어쓰지 않습니다.\n   - `priceEdited` ref(`onFocus`/`onChange` 시 `true`, 종목코드 변경 시 `false`)를 통해 동일 종목 시세 재조회 시 사용자가 수정한 지정가와 수량을 보존합니다.\n   - `refresh()`(`kis/orders`) 실패 시 `ordersError` 경고를 표시하면서 기존 조회 목록과 사용자 입력값을 유지합니다.\n\n6. **모바일 레이아웃·접근성 및 이슈 계약 경계**\n   - 확인 `<dialog>`의 `aria-labelledby`, 닫기/메뉴 버튼의 `aria-label`, 경고/상태 배너의 `role=\"alert\"`/`role=\"status\"`, 폼 입력 라벨 연결이 갖춰져 있으며, 브라우저 회귀 테스트 8건에서 모바일 뷰포트(390×844) 가로 넘침 없음(`scrollWidth <= innerWidth`)과 복구·확인 플로우가 검증되었습니다.\n   - 백엔드 무변경, 일반 웹 정정·취소 409 유지, 고정 승인 제한 유지, 실제 KIS 호출 미사용, 장중 실거래 및 사용자 최종 수용 제외(#14 미완료 상태 유지), `ste-lint` 기준 파일 부재(exit 2)가 검증 문서(`docs/verification/2026-11-16-paper.md`)에 누락 없이 명시되어 있습니다.\n",
+    "duration_seconds": 103.302225702,
+    "num_turns": 1,
+    "usage": {
+      "input_tokens": 31751,
+      "output_tokens": 7532,
+      "thinking_tokens": 6190,
+      "cache_read_tokens": 0,
+      "total_tokens": 39283
+    }
+  },
+  "tool_steps": [],
+  "limits": "Request/init model match only; server-internal model and effort independently unverified. Supplied-text review, no independent file/image access. CLI argument and stream protocol failures occurred before the successful invocation; no model substitution."
+}
