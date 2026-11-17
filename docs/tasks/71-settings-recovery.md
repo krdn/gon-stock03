@@ -2,7 +2,7 @@
 
 기준: [#71](https://github.com/krdn/gon-stock03/issues/71), 설계 [PR72](https://github.com/krdn/gon-stock03/pull/72) MERGED. 기존 #8 후속이다.
 
-- 상태: 설계 1~3단계 구현·단위197·브라우저116·빌드·지정 Argon 리뷰 PASS. [구현 PR73](https://github.com/krdn/gon-stock03/pull/73) OPEN, 구현 SHA `40e4f86`의 CI4 SUCCESS.
+- 상태: 설계 1~3단계 구현·단위197·브라우저116·빌드·지정 Argon 리뷰 PASS. [구현 PR73](https://github.com/krdn/gon-stock03/pull/73) MERGED, main `341825b`. 최종 head `bab80bb`의 CI4 SUCCESS.
 - 브랜치: `feat/71-settings-recovery`. 기준 main `0d2b33a0aaad65fa8e94d043e1157fdd586d1b87`.
 - 완료 조건: 실행 서버 식별·미주입 진단, 잔고 조회 전체 deadline·브라우저 대기 제한, GET 복구, 인증 대기·진행 표시, 회귀·지정 리뷰·PR CI. 실제 연결 수용은 별도다.
 - 범위: 연결 진단/조회 경로·계약·UI·검사. 실제 KIS 인증/업무API/WebSocket/주문/취소/예약/외부알림·주입·기존 서버 재시작 금지. fake transport·메모리/임시DB만 사용한다.
@@ -50,3 +50,14 @@ PR74의 CI4 SUCCESS는 #25의 전송 전 차단 기록을 검증한 결과다. �
 새 탭은 생성하지 않았다. 컨텍스트 부족이 없고 독립적으로 인계할 미소유 작업도 없기 때문이다.
 다음 경계는 PR73의 사용자 검토·통합 결정, 기존 소유자의 #75 완료, 이후 #25 잔여 실증이다.
 #71과 #75가 수정한 공통 파일은 통합 전에 함께 검증해야 한다. 이 점검만으로 merge·사용자 수용·실제 거래 성공을 표시하지 않는다.
+
+## 통합 완료
+
+2026-11-17 사용자가 계획 완료까지 자율 진행을 요청했다. PR73 head `bab80bb`의 CI4 SUCCESS와 충돌 없음, 기존 지정 리뷰를 확인했다.
+제품 변경이 없어 검사를 반복하지 않고 PR73을 main `341825b61a198fd970f3ffb2c801097d4a9ade27`에 통합했다. 앞 절의 통합 대기 상태는 이 기록으로 갱신한다.
+
+[추가 실행 기록](https://github.com/krdn/gon-stock03/issues/71#issuecomment-6939807685)은 같은 head의 단위197·브라우저116·빌드 PASS를 확인한다.
+실제 연결 검증은 실행 제한 때문에 남아 있으며 #71을 닫지 않는다. #75 소유권·#25 시작 조건·기존 서버·원장을 보존했다.
+
+자동 resume은 미추적 `graphify-out/` 때문에 실패했다. 해당 파일을 보존하고 원격 SHA·이슈·PR·CI를 직접 대조했다.
+통합 후 CI와 기록 PR의 최종 결과는 #71 후속 댓글에서 확인한다.
