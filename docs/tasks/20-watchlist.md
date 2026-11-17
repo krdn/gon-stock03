@@ -45,3 +45,5 @@
 - 실행: 4303은 /home/gon/llm-projects/gon-stock03의 Vite. 이 작업 폴더 변경은 별도 빌드로 검증하고 실제 서비스 적용을 구분한다.
 
 후속 구현·검증: [실접속 수정 기록](../verification/2026-11-17-watchlist-fixes.md). 최초 미확인 목록, 상세 반복 클릭, 주문 링크 대비를 수정했다. 단위216·관련 브라우저17·빌드 통과. 원본4303에도 두 화면 파일만 적용했으며 main 통합과 구분한다. 모바일 자동 대비 일부 판정유보와 실제 거래 미검증을 보존한다.
+
+원격 전달: [PR89](https://github.com/krdn/gon-stock03/pull/89), 제품 SHA `7bcea9d29563e37e27370a6b8c4ee8dce86734e3`. 원격 브랜치 일치 확인. 최종 CI 결과는 PR checks 및 이슈 인계 댓글을 기준으로 확인한다. main 미통합.
