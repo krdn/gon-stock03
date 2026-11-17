@@ -7,7 +7,7 @@
 - 완료 조건: 공식 모의 endpoint/secretkey, 입력/응답 검증, 15초 제한·재시도 없음, 원문 비노출, 실패 시 자식 미실행. fake transport·프로세스 경계 테스트와 빌드·지정 Argon/high 리뷰·CI.
 - 필수 읽기: `docs/INFISICAL.md`, `scripts/dev.ts`, `server/realtime.ts`의 configuration/sessionOpen, `tests/realtime.test.ts`.
 - 경계: 사용자 발급 성공 보고와 구현 검증을 구분한다. 실제 구독·주문·자동전략·기존 서버 재시작은 이번 구현 검증에 포함하지 않는다. 휴장 확인과 거래일 입력은 자동화하지 않는다.
-- 현재: 설계 기록. 다음은 회귀 작성과 구현이다.
+- 현재: 구현·로컬 검증 완료. [PR81](https://github.com/krdn/gon-stock03/pull/81), 제품 `2ec43d5`. 원격 결과는 [PR checks](https://github.com/krdn/gon-stock03/pull/81/checks)와 #80 댓글을 확인한다. 다음은 통합 후 기존 실행 환경을 보존한 적용·장중 수신 검증이다.
 
 ## 구현·검증
 
