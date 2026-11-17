@@ -19,7 +19,7 @@ test('quote polling preserves the limit price and open order confirmation', asyn
   await page.clock.install();
   const state = snapshot(); state.instruments[0].price = 74800; state.revision = 20;
   await page.route('**/api/state', route => route.fulfill({ json: state }));
-  await page.goto('/trade'); await expect(page.getByRole('button', { name: '매수 주문 확인' })).toBeEnabled();
+  await page.goto('/trade?mode=demo'); await expect(page.getByRole('button', { name: '매수 주문 확인' })).toBeEnabled();
   await expect(page.getByLabel('주문 가격 (원)')).toHaveValue('74800');
   await page.getByLabel('주문 가격 (원)').fill('70000');
   await page.getByRole('button', { name: '매수 주문 확인' }).click();
@@ -65,7 +65,7 @@ test('all screens and detailed specs render without console errors at desktop an
   await expect(page).toHaveURL(/dashboard/); expect(errors).toEqual([]);
 });
 test('manual order is confirmed, filled later, and reflected in portfolio; watchlist persists', async ({ page }) => {
-  await page.goto('/trade'); await page.getByLabel('주문 가격 (원)').fill('80000'); await page.getByLabel('주문 수량 (주)').fill('1');
+  await page.goto('/trade?mode=demo'); await page.getByLabel('주문 가격 (원)').fill('80000'); await page.getByLabel('주문 수량 (주)').fill('1');
   await page.getByRole('button', { name: '매수 주문 확인' }).click(); await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: '데모 주문 접수', exact: true }).click(); await expect(page.getByRole('dialog')).not.toBeVisible();
   await page.goto('/orders'); await expect(page.getByText('접수 · 미체결', { exact: true })).toBeVisible();
@@ -86,7 +86,7 @@ test('strategy saves, automatic replay advances, backtest computes, halt stops a
   await page.goto('/risk'); await page.getByRole('button', { name: '신규 주문 긴급정지', exact: true }).click();
   await expect(page.getByRole('button', { name: '신규 주문 허용', exact: true })).toBeVisible();
   const stopped = await (await request.get('/api/state')).json(); expect(stopped.playing).toBe(false); expect(stopped.strategies.every((s: { active: boolean }) => !s.active)).toBe(true);
-  await page.goto('/trade'); await expect(page.getByRole('button', { name: '매수 주문 확인' })).toBeDisabled();
+  await page.goto('/trade?mode=demo'); await expect(page.getByRole('button', { name: '매수 주문 확인' })).toBeDisabled();
   await page.goto('/risk'); await page.getByRole('button', { name: '신규 주문 허용' }).click();
   await page.goto('/backtest'); await page.getByRole('combobox', { name: '데이터 출처', exact: true }).selectOption('demo'); await page.getByRole('button', { name: '백테스트 실행' }).click(); await expect(page.getByRole('heading', { name: '자산 곡선' })).toBeVisible();
 });

@@ -13,7 +13,7 @@ test('a later request with regressed revision is unavailable instead of silently
   await page.clock.install();
   const state = { ...snapshot(), instanceId: 'same-server', revision: 20 };
   await page.route('**/api/state', route => route.fulfill({ json: state }));
-  await page.goto('/trade');
+  await page.goto('/trade?mode=demo');
   await expect(page.getByRole('button', { name: '매수 주문 확인' })).toBeEnabled();
   state.revision = 1;
   const polled = page.waitForResponse('**/api/state'); await page.clock.fastForward(3500); await polled;
@@ -26,7 +26,7 @@ test('a new server accepts a lower revision and closes a confirmation from the o
   await page.clock.install();
   const state = { ...snapshot(), revision: 20 };
   await page.route('**/api/state', route => route.fulfill({ json: state }));
-  await page.goto('/trade'); await page.getByRole('button', { name: '매수 주문 확인' }).click();
+  await page.goto('/trade?mode=demo'); await page.getByRole('button', { name: '매수 주문 확인' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   state.instanceId = 'replacement-server'; state.revision = 1; state.instruments[0].price = 61000;
   const polled = page.waitForResponse('**/api/state'); await page.clock.fastForward(3500); await polled;
@@ -46,7 +46,7 @@ test('delayed older response never overwrites a newer revision or makes the conn
     if (++calls === 1) { await gate; await route.fulfill({ json: old }); }
     else await route.fulfill({ json: latest });
   });
-  await page.goto('/trade');
+  await page.goto('/trade?mode=demo');
   const newer = page.waitForResponse('**/api/state'); await page.clock.fastForward(3500); await newer;
   await expect(page.locator('.quote strong')).toContainText('72,000');
   const older = page.waitForResponse('**/api/state'); release!(); await older;
@@ -64,7 +64,7 @@ test('local loading, disconnected, ready and stale states are explicit and block
     if (mode === 'ready') await route.fulfill({ json: snapshot() });
     else await route.fulfill({ status: 503, body: 'fixture-secret' });
   });
-  await page.goto('/trade');
+  await page.goto('/trade?mode=demo');
   await expect(page.getByLabel('로컬 상태', { exact: true })).toContainText('로딩');
   mode = 'error'; release!();
   await expect(page.getByLabel('로컬 상태', { exact: true })).toContainText('미연결');
@@ -150,7 +150,7 @@ test('loss of local transport clears KIS loading and ready instead of claiming b
 test('known storage failure remains actionable while arbitrary JSON 5xx text stays hidden', async ({ page }) => {
   let safe = true;
   await page.route('**/api/orders', route => route.fulfill({ status: 500, json: { error: safe ? '요청과 이벤트 저장에 실패했습니다. 저장소 상태를 확인하세요.' : 'fixture-secret' } }));
-  await page.goto('/trade'); await page.getByRole('button', { name: '매수 주문 확인' }).click();
+  await page.goto('/trade?mode=demo'); await page.getByRole('button', { name: '매수 주문 확인' }).click();
   await page.getByRole('button', { name: '데모 주문 접수', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('저장소 상태를 확인하세요');
   await expect(page.getByRole('button', { name: '매수 주문 확인' })).toBeDisabled();

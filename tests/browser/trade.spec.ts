@@ -4,7 +4,7 @@ import { snapshot } from '../snapshot';
 test('changed quote requires explicit reconfirmation and halt blocks an open confirmation', async ({ page }) => {
   await page.clock.install(); const state = snapshot();
   await page.route('**/api/state', route => route.fulfill({ json: state }));
-  await page.goto('/trade'); await page.getByLabel('주문 가격 (원)').fill('70000');
+  await page.goto('/trade?mode=demo'); await page.getByLabel('주문 가격 (원)').fill('70000');
   await page.getByRole('button', { name: '매수 주문 확인' }).click();
   state.instruments[0].price += 1000; state.revision++;
   let polled = page.waitForResponse('**/api/state'); await page.clock.fastForward(3500); await polled;
@@ -22,7 +22,7 @@ test('trade shows reserved sells and preserves the code when moving to paper wit
   const state = snapshot(); state.orders = [{ id: 'sell', requestId: 'sell', code: '005930', side: 'sell', qty: 7, price: 70000, status: 'pending', createdAt: new Date().toISOString(), source: 'manual', fee: 0 }];
   await page.route('**/api/state', route => route.fulfill({ json: state }));
   const posts: string[] = []; page.on('request', r => { if (r.method() === 'POST') posts.push(r.url()); });
-  await page.goto('/trade?code=005930');
+  await page.goto('/trade?mode=demo&code=005930');
   await expect(page.getByRole('group', { name: '매도 가능 수량' }).locator('strong')).toHaveText('23주');
   await page.getByLabel('트레이딩 종목').selectOption('000660');
   const link = page.getByRole('link', { name: '선택 종목 KIS 모의 매매' });
@@ -37,7 +37,7 @@ test('lost DEMO response blocks new requests across reload and reconciles by req
   const state = snapshot(); let body: any; let posts = 0;
   await page.route('**/api/state', route => route.fulfill({ json: state }));
   await page.route('**/api/orders', route => { body = route.request().postDataJSON(); posts++; return route.abort(); });
-  await page.goto('/trade'); await page.getByRole('button', { name: '매수 주문 확인' }).click();
+  await page.goto('/trade?mode=demo'); await page.getByRole('button', { name: '매수 주문 확인' }).click();
   await page.getByRole('button', { name: '데모 주문 접수', exact: true }).evaluate((b: HTMLButtonElement) => { b.click(); b.click(); });
   await expect(page.getByText('DEMO 주문 응답 미확인', { exact: true })).toBeVisible();
   expect(posts).toBe(1);
@@ -58,7 +58,7 @@ test('definitive rejection keeps editable inputs and a lost response retries onl
     if (mode === 'lost') return route.abort();
     return route.fulfill({ json: { order: { ...body, status: 'pending' } } });
   });
-  await page.goto('/trade'); await page.getByLabel('주문 가격 (원)').fill('70000');
+  await page.goto('/trade?mode=demo'); await page.getByLabel('주문 가격 (원)').fill('70000');
   await page.getByRole('button', { name: '매수 주문 확인' }).click(); await page.getByRole('button', { name: '데모 주문 접수', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('보유 수량이 부족');
   await expect(page.getByRole('button', { name: '매수 주문 확인' })).toBeEnabled();
@@ -82,7 +82,7 @@ test('definitive rejection keeps editable inputs and a lost response retries onl
 test('connection loss blocks confirmation until fresh state and edited price is reviewed again', async ({ page }) => {
   await page.clock.install(); const state = snapshot(); let fail = false;
   await page.route('**/api/state', route => fail ? route.fulfill({ status: 503, json: {} }) : route.fulfill({ json: state }));
-  await page.goto('/trade'); await page.getByRole('button', { name: '매수 주문 확인' }).click();
+  await page.goto('/trade?mode=demo'); await page.getByRole('button', { name: '매수 주문 확인' }).click();
   fail = true; const polled = page.waitForResponse('**/api/state'); await page.clock.fastForward(3500); await polled;
   await expect(page.getByRole('button', { name: '데모 주문 접수', exact: true })).toBeDisabled();
   await expect(page.getByRole('dialog')).toContainText('최신 로컬 상태 확인');
@@ -98,7 +98,7 @@ test('freshness expiry between render and submit is a definitive local refusal w
   const state = snapshot(); await page.clock.install({ time: new Date(state.status.observedAt!) });
   await page.route('**/api/state', route => route.fulfill({ json: state }));
   let posts = 0; page.on('request', r => { if (r.method() === 'POST') posts++; });
-  await page.goto('/trade'); await page.getByRole('button', { name: '매수 주문 확인' }).click();
+  await page.goto('/trade?mode=demo'); await page.getByRole('button', { name: '매수 주문 확인' }).click();
   await page.clock.setSystemTime(new Date(Date.parse(state.status.observedAt!) + state.status.staleAfterMs + 1));
   await page.getByRole('button', { name: '데모 주문 접수', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('최신 로컬 상태');
@@ -110,7 +110,7 @@ test('a locally blocked retry retains the original unknown request across reload
   const state = snapshot(); await page.clock.install({ time: new Date(state.status.observedAt!) });
   await page.route('**/api/state', route => route.fulfill({ json: state }));
   let posts = 0; await page.route('**/api/orders', route => { posts++; return route.abort(); });
-  await page.goto('/trade'); await page.getByRole('button', { name: '매수 주문 확인' }).click();
+  await page.goto('/trade?mode=demo'); await page.getByRole('button', { name: '매수 주문 확인' }).click();
   await page.getByRole('button', { name: '데모 주문 접수', exact: true }).click();
   await expect(page.getByText('DEMO 주문 응답 미확인', { exact: true })).toBeVisible();
   const pending = await page.evaluate(() => sessionStorage.getItem('demo-order-pending'));
@@ -126,7 +126,7 @@ test('a locally blocked retry retains the original unknown request across reload
 test('unknown instrument and empty snapshot never silently select Samsung', async ({ page }) => {
   const state = snapshot();
   await page.route('**/api/state', route => route.fulfill({ json: state }));
-  await page.goto('/trade?code=999999');
+  await page.goto('/trade?mode=demo&code=999999');
   await expect(page.getByText('지원하지 않는 DEMO 종목입니다')).toBeVisible();
   await expect(page.getByRole('button', { name: '매수 주문 확인' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: '선택 종목 KIS 모의 매매' })).toHaveAttribute('href', '/paper?code=999999');
@@ -137,7 +137,7 @@ test('unknown instrument and empty snapshot never silently select Samsung', asyn
 
 test('initial state failure does not present fixture cash or order inputs', async ({ page }) => {
   await page.route('**/api/state', route => route.fulfill({ status: 503, json: {} }));
-  await page.goto('/trade');
+  await page.goto('/trade?mode=demo');
   await expect(page.getByText('DEMO 상태를 확인하지 못했습니다')).toBeVisible();
   await expect(page.getByLabel('주문 가격 (원)')).toHaveCount(0);
 });
@@ -159,7 +159,7 @@ for (const failure of ['corrupt', 'read', 'write', 'remove']) {
         } });
       }
     }, failure);
-    await page.goto('/trade');
+    await page.goto('/trade?mode=demo');
     if (failure === 'write' || failure === 'remove') {
       await page.getByRole('button', { name: '매수 주문 확인' }).click();
       await page.getByRole('button', { name: '데모 주문 접수', exact: true }).click();
@@ -183,7 +183,7 @@ test('order limits, fee-inclusive cash and reserved sells are explained before c
   const state = snapshot(); state.startingEquity -= state.cash - 70000; state.cash = 70000;
   state.orders = [{ id: 'reserved', requestId: 'reserved', code: '005930', side: 'sell', qty: 29, price: 70000, status: 'pending', source: 'manual', fee: 0, createdAt: new Date().toISOString() }];
   await page.route('**/api/state', route => route.fulfill({ json: state }));
-  await page.goto('/trade');
+  await page.goto('/trade?mode=demo');
   await page.getByLabel('주문 가격 (원)').fill('70000');
   await expect(page.getByRole('status').filter({ hasText: '수수료를 포함한 주문 금액이 예약 제외 현금을 초과합니다' })).toBeVisible();
   await expect(page.getByRole('button', { name: '매수 주문 확인' })).toBeDisabled();
@@ -201,7 +201,7 @@ test('limits refreshed while dialog is open block submission', async ({ page }) 
   await page.clock.install(); const state = snapshot(); let posts = 0;
   page.on('request', r => { if (r.method() === 'POST') posts++; });
   await page.route('**/api/state', route => route.fulfill({ json: state }));
-  await page.goto('/trade'); await page.getByRole('button', { name: '매수 주문 확인' }).click();
+  await page.goto('/trade?mode=demo'); await page.getByRole('button', { name: '매수 주문 확인' }).click();
   state.risk.maxOrder = 10000; state.revision++;
   const polled = page.waitForResponse('**/api/state'); await page.clock.fastForward(3500); await polled;
   await expect(page.getByRole('dialog')).toContainText('1회 주문 한도를 초과합니다.');
@@ -214,7 +214,7 @@ for (const width of [320, 390, 768, 1440]) {
     const state = snapshot();
     await page.route('**/api/state', route => route.fulfill({ json: state }));
     await page.setViewportSize({ width, height: 900 });
-    await page.goto('/trade');
+    await page.goto('/trade?mode=demo');
     await page.getByLabel('트레이딩 종목').selectOption('229200');
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await expect(page.getByRole('button', { name: '60봉', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -233,7 +233,7 @@ for (const limit of ['position', 'loss']) {
     if (limit === 'position') state.risk.maxPosition = 10000;
     else state.startingEquity += state.risk.dailyLoss;
     await page.route('**/api/state', route => route.fulfill({ json: state }));
-    await page.goto('/trade');
+    await page.goto('/trade?mode=demo');
     await expect(page.getByRole('status').filter({ hasText: limit === 'position' ? '종목별 최대 투자금을 초과합니다.' : '손실 한도를 초과했습니다.' })).toBeVisible();
     await expect(page.getByRole('button', { name: '매수 주문 확인' })).toBeDisabled();
   });
