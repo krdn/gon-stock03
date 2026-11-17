@@ -388,5 +388,66 @@
     "tests/browser/paper.spec.ts": "84853af3b9194160ab5a1f750ed346904ea9c0175bb008f760960801b3ef5bc7",
     "tests/paper.test.ts": "021109a6dae3508f6288042762373397b8427eae68cec114138820a2f8d4d556"
   },
-  "status": "planned; remote merge and cleanup not yet performed"
+  "status": "local integration verified; remote PR/CI and branch cleanup pending",
+  "history_bridge": "9ad8557d1b107c4d6ef94688360846e6243c97b8",
+  "history_bridge_heads": [
+    {
+      "branch": "chore/25-validation-prep",
+      "sha": "3db325c0f2d03619546aa522baeef8e89ffc4674",
+      "pr": 66,
+      "merged_commit": "dae458093b664d872a23672f4b65aa9b229aa10c"
+    },
+    {
+      "branch": "docs/25-ui-acceptance",
+      "sha": "464416291a51d10cb3a8db02596111a217db83a1",
+      "pr": 70,
+      "merged_commit": "005a80e9f2277d4d4a1bb715211db8c9bfc7c4a4"
+    },
+    {
+      "branch": "docs/65-integrated-handoff",
+      "sha": "22444db4475d4f5d97a8249b879d838d52ef75c3",
+      "pr": 69,
+      "merged_commit": "99f6730a577101d4bd24f3def7a8cd3109f32c2b"
+    },
+    {
+      "branch": "docs/80-runtime-applied",
+      "sha": "5812c08fc9b65e5b76d2267d9b47c20a8c77dc5c",
+      "pr": 82,
+      "merged_commit": "cebed36dbecd38a5457e276ed19c3cde02a360df"
+    },
+    {
+      "branch": "feat/80-ws-approval",
+      "sha": "0913a37c7bc7fc9aa51687216ece3cadd07524ca",
+      "pr": 81,
+      "merged_commit": "275d9b5d4ab63eeabc0ee59054e99851af3de742"
+    },
+    {
+      "branch": "fix/64-sqlite-permissions",
+      "sha": "4a3221d4ca9af55955cfecd7948ae323aad4cc0f",
+      "pr": 67,
+      "merged_commit": "961f470036eafbadce5d18d9b772705f1f4c5ca3"
+    },
+    {
+      "branch": "fix/65-static-errors",
+      "sha": "22575b0e4a1225506dd629a207bb3d3384f6f6dc",
+      "pr": 68,
+      "merged_commit": "50b958db9c8ee63f72e164ace5f3576b8fddfbfb"
+    },
+    {
+      "branch": "fix/83-graphify-handoff",
+      "sha": "15a51fe64969e58a61d7acf598fb1c92848456aa",
+      "pr": 84,
+      "merged_commit": "849bef9c70a55533edca7d10a9804b083b67e8ff"
+    },
+    {
+      "branch": "세부작업",
+      "sha": "a8b73cdcb1235ffc385a177bc96de6b842a4dd5d",
+      "pr": 72,
+      "merged_commit": "0d2b33a0aaad65fa8e94d043e1157fdd586d1b87"
+    }
+  ],
+  "all_original_heads_ancestral_locally": true,
+  "original_snapshot_ancestral_locally": true,
+  "product_tree_changed": false,
+  "fixture_archive": "docs/verification/assets/75-original-20261117/"
 }
