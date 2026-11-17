@@ -73,6 +73,18 @@ status를 reviewed로 바꾸고 `gon-workflow implementation-ready .`로 24시�
 세션 자동 생성·전환을 지원한다고 가정하지 않는다. 사용자의 전체 요청 범위를 임의로 줄이지 않는다.
 현재 세션에서 계속해야 해도 같은 작업 분할·선택적 읽기 규칙을 적용한다.
 
+## Graphify 코드 구조 조회와 기록
+
+구조·영향 범위를 조사할 때 `graphify explain "scripts/dev.ts"` 또는 `graphify path "A" "B"`로 관련 경로를 찾고 원문과 대조한다.
+그래프는 코드 관계 탐색 자료다. 테스트·실제 실행 증거·문서 원문을 대신하지 않는다.
+
+코드 변경 후 저장소 루트에서 `PYTHONHASHSEED=0 graphify update .`를 실행한다. 이 명령은 LLM 없이 코드 그래프를 갱신하며 문서 의미 분석은 수행하지 않는다.
+성공 여부와 변경 내용을 확인한 뒤 코드와 `graphify-out/graph.json`, `graphify-out/GRAPH_REPORT.md`를 함께 커밋·푸시한다.
+
+`graphify-out/.skip-hook`은 이 저장소의 커밋·checkout 후 자동 재생성을 막는다. 전역 훅은 유지한다.
+캐시·HTML·manifest·로컬 빌드/라벨 상태는 Git에서 제외한다. 핵심 그래프·보고서는 추적하므로 변경을 커밋하지 않으면 인수인계가 차단된다.
+전달 전에 `git status --porcelain --untracked-files=all`이 비었는지 확인하고 `gon-workflow handoff`로 원격 기록을 검증한다.
+
 ## 업데이트와 복구
 
 다음 신규 시작 또는 명시적인 표준 갱신 때 `start`를 다시 실행한다.
