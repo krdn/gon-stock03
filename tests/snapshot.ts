@@ -4,5 +4,5 @@ import type { StateSnapshot } from '../shared/model';
 
 export function snapshot(): StateSnapshot {
   const now = new Date().toISOString();
-  return { ...initialState(), instanceId: 'fixture-server', status: { ...emptyStatus('demo'), phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now }, connection: disconnectedConnection() };
+  return { ...initialState(), instanceId: 'fixture-server', startedAt: now, status: { ...emptyStatus('demo'), phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now }, connection: disconnectedConnection() };
 }

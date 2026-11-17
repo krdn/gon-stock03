@@ -4,7 +4,7 @@ import type { ConnectionFailure } from '../../shared/model';
 
 test('settings shows missing injection separately from unverified authentication and balance', async ({ page }) => {
   await page.goto('/settings');
-  await expect(page.getByLabel('Infisical 주입 상태', { exact: true })).toContainText('미주입');
+  await expect(page.getByLabel('서버 필수 설정 상태', { exact: true })).toContainText('미주입');
   await expect(page.getByLabel('KIS 인증 상태', { exact: true })).toContainText('미확인');
   await expect(page.getByLabel('모의 잔고 조회 상태', { exact: true })).toContainText('미조회');
   await page.getByRole('button', { name: '안전한 연결 안내', exact: true }).click();
@@ -29,8 +29,8 @@ test('settings keeps token and complete balance responses separate, suppresses o
     await route.fulfill({ json: { connection: state.connection, message: '전체 조회 확인' } });
   });
   await page.goto('/settings');
-  await expect(page.getByLabel('Infisical 주입 상태', { exact: true })).toContainText('필수 값 있음');
-  await expect(page.getByLabel('Infisical 주입 상태', { exact: true })).toContainText('출처 미확인');
+  await expect(page.getByLabel('서버 필수 설정 상태', { exact: true })).toContainText('필수 값 있음');
+  await expect(page.getByLabel('서버 필수 설정 상태', { exact: true })).toContainText('출처 미확인');
   await expect(page.getByLabel('KIS 인증 상태', { exact: true })).toContainText('미확인');
   await page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' }).click();
   await expect(page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' })).toBeDisabled();
@@ -87,6 +87,74 @@ test('settings expires token evidence locally and hides positive stages when the
   await expect(page.getByLabel('KIS 인증 상태', { exact: true })).toContainText('만료·갱신 필요');
   offline = true; await page.clock.fastForward(3500);
   await expect(page.getByLabel('KIS 인증 상태', { exact: true })).toContainText('서버 상태 확인 필요');
-  await expect(page.getByLabel('Infisical 주입 상태', { exact: true })).toContainText('서버 상태 확인 필요');
+  await expect(page.getByLabel('서버 필수 설정 상태', { exact: true })).toContainText('서버 상태 확인 필요');
   await expect(page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' })).toBeDisabled();
+});
+
+test('settings keeps GET recovery open during a hung check and bounds browser waiting without resending', async ({ page }) => {
+  await page.clock.install();
+  const state = snapshot(); let posts = 0, offline = false;
+  await page.route('**/api/state', route => {
+    const now = new Date(Date.now() + 180_000).toISOString();
+    state.status.observedAt = now; state.status.lastSuccessAt = now;
+    return offline ? route.abort() : route.fulfill({ json: state });
+  });
+  await page.route('**/api/kis/check', () => { posts++; });
+  await page.goto('/settings');
+  await expect(page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' })).toBeEnabled();
+  await page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' }).click();
+  await expect(page.getByRole('button', { name: '연결 상태 새로고침' })).toBeEnabled();
+  await page.getByRole('button', { name: '연결 상태 새로고침' }).click();
+  await expect(page.getByText('외부 KIS 호출 없음', { exact: false })).toBeVisible();
+  await page.clock.fastForward(125_001);
+  await expect(page.getByRole('alert')).toContainText('응답 확인 지연');
+  await expect(page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' })).toBeEnabled();
+  expect(posts).toBe(1);
+  offline = true; await page.getByRole('button', { name: '연결 상태 새로고침' }).click();
+  await expect(page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' })).toBeDisabled();
+  offline = false; await page.getByRole('button', { name: '연결 상태 새로고침' }).click();
+  await expect(page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' })).toBeEnabled();
+});
+
+test('settings uses server time for cooldown and shows server identity', async ({ page }) => {
+  const start = Date.now(); await page.clock.install({ time: start });
+  const state = snapshot();
+  state.connection.authentication.retryAt = new Date(start + 3600_000 + 60_000).toISOString();
+  state.status.observedAt = new Date(start + 3600_000).toISOString();
+  state.status.lastSuccessAt = state.status.observedAt;
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.goto('/settings');
+  await expect(page.getByLabel('실행 서버 식별')).toContainText('fixture-');
+  await expect(page.getByLabel('KIS 인증 상태', { exact: true })).toContainText('60초');
+  await expect(page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' })).toBeDisabled();
+  state.status.observedAt = new Date(start + 3600_000 + 60_001).toISOString();
+  state.status.lastSuccessAt = state.status.observedAt;
+  await page.clock.fastForward(60_001);
+  await expect(page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' })).toBeEnabled();
+});
+
+test('settings identifies a restarted server, shows progress and expires complete money after 60 seconds', async ({ page }) => {
+  const start = Date.now(); await page.clock.install({ time: start });
+  const state = snapshot(); let serverTime = start;
+  state.connection.status.phase = 'loading'; state.connection.status.pages = 2;
+  state.connection.checkStartedAt = new Date(start - 15_000).toISOString();
+  await page.route('**/api/state', route => {
+    state.status.observedAt = new Date(serverTime).toISOString(); state.status.lastSuccessAt = state.status.observedAt;
+    return route.fulfill({ json: state });
+  });
+  await page.goto('/settings');
+  await expect(page.getByLabel('모의 잔고 조회 상태', { exact: true })).toContainText('경과 15초');
+  await expect(page.getByLabel('모의 잔고 조회 상태', { exact: true })).toContainText('확인한 페이지: 2');
+  await expect(page.getByRole('button', { name: '연결 상태 새로고침' })).toBeEnabled();
+  state.instanceId = 'restarted-server'; state.startedAt = new Date(start + 1000).toISOString();
+  state.connection.status = { ...state.connection.status, phase: 'ready', complete: true, lastSuccessAt: new Date(start).toISOString(), observedAt: new Date(start).toISOString() };
+  state.connection.connected = true; state.connection.balance = { cash: 9876, totalEquity: 9876, positions: [] };
+  await page.getByRole('button', { name: '연결 상태 새로고침' }).click();
+  await expect(page.getByLabel('실행 서버 식별')).toContainText('restarte');
+  await expect(page.getByRole('alert')).toContainText('서버가 다시 시작');
+  await expect(page.getByText('전체 조회 성공값', { exact: true })).toBeVisible();
+  serverTime += 60_001; await page.clock.fastForward(60_001);
+  await expect(page.getByText('이전 전체 성공값 · 최신 아님', { exact: true })).toBeVisible();
+  await expect(page.getByText('9,876원', { exact: true })).toBeVisible();
+  await expect(page.getByText('조회 확인', { exact: true })).toHaveCount(0);
 });

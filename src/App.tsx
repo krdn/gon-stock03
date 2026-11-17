@@ -23,6 +23,8 @@ export default function App() {
   const [connectionState, setConnection] = useState(disconnectedConnection);
   const [now, setNow] = useState(Date.now);
   const snapshot = useRef<StateSnapshot | null>(null);
+  const serverClock = useRef({ observedAt: null as string | null, receivedAt: 0 });
+  const serverNow = serverClock.current.observedAt ? Date.parse(serverClock.current.observedAt) + now - serverClock.current.receivedAt : now;
   const requests = useRef({ issued: 0, applied: 0 });
   const status = freshness(localStatus, now);
   const accountStatus = freshness(connectionState.status, now);
@@ -50,6 +52,7 @@ export default function App() {
         setLocalStatus(old => ({ ...old, phase: 'error', complete: false, error: '저장 상태가 이전 버전으로 바뀌었습니다. 페이지를 새로고침해 다시 확인하세요.' })); return;
       }
       if (previous && previous.instanceId !== result.instanceId) setNotice({ text: '서버가 다시 시작되어 저장 상태를 새로 불러왔습니다. 주문과 한도를 다시 확인하세요.', error: true });
+      if (result.status.observedAt !== serverClock.current.observedAt) serverClock.current = { observedAt: result.status.observedAt, receivedAt: Date.now() };
       snapshot.current = result; setState(result); setLocalStatus(result.status); setConnection(result.connection); setNow(Date.now());
     } catch {
       if (sequence < requests.current.applied) return;
@@ -71,18 +74,20 @@ export default function App() {
     if (path === 'kis/check' || path === 'kis/orders') setConnection(old => ({ ...old, connected: false, status: { ...old.status, phase: 'loading', complete: false, error: null } }));
     let message = '요청을 처리하지 못했습니다. 잠시 후 다시 확인하세요.';
     let definitive = false;
+    const controller = path === 'kis/check' ? new AbortController() : undefined;
+    const timer = controller ? window.setTimeout(() => controller.abort(), 125_000) : undefined;
     try {
-      const response = await fetch('/api/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(body ?? {}) });
+      const response = await fetch('/api/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(body ?? {}), ...(controller ? { signal: controller.signal } : {}) });
       const result = await response.json();
       if (!result || typeof result !== 'object') throw new Error(message);
       if (!response.ok) { definitive = response.status >= 400 && response.status < 500; if ((response.status < 500 || result.error === storageErrorMessage) && typeof result.error === 'string') message = result.error; throw new Error(message); }
       await refresh(); setNotice({ text: result.message ?? '변경 사항을 저장했습니다.', error: Boolean(result.warning) });
       return result as T;
-    } catch { setNotice({ text: message, error: true }); await refresh(); throw Object.assign(new Error(message), { definitive }); }
-    finally { setBusy(false); }
+    } catch { if (controller?.signal.aborted) message = '응답 확인 지연: 브라우저 대기를 종료했습니다. 서버 취소를 보장하지 않습니다. 연결 상태를 새로고침하세요.'; setNotice({ text: message, error: true }); await refresh(); throw Object.assign(new Error(message), { definitive }); }
+    finally { window.clearTimeout(timer); setBusy(false); }
   }
   const routes = [Dashboard, Market, WatchlistPage, Trade, Orders, Portfolio, Strategies, Backtest, Risk, Journal, Alerts, DataStatus, Settings, Design, Paper];
-  return <WorkbenchContext.Provider value={{ state, status, connection, paperRisk: snapshot.current?.paperRisk, realtime: snapshot.current?.realtime, busy, available, act, refresh }}><a className="skip-link" href="#main">본문으로 이동</a><div className="app-shell">
+  return <WorkbenchContext.Provider value={{ state, status, connection, serverNow, server: snapshot.current ? { instanceId: snapshot.current.instanceId, startedAt: snapshot.current.startedAt } : undefined, paperRisk: snapshot.current?.paperRisk, realtime: snapshot.current?.realtime, busy, available, act, refresh }}><a className="skip-link" href="#main">본문으로 이동</a><div className="app-shell">
     {menu && <button className="scrim" aria-label="메뉴 닫기" onClick={() => setMenu(false)} />}
     <aside className={`sidebar ${menu ? 'open' : ''}`}><Link to="/dashboard" className="brand"><span className="brand-symbol"><Activity size={22} /></span><div>GON<span className="brand-light"> STOCK</span><small>PERSONAL TRADING WORKSPACE</small></div></Link><div className="workspace-label"><span className="avatar">G</span><div>나의 워크스페이스<small>국내 주식 · ETF</small></div><Badge tone="dark">LOCAL</Badge></div><nav aria-label="주 메뉴">{screens.map((screen, i) => { const Icon = icons[i]; return <div key={screen.id}>{(i === 0 || screen.group !== screens[i - 1].group) && <p className="nav-group">{screen.group}</p>}<NavLink to={'/' + screen.id}><Icon size={18} /><span>{screen.title}</span>{screen.id === 'alerts' && <small className="nav-count">{state.events.filter(e => !e.read).length}</small>}{screen.id === 'design' && <small className="nav-new">GUIDE</small>}</NavLink></div>; })}</nav><div className="sidebar-bottom"><span className="status-dot" /><div>로컬 데모 환경<small>KIS 모의투자 별도 연결</small></div><CircleHelp size={17} /></div></aside>
     <div className="workspace"><header className="topbar"><div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="메뉴 열기" onClick={() => setMenu(!menu)}><Menu size={20} /></button><span>워크스페이스</span><ChevronRight size={14} /><strong>{current.title}</strong></div><div className="top-actions"><Badge tone={current.id === 'paper' ? 'neutral' : 'teal'}>{current.id === 'paper' ? 'KIS 실제 모의 계좌' : current.id === 'dashboard' ? 'DEMO / KIS 모의 · 계좌 요약' : current.id === 'orders' ? 'DEMO / KIS 모의 · 환경 선택' : current.id === 'alerts' ? 'DEMO / KIS 모의 · 운영 이벤트' : current.id === 'risk' ? 'DEMO / KIS 모의 · 공통 한도' : current.id === 'portfolio' ? 'DEMO / KIS 모의 · 환경 선택' : current.id === 'strategies' ? 'DEMO / KIS 모의 · 전략 환경 선택' : current.id === 'backtest' ? 'KIS 저장 일봉 / DEMO 실험' : current.id === 'data' ? '공개 마스터 / KIS 일봉 / 합성' : current.id === 'market' || current.id === 'watchlist' ? '공식 마스터 · KIS 모의 시세' : '합성 데이터 · 로컬 데모'}</Badge><Link to="/settings" className="connection-link"><span className={`status-dot ${available ? '' : 'amber'}`} />{available ? '로컬 서버 연결' : '화면 미리보기'}</Link><Link className="icon-button" to="/alerts" aria-label="알림 열기"><Bell size={18} /></Link><span className="avatar small">G</span></div></header>

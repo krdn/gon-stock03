@@ -53,7 +53,10 @@ test('state API shares a validated status contract without broker I/O, secrets o
     assert.equal((await post()).status, 200);
     const good = await read(); assert.equal(good.connection.status.phase, 'ready'); assert.equal(good.connection.balance?.cash, 123456); assert.equal(good.cash, before.cash);
     assert.equal(good.connection.authentication.phase, 'ready'); assert.ok(good.connection.authentication.lastSuccessAt);
-    assert.equal(good.instanceId, before.instanceId); const requestCount = calls;
+    assert.equal(good.instanceId, before.instanceId); assert.equal(good.startedAt, before.startedAt);
+    assert.ok(Number.isFinite(Date.parse(before.startedAt))); assert.ok(Date.parse(before.startedAt) <= Date.now());
+    assert.equal(before.connection.checkStartedAt, null); assert.ok(good.connection.checkStartedAt);
+    const requestCount = calls;
     await read(); await read(); assert.equal(calls, requestCount);
     fail = true; const failed = await post(); assert.equal(failed.status, 400);
     const body = await failed.text(); const stale = await read();
