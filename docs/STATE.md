@@ -2,6 +2,7 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매.
 
+- **운영 수정:** [#83 Graphify 추적·전달](tasks/83-graphify-handoff.md). 사용자 선택으로 핵심 그래프·보고서를 추적하고 캐시는 제외한다. 커밋 전 명시 갱신, 저장소별 훅 자동 재생성 중지로 인수인계 차단을 해소한다. 커밋/checkout 후 clean과 실제 자동 게시·댓글 재조회 성공. 원격 CI·통합은 #83의 관련 PR을 확인한다.
 - **접속키 완료:** [#80](tasks/80-ws-approval.md)·[PR81](https://github.com/krdn/gon-stock03/pull/81) main `275d9b5` 통합·CI2 PASS. 16:48 `dev:realtime` 실제 발급·4303/4304 적용 완료. 키는 서버에만 존재하며 기존 원장 유지. [적용·초기 실패·잔여 조건](verification/2026-11-17-ws-apply.md). 실제 구독은 장중 대기다.
 - **현재:** [#75 시장가1회](tasks/75-market-paper.md)는 구현 완료·실제 실증 대기다. PR78 통합 main `b7c6ac2`, head `d821caa`의 단위203·브라우저118·빌드·지정 Argon/high 리뷰·CI4 PASS.
 - **실제 결과:** 2026-11-17 15:24 잔고 HTTP500으로 사전검사 중단. 주문POST0·취소POST0. 15:25 읽기 전용 재조회 성공. [실행·백업·한계](verification/2026-11-17-market-paper.md).

@@ -1,6 +1,6 @@
 {
-  "checked_at": "2026-11-17T07:29:19.394732+00:00",
-  "objective": "#80 WebSocket 접속키 메모리 발급",
+  "checked_at": "2026-11-17T07:58:56.463767+00:00",
+  "objective": "Graphify 핵심 결과 추적과 생성물로 인한 인수인계 차단 해소",
   "sources": [
     {
       "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_user/kis_auth.py",
@@ -334,6 +334,18 @@
       ],
       "decisions": "명시적 dev:realtime만 인증한다. 접속키는 서버 자식 환경에만 전달하며 파일/로그 저장·자동 구독·거래는 하지 않는다.",
       "issue": "https://github.com/krdn/gon-stock03/issues/80"
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/83",
+      "checked_at": "2026-11-17T07:58:56.463767+00:00",
+      "objective": "Graphify 핵심 결과 추적과 생성물로 인한 인수인계 차단 해소",
+      "sources": [
+        {
+          "url": "https://git-scm.com/docs/gitignore",
+          "finding": "추적 파일은 영향받지 않으며 부모 디렉터리 제외 시 하위 재포함 불가. 디렉터리 내용만 제외하고 핵심 파일을 재포함한다."
+        }
+      ],
+      "decisions": "graph.json·GRAPH_REPORT.md·.skip-hook만 추적. 캐시·HTML·상태 파일은 제외. 그래프 갱신 후 코드와 함께 커밋하며 중앙 dirty 검사와 전역 훅은 보존한다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."
