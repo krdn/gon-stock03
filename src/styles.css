@@ -47,3 +47,11 @@
 .backtest-fields .field { min-width: 0; }
 
 .strategy-evaluation { border-top: 1px solid var(--line); padding: 10px 0; overflow-wrap: anywhere; font-size: 12px; line-height: 1.7; }
+
+.trade-page .quote small,.trade-page .side-tabs button:not(.active){color:var(--muted)}
+.trade-page .inline-flow{color:#43665d}
+.trade-validation{font-size:12px;line-height:1.7;color:var(--red);margin:12px 0}
+.trade-page .trade-grid > *,.trade-page .stock-heading label{min-width:0}
+.trade-page .stock-heading label{flex:1}
+.trade-page .stock-heading select{width:100%}
+.trade-page .chart-toolbar,.trade-page .chart-axis{flex-wrap:wrap;gap:8px}

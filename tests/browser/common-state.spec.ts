@@ -68,7 +68,9 @@ test('local loading, disconnected, ready and stale states are explicit and block
   await expect(page.getByLabel('로컬 상태', { exact: true })).toContainText('로딩');
   mode = 'error'; release!();
   await expect(page.getByLabel('로컬 상태', { exact: true })).toContainText('미연결');
-  await expect(page.getByRole('button', { name: '매수 주문 확인' })).toBeDisabled();
+  await expect(page.getByText('DEMO 상태를 확인하지 못했습니다')).toBeVisible();
+  await expect(page.getByRole('button', { name: '매수 주문 확인' })).toHaveCount(0);
+  await expect(page.getByLabel('주문 가격 (원)')).toHaveCount(0);
   mode = 'ready'; await page.getByRole('button', { name: '다시 확인', exact: true }).click();
   await expect(page.getByLabel('로컬 상태', { exact: true })).toContainText('정상');
   await page.getByRole('button', { name: '매수 주문 확인' }).click();
