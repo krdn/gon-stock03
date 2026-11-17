@@ -14,7 +14,8 @@ const removed = (row: Row): row is RemovedInstrument => 'removedAt' in row;
 const time = (value: string) => new Date(value).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
 
 export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
-  const { state, act, busy, available } = useWorkbench();
+  const { state, act, busy, available, server, status } = useWorkbench();
+  const watchlist = useMemo(() => server ? state.watchlist : [], [state.watchlist, server?.instanceId]);
   const [data, setData] = useState<MasterDataSnapshot>({ instruments: [], removed: [], sources: [] });
   const [saveError, setSaveError] = useState('');
   const [masterError, setMasterError] = useState(''), [loadingMaster, setLoadingMaster] = useState(true);
@@ -27,11 +28,11 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
   const query = search.trim().toLocaleUpperCase('ko-KR');
   const filtered = useMemo(() => {
     const masterRows: Row[] = [...data.instruments, ...data.removed];
-    const saved = new Set(state.watchlist);
+    const saved = new Set(watchlist);
     const knownCodes = new Set(masterRows.map(row => row.code));
     const list: Row[] = watchOnly ? [...masterRows.filter(row => saved.has(row.code)), ...[...saved].filter(code => !knownCodes.has(code)).map(code => ({ code, name: state.instruments.find(row => row.code === code)?.name ?? code, unverified: true as const }))] : masterRows;
     return list.filter(row => (market === '전체' || category(row) === market) && (row.code.includes(query) || row.name.toLocaleUpperCase('ko-KR').includes(query)));
-  }, [data, market, query, watchOnly, state.watchlist, state.instruments]);
+  }, [data, market, query, watchOnly, watchlist, state.instruments]);
   const lastPage = Math.max(0, Math.ceil(filtered.length / MARKET_PAGE_SIZE) - 1), currentPage = Math.min(page, lastPage);
   const rows = filtered.slice(currentPage * MARKET_PAGE_SIZE, (currentPage + 1) * MARKET_PAGE_SIZE);
   const codes = rows.filter(row => !removed(row) && !unverified(row)).map(row => row.code).join(',');
@@ -40,14 +41,21 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
   const masterComplete = data.sources.length === 2 && data.sources.every(source => source.phase === 'ready' && source.lastSuccessAt);
   const emptyMessage = loadingMaster ? '마스터 확인 후 검색 결과를 판단할 수 있습니다.'
     : masterError ? '마스터 확인 후 검색 결과를 판단할 수 있습니다. 다시 갱신하세요.'
-    : watchOnly && exactCode && !state.watchlist.includes(exactCode.code) ? '관심목록에 없는 종목입니다. 시장 탐색에서 추가하세요.'
+    : watchOnly && exactCode && !watchlist.includes(exactCode.code) ? '관심목록에 없는 종목입니다. 시장 탐색에서 추가하세요.'
     : exactCode ? `다른 시장 필터에 있는 종목입니다. 전체 또는 ${category(exactCode)}를 선택하세요.`
     : masterComplete && /^\d[0-9A-Z]{5}$/.test(query) ? '현재 마스터에 없는 코드입니다. 미등록·상장폐지 여부를 확인하세요. 상장폐지로 단정할 수 없습니다.'
     : data.instruments.length ? '검색 조건과 시장 필터를 바꿔보세요.' : '마스터 갱신으로 공식 종목 목록을 수집하세요. 예시 가격으로 대체하지 않습니다.';
 
-  useEffect(() => {
-    if (selected) { detailSection.current?.focus(); detailSection.current?.scrollIntoView({ block: 'nearest' }); }
-  }, [selected]);
+  function focusDetail() {
+    detailSection.current?.focus();
+    detailSection.current?.scrollIntoView({ block: 'nearest' });
+  }
+  function openDetail(code: string, trigger: HTMLButtonElement) {
+    detailTrigger.current = trigger;
+    if (selected === code) focusDetail();
+    else setSelected(code);
+  }
+  useEffect(() => { if (selected) focusDetail(); }, [selected]);
 
   async function loadMaster(update: boolean) {
     masterRequest.current?.abort(); const controller = new AbortController(); masterRequest.current = controller;
@@ -126,7 +134,7 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
   return <>
     <div className="notice compact"><div><strong>국내 주식·ETF · KIS 모의 서버 시세</strong><br />현재 페이지 최대 {MARKET_PAGE_SIZE}종목을 순차 조회하고 완료 {MARKET_REFRESH_MS / 1000}초 후 갱신합니다. 수신 시각은 체결 시각이 아닙니다. 실시간 시세·거래 가능 확정을 뜻하지 않습니다.</div></div>
     {!watchOnly && <div className="market-summary">{(['KOSPI', 'KOSDAQ', 'ETF'] as const).map(m => <div key={m}><span className="eyebrow">{m}</span><h3>{data.instruments.filter(row => category(row) === m).length}<small>개 마스터 종목</small></h3><p>{m === 'ETF' ? '상장시장과 별도 분류' : 'ETF 제외 · 국내 주식'}</p></div>)}</div>}
-    {watchOnly && <div className="button-row"><Link className="button secondary" to="/market">시장 탐색에서 추가</Link><span className="muted">저장된 관심종목 {state.watchlist.length}개 · 시장 탐색과 같은 목록</span></div>}
+    {watchOnly && <div className="button-row"><Link className="button secondary" to="/market">시장 탐색에서 추가</Link><span className="muted">{server ? `저장된 관심종목 ${watchlist.length}개 · 시장 탐색과 같은 목록` : '저장된 관심종목 수 미확인'}</span></div>}
     <Panel title={watchOnly ? "나의 관심종목" : "종목 마스터"} action={<button className="button secondary" disabled={loadingMaster} onClick={() => void loadMaster(true)}><RefreshCw size={15} />{loadingMaster ? '마스터 확인 중' : '마스터 갱신'}</button>}>
       {saveError && <div role="alert" className="notice warning">{saveError}</div>}
       {masterError && <div role="alert" className="notice warning">{masterError}</div>}
@@ -134,11 +142,11 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
       <div className="market-sources">{data.sources.map(source => <span key={source.exchange}>{source.exchange} · {source.phase === 'loading' ? '수집 중 · 이전 목록' : source.phase === 'error' ? '갱신 실패' : '수집 완료'} · {source.lastSuccessAt ? time(source.lastSuccessAt) : '성공 기록 없음'}</span>)}</div>
       <div className="toolbar"><div className="tabs">{['전체', 'KOSPI', 'KOSDAQ', 'ETF'].map(m => <button aria-pressed={market === m} className={market === m ? 'active' : ''} onClick={() => changeFilter(m)} key={m}>{m}</button>)}</div><label className="search-field"><Search size={17} /><input aria-label="종목명 또는 코드 검색" placeholder="종목명 또는 코드 검색" value={search} onChange={event => { setSearch(event.target.value); setPage(0); setSelected(null); }} /></label></div>
       <div className="button-row market-refresh"><button className="button secondary" disabled={reading || !codes || !visible} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={15} />{reading ? '표시 종목 조회 중' : '표시 종목 시세 갱신'}</button><span className="muted tiny">{visible ? '현재 페이지 자동 갱신' : '숨겨진 화면 · 갱신 중단'} · 30초 경과 또는 실패 시 지연 표시</span></div>
-      {rows.length ? <div className="table-scroll"><table className="market-table"><thead><tr><th>관심</th><th>종목명 / 코드</th><th>현재가</th><th>등락률</th><th>거래량</th><th>수신 상태 / 거래 상태</th><th>{watchOnly ? '상세 / 주문' : '상세'}</th></tr></thead><tbody>{rows.map(row => {
+      {watchOnly && !server ? <Empty title={status.phase === 'loading' ? '관심목록을 확인하고 있습니다' : '관심목록을 확인하지 못했습니다'}>로컬 서버 연결 후 저장된 목록을 표시합니다.</Empty> : rows.length ? <div className="table-scroll"><table className="market-table"><thead><tr><th>관심</th><th>종목명 / 코드</th><th>현재가</th><th>등락률</th><th>거래량</th><th>수신 상태 / 거래 상태</th><th>{watchOnly ? '상세 / 주문' : '상세'}</th></tr></thead><tbody>{rows.map(row => {
         const value = removed(row) || unverified(row) ? undefined : quotes[row.code], quote = value?.quote;
-        return <tr key={row.code}><td><button className={`star-button ${state.watchlist.includes(row.code) ? 'selected' : ''}`} aria-label={`${row.name} 관심 ${state.watchlist.includes(row.code) ? '해제' : '등록'}`} disabled={busy || !available || ((removed(row) || unverified(row)) && !state.watchlist.includes(row.code))} onClick={() => void toggleWatch(row.code)}><Star size={17} /></button></td><td><button className="market-name" aria-controls="market-detail" onClick={event => { detailTrigger.current = event.currentTarget; setSelected(row.code); }}>{row.name}<small>{row.code} · {row.exchange ?? '마스터 미확인'}{row.kind === 'etf' ? ' · ETF' : ''}</small></button></td><td className="number">{quote ? won(quote.price) : '—'}</td><td>{quote ? <Change value={quote.change} /> : '—'}</td><td className="number">{quote?.volume === undefined ? '—' : won(quote.volume)}</td><td className="market-row-status"><strong>{quoteLabel(row)}</strong><span>{tradingLabel(row)}</span><small>{quote ? `수신 ${time(quote.receivedAt)}` : '수신 시각 없음'}</small>{value?.error && <small className="down">{value.error}</small>}</td><td><button className="button quiet" aria-label={`${row.name} 상세`} aria-controls="market-detail" onClick={event => { detailTrigger.current = event.currentTarget; setSelected(row.code); }}>보기</button>{watchOnly && !removed(row) && !unverified(row) && <Link className="table-action" aria-label={`${row.name} KIS 주문 화면`} to={`/paper?code=${encodeURIComponent(row.code)}`}>주문 화면 ↗</Link>}</td></tr>;
-      })}</tbody></table></div> : <Empty title={watchOnly && !state.watchlist.length ? '관심종목이 없습니다' : loadingMaster ? '종목 마스터를 확인하고 있습니다' : '표시할 종목이 없습니다'}>{watchOnly && !state.watchlist.length ? '시장 탐색에서 관심종목을 추가하세요.' : emptyMessage}</Empty>}
-      <div className="table-foot"><span>총 {filtered.length}개 종목 · {currentPage + 1} / {lastPage + 1}페이지</span><div className="button-row"><button className="button quiet" disabled={currentPage === 0} onClick={() => { setPage(currentPage - 1); setSelected(null); }}>이전 페이지</button><button className="button quiet" disabled={currentPage === lastPage} onClick={() => { setPage(currentPage + 1); setSelected(null); }}>다음 페이지</button></div></div>
+        return <tr key={row.code}><td><button className={`star-button ${watchlist.includes(row.code) ? 'selected' : ''}`} aria-label={`${row.name} 관심 ${watchlist.includes(row.code) ? '해제' : '등록'}`} disabled={busy || !available || ((removed(row) || unverified(row)) && !watchlist.includes(row.code))} onClick={() => void toggleWatch(row.code)}><Star size={17} /></button></td><td><button className="market-name" aria-controls="market-detail" onClick={event => openDetail(row.code, event.currentTarget)}>{row.name}<small>{row.code} · {row.exchange ?? '마스터 미확인'}{row.kind === 'etf' ? ' · ETF' : ''}</small></button></td><td className="number">{quote ? won(quote.price) : '—'}</td><td>{quote ? <Change value={quote.change} /> : '—'}</td><td className="number">{quote?.volume === undefined ? '—' : won(quote.volume)}</td><td className="market-row-status"><strong>{quoteLabel(row)}</strong><span>{tradingLabel(row)}</span><small>{quote ? `수신 ${time(quote.receivedAt)}` : '수신 시각 없음'}</small>{value?.error && <small className="down">{value.error}</small>}</td><td><button className="button quiet" aria-label={`${row.name} 상세`} aria-controls="market-detail" onClick={event => openDetail(row.code, event.currentTarget)}>보기</button>{watchOnly && !removed(row) && !unverified(row) && <Link className="table-action" aria-label={`${row.name} KIS 주문 화면`} to={`/paper?code=${encodeURIComponent(row.code)}`}>주문 화면 ↗</Link>}</td></tr>;
+      })}</tbody></table></div> : <Empty title={watchOnly && !watchlist.length ? '관심종목이 없습니다' : loadingMaster ? '종목 마스터를 확인하고 있습니다' : '표시할 종목이 없습니다'}>{watchOnly && !watchlist.length ? '시장 탐색에서 관심종목을 추가하세요.' : emptyMessage}</Empty>}
+      {(!watchOnly || server) && <div className="table-foot"><span>총 {filtered.length}개 종목 · {currentPage + 1} / {lastPage + 1}페이지</span><div className="button-row"><button className="button quiet" disabled={currentPage === 0} onClick={() => { setPage(currentPage - 1); setSelected(null); }}>이전 페이지</button><button className="button quiet" disabled={currentPage === lastPage} onClick={() => { setPage(currentPage + 1); setSelected(null); }}>다음 페이지</button></div></div>}
     </Panel>
     {detail && <section id="market-detail" ref={detailSection} tabIndex={-1} aria-label="종목 상세"><Panel title={`${detail.name} · ${detail.code}`} action={<button className="button quiet" onClick={() => { setSelected(null); detailTrigger.current?.focus(); }}>상세 닫기</button>}><div className="check-row"><span>시장 / 종류</span><strong>{detail.exchange ?? '마스터 미확인'} / {unverified(detail) ? '확인 필요' : detail.kind === 'etf' ? 'ETF' : '주식'}</strong></div><div className="check-row"><span>업종</span><strong>{removed(detail) ? '확인 필요' : quotes[detail.code]?.quote?.sector || '미수신'}</strong></div><div className="check-row"><span>거래 상태</span><Badge>{tradingLabel(detail)}</Badge></div><div className="check-row"><span>시세 상태</span><strong>{quoteLabel(detail)}</strong></div><p className="muted prose">{unverified(detail) ? '저장된 코드의 마스터 정보를 확인하지 못했습니다. 마스터 갱신 후 다시 확인하세요.' : removed(detail) ? `마스터 제외 확인: ${time(detail.removedAt)}. 제외 사유와 상장폐지 여부는 별도 확인이 필요합니다.` : '가격·업종·거래량은 KIS REST 응답 기준입니다. 거래정지 해제·주문 가능 여부는 주문 전 별도 검사가 필요합니다.'}</p><Link className="subtle-link" to="/settings">KIS 연결 상태 확인 ↗</Link></Panel></section>}
   </>;

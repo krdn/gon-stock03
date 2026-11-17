@@ -22,6 +22,7 @@
 .market-sources { display: flex; flex-wrap: wrap; gap: 8px 20px; color: var(--muted); font-size: 12px; margin-bottom: 16px; }
 .market-refresh { flex-wrap: wrap; margin-bottom: 16px; }
 .market-table { min-width: 900px; }
+.market-table .table-action { color: var(--teal); }
 .market-name { border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-align: left; cursor: pointer; padding: 0; }
 .market-name small, .market-row-status span, .market-row-status small { display: block; color: var(--muted); font-size: 11px; font-weight: 400; margin-top: 5px; }
 .market-row-status { max-width: 280px; white-space: normal; }
