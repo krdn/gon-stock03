@@ -36,6 +36,7 @@ export const dataStatusSchema = z.object({
 });
 const connectionFailureSchema = z.object({ kind: z.enum(['missing', 'invalid', 'expired', 'permission', 'rate-limit', 'network', 'upstream', 'contract', 'rejected']), message: z.string() });
 export const connectionSchema = z.object({
+  checkStartedAt: z.iso.datetime().nullable(),
   configured: z.boolean(), mode: z.literal('paper'), connected: z.boolean(), checkedAt: z.iso.datetime().optional(), message: z.string(),
   status: dataStatusSchema.extend({ environment: z.literal('kis-paper'), source: z.literal('kis-rest') }),
   injection: z.object({ phase: z.enum(['unverified', 'missing', 'invalid', 'present']), missing: z.array(z.enum(['KIS_APP_KEY', 'KIS_APP_SECRET', 'KIS_CANO', 'KIS_ACNT_PRDT_CD'])) }),
@@ -53,7 +54,7 @@ export const stateSnapshotSchema = z.object({
   risk: riskInput.extend({ halted: z.boolean() }),
   events: z.array(z.object({ id: z.string(), time: z.string(), level: z.enum(['info', 'warning', 'error']), title: z.string(), detail: z.string(), read: z.boolean(), environment: z.enum(['demo', 'kis-paper', 'shared']).optional(), target: z.enum(['orders', 'paper', 'settings', 'risk', 'strategies']).optional(), requestId: z.uuid().optional() })),
   journal: z.array(z.object({ id: z.string(), date: z.string(), code: codeSchema, text: z.string() })),
-  tick: z.number(), playing: z.boolean(), revision: z.number().int().nonnegative(), updatedAt: z.string(), instanceId: z.string().min(1),
+  tick: z.number(), playing: z.boolean(), revision: z.number().int().nonnegative(), updatedAt: z.string(), instanceId: z.string().min(1), startedAt: z.iso.datetime(),
   status: dataStatusSchema.extend({ environment: z.literal('demo'), source: z.literal('synthetic') }), connection: connectionSchema,
   realtime: z.object({ phase: z.enum(['stopped', 'connecting', 'reconciling', 'ready', 'disconnected', 'error']), required: z.boolean(), ordersAllowed: z.boolean(), message: z.string(), code: codeSchema.nullable(), lastQuoteAt: z.iso.datetime().nullable(), lastNoticeAt: z.iso.datetime().nullable(), reconciledAt: z.iso.datetime().nullable(), price: z.number().positive().nullable(), fresh: z.boolean() }).optional(),
   paperRisk: z.object({ day: z.string().regex(/^\d{8}$/), baselineEquity: z.number().nonnegative().nullable(), unresolvedCount: z.number().int().nonnegative(), orders: z.object({ observedAt: z.iso.datetime(), rows: z.array(z.object({ code: codeSchema, side: z.enum(['buy', 'sell']), price: z.number().nonnegative(), remaining: z.number().int().nonnegative(), cancelled: z.boolean() })) }).nullable() }).optional(),

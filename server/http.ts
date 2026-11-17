@@ -29,6 +29,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
   const realtime = new Realtime(store, paper, realtimeOptions?.config ?? Realtime.configuration(), realtimeOptions?.connect, realtimeOptions?.now);
   const market = new MarketData(store, kis);
   const instanceId = randomUUID();
+  const startedAt = new Date().toISOString();
   const origins = new Set(ports.flatMap(port => [`http://127.0.0.1:${port}`, `http://localhost:${port}`]));
   const hosts = new Set([...origins].map(origin => new URL(origin).host));
   const server = createServer(async (req, res) => {
@@ -38,7 +39,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
     try {
       if (path === '/api/state' && req.method === 'GET') {
         const now = new Date().toISOString();
-        const snapshot: StateSnapshot = { ...store.read(), events: store.events(), instanceId, status: { ...emptyStatus('demo'), phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now }, connection: kis.connection(), paperRisk: paper.riskSnapshot(), realtime: realtime.status() };
+        const snapshot: StateSnapshot = { ...store.read(), events: store.events(), instanceId, startedAt, status: { ...emptyStatus('demo'), phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now }, connection: kis.connection(), paperRisk: paper.riskSnapshot(), realtime: realtime.status() };
         json(res, 200, snapshot); return;
       }
       if (path === '/api/kis/ledger' && req.method === 'GET') { json(res, 200, { orders: store.paperOrders(), minimumRun: paper.approvalStatus() }); return; }

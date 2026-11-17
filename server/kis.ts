@@ -21,6 +21,16 @@ export class KisNotSent extends KisFailure { constructor(message: string, kind: 
 export class KisDataError extends Error { constructor(readonly kind: 'request' | 'contract', message: string) { super(message); } }
 class KisAuthExpired extends KisRejected { constructor(message: string) { super(message, 'expired'); } }
 const safeFailure = (error: unknown): ConnectionFailure => error instanceof KisFailure ? { kind: error.kind, message: error.message } : { kind: 'upstream', message: 'KIS 모의 요청을 완료하지 못했습니다. 잠시 후 다시 확인하세요.' };
+async function within<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  let abort!: () => void;
+  const cancelled = new Promise<never>((_, reject) => {
+    abort = () => reject(signal.reason);
+    if (signal.aborted) abort(); else signal.addEventListener('abort', abort, { once: true });
+  });
+  try { return await Promise.race([promise, cancelled]); }
+  finally { signal.removeEventListener('abort', abort); }
+}
 export const koreaDate = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(new Date()).replaceAll('-', '');
 export class KisClient {
   private token?: { value: string; until: number };
@@ -51,26 +61,29 @@ export class KisClient {
     const missing = (Object.keys(fields) as ConnectionState['injection']['missing']).filter(key => !fields[key].trim());
     return { phase: missing.length ? 'missing' : this.configured() ? 'present' : 'invalid', missing };
   }
-  private async send(path: string, init: RequestInit, beforeSend?: () => void) {
+  private async send(path: string, init: RequestInit, beforeSend?: () => void, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     if (this.pending >= 30) throw new KisNotSent('KIS 요청 대기가 많습니다. 잠시 후 다시 확인하세요.', 'rate-limit');
     this.pending++;
     const job = this.queue.catch(() => {}).then(async () => {
-      for (let wait = this.spacing - (performance.now() - this.lastCall); wait > 0; wait = this.spacing - (performance.now() - this.lastCall)) await new Promise(resolve => setTimeout(resolve, wait));
+      for (let wait = this.spacing - (performance.now() - this.lastCall); wait > 0; wait = this.spacing - (performance.now() - this.lastCall)) await within(new Promise(resolve => setTimeout(resolve, wait)), signal);
+      signal?.throwIfAborted();
       beforeSend?.();
       const remaining = Math.min(this.requestDeadline - performance.now(), this.requestWallDeadline - Date.now());
       if (remaining <= 0) throw new KisNotSent('승인된 조회 시간이 종료되었습니다. 자동 재조회하지 마세요.');
-      const options: RequestInit = { ...init, redirect: 'error', signal: AbortSignal.timeout(Math.max(1, Math.floor(Math.min(15000, remaining)))) };
+      const timeout = AbortSignal.timeout(Math.max(1, Math.floor(Math.min(15000, remaining))));
+      const options: RequestInit = { ...init, redirect: 'error', signal: signal ? AbortSignal.any([signal, timeout]) : timeout };
       let response: Response;
       try {
         let pendingResponse: Promise<Response>;
         try { pendingResponse = this.transport(BASE + path, options); }
         finally { this.lastCall = performance.now(); }
-        response = await pendingResponse;
+        response = await within(pendingResponse, signal);
       }
       catch { throw new KisFailure('KIS 모의 서버 통신 실패 또는 시간 초과입니다. 실전 서버로 대체하지 않습니다.', 'network'); }
       if (response.status === 401 && init.method !== 'POST') throw new KisAuthExpired('KIS 모의 인증이 만료되거나 거부되었습니다.');
       let data: unknown;
-      try { data = await response.json(); }
+      try { data = await within(response.json(), signal); }
       catch (error) {
         if (!(error instanceof SyntaxError)) throw new KisFailure('KIS 모의 응답 수신 실패 또는 시간 초과입니다.', 'network');
         if (response.ok) throw new KisFailure('KIS 응답 형식이 JSON이 아닙니다.', 'contract');
@@ -89,17 +102,17 @@ export class KisClient {
       return { response, data };
     });
     this.queue = job;
-    try { return await job; } finally { this.pending--; }
+    try { return await within(job, signal); } finally { this.pending--; }
   }
-  private async request(path: string, tr: string, params: Record<string, string>, post = false, continuation = '', beforeSend?: () => void) {
+  private async request(path: string, tr: string, params: Record<string, string>, post = false, continuation = '', beforeSend?: () => void, signal?: AbortSignal) {
     let token: string;
-    try { token = await this.accessToken(); }
+    try { token = await within(this.accessToken(signal), signal); }
     catch (error) { if (post) throw new KisNotSent('인증을 완료하지 못해 주문을 보내지 않았습니다.'); throw error; }
     const send = (value: string) => this.send(path + (post ? '' : '?' + new URLSearchParams(params)), {
       method: post ? 'POST' : 'GET',
       headers: { 'Content-Type': 'application/json', authorization: `Bearer ${value}`, appkey: this.credentials.key, appsecret: this.credentials.secret, tr_id: tr, tr_cont: continuation, custtype: 'P' },
       ...(post ? { body: JSON.stringify(params) } : {}),
-    }, beforeSend);
+    }, beforeSend, signal);
     try { return await send(token); }
     catch (error) {
       if (!(error instanceof KisAuthExpired) || post) throw error;
@@ -107,7 +120,7 @@ export class KisClient {
         this.token = undefined; this.authError = error;
         this.accountState.authentication = { ...this.accountState.authentication, phase: 'expired', failure: safeFailure(error) };
       }
-      const renewed = await this.accessToken();
+      const renewed = await within(this.accessToken(signal), signal);
       try { return await send(renewed); }
       catch (retryError) { if (retryError instanceof KisAuthExpired && this.token?.value === renewed) { this.token = undefined; this.authError = retryError; this.accountState.authentication = { ...this.accountState.authentication, phase: 'expired', failure: safeFailure(retryError) }; } throw retryError; }
     }
@@ -204,14 +217,15 @@ export class KisClient {
     if (!parsed.success) throw new Error('주문 응답을 확정할 수 없습니다. 자동 재전송하지 않습니다.');
     return { brokerId: parsed.data.output.ODNO, organization: parsed.data.output.KRX_FWDG_ORD_ORGNO };
   }
-  private async accessToken(): Promise<string> {
+  private async accessToken(signal?: AbortSignal): Promise<string> {
+    signal?.throwIfAborted();
     if (!this.configured()) throw new KisFailure('KIS 모의 환경변수가 없거나 계좌 형식이 올바르지 않습니다. Infisical 주입을 확인하세요.', this.injection().phase === 'missing' ? 'missing' : 'invalid');
     if (this.token && this.token.until > Date.now()) return this.token.value;
     if (this.auth) return this.auth;
     if (Date.now() < this.nextAuthAt) throw this.authError ?? new KisFailure('KIS 인증 갱신 대기 중입니다. 1분 후 다시 확인하세요.', 'rate-limit');
     this.accountState.authentication = { ...this.accountState.authentication, phase: 'loading', failure: null };
     this.auth = (async () => {
-      const { data } = await this.send('/oauth2/tokenP', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ grant_type: 'client_credentials', appkey: this.credentials.key, appsecret: this.credentials.secret }) }, () => { this.nextAuthAt = Date.now() + 60_000; });
+      const { data } = await this.send('/oauth2/tokenP', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ grant_type: 'client_credentials', appkey: this.credentials.key, appsecret: this.credentials.secret }) }, () => { this.nextAuthAt = Date.now() + 60_000; }, signal);
       const parsed = z.object({ access_token: z.string().min(1), expires_in: z.number().positive() }).safeParse(data);
       if (!parsed.success) throw new KisFailure('KIS 모의 토큰 발급 응답 계약을 확인할 수 없습니다.', 'contract');
       const validUntil = new Date(Date.now() + Math.max(0, parsed.data.expires_in - 60) * 1000);
@@ -237,25 +251,32 @@ export class KisClient {
     return structuredClone({ ...this.accountState, configured: this.configured(), injection: this.injection(), authentication, status, connected: status.phase === 'ready' });
   }
   async balance(fresh = false): Promise<ConnectionState> {
-    if (fresh) while (this.balanceRequest) await this.balanceRequest.catch(() => {});
-    if (this.balanceRequest) return this.balanceRequest;
-    this.accountState.status = { ...this.accountState.status, phase: 'loading', complete: false, error: null, pages: 0 };
-    this.accountState.failure = null;
-    this.balanceRequest = this.loadBalance();
-    try { return await this.balanceRequest; }
-    catch (error) {
-      const failure = safeFailure(error); const message = failure.message;
-      const previous = this.accountState.status;
-      this.accountState = { ...this.accountState, connected: false, message, failure, status: { ...previous, phase: previous.pages > 0 ? 'partial' : this.configured() ? 'error' : 'disconnected', complete: false, observedAt: new Date().toISOString(), error: message } };
-      throw error instanceof KisFailure ? error : new KisFailure(message, failure.kind);
-    } finally { this.balanceRequest = undefined; }
+    if (!fresh && this.balanceRequest) return this.balanceRequest;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new KisFailure('KIS 잔고 전체 조회 제한시간(120초)이 지났습니다. 상태를 확인한 뒤 수동 재조회하세요.', 'network')), 120_000);
+    try {
+      if (fresh) while (this.balanceRequest) await within(this.balanceRequest.catch(() => {}), controller.signal);
+      controller.signal.throwIfAborted();
+      this.accountState.checkStartedAt = new Date().toISOString();
+      this.accountState.status = { ...this.accountState.status, phase: 'loading', complete: false, error: null, pages: 0 };
+      this.accountState.failure = null;
+      this.balanceRequest = this.loadBalance(controller.signal);
+      try { return await this.balanceRequest; }
+      catch (error) {
+        const failure = safeFailure(error); const message = failure.message;
+        const previous = this.accountState.status;
+        this.accountState = { ...this.accountState, connected: false, message, failure, status: { ...previous, phase: previous.pages > 0 ? 'partial' : this.configured() ? 'error' : 'disconnected', complete: false, observedAt: new Date().toISOString(), error: message } };
+        throw error instanceof KisFailure ? error : new KisFailure(message, failure.kind);
+      } finally { this.balanceRequest = undefined; }
+    } finally { clearTimeout(timer); }
   }
-  private async loadBalance(): Promise<ConnectionState> {
+  private async loadBalance(signal: AbortSignal): Promise<ConnectionState> {
     const positions: NonNullable<ConnectionState['balance']>['positions'] = [];
     let fk = '', nk = '', cash = 0, totalEquity = 0; const seen = new Set<string>();
     for (let page = 0; page < 50; page++) {
       const params = { ...this.accountParams(), AFHR_FLPR_YN: 'N', OFL_YN: '', INQR_DVSN: '02', UNPR_DVSN: '01', FUND_STTL_ICLD_YN: 'N', FNCG_AMT_AUTO_RDPT_YN: 'N', PRCS_DVSN: '00', CTX_AREA_FK100: fk, CTX_AREA_NK100: nk };
-      const { response, data } = await this.request('/uapi/domestic-stock/v1/trading/inquire-balance', 'VTTC8434R', params, false, page ? 'N' : '');
+      const { response, data } = await this.request('/uapi/domestic-stock/v1/trading/inquire-balance', 'VTTC8434R', params, false, page ? 'N' : '', undefined, signal);
+      signal.throwIfAborted();
       const parsed = balanceSchema.safeParse(data);
       if (!parsed.success) throw new KisFailure('KIS 모의 잔고 응답 계약이 일치하지 않습니다. 불완전 잔고는 표시하지 않습니다.', 'contract');
       this.accountState.status = { ...this.accountState.status, observedAt: new Date().toISOString(), pages: page + 1 };

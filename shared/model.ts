@@ -14,13 +14,14 @@ export interface Connection { configured: boolean; mode: 'paper'; connected: boo
 export interface DataStatus { environment: 'demo' | 'kis-paper'; source: 'synthetic' | 'kis-rest'; phase: 'disconnected' | 'loading' | 'ready' | 'stale' | 'partial' | 'error'; observedAt: string | null; lastSuccessAt: string | null; staleAfterMs: number; complete: boolean; error: string | null; pages: number }
 export interface ConnectionFailure { kind: 'missing' | 'invalid' | 'expired' | 'permission' | 'rate-limit' | 'network' | 'upstream' | 'contract' | 'rejected'; message: string }
 export interface ConnectionState extends Connection {
+  checkStartedAt: string | null;
   status: DataStatus;
   injection: { phase: 'unverified' | 'missing' | 'invalid' | 'present'; missing: ('KIS_APP_KEY' | 'KIS_APP_SECRET' | 'KIS_CANO' | 'KIS_ACNT_PRDT_CD')[] };
   authentication: { phase: 'unverified' | 'loading' | 'ready' | 'expired' | 'error'; lastSuccessAt: string | null; validUntil: string | null; retryAt: string | null; failure: ConnectionFailure | null };
   failure: ConnectionFailure | null;
 }
 export interface PaperRiskSnapshot { day: string; baselineEquity: number | null; unresolvedCount: number; orders: { observedAt: string; rows: Pick<BrokerOrder, 'code' | 'side' | 'price' | 'remaining' | 'cancelled'>[] } | null }
-export interface StateSnapshot extends State { realtime?: import('./realtime.ts').RealtimeStatus; instanceId: string; status: DataStatus; connection: ConnectionState; paperRisk?: PaperRiskSnapshot }
+export interface StateSnapshot extends State { realtime?: import('./realtime.ts').RealtimeStatus; instanceId: string; startedAt: string; status: DataStatus; connection: ConnectionState; paperRisk?: PaperRiskSnapshot }
 export interface KisQuote { code: string; price: number; change: number; upper: number; lower: number; tickSize: number; stopped: boolean; receivedAt: string; volume?: number; sector?: string; liquidation?: boolean }
 export interface KisBar { date: string; close: number }
 export interface BrokerOrder { brokerId: string; date: string; code: string; name: string; side: 'buy' | 'sell'; qty: number; price: number; filled: number; remaining: number; cancelled: boolean; organization: string }

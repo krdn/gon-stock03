@@ -107,7 +107,7 @@ test('an old queued request expiring after renewal cannot overwrite the new auth
     if (expired && token === 'Bearer token-1') {
       events.push('old-token-expired');
       if (!scheduled) {
-        scheduled = true; let microtasks = 3;
+        scheduled = true; let microtasks = 5;
         const startConcurrentRead = () => { if (microtasks-- > 0) queueMicrotask(startConcurrentRead); else { second = client.quote('005930'); trigger(); } };
         queueMicrotask(startConcurrentRead);
       }
@@ -325,10 +325,11 @@ test('pacing survives a synchronous transport failure without replaying POST or 
 });
 
 test('pacing does not add a second interval after a slow transport response', async t => {
+  const realTimeout = setTimeout;
   let now = 0;
   const starts: number[] = [];
   t.mock.method(performance, 'now', () => now);
-  t.mock.method(globalThis, 'setTimeout', (callback: () => void, delay: number) => { now += delay; queueMicrotask(callback); });
+  t.mock.method(globalThis, 'setTimeout', (callback: () => void, delay: number) => { if (delay === 120_000) return realTimeout(callback, delay); now += delay; queueMicrotask(callback); });
   const client = new KisClient(credentials, async url => {
     starts.push(now);
     await Promise.resolve();
