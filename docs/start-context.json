@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-11-16T14:30:42.333408+00:00",
+  "checked_at": "2026-11-17T06:17:59.566856+00:00",
   "objective": "#14 요청 ID 보존·입력 보존·로컬 원장·명시적 불명 복구 화면",
   "sources": [
     {
@@ -298,6 +298,34 @@
         }
       ],
       "decisions": "정적 readFile 경계에만 catch를 추가한다. ENOENT/ENOTDIR은404, 나머지 읽기 실패는500 고정 문구로 반환한다. API 공통 catch와 정상 정적 응답은 유지한다. 임시 cwd와 메모리 DB·실패 fake transport만 사용한다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/71",
+      "checked_at": "2026-11-17T00:39:27.819835+00:00",
+      "objective": "연결 진단과 유한 조회 복구",
+      "sources": [
+        {
+          "url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal/timeout_static",
+          "finding": "AbortSignal timeout은 대기 중단을 알리며 AbortController와 setTimeout/clearTimeout으로 작업 종료 시 타이머를 정리할 수 있다. Node v24 globals 직접 접근은 실패했다."
+        }
+      ],
+      "decisions": "잔고 작업에만 120초 deadline을 적용하고 큐·인증·본문·페이지 대기를 포함한다. kis/check 브라우저 대기는125초, GET 복구는 독립한다. 실제 API/주입/재시작 없이 fake transport와 임시DB로 검증한다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/75",
+      "checked_at": "2026-11-17T06:17:59.566856+00:00",
+      "objective": "보존된 시장가 1회 구현을 최신 main과 결합 검증",
+      "sources": [
+        {
+          "url": "https://raw.githubusercontent.com/koreainvestment/open-trading-api/main/examples_llm/domestic_stock/order_cash/order_cash.py",
+          "finding": "모의 매수 VTTC0012U, 수량·단가 문자열, 단가 없는 주문은 상한가로 금액 선정 후 체결금액 정산."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/koreainvestment/open-trading-api/main/examples_llm/domestic_stock/inquire_psbl_order/inquire_psbl_order.py",
+          "finding": "미수 없는 매수가능수량은 ORD_DVSN01과 nrcvb_buy_qty, 금액은 nrcvb_buy_amt로 확인."
+        }
+      ],
+      "decisions": "기존 #75 구현을 보존한 별도 브랜치에서 #71과 결합 검증한다. 삼성전자 1주·30만원 상한·전송1회·POST 재시도0·API 취소 없음 유지. 실제 실행은 승인과 장중·계좌 조건을 대조한 뒤 진행한다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."

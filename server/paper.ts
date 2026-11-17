@@ -1,11 +1,11 @@
-import { paperRecoveryInput, type OrderInput, type PaperRecoveryInput } from '../shared/contracts.ts';
+import { paperRecoveryInput, type PaperOrderInput, type PaperRecoveryInput } from '../shared/contracts.ts';
 import type { PaperOrder, BrokerOrder, PaperEvidence, ConnectionState, PaperRiskSnapshot } from '../shared/model.ts';
 import { KisClient, KisRejected, KisNotSent, koreaDate } from './kis.ts';
 import { Store } from './store.ts';
 import { halt } from './engine.ts';
 import { z } from 'zod';
 
-export const paperApprovalSchema = z.object({ date: z.iso.date(), requestId: z.uuid(), cancelProbe: z.literal(true).optional(), code: z.enum(['069500', '005930']).optional(), maxAmount: z.number().int().positive().max(200000).optional(), allowExistingHolding: z.literal(true).optional() }).strict();
+export const paperApprovalSchema = z.object({ date: z.iso.date(), requestId: z.uuid(), cancelProbe: z.literal(true).optional(), code: z.enum(['069500', '005930']).optional(), maxAmount: z.number().int().positive().max(300000).optional(), orderType: z.literal('market').optional(), allowExistingHolding: z.literal(true).optional() }).strict().refine(value => value.orderType !== 'market' || (value.code === '005930' && !value.cancelProbe), '시장가는 삼성전자 매수1회·API 취소 없음 승인만 지원합니다.').refine(value => value.orderType === 'market' || (value.maxAmount ?? 100000) <= 200000, '지정가 승인 상한은 20만원입니다.');
 export type PaperApproval = z.infer<typeof paperApprovalSchema>;
 
 export const paperCapabilities = {
@@ -13,7 +13,7 @@ export const paperCapabilities = {
 } as const;
 const normalizeId = (id: string) => id.replace(/^0+(?=\d)/, '');
 const sameId = (a: string, b: string) => normalizeId(a) === normalizeId(b);
-const matches = (local: PaperOrder, row: BrokerOrder) => row.date === local.tradeDate && row.code === local.code && row.side === local.side && row.qty === local.qty && row.price === local.price;
+const matches = (local: PaperOrder, row: BrokerOrder) => row.date === local.tradeDate && row.code === local.code && row.side === local.side && row.qty === local.qty && row.price === local.price && (local.orderType ?? 'limit') === (row.orderType ?? 'limit');
 const reconciled = (local: PaperOrder, row: BrokerOrder): PaperOrder => ({ ...local, brokerId: row.brokerId, organization: row.organization, filled: row.filled, remaining: row.remaining,
   status: row.filled === local.qty ? 'filled' : row.remaining === 0 ? 'cancelled' : row.filled > 0 ? 'partial' : 'accepted', message: 'KIS 주문 조회와 대조했습니다.' });
 const evidence = (tradeDate: string, orders: BrokerOrder[], connection: ConnectionState): PaperEvidence => ({ observedAt: new Date().toISOString(), tradeDate, orders,
@@ -126,18 +126,20 @@ export class PaperBroker {
     if (!order || order.status !== 'unknown' || order.brokerId) throw new Error('주문번호 없는 응답 불명 주문만 명시적 복구할 수 있습니다.');
     return order;
   }
-  async submit(input: OrderInput, checkSignal?: () => void, strategy?: PaperOrder['strategy']): Promise<PaperOrder> {
+  async submit(input: PaperOrderInput, checkSignal?: () => void, strategy?: PaperOrder['strategy']): Promise<PaperOrder> {
     return this.enqueue(async () => {
+      const market = 'orderType' in input && input.orderType === 'market';
       const existing = this.store.paperOrders().find(o => o.requestId === input.requestId);
       if (existing) {
-        if (existing.code !== input.code || existing.side !== input.side || existing.qty !== input.qty || existing.price !== input.price) throw new Error('동일 요청 ID의 주문 내용이 다릅니다.');
+        if (existing.code !== input.code || existing.side !== input.side || existing.qty !== input.qty || existing.price !== input.price || (existing.orderType ?? 'limit') !== (market ? 'market' : 'limit')) throw new Error('동일 요청 ID의 주문 내용이 다릅니다.');
         return existing;
       }
+      if (market && (this.approval?.orderType !== 'market' || strategy)) throw new Error('시장가 1회 승인이 없습니다.');
       if (this.store.realtimeRequired() && !this.realtimeGuard) throw new KisNotSent('실시간 대조 안전장치 없이 신규 주문을 실행할 수 없습니다.');
       checkSignal?.();
       const checkRealtime = this.realtimeGuard?.(input.code);
       if (this.approval) {
-        if (input.requestId !== this.approval.requestId || input.code !== (this.approval.code ?? '069500') || input.side !== 'buy' || input.qty !== 1 || !Number.isSafeInteger(input.price) || input.price <= 0 || input.price > (this.approval.maxAmount ?? 100000)) throw new Error('조건부 1회 승인 범위와 주문이 다릅니다.');
+        if ((this.approval.orderType === 'market') !== market || input.requestId !== this.approval.requestId || input.code !== (this.approval.code ?? '069500') || input.side !== 'buy' || input.qty !== 1 || !Number.isSafeInteger(input.price) || (market ? input.price !== 0 : input.price <= 0 || input.price > (this.approval.maxAmount ?? 100000))) throw new Error('조건부 1회 승인 범위와 주문이 다릅니다.');
         this.checkWindow();
         this.store.claimPaperRun();
       }
@@ -153,22 +155,25 @@ export class PaperBroker {
       const quoteReceived = performance.now();
       if (this.approval) {
         if (quoteReceived - quoteStarted > 5000 || Date.now() - quoteStartedAt > 5000) throw new Error('승인 시세 조회 지연: 5초를 초과했습니다.');
-        if (input.price !== quote.price) throw new Error(`승인 지정가 불일치: 지정가 ${input.price}원, 재조회 현재가 ${quote.price}원.`);
-        if (!Number.isSafeInteger(quote.tickSize) || quote.tickSize <= 0 || input.price % quote.tickSize !== 0) throw new Error(`승인 호가 단위 오류: 지정가 ${input.price}원, 호가 단위 ${quote.tickSize}원.`);
+        if (!market && input.price !== quote.price) throw new Error(`승인 지정가 불일치: 지정가 ${input.price}원, 재조회 현재가 ${quote.price}원.`);
+        if (!market && (!Number.isSafeInteger(quote.tickSize) || quote.tickSize <= 0 || input.price % quote.tickSize !== 0)) throw new Error(`승인 호가 단위 오류: 지정가 ${input.price}원, 호가 단위 ${quote.tickSize}원.`);
       }
+      const valuationPrice = market ? quote.upper : input.price;
+      if (market && (!Number.isSafeInteger(valuationPrice) || valuationPrice < quote.price || valuationPrice <= 0 || valuationPrice > (this.approval!.maxAmount ?? 100000))) throw new Error('시장가 상한가가 승인 금액을 초과하거나 유효하지 않습니다.');
       const risk = this.store.read().risk;
       if (risk.halted) throw new Error('신규 주문 정지 상태입니다.');
       const value = balance.totalEquity;
       if (this.store.paperBaseline(koreaDate(), value) - value >= risk.dailyLoss) throw new Error('KIS 모의 계좌 손실 한도에 도달했습니다.');
       if (quote.stopped) throw new Error('거래정지 종목은 주문할 수 없습니다.');
-      if (input.price < quote.lower || input.price > quote.upper) throw new Error('지정가가 KIS 가격 제한 범위를 벗어났습니다.');
-      const amount = input.price * input.qty;
+      if (!market && (input.price < quote.lower || input.price > quote.upper)) throw new Error('지정가가 KIS 가격 제한 범위를 벗어났습니다.');
+      const amount = valuationPrice * input.qty;
+      if (this.approval && balance.cash <= amount) throw new Error('승인 조건의 현금 여유가 부족합니다.');
       if (!Number.isSafeInteger(amount) || amount > risk.maxOrder) throw new Error('1회 주문 한도를 초과했습니다.');
       const holding = balance.positions.find(p => p.code === input.code);
       if (input.side === 'buy') {
         const pending = brokerOrders.filter(o => o.code === input.code && o.side === 'buy' && !o.cancelled).reduce((a, o) => a + o.remaining * o.price, 0);
         if ((holding?.qty ?? 0) * quote.price + pending + amount > risk.maxPosition) throw new Error('KIS 종목별 투자 한도를 초과했습니다.');
-        const power = await this.kis.buyingPower(input.code, input.price);
+        const power = await this.kis.buyingPower(input.code, market ? quote.price : input.price);
         if (this.approval && amount >= power.cash) throw new Error('승인 조건의 미수 없는 현금 여유가 부족합니다.');
         if (input.qty > power.qty || amount > power.cash) throw new Error('KIS 미수 없는 매수 가능 수량 또는 현금이 부족합니다.');
       } else {

@@ -7,6 +7,8 @@ export const storageErrorMessage = '요청과 이벤트 저장에 실패했습�
 export const codeSchema = z.string().regex(/^\d{6}$/);
 const integer = (min: number, max: number) => z.number().int().min(min).max(max);
 export const orderInput = z.object({ code: codeSchema, side: z.enum(['buy', 'sell']), qty: integer(1, 100000), price: integer(1, 10000000), requestId: z.uuid() }).strict();
+export const paperOrderInput = z.union([orderInput, orderInput.extend({ code: z.literal('005930'), side: z.literal('buy'), qty: z.literal(1), price: z.literal(0), orderType: z.literal('market') })]);
+export type PaperOrderInput = z.infer<typeof paperOrderInput>;
 export const strategyInput = z.object({ name: z.string().trim().min(1).max(60), code: codeSchema, fast: integer(2, 60), slow: integer(3, 100), qty: integer(1, 10000), environment: z.enum(['demo', 'kis-paper']).default('demo') }).strict().refine(v => v.fast < v.slow, '단기 기간은 장기 기간보다 작아야 합니다.');
 export const backtestInput = z.object({ code: codeSchema, fast: integer(2, 60), slow: integer(3, 100), capital: integer(100000, 100000000), feeBps: z.number().min(0).max(100), slippageBps: z.number().min(0).max(100) }).strict().refine(v => v.fast < v.slow, '단기 기간은 장기 기간보다 작아야 합니다.');
 export const riskInput = z.object({ maxOrder: integer(10000, 100000000), maxPosition: integer(10000, 100000000), dailyLoss: integer(1000, 100000000) }).strict();
@@ -21,11 +23,11 @@ export type OrderInput = z.infer<typeof orderInput>;
 export const paperLedgerSchema = z.object({ orders: z.array(z.object({
   strategy: z.object({ id: z.string(), revision: z.number().int().positive(), event: z.string(), signal: z.enum(['buy', 'sell']) }).optional(),
   requestId: z.string().min(1).max(80), code: codeSchema, side: z.enum(['buy', 'sell']),
-  qty: z.number().int().positive(), price: z.number().positive(),
+  qty: z.number().int().positive(), price: z.number().nonnegative(), orderType: z.literal('market').optional(),
   createdAt: z.string().refine(value => Number.isFinite(Date.parse(value))), tradeDate: z.string().regex(/^\d{8}$/),
   status: z.enum(['sending', 'accepted', 'unknown', 'rejected', 'partial', 'filled', 'cancelled']),
   brokerId: z.string().regex(/^\d{1,10}$/).optional(), filled: z.number().int().nonnegative(), remaining: z.number().int().nonnegative(),
-}).refine(order => order.filled + order.remaining <= order.qty)) });
+}).refine(order => order.filled + order.remaining <= order.qty && (order.orderType === 'market' ? order.price === 0 : order.price > 0))) });
 export type PaperLedger = z.infer<typeof paperLedgerSchema>;
 
 export const dataStatusSchema = z.object({
@@ -36,6 +38,7 @@ export const dataStatusSchema = z.object({
 });
 const connectionFailureSchema = z.object({ kind: z.enum(['missing', 'invalid', 'expired', 'permission', 'rate-limit', 'network', 'upstream', 'contract', 'rejected']), message: z.string() });
 export const connectionSchema = z.object({
+  checkStartedAt: z.iso.datetime().nullable(),
   configured: z.boolean(), mode: z.literal('paper'), connected: z.boolean(), checkedAt: z.iso.datetime().optional(), message: z.string(),
   status: dataStatusSchema.extend({ environment: z.literal('kis-paper'), source: z.literal('kis-rest') }),
   injection: z.object({ phase: z.enum(['unverified', 'missing', 'invalid', 'present']), missing: z.array(z.enum(['KIS_APP_KEY', 'KIS_APP_SECRET', 'KIS_CANO', 'KIS_ACNT_PRDT_CD'])) }),
@@ -53,7 +56,7 @@ export const stateSnapshotSchema = z.object({
   risk: riskInput.extend({ halted: z.boolean() }),
   events: z.array(z.object({ id: z.string(), time: z.string(), level: z.enum(['info', 'warning', 'error']), title: z.string(), detail: z.string(), read: z.boolean(), environment: z.enum(['demo', 'kis-paper', 'shared']).optional(), target: z.enum(['orders', 'paper', 'settings', 'risk', 'strategies']).optional(), requestId: z.uuid().optional() })),
   journal: z.array(z.object({ id: z.string(), date: z.string(), code: codeSchema, text: z.string() })),
-  tick: z.number(), playing: z.boolean(), revision: z.number().int().nonnegative(), updatedAt: z.string(), instanceId: z.string().min(1),
+  tick: z.number(), playing: z.boolean(), revision: z.number().int().nonnegative(), updatedAt: z.string(), instanceId: z.string().min(1), startedAt: z.iso.datetime(),
   status: dataStatusSchema.extend({ environment: z.literal('demo'), source: z.literal('synthetic') }), connection: connectionSchema,
   realtime: z.object({ phase: z.enum(['stopped', 'connecting', 'reconciling', 'ready', 'disconnected', 'error']), required: z.boolean(), ordersAllowed: z.boolean(), message: z.string(), code: codeSchema.nullable(), lastQuoteAt: z.iso.datetime().nullable(), lastNoticeAt: z.iso.datetime().nullable(), reconciledAt: z.iso.datetime().nullable(), price: z.number().positive().nullable(), fresh: z.boolean() }).optional(),
   paperRisk: z.object({ day: z.string().regex(/^\d{8}$/), baselineEquity: z.number().nonnegative().nullable(), unresolvedCount: z.number().int().nonnegative(), orders: z.object({ observedAt: z.iso.datetime(), rows: z.array(z.object({ code: codeSchema, side: z.enum(['buy', 'sell']), price: z.number().nonnegative(), remaining: z.number().int().nonnegative(), cancelled: z.boolean() })) }).nullable() }).optional(),

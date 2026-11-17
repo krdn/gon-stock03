@@ -1,0 +1,20 @@
+{
+  "requestedModel": "gemini-4-argon-high",
+  "requestedEffort": "high",
+  "initModel": "gemini-4-argon-high",
+  "serverModelEffortIndependentlyVerified": false,
+  "result": {
+    "conversation_id": "67093a2d-8c0e-4f93-952b-a58358e619e0",
+    "status": "SUCCESS",
+    "response": "### 독립 코드 리뷰 결과: **PASS**\n\n제공된 DIFF 및 파일 본문을 기준으로 요구사항 및 중점 검토 항목을 점검한 결과, **차단 결함(Blocking Defect)은 없습니다.**\n\n---\n\n### 항목별 검토 근거\n\n1. **시장가 단가 0의 원장·대조·위험 계산**\n   - **입력 및 원장 계약 (`shared/contracts.ts`)**: `paperOrderInput`은 기존 지정가 `orderInput`과 삼성전자(`005930`)·매수(`buy`)·1주(`qty: 1`)·단가 0(`price: 0`)·`orderType: 'market'`의 조합만 허용합니다. `paperLedgerSchema`는 `order.orderType === 'market' ? order.price === 0 : order.price > 0` 조건으로 시장가 단가 0과 지정가 양수 단가를 엄격히 분리합니다.\n   - **주문 전송 및 대조 (`server/kis.ts`, `server/paper.ts`)**: 시장가 주문 전송 시 `VTTC0012U`, `ORD_DVSN: '01'`, `ORD_QTY: '1'`, `ORD_UNPR: '0'`으로 전송합니다. 일별 주문 체결 조회(`dailyOrders`)는 `ord_dvsn_cd === '01'`일 때만 `orderType: 'market'`을 부여하며, `matches()`에서 `price === 0`과 `(local.orderType ?? 'limit') === (row.orderType ?? 'limit')`를 모두 대조하므로 주문구분 누락이나 단가 불일치 시 `unknown`으로 안전하게 차단(fail-closed)됩니다.\n   - **상한가 기준 위험 및 한도 계산 (`server/paper.ts`)**: `valuationPrice = market ? quote.upper : input.price`로 설정하여 상한가(`quote.upper`)가 유효한 안전 정수이고 현재가 이상(`valuationPrice >= quote.price`)이며 승인 상한(`maxAmount`, 최대 300,000원) 이하인지 검증합니다. 이후 `amount = valuationPrice * input.qty`를 기준으로 예수금(`balance.cash > amount`), 1회 주문 한도(`risk.maxOrder`), 종목별 투자 한도(`risk.maxPosition`), 미수 없는 매수 가능 금액(`power.cash > amount`)을 모두 평가합니다.\n\n2. **승인 고정·재시작·중복 방지 및 안전장치**\n   - **승인 스키마 (`server/paper.ts`)**: `paperApprovalSchema`에서 시장가 승인은 `code === '005930' && !cancelProbe`만 허용하고 최대 30만원(`max(300000)`)까지 열어두되, 지정가 승인은 기존 20만원 상한을 유지했습니다.\n   - **재시작 고정 및 기존 원장 보존 (`server/store.ts`)**: `configurePaperRun`에서 `order_type` 컬럼(`DEFAULT 'limit'`)을 무중단 추가하여 기존 원장/승인 테이블을 보존하고, 재시작 시 `day`, `request_id`, `code`, `max_amount`, `allow_holding`, `order_type`이 모두 일치하지 않으면 기동을 거부합니다.\n   - **중복·시간창·종료 정지 (`server/paper.ts`, `server/kis.ts`)**: 동일 `requestId` 재호출 시 `orderType`까지 대조하여 재전송 없이 기존 주문을 반환하고, 5초 시세 유효성 검사, 종료 시 `halt(state, true)` 및 `limitRequestsFor(120000)`(재시작 시 `limitRequestsFor(0)`)가 그대로 유지됩니다.\n\n3. **일반·DEMO·전략 시장가 확대 금지 및 공통 지정가 회귀**\n   - `orderInput`은 변경되지 않아 DEMO 및 전략 경로에서 시장가나 0원 주문을 사용할 수 없습니다.\n   - `PaperBroker.submit`은 `if (market && (this.approval?.orderType !== 'market' || strategy))` 조건으로 명시적 시장가 1회 승인이 없거나 전략 호출인 경우 즉시 거부합니다.\n   - 지정가 경로는 기존 `input.price === quote.price`, 호가 단위(`tickSize`), 상하한가 범위 검증을 그대로 수행합니다.\n\n4. **UI 시장가 표시 (`src/pages/Paper.tsx`, `src/pages/Trading.tsx`)**\n   - `/paper`의 앱 전송 주문 원장(`시장가 × 1`), 불명 주문 복구 후보 목록(`1주 × 시장가`), `/orders`의 KIS 모의 원장(`매수 · 시장가`) 모두 `orderType === 'market'`일 때 `0원` 대신 `시장가`를 표시합니다.\n\n---\n\n### 비차단 관찰 사항 (Non-blocking Notes)\n\n- **미체결 매수 주문 금액 합산 식 (`server/paper.ts:174`)**: `pending` 미체결 금액 계산(`o.remaining * o.price`)과 `riskOrders` 스냅샷은 브로커 주문의 `o.price`를 그대로 사용하므로, 만약 미체결 시장가 주문(`price: 0`)이 존재한다면 미체결 평가액이 `0`으로 계산됩니다. 다만 현재 구조에서는 시장가 주문이 오직 1회 승인(`this.approval`)으로만 가능하고, 실행 전 미체결 존재 시 주문을 차단하며 실행 직후 `finally`에서 `risk.halted = true`로 영구 정지시키므로 실제 실행 경로에서는 도달하지 않습니다.\n- **검증 상태 구분**: 단위 테스트 203건 및 빌드 통과는 코드/계약 수준의 검증이며, 브라우저 E2E 검사는 진행 중이고 **실제 KIS 모의 서버 대상 시장가 주문 실행 및 대조는 아직 수행되지 않은 상태**입니다.\n",
+    "duration_seconds": 100.075068658,
+    "num_turns": 1,
+    "usage": {
+      "input_tokens": 71794,
+      "output_tokens": 8527,
+      "thinking_tokens": 7233,
+      "cache_read_tokens": 0,
+      "total_tokens": 80321
+    }
+  }
+}
