@@ -27,3 +27,7 @@
 완료 경계에서 가이드와 중앙 `review-llm --dry-run`을 확인했다. 중앙 기본값은 지정 모델과 달라 설정을 바꾸지 않고 `agy --model gemini-4-argon-high --effort high`로 명시 호출한다. 현재 실행기 모델 목록에 해당 ID가 있다. conversation `8eb240c4-15eb-4aa1-88e0-71f3f87c150a`, 종료0·SUCCESS·PASS·차단 지적0. 요청/init 모델은 일치했다. 결과에는 서버 내부 모델·effort가 별도로 반환되지 않아 독립 확인할 수 없다. 검토자는 제공 코드·diff·검사 기록만 읽었고 테스트를 직접 실행하지 않았다.
 
 실제 KIS 인증·업무API·WebSocket·주문·취소·예약·외부알림·Infisical 주입은 수행하지 않았다. 테스트 PASS와 PR CI는 실제 연결 성공, 사용자 수용, main 통합을 뜻하지 않는다. #25 장중 실증과 기존 실행 승인 경계는 유지한다.
+
+## 원격 전달
+
+구현 커밋 `40e4f862faa765581f27ebb29cad27f69ff00f20`을 [PR73](https://github.com/krdn/gon-stock03/pull/73)으로 푸시했다. 해당 SHA의 application/configuration push·PR 검사 4건이 모두 SUCCESS다([PR application](https://github.com/krdn/gon-stock03/actions/runs/43990837230), [push application](https://github.com/krdn/gon-stock03/actions/runs/43990828833)). 기록 후속 커밋의 최신 CI는 PR과 #71 최종 댓글에서 다시 확인한다. PR은 OPEN이며 main에 통합하지 않았다.

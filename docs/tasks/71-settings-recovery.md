@@ -2,7 +2,7 @@
 
 기준: [#71](https://github.com/krdn/gon-stock03/issues/71), 설계 [PR72](https://github.com/krdn/gon-stock03/pull/72) MERGED. 기존 #8 후속이다.
 
-- 상태: 설계 1~3단계 구현·단위197·브라우저116·빌드·지정 Argon 리뷰 PASS. 구현 PR/CI 확인이 남았다.
+- 상태: 설계 1~3단계 구현·단위197·브라우저116·빌드·지정 Argon 리뷰 PASS. [구현 PR73](https://github.com/krdn/gon-stock03/pull/73) OPEN, 구현 SHA `40e4f86`의 CI4 SUCCESS.
 - 브랜치: `feat/71-settings-recovery`. 기준 main `0d2b33a0aaad65fa8e94d043e1157fdd586d1b87`.
 - 완료 조건: 실행 서버 식별·미주입 진단, 잔고 조회 전체 deadline·브라우저 대기 제한, GET 복구, 인증 대기·진행 표시, 회귀·지정 리뷰·PR CI. 실제 연결 수용은 별도다.
 - 범위: 연결 진단/조회 경로·계약·UI·검사. 실제 KIS 인증/업무API/WebSocket/주문/취소/예약/외부알림·주입·기존 서버 재시작 금지. fake transport·메모리/임시DB만 사용한다.
@@ -26,4 +26,4 @@
 
 완료 경계 리뷰는 `gemini-4-argon-high`/high 또는 `claude-fable-5-2`/high만 사용한다. 중앙 설정을 보존하고 Argon 명시 호출을 선택했다. 자동 대체·effort 승격·기존 리뷰 재사용은 하지 않는다. 요청/init과 서버 내부 모델·effort 독립 확인 범위를 구분한다.
 
-로컬 회귀·리뷰를 완료했다. 커밋·푸시·PR·CI를 확인하고 #71을 갱신한다. main 통합·사용자 수용·실제 주입과 연결 성공을 완료로 처리하지 않는다. #25 장중 실증은 별도 Blocked다.
+구현 커밋 `40e4f862faa765581f27ebb29cad27f69ff00f20`을 푸시하고 PR73의 CI4 SUCCESS를 확인했다. 기록 후속 커밋의 최신 CI는 PR과 #71 최종 댓글에서 대조한다. 다음 행동은 사용자 검토·수용 및 별도 통합 결정이다. main 통합·사용자 수용·실제 주입과 연결 성공을 완료로 처리하지 않는다. #25 장중 실증은 별도 Blocked다.
