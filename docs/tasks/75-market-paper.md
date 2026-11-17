@@ -51,3 +51,19 @@ KIS 공개 상세 `order-cash`에서 KRX01=시장가, 시장가 단가0, VTS 매
 
 다음 장중 수동 시작에서는 승인된005930 시장가 매수1주·30만원·120초·전송1회·API취소 없음 범위를 재사용한다.
 실행일·시간창·현재 계좌 조건을 확인하고 새 실행ID를 고정한다. 소비 원장 초기화·예약·자동 실행은 하지 않는다.
+
+## 장외 재개 점검
+
+2026-11-17 19:15 KST, 사용자 순차 진행 요청으로 재개했다. [범위 기록](https://github.com/krdn/gon-stock03/issues/75#issuecomment-6945158757).
+현재 저장소 `/home/gon/llm-projects/gon-stock03`의 main과 원격은 `53aa1e3`로 일치했다. `gon-workflow resume` 성공, PR78 MERGED·CI4 SUCCESS, 해당 main CI2 SUCCESS를 확인했다.
+
+기존 `65-static-errors` 경로의 resume은 워크플로 파일 부재로 실패했다. `git worktree list`는 현재 저장소 한 곳이다. 4303 프로세스의 cwd는 삭제된 기존 폴더였고 4304는 LISTEN이 없었다. 경로가 유효하지 않아 기존 웹 프로세스를 종료하고 현재 저장소에서 앱을 복구했다.
+
+- 19:17 기존 DB를 SQLite backup API로 `.local/resume-20261117-1915/workspace.sqlite`에 보존했다. 백업 quick_check=ok. 기존 DB 권한0600.
+- Infisical dev /kis 주입으로 기본 `npm run dev`를 실행했다. STOCK_DB는 현재 저장소의 기존 DB로 고정했다. 주문 승인·WS 접속키 환경은 제외했다.
+- 4303 프록시와 4304의 `/api/state`: 각각200·ready. playing=false·활성전략0·실시간stopped·인증값 구성 존재 확인. 이는 실제 KIS 인증·잔고 조회 성공이 아니다.
+- `/dashboard`: HTTP200·앱 root 존재. 브라우저 렌더링·사용자 수용은 이번에 검증하지 않았다.
+- 현재 workspace의 paper_orders는 복구 전후0건, 정렬된 원장 내용 SHA256 일치, quick_check=ok. 별도 모의 실행 DB와 기존 백업을 수정하지 않았다. 과거 '원장10개' 기록을 주문10건으로 해석하지 않는다.
+- 이번 실행의 증권사 인증·조회·주문·취소·WS 구독 요청 없음. 예약·자동 재개 없음. 제품 코드 변경 없음.
+
+[KRX 안내](https://regulation.krx.co.kr/contents/RGL/03/03020401/RGL03020401.jsp)의 정규장09:00~15:30 밖이므로 #75 실제 실증은 대기한다. 다음 장중 수동 시작 때 당일 거래시간·계좌·미체결·보유·모바일 대응과 승인 범위를 재확인한다. #25 및 상위 이슈는 미완료다.

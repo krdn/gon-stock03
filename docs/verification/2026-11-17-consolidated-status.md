@@ -31,7 +31,7 @@
 
 ## 현재 로컬 실행과 보존
 
-4303 웹·4304 서버는 `65-static-errors` worktree의 코드로 실행했다. 원장은 `/home/gon/llm-projects/gon-stock03/.local/workspace.sqlite`다.
+16:48 관측에서 4303 웹·4304 서버는 `65-static-errors` worktree의 코드로 실행했다. 이 실행 상태는 19:17 복구로 대체됐다. 원장은 `/home/gon/llm-projects/gon-stock03/.local/workspace.sqlite`다.
 `dev:realtime`으로 접속키를 서버 메모리에만 주입했고 기본 서버에는 KIS_PAPER_APPROVAL이 없다. 이번 정리에서 앱 재시작·KIS 호출·주문을 하지 않는다.
 
 HTS ID 등록·세션 스키마는 확인했지만 세션 날짜는17일과 달랐다. 다음 실행일의 거래시간 확인과 세션 갱신은 별도다.
@@ -44,10 +44,10 @@ HTS ID 등록·세션 스키마는 확인했지만 세션 날짜는17일과 달�
 
 ## 새 세션 시작
 
-작업 경로: `/home/gon/llm-projects/gon-stock03-worktrees/65-static-errors`. 이 경로의 main과 원격 main을 먼저 대조한다.
+작업 경로: `/home/gon/llm-projects/gon-stock03`. 19:15 점검에서 기존 `65-static-errors` 작업 폴더는 사용할 수 없었다. 현재 저장소와 원격 main을 먼저 대조한다. [복구 결과](../tasks/75-market-paper.md#장외-재개-점검)를 따른다.
 
 ```bash
-gon-workflow resume /home/gon/llm-projects/gon-stock03-worktrees/65-static-errors \
+gon-workflow resume /home/gon/llm-projects/gon-stock03 \
   --issue https://github.com/krdn/gon-stock03/issues/75 \
   --task docs/tasks/75-market-paper.md \
   --pr https://github.com/krdn/gon-stock03/pull/78
