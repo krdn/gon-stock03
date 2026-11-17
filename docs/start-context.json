@@ -1,17 +1,13 @@
 {
-  "checked_at": "2026-11-17T06:17:59.566856+00:00",
-  "objective": "#14 요청 ID 보존·입력 보존·로컬 원장·명시적 불명 복구 화면",
+  "checked_at": "2026-11-17T07:29:19.394732+00:00",
+  "objective": "#80 WebSocket 접속키 메모리 발급",
   "sources": [
     {
-      "url": "https://react.dev/reference/react/useRef",
-      "finding": "렌더 사이 ref 보존 및 이벤트 핸들러에서 동기 잠금 가능. 표시 상태는 state로 관리한다."
-    },
-    {
-      "url": "https://react.dev/reference/react/useEffect",
-      "finding": "의존 변경·unmount에서 cleanup 실행. 비동기 조회의 늦은 응답을 폐기한다."
+      "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_user/kis_auth.py",
+      "finding": "auth_ws는 모의 앱키와 secretkey로 /oauth2/Approval에 POST하고 approval_key를 헤더에 사용한다."
     }
   ],
-  "decisions": "기존 C03 서비스와 원장 스키마 재사용. 실제 KIS 업무API 호출 없이 격리 검증. 고정 승인과 웹 취소409 유지.",
+  "decisions": "명시적 dev:realtime만 인증한다. 접속키는 서버 자식 환경에만 전달하며 파일/로그 저장·자동 구독·거래는 하지 않는다.",
   "status": "reviewed",
   "task_contexts": [
     {
@@ -326,6 +322,18 @@
         }
       ],
       "decisions": "기존 #75 구현을 보존한 별도 브랜치에서 #71과 결합 검증한다. 삼성전자 1주·30만원 상한·전송1회·POST 재시도0·API 취소 없음 유지. 실제 실행은 승인과 장중·계좌 조건을 대조한 뒤 진행한다."
+    },
+    {
+      "checked_at": "2026-11-17T07:29:19.394732+00:00",
+      "objective": "#80 WebSocket 접속키 메모리 발급",
+      "sources": [
+        {
+          "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_user/kis_auth.py",
+          "finding": "auth_ws는 모의 앱키와 secretkey로 /oauth2/Approval에 POST하고 approval_key를 헤더에 사용한다."
+        }
+      ],
+      "decisions": "명시적 dev:realtime만 인증한다. 접속키는 서버 자식 환경에만 전달하며 파일/로그 저장·자동 구독·거래는 하지 않는다.",
+      "issue": "https://github.com/krdn/gon-stock03/issues/80"
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."
