@@ -1,17 +1,25 @@
 {
-  "checked_at": "2026-11-16T14:30:42.333408+00:00",
-  "objective": "#14 요청 ID 보존·입력 보존·로컬 원장·명시적 불명 복구 화면",
+  "checked_at": "2026-11-17T01:44:35.403934+00:00",
+  "objective": "삼성전자 명시적 시장가 모의1회·30만원 상한",
   "sources": [
     {
-      "url": "https://react.dev/reference/react/useRef",
-      "finding": "렌더 사이 ref 보존 및 이벤트 핸들러에서 동기 잠금 가능. 표시 상태는 state로 관리한다."
+      "url": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/order-cash",
+      "finding": "공개JSON 재조회: VTS VTTC0012U, KRX ORD_DVSN01 시장가, ORD_UNPR0."
     },
     {
-      "url": "https://react.dev/reference/react/useEffect",
-      "finding": "의존 변경·unmount에서 cleanup 실행. 비동기 조회의 늦은 응답을 폐기한다."
+      "url": "https://raw.githubusercontent.com/koreainvestment/open-trading-api/main/examples_llm/domestic_stock/order_cash/order_cash.py",
+      "finding": "단가 없는 주문은 상한가로 주문금액 선정 후 체결금액 정산."
+    },
+    {
+      "url": "https://raw.githubusercontent.com/koreainvestment/open-trading-api/main/examples_llm/domestic_stock/inquire_psbl_order/inquire_psbl_order.py",
+      "finding": "ORD_DVSN01 및 nrcvb_buy_qty/nrcvb_buy_amt로 미수 없는 주문가능수량/금액 확인."
+    },
+    {
+      "url": "https://raw.githubusercontent.com/koreainvestment/open-trading-api/main/examples_llm/domestic_stock/inquire_daily_ccld/inquire_daily_ccld.py",
+      "finding": "VTS VTTC0081R와 날짜/주문번호, 모의15건 연속조회 사용."
     }
   ],
-  "decisions": "기존 C03 서비스와 원장 스키마 재사용. 실제 KIS 업무API 호출 없이 격리 검증. 고정 승인과 웹 취소409 유지.",
+  "decisions": "명시적 시장가 승인1회·상한가 기반30만원 guard·원장 주문유형 고정. 기존 지정가/DEMO 보존, 실제 실행은 검증 후 별도 결과.",
   "status": "reviewed",
   "task_contexts": [
     {
@@ -298,6 +306,30 @@
         }
       ],
       "decisions": "정적 readFile 경계에만 catch를 추가한다. ENOENT/ENOTDIR은404, 나머지 읽기 실패는500 고정 문구로 반환한다. API 공통 catch와 정상 정적 응답은 유지한다. 임시 cwd와 메모리 DB·실패 fake transport만 사용한다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/75",
+      "checked_at": "2026-11-17T01:44:35.403934+00:00",
+      "objective": "삼성전자 명시적 시장가 모의1회·30만원 상한",
+      "sources": [
+        {
+          "url": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/order-cash",
+          "finding": "공개JSON 재조회: VTS VTTC0012U, KRX ORD_DVSN01 시장가, ORD_UNPR0."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/koreainvestment/open-trading-api/main/examples_llm/domestic_stock/order_cash/order_cash.py",
+          "finding": "단가 없는 주문은 상한가로 주문금액 선정 후 체결금액 정산."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/koreainvestment/open-trading-api/main/examples_llm/domestic_stock/inquire_psbl_order/inquire_psbl_order.py",
+          "finding": "ORD_DVSN01 및 nrcvb_buy_qty/nrcvb_buy_amt로 미수 없는 주문가능수량/금액 확인."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/koreainvestment/open-trading-api/main/examples_llm/domestic_stock/inquire_daily_ccld/inquire_daily_ccld.py",
+          "finding": "VTS VTTC0081R와 날짜/주문번호, 모의15건 연속조회 사용."
+        }
+      ],
+      "decisions": "명시적 시장가 승인1회·상한가 기반30만원 guard·원장 주문유형 고정. 기존 지정가/DEMO 보존, 실제 실행은 검증 후 별도 결과."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."
