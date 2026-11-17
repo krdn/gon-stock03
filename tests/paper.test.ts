@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { KisClient, koreaDate } from '../server/kis.ts';
-import { PaperBroker } from '../server/paper.ts';
+import { paperOrderInput, orderInput, paperLedgerSchema } from '../shared/contracts.ts';
+import { PaperBroker, paperApprovalSchema } from '../server/paper.ts';
 import { Store } from '../server/store.ts';
 import { once } from 'node:events';
 import { makeServer } from '../server/http.ts';
@@ -11,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only', spacing = 0, approval?: { date: string; requestId: string; cancelProbe?: true; code?: '069500' | '005930'; maxAmount?: number; allowExistingHolding?: true }) {
+function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only', spacing = 0, approval?: { date: string; requestId: string; cancelProbe?: true; code?: '069500' | '005930'; maxAmount?: number; allowExistingHolding?: true; orderType?: 'market' }) {
   let submits = 0;
   const response = { cancelMode: 'success', cash: '10000000', totalEquity: '10000000', nonCreditCash: '10000000', positions: [] as Record<string, string>[], price: '70000', upper: '91000', tick: '100', rows: [] as Record<string, string>[], before: async (_path: string) => {}, receipt: { rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } } as unknown };
   const requests: { url: URL; init: RequestInit | undefined; startedAt: number }[] = [];
@@ -794,4 +795,116 @@ test('explicit holding approval preserves existing positions and remains pinned 
     assert.equal(f.count(), 1); assert.equal(f.store.read().risk.halted, true);
     assert.equal(f.response.positions[0].hldg_qty, '2');
   } finally { f.store.close(); }
+});
+
+
+test('market approval sends one zero-price VTS buy despite current-price changes and reconciles it', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T11:00:00+09:00') });
+  const order = { ...input(), price: 0, orderType: 'market' as const };
+  const approval = { ...approvalFor(order), code: '005930' as const, maxAmount: 300000, orderType: 'market' as const };
+  let f!: ReturnType<typeof fixture>;
+  assert.doesNotThrow(() => { f = fixture('success', 0, approval); }, 'explicit market approval with 300000 cap must be supported');
+  try {
+    f.response.price = '192100'; f.response.upper = '255500'; await f.client.quote('005930');
+    f.response.price = '192200';
+    const result = await f.broker.submit(order);
+    assert.equal(result.status, 'accepted');
+    const wire = f.requests.find(r => r.url.pathname.endsWith('/order-cash'))!;
+    const body = JSON.parse(wire.init!.body as string);
+    assert.equal(body.ORD_DVSN, '01'); assert.equal(body.ORD_UNPR, '0'); assert.equal(body.ORD_QTY, '1');
+    assert.equal((wire.init!.headers as Record<string, string>).tr_id, 'VTTC0012U');
+    assert.equal(result.price, 0); assert.equal(f.store.read().risk.halted, true);
+    await f.broker.submit(order); assert.equal(f.count(), 1);
+    const { orderType: _type, ...limit } = order;
+    await assert.rejects(f.broker.submit({ ...limit, price: 192200 }), /동일 요청/);
+    assert.throws(() => new PaperBroker(f.store, f.client, { ...approval, orderType: undefined }), /승인/);
+    assert.throws(() => new PaperBroker(f.store, f.client, { ...approval, maxAmount: 200000 }), /승인/);
+    f.response.rows = [brokerRow({ ord_unpr: '0', ord_dvsn_cd: '01', tot_ccld_qty: '1', rmn_qty: '0' })];
+    const refreshed = await f.broker.refresh();
+    assert.equal(refreshed.orders[0].status, 'filled'); assert.equal(refreshed.orders[0].filled, 1);
+    const restarted = new PaperBroker(f.store, f.client, approval);
+    await restarted.submit(order); assert.equal(f.count(), 1);
+    await assert.rejects(restarted.submit({ ...order, requestId: randomUUID() })); assert.equal(f.count(), 1);
+  } finally { f.store.close(); }
+});
+
+test('market orders require a matching bounded approval and never open the general order path', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T11:00:00+09:00') });
+  const order = { ...input(), price: 0, orderType: 'market' as const };
+  for (const approval of [undefined, { ...approvalFor(order), code: '005930' as const, maxAmount: 200000 }]) {
+    const f = fixture('success', 0, approval);
+    try { await assert.rejects(f.broker.submit(order), /시장가.*승인/); assert.equal(f.count(), 0); assert.equal(f.requests.length, 0); }
+    finally { f.store.close(); }
+  }
+});
+
+test('market approval reserves the upper price against approval, cash and risk limits', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T11:00:00+09:00') });
+  for (const reason of ['approval', 'cash', 'power', 'order-risk', 'position-risk', 'invalid-upper']) {
+    const order = { ...input(), price: 0, orderType: 'market' as const };
+    const approval = { ...approvalFor(order), code: '005930' as const, maxAmount: 300000, orderType: 'market' as const };
+    const f = fixture('success', 0, approval);
+    try {
+      f.response.price = '192200'; f.response.upper = '255500';
+      if (reason === 'approval') f.response.upper = '300100';
+      if (reason === 'cash') f.response.cash = '200000';
+      if (reason === 'power') f.response.nonCreditCash = '200000';
+      if (reason === 'order-risk') f.store.update(s => { s.risk.maxOrder = 200000; });
+      if (reason === 'position-risk') f.store.update(s => { s.risk.maxPosition = 200000; });
+      if (reason === 'invalid-upper') f.response.upper = '190000';
+      await assert.rejects(f.broker.submit(order)); assert.equal(f.count(), 0, reason);
+      assert.equal(f.store.read().risk.halted, true);
+      await assert.rejects(f.broker.submit(order)); assert.equal(f.count(), 0);
+    } finally { f.store.close(); }
+  }
+});
+
+test('market orders retain no-retry rejection and unknown outcomes', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T11:00:00+09:00') });
+  for (const mode of ['reject', 'timeout'] as const) {
+    const order = { ...input(), price: 0, orderType: 'market' as const };
+    const f = fixture(mode, 0, { ...approvalFor(order), code: '005930', maxAmount: 300000, orderType: 'market' });
+    try {
+      assert.equal((await f.broker.submit(order)).status, mode === 'reject' ? 'rejected' : 'unknown');
+      await f.broker.submit(order); assert.equal(f.count(), 1); assert.equal(f.store.read().risk.halted, true);
+    } finally { f.store.close(); }
+  }
+});
+
+
+test('market HTTP input stays isolated from DEMO and accepts only the exact one-share buy shape', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T11:00:00+09:00') });
+  const order = { ...input(), price: 0, orderType: 'market' as const };
+  assert.equal(paperOrderInput.safeParse(order).success, true);
+  assert.equal(orderInput.safeParse(order).success, false);
+  for (const invalid of [{ ...order, code: '069500' }, { ...order, side: 'sell' }, { ...order, qty: 2 }, { ...order, price: 192200 }, { ...order, orderType: undefined }]) assert.equal(paperOrderInput.safeParse(invalid).success, false);
+  const approval = { ...approvalFor(order), code: '005930' as const, maxAmount: 300000, orderType: 'market' as const };
+  assert.equal(paperApprovalSchema.safeParse({ ...approval, maxAmount: 300001 }).success, false);
+  assert.equal(paperApprovalSchema.safeParse({ ...approval, orderType: undefined }).success, false);
+  assert.equal(paperApprovalSchema.safeParse({ ...approval, cancelProbe: true }).success, false);
+  const f = fixture('success', 0, approval), port = apiPort++, server = makeServer(f.store, f.client, [port], approval);
+  server.listen(port, '127.0.0.1'); await once(server, 'listening');
+  try {
+    const address = server.address() as { port: number };
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/kis/order`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(order) });
+    assert.equal(response.status, 200);
+    const result = await response.json(); assert.equal(result.order.status, 'accepted'); assert.equal(result.order.orderType, 'market');
+    assert.equal(paperLedgerSchema.safeParse({ orders: [result.order] }).success, true);
+    assert.equal(paperLedgerSchema.safeParse({ orders: [{ ...result.order, orderType: undefined }] }).success, false);
+    assert.equal(paperLedgerSchema.safeParse({ orders: [{ ...result.order, price: 192200 }] }).success, false);
+    assert.equal(f.count(), 1);
+  } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); f.store.close(); }
+});
+
+test('market reconciliation fails closed on missing order type or changed zero order price', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T11:00:00+09:00') });
+  for (const fields of [{ ord_unpr: '0' }, { ord_unpr: '70000', ord_dvsn_cd: '01' }] as Record<string, string>[]) {
+    const order = { ...input(), price: 0, orderType: 'market' as const };
+    const f = fixture('success', 0, { ...approvalFor(order), code: '005930', maxAmount: 300000, orderType: 'market' });
+    try {
+      await f.broker.submit(order); f.response.rows = [brokerRow({ ...fields, tot_ccld_qty: '1', rmn_qty: '0' })];
+      assert.equal((await f.broker.refresh()).orders[0].status, 'unknown');
+      assert.equal(f.count(), 1); assert.equal(f.store.read().risk.halted, true);
+    } finally { f.store.close(); }
+  }
 });

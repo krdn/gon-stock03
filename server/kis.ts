@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ConnectionState, ConnectionFailure, KisQuote, KisBar, BrokerOrder } from '../shared/model.ts';
-import type { OrderInput } from '../shared/contracts.ts';
+import type { PaperOrderInput } from '../shared/contracts.ts';
 import { authenticationStatus, disconnectedConnection, freshness, QUOTE_REFRESH_MS } from '../shared/status.ts';
 import { dailyInput, marketDate, type DailyInput, type DailyPrice } from '../shared/market-data.ts';
 
@@ -187,12 +187,12 @@ export class KisClient {
     let fk = '', nk = ''; const seen = new Set<string>(); const rows: BrokerOrder[] = [];
     for (let page = 0; page < 50; page++) {
       const { response, data } = await this.request('/uapi/domestic-stock/v1/trading/inquire-daily-ccld', 'VTTC0081R', { ...this.accountParams(), INQR_STRT_DT: date, INQR_END_DT: date, SLL_BUY_DVSN_CD: '00', PDNO: '', CCLD_DVSN: '00', INQR_DVSN: '00', INQR_DVSN_3: '00', ORD_GNO_BRNO: '', ODNO: '', INQR_DVSN_1: '', CTX_AREA_FK100: fk, CTX_AREA_NK100: nk, EXCG_ID_DVSN_CD: 'KRX' }, false, page ? 'N' : '');
-      const parsed = z.object({ rt_cd: z.literal('0'), output1: z.array(z.object({ odno: brokerId, ord_dt: marketDate, pdno: z.string().regex(/^\d{6}$/), prdt_name: z.string(), sll_buy_dvsn_cd: z.enum(['01', '02']), ord_qty: amount, ord_unpr: amount, tot_ccld_qty: amount, rmn_qty: amount, cncl_yn: z.enum(['Y', 'N']), ord_gno_brno: organizationId })), ctx_area_fk100: z.string().optional(), ctx_area_nk100: z.string().optional() }).safeParse(data);
+      const parsed = z.object({ rt_cd: z.literal('0'), output1: z.array(z.object({ odno: brokerId, ord_dt: marketDate, pdno: z.string().regex(/^\d{6}$/), prdt_name: z.string(), sll_buy_dvsn_cd: z.enum(['01', '02']), ord_qty: amount, ord_unpr: amount, ord_dvsn_cd: z.string().optional(), tot_ccld_qty: amount, rmn_qty: amount, cncl_yn: z.enum(['Y', 'N']), ord_gno_brno: organizationId })), ctx_area_fk100: z.string().optional(), ctx_area_nk100: z.string().optional() }).safeParse(data);
       if (!parsed.success) throw new Error('KIS 주문 조회 응답 계약이 일치하지 않습니다.');
       for (const o of parsed.data.output1) {
         if (![o.ord_qty, o.ord_unpr, o.tot_ccld_qty, o.rmn_qty].every(Number.isSafeInteger) || o.ord_qty <= 0 || o.tot_ccld_qty + o.rmn_qty > o.ord_qty) throw new Error('KIS 주문 조회 수량 계약이 일치하지 않습니다.');
         if (rows.some(row => row.date === o.ord_dt && row.organization.replace(/^0+(?=\d)/, '') === o.ord_gno_brno.replace(/^0+(?=\d)/, '') && row.brokerId.replace(/^0+(?=\d)/, '') === o.odno.replace(/^0+(?=\d)/, ''))) throw new Error('KIS 주문 조회에 중복 주문번호가 있습니다.');
-        rows.push({ brokerId: o.odno, date: o.ord_dt, code: o.pdno, name: o.prdt_name, side: o.sll_buy_dvsn_cd === '02' ? 'buy' : 'sell', qty: o.ord_qty, price: o.ord_unpr, filled: o.tot_ccld_qty, remaining: o.rmn_qty, cancelled: o.cncl_yn === 'Y', organization: o.ord_gno_brno });
+        rows.push({ ...(o.ord_dvsn_cd === '01' ? { orderType: 'market' as const } : {}), brokerId: o.odno, date: o.ord_dt, code: o.pdno, name: o.prdt_name, side: o.sll_buy_dvsn_cd === '02' ? 'buy' : 'sell', qty: o.ord_qty, price: o.ord_unpr, filled: o.tot_ccld_qty, remaining: o.rmn_qty, cancelled: o.cncl_yn === 'Y', organization: o.ord_gno_brno });
       }
       if (!['M', 'F'].includes(response.headers.get('tr_cont') ?? '')) return rows;
       fk = parsed.data.ctx_area_fk100?.trim() ?? ''; nk = parsed.data.ctx_area_nk100?.trim() ?? '';
@@ -211,8 +211,8 @@ export class KisClient {
     const receipt = z.object({ rt_cd: z.literal('0'), output: z.object({ ODNO: brokerId, KRX_FWDG_ORD_ORGNO: organizationId }) }).safeParse(data);
     if (!receipt.success) throw new Error('취소 응답을 확정할 수 없습니다. 재전송하지 마세요.');
   }
-  async submit(input: OrderInput, beforeSend?: () => void) {
-    const { data } = await this.request('/uapi/domestic-stock/v1/trading/order-cash', input.side === 'buy' ? 'VTTC0012U' : 'VTTC0011U', { ...this.accountParams(), PDNO: input.code, ORD_DVSN: '00', ORD_QTY: String(input.qty), ORD_UNPR: String(input.price), EXCG_ID_DVSN_CD: 'KRX', SLL_TYPE: input.side === 'sell' ? '01' : '', CNDT_PRIC: '' }, true, '', beforeSend);
+  async submit(input: PaperOrderInput, beforeSend?: () => void) {
+    const { data } = await this.request('/uapi/domestic-stock/v1/trading/order-cash', input.side === 'buy' ? 'VTTC0012U' : 'VTTC0011U', { ...this.accountParams(), PDNO: input.code, ORD_DVSN: 'orderType' in input && input.orderType === 'market' ? '01' : '00', ORD_QTY: String(input.qty), ORD_UNPR: String(input.price), EXCG_ID_DVSN_CD: 'KRX', SLL_TYPE: input.side === 'sell' ? '01' : '', CNDT_PRIC: '' }, true, '', beforeSend);
     const parsed = z.object({ rt_cd: z.literal('0'), output: z.object({ ODNO: brokerId, KRX_FWDG_ORD_ORGNO: organizationId }) }).safeParse(data);
     if (!parsed.success) throw new Error('주문 응답을 확정할 수 없습니다. 자동 재전송하지 않습니다.');
     return { brokerId: parsed.data.output.ODNO, organization: parsed.data.output.KRX_FWDG_ORD_ORGNO };
