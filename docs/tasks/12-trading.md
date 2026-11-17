@@ -30,3 +30,7 @@ AGENTS·WORKFLOW·이슈 #12, `src/pages/Trading.tsx`의 Trade, `src/specs.ts`�
 수용·통합 대기 설명 후 사용자 “작업 진행” 및 통합·후속 순차 진행 지시가 전달됐다. 지정 Gemini4Argon/high MERGE PASS와 결합 단위134·브라우저83·빌드 PASS로 기술 수용을 검증했다. 사용자 직접 육안 관찰은 주장하지 않는다. [결합 검증](../verification/2026-11-16-trading-alerts-integration.md). 원격 통합·CI 확인 후 완료 상태를 반영한다.
 
 통합 완료: PR56 `d678e31`, PR57 `bf158cc`, 양쪽 main CI2 SUCCESS. #12·#17 completed/Done 확인. 기존 대기 문구는 통합 전 기록이며 현재는 [#13](13-orders.md)을 순차 진행한다.
+
+## 2026-11-17 후속 화면 수정
+
+사용자 /trade 정밀 분석·수정 요청. main `0ab9da1` 기반 `krdn/issue-12`. 미지원 종목의 묵시적 대체·최초 연결 전 예시 주문폼·한도/잔고 사전 안내 부재·저장소 오류·선택 상태 및 대비를 수정한다. 회귀 재현, 격리 브라우저, 빌드, 외부 리뷰로 확인한다. KIS 주문·취소 없음. 4303 원본 실행 경로는 `/home/gon/llm-projects/gon-stock03`; 검증 뒤 충돌을 확인해 로컬 화면에 적용한다.

@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-11-17T08:22:41.146097+00:00",
+  "checked_at": "2026-11-17T13:18:43.257408+00:00",
   "objective": "전체 브랜치 이력 통합·보존·정리와 새 세션 재개",
   "sources": [
     {
@@ -381,6 +381,22 @@
         }
       ],
       "decisions": "서버 스냅샷 확인 전 예시 관심목록을 숨기고, 동일 상세 재선택은 기존 DOM에 직접 초점을 이동한다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/12",
+      "checked_at": "2026-11-17T13:18:43.257408+00:00",
+      "objective": "트레이딩 입력·복구·접근성 결함 수정",
+      "sources": [
+        {
+          "url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/sessionStorage",
+          "finding": "sessionStorage는 탭별 유지되며 정책에 따라 SecurityError가 발생한다."
+        },
+        {
+          "url": "https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html",
+          "finding": "일반 텍스트는 4.5:1 이상의 대비가 필요하다."
+        }
+      ],
+      "decisions": "저장소 실패 시 신규 주문을 차단하고 원 요청을 보존한다. 입력 사전 안내와 서버 최종 검사를 함께 유지한다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."
