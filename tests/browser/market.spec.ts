@@ -207,3 +207,59 @@ test('watchlist distinguishes an unsaved master code from a market filter mismat
   await expect(page.getByText('관심목록에 없는 종목입니다.', { exact: false })).toBeVisible();
   await expect(page.getByText('다른 시장 필터에 있는 종목입니다.', { exact: false })).toHaveCount(0);
 });
+
+test('watchlist never presents preview selections as saved before the first state response', async ({ page }) => {
+  const calls = await setup(page);
+  await page.route('**/api/state', route => route.fulfill({ status: 503, body: 'unavailable' }));
+  await page.clock.install();
+  await page.goto('/watchlist');
+  await expect(page.getByText('관심목록을 확인하지 못했습니다', { exact: true })).toBeVisible();
+  await expect(page.getByText('저장된 관심종목 4개', { exact: false })).toHaveCount(0);
+  await expect(page.locator('tbody tr')).toHaveCount(0);
+  await page.clock.runFor(16_000);
+  expect(calls).toEqual([]);
+  const state = snapshot(); state.watchlist = [];
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.getByRole('button', { name: '다시 확인', exact: true }).click();
+  await expect(page.getByText('관심종목이 없습니다', { exact: true })).toBeVisible();
+});
+
+test('watchlist retains confirmed selections when the connection later fails', async ({ page }) => {
+  const state = snapshot(); state.watchlist = ['005930']; await setup(page, state);
+  await page.clock.install();
+  await page.goto('/watchlist'); await expect(page.locator('tbody tr')).toHaveCount(1);
+  await page.route('**/api/state', route => route.fulfill({ status: 503, body: 'unavailable' }));
+  await page.clock.runFor(4000);
+  await expect(page.getByText('마지막 확인값입니다.', { exact: false })).toBeVisible();
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '삼성전자 관심 해제', exact: true })).toBeDisabled();
+});
+
+for (const width of [1440, 390]) test(`watchlist repeated detail activation focuses the panel at width ${width}`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 844 });
+  const state = snapshot(); state.watchlist = ['005930']; await setup(page, state);
+  await page.clock.install();
+  await page.goto('/watchlist');
+  const detail = page.getByRole('region', { name: '종목 상세' });
+  const trigger = page.getByRole('button', { name: '삼성전자 상세', exact: true });
+  await trigger.click(); await expect(detail).toBeFocused();
+  await trigger.click(); await expect(detail).toBeFocused();
+  await page.getByRole('button', { name: '상세 닫기', exact: true }).click();
+  await expect(trigger).toBeFocused();
+});
+
+test('watchlist distinguishes a pending first load from a confirmed empty list', async ({ page }) => {
+  const state = snapshot(); state.watchlist = [];
+  const calls = await setup(page, state);
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/state', async route => { await gate; await route.fulfill({ json: state }); });
+  await page.clock.install();
+  await page.goto('/watchlist');
+  await expect(page.getByText('관심목록을 확인하고 있습니다', { exact: true })).toBeVisible();
+  await expect(page.getByText('관심종목이 없습니다', { exact: true })).toHaveCount(0);
+  await page.clock.runFor(500);
+  expect(calls).toEqual([]);
+  release();
+  await expect(page.getByText('관심종목이 없습니다', { exact: true })).toBeVisible();
+});
