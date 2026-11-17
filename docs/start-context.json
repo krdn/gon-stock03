@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-11-16T14:30:42.333408+00:00",
+  "checked_at": "2026-11-17T00:39:27.819835+00:00",
   "objective": "#14 요청 ID 보존·입력 보존·로컬 원장·명시적 불명 복구 화면",
   "sources": [
     {
@@ -298,6 +298,18 @@
         }
       ],
       "decisions": "정적 readFile 경계에만 catch를 추가한다. ENOENT/ENOTDIR은404, 나머지 읽기 실패는500 고정 문구로 반환한다. API 공통 catch와 정상 정적 응답은 유지한다. 임시 cwd와 메모리 DB·실패 fake transport만 사용한다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/71",
+      "checked_at": "2026-11-17T00:39:27.819835+00:00",
+      "objective": "연결 진단과 유한 조회 복구",
+      "sources": [
+        {
+          "url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal/timeout_static",
+          "finding": "AbortSignal timeout은 대기 중단을 알리며 AbortController와 setTimeout/clearTimeout으로 작업 종료 시 타이머를 정리할 수 있다. Node v24 globals 직접 접근은 실패했다."
+        }
+      ],
+      "decisions": "잔고 작업에만 120초 deadline을 적용하고 큐·인증·본문·페이지 대기를 포함한다. kis/check 브라우저 대기는125초, GET 복구는 독립한다. 실제 API/주입/재시작 없이 fake transport와 임시DB로 검증한다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."

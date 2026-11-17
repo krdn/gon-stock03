@@ -2,7 +2,7 @@
 
 기준 이슈: https://github.com/krdn/gon-stock03/issues/71 (기존 #8 후속).
 
-- 상태: 구현 착수 준비. 사용자 요청으로 다음 작업 실행이 허용됐다. 제품 구현은 새 세션이 소유한다.
+- 상태: 구현 착수. 2026-11-17 부모가 구현 소유권을 이 세션에 전달했다.
 - 목표·완료 조건: 실행 서버 식별·미주입 진단, 유한한 조회 대기, 상태 새로고침 복구, 인증 대기 UI. 상세 체크리스트는 #71을 기준으로 한다.
 - 범위: 연결 진단/조회 경로·계약·UI·회귀 검사. 실제 KIS 업무 API·주문·취소·예약은 현재 STATE 제한을 유지한다.
 - 브랜치: `세부작업`. 최초 설계 기록 `6d7045b`. 최신 기준 main `005a80e`를 병합해 설계 PR72의 STATE 충돌을 해결한다. PR72 통합 확인 후 별도 `feat/71-settings-recovery` 브랜치에서 시작한다.
@@ -42,3 +42,9 @@
 - 기존 main은 UI 초기/DEMO 표시·배치 수용을 포함한 005a80e다. PR72의 충돌은 STATE 한 파일이며 제품 코드는 최신 main 그대로 보존한다.
 - 중앙 gon-github-workflow PR28/main 81c87bc와 설치된 resume을 사용한다. 현재 worktree의 graphify-out/은 보존하며 새 구현은 별도 clean worktree에서 시작한다.
 - 인계 설계 검토: `gemini-4-argon-high`/요청 high, conversation `1a85854b-4934-4352-a343-3e79b9f35b88`, SUCCESS·PASS·차단0. 요청/init 모델 일치, 서버 내부 모델·effort는 결과에 별도 반환되지 않아 독립 확인 불가. 리뷰는 제공 diff만 검토했고 실제 제품 동작을 실행하지 않았다. 실제 연결 미검증 유지·PR72 통합/CI·clean worktree 원격 푸시·resume·탭/세션/cwd 확인 후 소유권 이전 순서를 확인했다.
+
+## 구현 소유권 인계
+
+- 부모 확인: Herdr 탭 `#71 연결·설정 복구`, terminal `t7y`, 세션 `01a1e52f-2eba-7a40-9aa7-4ffac600c0cd`, 현재 worktree와 Ready 화면. 이 항목은 부모의 관측 보고다.
+- 이 세션 확인: `feat/71-settings-recovery`, 기준 `0d2b33a0aaad65fa8e94d043e1157fdd586d1b87`, clean, resume PASS, PR72 MERGED·CI4 SUCCESS.
+- 설계 1~3단계·격리 회귀·지정 외부 리뷰·PR/CI까지 소유한다. 추가 에이전트와 부모 검증 재위임 없음. 실제 주입·KIS·기존 서버 재시작·main 통합·사용자 수용은 포함하지 않는다.

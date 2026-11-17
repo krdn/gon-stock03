@@ -2,7 +2,7 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매.
 
-- **현재 구현:** [#71 연결·설정 복구](tasks/71-settings-recovery.md). 설계 PR72를 최신 main에 맞춰 통합한 뒤 별도 구현 브랜치·Herdr 새 세션으로 진행한다. 실제 KIS 호출 없이 fake transport·임시DB로 구현·검증한다.
+- **현재 구현:** [#71 연결·설정 복구](tasks/71-settings-recovery.md). 설계 PR72 통합 후 `feat/71-settings-recovery` 새 세션으로 구현 소유권 인계 완료. 실제 KIS 호출 없이 fake transport·임시DB로 구현·검증한다.
 - **별도 실증:** [#25 장중 통합 실증](tasks/25-validation.md)은 준비 완료·Blocked. 실제 관측·장중 흐름 수용이 남았다. 신규 연결 복구 #71과 분리한다. [15개 화면의 초기/DEMO 표시·배치](verification/2026-11-17-ui-acceptance.md)는 사용자 수용을 기록했다. 별도 장중 시작 전 실행하지 않는다.
 - **수용·통합:** 사용자가 PR68 통합·#65 완료를 명시 승인했다. [#65](tasks/65-static-errors.md)의 PR68은 main `50b958db9c8ee63f72e164ace5f3576b8fddfbfb`에 통합했다. PR head `22575b0`의 CI4·단위189·브라우저113·build·지정 Argon 리뷰 PASS. [검증](verification/2026-11-16-static-errors.md). #64 PR67도 통합 완료다. 실제 장중 수용은 아니다.
 - **장중 실증 조건:** [실증 준비안](verification/2026-11-16-validation-prep.md)의 별도 시작 조건과 수용 대상 SHA를 확인한다. 현재 요청은 KIS 실행 승인이 아니다. 최종 원격 CI·완료 기록은 #65/#25 최신 댓글을 확인한다. #1/#2/#3/#25를 일괄 완료하지 않는다.
