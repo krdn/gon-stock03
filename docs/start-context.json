@@ -1,6 +1,6 @@
 {
-  "checked_at": "2026-11-17T07:58:56.463767+00:00",
-  "objective": "Graphify 핵심 결과 추적과 생성물로 인한 인수인계 차단 해소",
+  "checked_at": "2026-11-17T08:22:41.146097+00:00",
+  "objective": "전체 브랜치 이력 통합·보존·정리와 새 세션 재개",
   "sources": [
     {
       "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_user/kis_auth.py",
@@ -346,6 +346,26 @@
         }
       ],
       "decisions": "graph.json·GRAPH_REPORT.md·.skip-hook만 추적. 캐시·HTML·상태 파일은 제외. 그래프 갱신 후 코드와 함께 커밋하며 중앙 dirty 검사와 전역 훅은 보존한다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/85",
+      "checked_at": "2026-11-17T08:22:41.146097+00:00",
+      "objective": "전체 브랜치 이력 통합·보존·정리와 새 세션 재개",
+      "sources": [
+        {
+          "url": "https://git-scm.com/docs/git-merge",
+          "finding": "ours 전략은 현재 트리를 유지하며 다른 head를 병합 이력으로 연결한다. 이미 통합된 정확한 PR head에만 사용한다."
+        },
+        {
+          "url": "https://git-scm.com/docs/git-bundle",
+          "finding": "bundle create로 refs 이력을 보존하고 verify로 저장소에서 유효성을 검증할 수 있다."
+        },
+        {
+          "url": "https://git-scm.com/docs/git-worktree",
+          "finding": "worktree별 HEAD를 분리할 수 있고 다른 worktree의 브랜치 checkout 상태를 확인해야 한다."
+        }
+      ],
+      "decisions": "미커밋 원본은 snapshot 커밋으로 보존하고 정상 병합한다. 기존 squash PR 원본만 tree 불변 병합으로 연결한다. 원격 main 조상 확인 후 같은 commit detach와 브랜치 삭제를 수행한다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."

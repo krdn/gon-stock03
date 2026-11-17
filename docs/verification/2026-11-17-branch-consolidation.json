@@ -1,0 +1,453 @@
+{
+  "baseline_main": "849bef9c70a55533edca7d10a9804b083b67e8ff",
+  "backup_directory": "/home/gon/llm-projects/gon-stock03-branch-backups/20261117-172005",
+  "original_worktree_count": 22,
+  "original_branch_count": 29,
+  "branches": [
+    {
+      "branch": "chore/25-validation-prep",
+      "sha": "3db325c0f2d03619546aa522baeef8e89ffc4674",
+      "ancestor": false,
+      "prs": [
+        {
+          "number": 66,
+          "exactHead": true,
+          "head": "3db325c0f2d03619546aa522baeef8e89ffc4674",
+          "merge": "dae458093b664d872a23672f4b65aa9b229aa10c"
+        }
+      ]
+    },
+    {
+      "branch": "docs/25-afterhours-checks",
+      "sha": "4b8c6d744438495ad14806b314a22e50543de580",
+      "ancestor": true,
+      "prs": [
+        {
+          "number": 79,
+          "exactHead": true,
+          "head": "4b8c6d744438495ad14806b314a22e50543de580",
+          "merge": "023960f18a6c24819669e3ced5c2420e8f5fb0ed"
+        }
+      ]
+    },
+    {
+      "branch": "docs/25-samsung-preflight-20261117",
+      "sha": "f1d7ce47fa6a081051dd7787a49d7fddf802f742",
+      "ancestor": true,
+      "prs": [
+        {
+          "number": 74,
+          "exactHead": true,
+          "head": "f1d7ce47fa6a081051dd7787a49d7fddf802f742",
+          "merge": "9e25197a079bb11b03341f6eb6efbcc3d39f5292"
+        }
+      ]
+    },
+    {
+      "branch": "docs/25-ui-acceptance",
+      "sha": "464416291a51d10cb3a8db02596111a217db83a1",
+      "ancestor": false,
+      "prs": [
+        {
+          "number": 70,
+          "exactHead": true,
+          "head": "464416291a51d10cb3a8db02596111a217db83a1",
+          "merge": "005a80e9f2277d4d4a1bb715211db8c9bfc7c4a4"
+        }
+      ]
+    },
+    {
+      "branch": "docs/65-integrated-handoff",
+      "sha": "22444db4475d4f5d97a8249b879d838d52ef75c3",
+      "ancestor": false,
+      "prs": [
+        {
+          "number": 69,
+          "exactHead": true,
+          "head": "22444db4475d4f5d97a8249b879d838d52ef75c3",
+          "merge": "99f6730a577101d4bd24f3def7a8cd3109f32c2b"
+        }
+      ]
+    },
+    {
+      "branch": "docs/71-integration-complete",
+      "sha": "087b588a172e3ce1fcd24357f377d04533e1cb91",
+      "ancestor": true,
+      "prs": [
+        {
+          "number": 76,
+          "exactHead": false,
+          "head": "369fa0cf5f86bfadfb209a541364d4796e553c7f",
+          "merge": "087b588a172e3ce1fcd24357f377d04533e1cb91"
+        }
+      ]
+    },
+    {
+      "branch": "docs/71-live-acceptance",
+      "sha": "e9cc3fe72945a9369caacd533b9805656e51c360",
+      "ancestor": true,
+      "prs": [
+        {
+          "number": 77,
+          "exactHead": true,
+          "head": "e9cc3fe72945a9369caacd533b9805656e51c360",
+          "merge": "d4b468462aa3b4b22dd2abb7d86c9dd4e6a5cee1"
+        }
+      ]
+    },
+    {
+      "branch": "docs/80-runtime-applied",
+      "sha": "5812c08fc9b65e5b76d2267d9b47c20a8c77dc5c",
+      "ancestor": false,
+      "prs": [
+        {
+          "number": 82,
+          "exactHead": true,
+          "head": "5812c08fc9b65e5b76d2267d9b47c20a8c77dc5c",
+          "merge": "cebed36dbecd38a5457e276ed19c3cde02a360df"
+        }
+      ]
+    },
+    {
+      "branch": "feat/11-risk-management",
+      "sha": "ba2ce1e13c495f9bfdeb53cfa7b3e37f5f3dd3b4",
+      "ancestor": true,
+      "prs": [
+        {
+          "number": 55,
+          "exactHead": true,
+          "head": "ba2ce1e13c495f9bfdeb53cfa7b3e37f5f3dd3b4",
+          "merge": "23c7b519809681d2777e1ee1298e7604cc4ae1bc"
+        }
+      ]
+    },
+    {
+      "branch": "feat/12-trading",
+      "sha": "087b588a172e3ce1fcd24357f377d04533e1cb91",
+      "ancestor": true,
+      "prs": [
+        {
+          "number": 56,
+          "exactHead": false,
+          "head": "3f5366c456137a53a4a1bc845f88d3f1d2914c3e",
+          "merge": "d678e3143b9f512f87f1a88afda143acf296c2b1"
+        }
+      ]
+    },
+    {
+      "branch": "feat/13-orders",
+      "sha": "38e6e402c640bdb19f550eb099dd6eb08a80302d",
+      "ancestor": true,
+      "prs": [
+        {
+          "number": 58,
+          "exactHead": true,
+          "head": "38e6e402c640bdb19f550eb099dd6eb08a80302d",
+          "merge": "2bd44733f8b6923841b5fff46d358f13cdf36090"
+        }
+      ]
+    },
+    {
+      "branch": "feat/14-paper",
+      "sha": "391757edb85da5289f1fdcb8a28bf22de9c56e35",
+      "ancestor": true,
+      "prs": [
+        {
+          "number": 61,
+          "exactHead": true,
+          "head": "391757edb85da5289f1fdcb8a28bf22de9c56e35",
+          "merge": "af159134162b5aaa9aeabdbdf4f8c36ccbea4e11"
+        }
+      ]
+    },
+    {
+      "branch": "feat/17-alerts",
+      "sha": "d89e97af5b2956726bdf8f584bf6113cec610218",
+      "ancestor": true,
+      "prs": [
+        {
+          "number": 57,
+          "exactHead": false,
+          "head": "497173e35c39719ea0568f690aeb52529133cb3c",
+          "merge": "bf158ccaf826ca4e91ba5b6d7a059700dfb15098"
+        }
+      ]
+    },
+    {
+      "branch": "feat/18-dashboard",
+      "sha": "6270faa0024433274930996300fb1e9e20cadc89",
+      "ancestor": true,
+      "prs": [
+        {
+          "number": 59,
+          "exactHead": true,
+          "head": "6270faa0024433274930996300fb1e9e20cadc89",
+          "merge": "2bd44733f8b6923841b5fff46d358f13cdf36090"
+        }
+      ]
+    },
+    {
+      "branch": "feat/19-realtime",
+      "sha": "2e7ea616bb795bc01109d852f33a2a1ede68aac5",
+      "ancestor": true,
+      "prs": [
+        {
+          "number": 62,
+          "exactHead": true,
+          "head": "2e7ea616bb795bc01109d852f33a2a1ede68aac5",
+          "merge": "54754f81e831cf3a6b24085229ca68c485dc8c86"
+        }
+      ]
+    },
+    {
+      "branch": "feat/22-strategies",
+      "sha": "41047ece747b5fad89ae89fe5a9675c4aa646757",
+      "ancestor": true,
+      "prs": [
+        {
+          "number": 63,
+          "exactHead": true,
+          "head": "41047ece747b5fad89ae89fe5a9675c4aa646757",
+          "merge": "134118eff0b0575be231d9dd34929ab45a290125"
+        }
+      ]
+    },
+    {
+      "branch": "feat/71-settings-recovery",
+      "sha": "bab80bb928583c40ec80a552550f82eafaac4ded",
+      "ancestor": true,
+      "prs": [
+        {
+          "number": 73,
+          "exactHead": true,
+          "head": "bab80bb928583c40ec80a552550f82eafaac4ded",
+          "merge": "341825b61a198fd970f3ffb2c801097d4a9ade27"
+        }
+      ]
+    },
+    {
+      "branch": "feat/75-market-paper",
+      "sha": "4f258896f32b5e44d7f14f0791e103788ce0f1ab",
+      "ancestor": false,
+      "prs": []
+    },
+    {
+      "branch": "feat/75-market-paper-complete",
+      "sha": "d821caaca7fdf440a1ab5c6df060600ffa3961de",
+      "ancestor": true,
+      "prs": [
+        {
+          "number": 78,
+          "exactHead": true,
+          "head": "d821caaca7fdf440a1ab5c6df060600ffa3961de",
+          "merge": "b7c6ac2d0238acb171153b09b0655c1543b22b88"
+        }
+      ]
+    },
+    {
+      "branch": "feat/80-ws-approval",
+      "sha": "0913a37c7bc7fc9aa51687216ece3cadd07524ca",
+      "ancestor": false,
+      "prs": [
+        {
+          "number": 81,
+          "exactHead": true,
+          "head": "0913a37c7bc7fc9aa51687216ece3cadd07524ca",
+          "merge": "275d9b5d4ab63eeabc0ee59054e99851af3de742"
+        }
+      ]
+    },
+    {
+      "branch": "feat/9-vts-cancel-probe",
+      "sha": "f4ff9582c4178f9b7bc39f594b734bcd6f7a8e04",
+      "ancestor": true,
+      "prs": [
+        {
+          "number": 54,
+          "exactHead": true,
+          "head": "f4ff9582c4178f9b7bc39f594b734bcd6f7a8e04",
+          "merge": "5314e0203b47435600de9a51fbe839a0c327875b"
+        }
+      ]
+    },
+    {
+      "branch": "fix/64-sqlite-permissions",
+      "sha": "4a3221d4ca9af55955cfecd7948ae323aad4cc0f",
+      "ancestor": false,
+      "prs": [
+        {
+          "number": 67,
+          "exactHead": true,
+          "head": "4a3221d4ca9af55955cfecd7948ae323aad4cc0f",
+          "merge": "961f470036eafbadce5d18d9b772705f1f4c5ca3"
+        }
+      ]
+    },
+    {
+      "branch": "fix/65-static-errors",
+      "sha": "22575b0e4a1225506dd629a207bb3d3384f6f6dc",
+      "ancestor": false,
+      "prs": [
+        {
+          "number": 68,
+          "exactHead": true,
+          "head": "22575b0e4a1225506dd629a207bb3d3384f6f6dc",
+          "merge": "50b958db9c8ee63f72e164ace5f3576b8fddfbfb"
+        }
+      ]
+    },
+    {
+      "branch": "fix/83-graphify-handoff",
+      "sha": "15a51fe64969e58a61d7acf598fb1c92848456aa",
+      "ancestor": false,
+      "prs": [
+        {
+          "number": 84,
+          "exactHead": true,
+          "head": "15a51fe64969e58a61d7acf598fb1c92848456aa",
+          "merge": "849bef9c70a55533edca7d10a9804b083b67e8ff"
+        }
+      ]
+    },
+    {
+      "branch": "integration/12-17",
+      "sha": "497173e35c39719ea0568f690aeb52529133cb3c",
+      "ancestor": true,
+      "prs": [
+        {
+          "number": 57,
+          "exactHead": true,
+          "head": "497173e35c39719ea0568f690aeb52529133cb3c",
+          "merge": "bf158ccaf826ca4e91ba5b6d7a059700dfb15098"
+        }
+      ]
+    },
+    {
+      "branch": "integration/13-18",
+      "sha": "e1ab060b524a23b2030ea27b7c0a81996a00aaf3",
+      "ancestor": true,
+      "prs": [
+        {
+          "number": 60,
+          "exactHead": true,
+          "head": "e1ab060b524a23b2030ea27b7c0a81996a00aaf3",
+          "merge": "46593c56abc5f6958f21e163bdd8d4758b79c2b6"
+        }
+      ]
+    },
+    {
+      "branch": "krdn/cabezon",
+      "sha": "275d9b5d4ab63eeabc0ee59054e99851af3de742",
+      "ancestor": true,
+      "prs": []
+    },
+    {
+      "branch": "krdn/finback",
+      "sha": "0d2b33a0aaad65fa8e94d043e1157fdd586d1b87",
+      "ancestor": true,
+      "prs": []
+    },
+    {
+      "branch": "main",
+      "sha": "849bef9c70a55533edca7d10a9804b083b67e8ff",
+      "ancestor": true,
+      "prs": []
+    },
+    {
+      "branch": "세부작업",
+      "sha": "a8b73cdcb1235ffc385a177bc96de6b842a4dd5d",
+      "ancestor": false,
+      "prs": [
+        {
+          "number": 72,
+          "exactHead": true,
+          "head": "a8b73cdcb1235ffc385a177bc96de6b842a4dd5d",
+          "merge": "0d2b33a0aaad65fa8e94d043e1157fdd586d1b87"
+        }
+      ]
+    }
+  ],
+  "original_snapshot": "96545e59cdfa096564c33c98cf3409274d146ca3",
+  "original_files": {
+    "docs/verification/assets/dashboard/kis-fixture-desktop.png": "f6e311e49cb115fca42426606b0d9d0d064cd0f0a0b1f2a3331400e34e83bf34",
+    "docs/verification/assets/dashboard/kis-fixture-mobile.png": "b7ba1692313aa110811d1ba1fca00b670d556a8f3bd44999811f169ee35a8ec8",
+    "docs/verification/assets/orders-dashboard-integration/dashboard-mobile.png": "d0de1858753484738a4496a49ecb26bfee838ff163a1d889bbff7a2dca776ba2",
+    "docs/verification/assets/orders-dashboard-integration/orders-desktop.png": "94af41ab8517db464b242587a32a048f48a7dcff6615a4c0605d8008eb4d8958",
+    "docs/verification/assets/orders-dashboard-integration/orders-mobile.png": "9e30fb87f80e7ac92360fd028d4073b76032399991ada4ce34a9e4c5c91b60bf",
+    "docs/verification/assets/paper/desktop-input.png": "56e161f1699a85769ba204d2a954759d87487c5e38ccf4e1c6e3cd944a54b9c0",
+    "docs/verification/assets/paper/mobile-confirmation.png": "4f51519da1dae951baa9baaaf8398ffc8a4ee86a298495b6269cbd1dbbd00839",
+    "docs/verification/assets/paper/mobile-recovery.png": "4090151327cfc735246edd4621d815040105608e85e32fc0ef920763bb0bd0f3",
+    "server/http.ts": "b18fddb81ed42175c6ae5ffdb2b1d2140191d5dabb9b1021647f946ab40e3367",
+    "server/kis.ts": "f8631b0f6c07a08fc1d8e1b34beb60371f8a5dee6885eacdb4a6916776e573d2",
+    "server/paper.ts": "e4f1978c0941e1266b040f066fdb32b6e97c3914f4a4fda0f901ba0c2cb40ea9",
+    "server/store.ts": "5c0c01c7c0f9f396ebaf4e03a76e73f7749bc249e20ed5eb15d4d356222966a3",
+    "shared/contracts.ts": "fa51e2a85ecdb405aa77b630bfdb3aaff1d4987709fde7839bb71fe767d1fec5",
+    "shared/model.ts": "288c2232b7b38b8e9d53a0fb583801574de0f922ab1fa12fddbc2fc7b173ed41",
+    "src/pages/Paper.tsx": "e519ebcdb9389e5b1c25e5d2f36ed29f0324df87fd81b50bce810d22fffcce47",
+    "src/pages/Trading.tsx": "4337ec9c7770b233a56f1a200f9c178748c2ac6e23b5f44b833d37a1c60506d8",
+    "tests/browser/paper.spec.ts": "84853af3b9194160ab5a1f750ed346904ea9c0175bb008f760960801b3ef5bc7",
+    "tests/paper.test.ts": "021109a6dae3508f6288042762373397b8427eae68cec114138820a2f8d4d556"
+  },
+  "status": "local integration verified; remote PR/CI and branch cleanup pending",
+  "history_bridge": "9ad8557d1b107c4d6ef94688360846e6243c97b8",
+  "history_bridge_heads": [
+    {
+      "branch": "chore/25-validation-prep",
+      "sha": "3db325c0f2d03619546aa522baeef8e89ffc4674",
+      "pr": 66,
+      "merged_commit": "dae458093b664d872a23672f4b65aa9b229aa10c"
+    },
+    {
+      "branch": "docs/25-ui-acceptance",
+      "sha": "464416291a51d10cb3a8db02596111a217db83a1",
+      "pr": 70,
+      "merged_commit": "005a80e9f2277d4d4a1bb715211db8c9bfc7c4a4"
+    },
+    {
+      "branch": "docs/65-integrated-handoff",
+      "sha": "22444db4475d4f5d97a8249b879d838d52ef75c3",
+      "pr": 69,
+      "merged_commit": "99f6730a577101d4bd24f3def7a8cd3109f32c2b"
+    },
+    {
+      "branch": "docs/80-runtime-applied",
+      "sha": "5812c08fc9b65e5b76d2267d9b47c20a8c77dc5c",
+      "pr": 82,
+      "merged_commit": "cebed36dbecd38a5457e276ed19c3cde02a360df"
+    },
+    {
+      "branch": "feat/80-ws-approval",
+      "sha": "0913a37c7bc7fc9aa51687216ece3cadd07524ca",
+      "pr": 81,
+      "merged_commit": "275d9b5d4ab63eeabc0ee59054e99851af3de742"
+    },
+    {
+      "branch": "fix/64-sqlite-permissions",
+      "sha": "4a3221d4ca9af55955cfecd7948ae323aad4cc0f",
+      "pr": 67,
+      "merged_commit": "961f470036eafbadce5d18d9b772705f1f4c5ca3"
+    },
+    {
+      "branch": "fix/65-static-errors",
+      "sha": "22575b0e4a1225506dd629a207bb3d3384f6f6dc",
+      "pr": 68,
+      "merged_commit": "50b958db9c8ee63f72e164ace5f3576b8fddfbfb"
+    },
+    {
+      "branch": "fix/83-graphify-handoff",
+      "sha": "15a51fe64969e58a61d7acf598fb1c92848456aa",
+      "pr": 84,
+      "merged_commit": "849bef9c70a55533edca7d10a9804b083b67e8ff"
+    },
+    {
+      "branch": "세부작업",
+      "sha": "a8b73cdcb1235ffc385a177bc96de6b842a4dd5d",
+      "pr": 72,
+      "merged_commit": "0d2b33a0aaad65fa8e94d043e1157fdd586d1b87"
+    }
+  ],
+  "all_original_heads_ancestral_locally": true,
+  "original_snapshot_ancestral_locally": true,
+  "product_tree_changed": false,
+  "fixture_archive": "docs/verification/assets/75-original-20261117/"
+}
