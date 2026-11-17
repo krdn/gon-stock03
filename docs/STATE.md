@@ -2,8 +2,8 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매.
 
-- **현재 구현:** [#71 연결·설정 복구](tasks/71-settings-recovery.md). 설계 1~3단계 구현 완료, [PR73](https://github.com/krdn/gon-stock03/pull/73) OPEN·미통합. 구현 `40e4f86`의 단위197·브라우저116·빌드·지정 Argon 리뷰·CI4 PASS. [검증](verification/2026-11-17-settings-recovery.md). 실제 연결·사용자 수용은 별도다.
-- **다음 작업 점검:** #71 구현과 STE 복구는 PR73에 전달했다. PR73 최종 검증 head `4ca9a79`의 CI4 SUCCESS, 미통합이다. 사용자 검토·통합 결정이 다음 경계다.
+- **현재 구현:** [#71 연결·설정 복구](tasks/71-settings-recovery.md)의 설계 1~3단계와 STE 복구를 완료했다. [PR73](https://github.com/krdn/gon-stock03/pull/73)은 main `341825b`에 통합했다. 단위197·브라우저116·빌드·지정 Argon 리뷰·PR CI4 PASS. [검증](verification/2026-11-17-settings-recovery.md).
+- **남은 범위:** #71 실제 주입·인증·전체 잔고와 사용자 수용은 미검증이다. 이슈는 열린 상태로 유지한다. #75는 기존 소유자가 진행하고, 공통 변경 파일은 해당 통합 전에 함께 검증한다. #25 실증은 별도 시작 조건을 따른다.
 - **병행 작업 보존:** [#75 시장가 모의 1회 경로](https://github.com/krdn/gon-stock03/issues/75)는 `feat/75-market-paper` 별도 worktree에서 착수됐다. 미커밋 제품 변경이 있으므로 새 세션에서 중복 구현하지 않는다. [PR74](https://github.com/krdn/gon-stock03/pull/74)는 #25 실행 기록이며 제품 구현과 구분한다.
 - **별도 실증:** [#25 장중 통합 실증](tasks/25-validation.md)은 준비 완료·Blocked. 실제 관측·장중 흐름 수용이 남았다. 신규 연결 복구 #71과 분리한다. [15개 화면의 초기/DEMO 표시·배치](verification/2026-11-17-ui-acceptance.md)는 사용자 수용을 기록했다. 별도 장중 시작 전 실행하지 않는다.
 - **수용·통합:** 사용자가 PR68 통합·#65 완료를 명시 승인했다. [#65](tasks/65-static-errors.md)의 PR68은 main `50b958db9c8ee63f72e164ace5f3576b8fddfbfb`에 통합했다. PR head `22575b0`의 CI4·단위189·브라우저113·build·지정 Argon 리뷰 PASS. [검증](verification/2026-11-16-static-errors.md). #64 PR67도 통합 완료다. 실제 장중 수용은 아니다.
