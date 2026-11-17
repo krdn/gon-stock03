@@ -17,4 +17,6 @@
 - 기존 생성물193개의 내용 해시가 설정 변경 직후 동일했다. `PYTHONHASHSEED=0 graphify update .`는 스캔328개 변경 없음으로 종료0이었다.
 - `graphify explain "scripts/dev.ts"`는 Realtime import와 자식 실행 연결을 반환했다. 갱신 후 그래프1142노드·2517연결이며 .local/.env/.secrets/.codex 소스 경로와 절대 소스 경로는0이다.
 - 중앙 기본 Opus5.5/high 확인 후 프로젝트 지정 gemini-4-argon-high/high로 직접 리뷰했다. 응답 SUCCESS/PASS·결함0, conversation 54db8815-7a4b-4d41-a382-b8794d485d35다. 반환 JSON의 모델/effort 필드는 없어 서버 내부 모델은 독립 미검증이다.
-- 실제 저장소 커밋 후 clean·자동 전달·원격 CI는 후속 확인한다. 제품 코드·앱 실행·KIS 호출 변경은 없다.
+- 실제 저장소 커밋 후 clean, 설치된 checkout 훅 실행 후 그래프·보고서 해시 동일과 clean을 확인했다. 기존193개 생성물의 누락은0이다.
+- bdf0c3a 원격 일치·handoff --dry-run 성공 후 [자동 게시·댓글 재조회](https://github.com/krdn/gon-stock03/issues/83#issuecomment-6942353920)를 완료했다. 새 세션 생성은 하지 않았다.
+- diff·상대 링크 PASS. STE는0 findings이나 규칙 적용 파일0 보고 한계가 있다. 원격 CI·통합 상태는 #83의 관련 PR에서 확인한다. 제품 코드·앱 실행·KIS 호출 변경은 없다.
