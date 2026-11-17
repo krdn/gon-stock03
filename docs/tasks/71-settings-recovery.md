@@ -2,7 +2,7 @@
 
 기준: [#71](https://github.com/krdn/gon-stock03/issues/71), 설계 [PR72](https://github.com/krdn/gon-stock03/pull/72) MERGED. 기존 #8 후속이다.
 
-- 상태: 설계 1~3단계 구현·단위197·브라우저116·빌드·지정 Argon 리뷰 PASS. [구현 PR73](https://github.com/krdn/gon-stock03/pull/73) MERGED, main `341825b`. 최종 head `bab80bb`의 CI4 SUCCESS.
+- 상태: 실제 연결 검증·마감 승인 완료. 설계 1~3단계 구현·단위197·브라우저116·빌드·지정 Argon 리뷰 PASS. [구현 PR73](https://github.com/krdn/gon-stock03/pull/73) MERGED, main `341825b`. 최종 head `bab80bb`의 CI4 SUCCESS.
 - 브랜치: `feat/71-settings-recovery`. 기준 main `0d2b33a0aaad65fa8e94d043e1157fdd586d1b87`.
 - 완료 조건: 실행 서버 식별·미주입 진단, 잔고 조회 전체 deadline·브라우저 대기 제한, GET 복구, 인증 대기·진행 표시, 회귀·지정 리뷰·PR CI. 실제 연결 수용은 별도다.
 - 범위: 연결 진단/조회 경로·계약·UI·검사. 실제 KIS 인증/업무API/WebSocket/주문/취소/예약/외부알림·주입·기존 서버 재시작 금지. fake transport·메모리/임시DB만 사용한다.
@@ -61,3 +61,16 @@ PR74의 CI4 SUCCESS는 #25의 전송 전 차단 기록을 검증한 결과다. �
 
 자동 resume은 미추적 `graphify-out/` 때문에 실패했다. 해당 파일을 보존하고 원격 SHA·이슈·PR·CI를 직접 대조했다.
 통합 후 CI와 기록 PR의 최종 결과는 #71 후속 댓글에서 확인한다.
+
+## 실제 연결 검증과 마감
+
+2026-11-17 사용자가 Infisical 주입·서버 재시작·모의 인증·잔고 조회를 명시 승인했다. 앞 절의 해당 실행 제한은 이 한정 작업에 한해 해제됐다.
+[실행 근거](https://github.com/krdn/gon-stock03/issues/71#issuecomment-6940359209)는 main `087b588`의 실제 4303 화면과 서버 상태를 대조한다.
+
+- 원인: 일반 실행 명령으로 시작한 서버에 필수 환경변수 4개가 없었다.
+- 조치: 문서의 Infisical `dev /kis` 주입 명령으로 기존 DB를 유지하고 서버를 재시작했다.
+- 관측: 15:11:50 KST 토큰 발급, 15:11:52 전체 잔고 1페이지 성공. 상태 새로고침 후 성공 표시를 확인했다.
+- 코드 변경 없음. 주문·취소 실행 없음. 기존 보유·원장·다른 worktree를 보존했다.
+
+사용자는 결과 보고 뒤 #71 마감 → #75 완료 → #25 실증 순서에 동의하고 진행을 지시했다. 이를 #71 범위의 마감 승인으로 기록한다.
+실제 거래·복구·연속전략과 전체 화면 흐름의 수용은 #25에 남긴다. 주입된 서버를 다시 실행할 때도 [Infisical 실행 명령](../INFISICAL.md#연결설정-화면)을 사용한다.
