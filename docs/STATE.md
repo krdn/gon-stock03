@@ -8,6 +8,6 @@
 - **다음 #25:** [통합 실증](tasks/25-validation.md). 실제 WS 수신·단절/재시작 복구, 연속전략 별도 계약, 부분체결/경합 재현 여부, 동적 PC/모바일 사용자 수용이 남았다. #1/#2/#3도 미완료다.
 - **완료:** #71 연결·설정, #64/#65 안전성, #80 접속키 발급·앱 적용, #83 Graphify 추적·자동 전달은 통합했다. 15개 화면 수용은 초기/DEMO 표시·배치에 한정한다.
 - **실행 환경:** 4303/4304 소스는 이 worktree, 원장은 기존 gon-stock03/.local/workspace.sqlite다. 접속키는 서버 메모리에만 있다. 다음 세션에서 현재 프로세스·환경·세션 날짜를 재확인한다.
-- **통합·정리:** [#85](tasks/85-consolidation.md), [브랜치 manifest](verification/2026-11-17-branch-consolidation.json). 원본18개 변경과 fixture8개를 저장하고 기존 브랜치 이력을 연결했다. 최종 통합·삭제 결과는 #85의 관련 PR·댓글에서 대조한다.
+- **통합·정리:** [#85](tasks/85-consolidation.md), [브랜치 manifest](verification/2026-11-17-branch-consolidation.json). PR86으로 모든 기존 브랜치 이력을 main에 연결하고 초기 작업 브랜치29개를 정리했다. 원본18개 변경·fixture8개·작업 폴더를 보존했다. 구 worktree Graphify 재생성110개와 최종 검증은 #85 기록을 확인한다.
 - **보존·금지:** 기존 원장·보유·백업·작업 폴더·.codex·node_modules·Graphify 파일을 보존한다. 원장 초기화·ID 자동 재발급·예약·자동 재개·실전 전환·강제푸시·보호 우회 없음.
 - **리뷰·재개:** 필요한 구현 경계에서 지정 Fable5.2/high 또는 Argon/high만 사용한다. 이 파일·선택 작업·필수 자료·관련 이슈/PR/CI부터 읽는다. 신규 초기화와 전체 과거 기록 재독은 하지 않는다. [재개 명령과 전달 문구](verification/2026-11-17-consolidated-status.md#새-세션-시작)를 따른다.

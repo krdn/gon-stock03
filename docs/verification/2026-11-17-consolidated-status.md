@@ -16,7 +16,7 @@
 | 화면 부분 수용 | [15개 화면 초기/DEMO 표시·배치](2026-11-17-ui-acceptance.md)만 사용자 수용. 실제 동적 상세 흐름은 미수용 |
 | 장외 격리 점검 | [복구84·브라우저35·빌드](2026-11-17-afterhours.md) PASS. 실제 단절/체결을 대체하지 않는다 |
 | Graphify | #83·PR84 통합, PR CI4·main CI2 PASS. 핵심 그래프·보고서 추적, 캐시 제외, 커밋 전 갱신과 자동 handoff 성공 |
-| 이력·원본 보존 | [#85 작업](../tasks/85-consolidation.md), [브랜치 manifest](2026-11-17-branch-consolidation.json). 원본18개 변경 snapshot과 fixture8개를 보존한다 |
+| 이력·원본 보존 | [#85 작업](../tasks/85-consolidation.md), [브랜치 manifest](2026-11-17-branch-consolidation.json). PR86·main CI 통과, 초기 작업 브랜치29개 정리. 원본18개 변경 snapshot과 fixture8개 보존 |
 
 ## 남은 작업 순서
 
@@ -38,6 +38,8 @@ HTS ID 등록·세션 스키마는 확인했지만 세션 날짜는17일과 달�
 이 항목은17일 관측이며 다음 세션에서는 프로세스·원장 경로·환경의 존재 여부를 다시 확인한다. 비밀값은 출력하지 않는다.
 
 기존 worktree와 .local·백업·.codex·node_modules·Graphify 파일은 로컬에 남긴다. 원장·인증값·캐시 전체를 공개 저장소에 올리지 않는다.
+구 worktree16곳의 Graphify 생성물110개는 checkout 훅으로 재생성됐다. 파일 누락0·원본 코드/캡처 불변을 확인했지만 이전 생성물 바이트 복원은 입증하지 못한다. [상세 결과](2026-11-17-branch-cleanup-result.json)를 따른다.
+
 브랜치 삭제는 파일 삭제가 아니다. 보존 폴더가 detached HEAD이면 현재 main으로 오해하지 않는다. 최신 소스·기록은 main이 기준이다.
 
 ## 새 세션 시작
