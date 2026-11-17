@@ -109,3 +109,14 @@ test('paper definitive preflight rejection permits correction but ambiguous retr
   await expect(page.getByText('전송 결과 미확인', { exact: true })).toBeVisible();
   expect(requests[0].requestId).not.toBe(requests[1].requestId); expect(requests[1].price).toBe(70000);
 });
+
+for (const path of ['/paper', '/orders']) test(`market order ledger shows market pricing on ${path}`, async ({ page }) => {
+  await setup(page);
+  const marketOrder = { ...order, orderType: 'market', price: 0, qty: 1, remaining: 1, status: 'accepted', brokerId: '1234' };
+  await page.route('**/api/kis/ledger', route => route.fulfill({ json: { orders: [marketOrder] } }));
+  await page.goto(path);
+  if (path === '/orders') await page.getByRole('button', { name: 'KIS 모의 원장', exact: true }).click();
+  const row = page.getByRole('row').filter({ hasText: order.requestId });
+  await expect(row).toContainText('시장가');
+  await expect(row).not.toContainText('0원');
+});
