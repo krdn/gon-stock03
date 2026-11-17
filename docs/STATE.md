@@ -11,4 +11,4 @@
 - **보존:** 기존 원장·보유·백업·다른 worktree·.codex·graphify-out·기존 node_modules·전역 hook. 강제푸시·보호 우회·추가 에이전트·부모 검증 재위임 없음.
 - **리뷰:** 외부 리뷰 지침·중앙 설정 확인 후 `claude-fable-5-2-high` 또는 `gemini-4-argon-high`만. 자동 대체·effort 승격·다른 이슈 리뷰 재사용 금지. 요청/init과 서버 내부 모델/effort 독립 미검증을 구분한다.
 - **세션:** #71 구현 소유권은 새 Herdr 세션 `01a1e52f-2eba-7a40-9aa7-4ffac600c0cd`에 인계됐다. 부모의 탭·terminal t7y·cwd·Ready 관측 보고와 이 세션의 resume 확인을 [작업 기록](tasks/71-settings-recovery.md)에 남겼다. 제품 구현·검증은 이 세션이 소유한다.
-- **재개:** AGENTS·WORKFLOW·현재 작업·필수 자료·관련 원격 이슈/PR/CI만. 신규 초기화 없음. STE 기준파일 부재·기존 번들 경고 유지.
+- **재개:** AGENTS·WORKFLOW·현재 작업·필수 자료·관련 원격 이슈/PR/CI만. 신규 초기화 없음. [STE 기준](conventions/ste100-writing.md) 도입 후 변경 문서 검사 PASS. 기존 번들 경고 유지.
