@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-11-17T08:22:41.146097+00:00",
+  "checked_at": "2026-11-17T13:41:20.689516+00:00",
   "objective": "전체 브랜치 이력 통합·보존·정리와 새 세션 재개",
   "sources": [
     {
@@ -381,6 +381,38 @@
         }
       ],
       "decisions": "서버 스냅샷 확인 전 예시 관심목록을 숨기고, 동일 상세 재선택은 기존 DOM에 직접 초점을 이동한다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/12",
+      "checked_at": "2026-11-17T13:18:43.257408+00:00",
+      "objective": "트레이딩 입력·복구·접근성 결함 수정",
+      "sources": [
+        {
+          "url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/sessionStorage",
+          "finding": "sessionStorage는 탭별 유지되며 정책에 따라 SecurityError가 발생한다."
+        },
+        {
+          "url": "https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html",
+          "finding": "일반 텍스트는 4.5:1 이상의 대비가 필요하다."
+        }
+      ],
+      "decisions": "저장소 실패 시 신규 주문을 차단하고 원 요청을 보존한다. 입력 사전 안내와 서버 최종 검사를 함께 유지한다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/12",
+      "checked_at": "2026-11-17T13:41:20.689516+00:00",
+      "objective": "트레이딩 기본 화면 실제 KIS 주가·일봉 연동",
+      "sources": [
+        {
+          "url": "https://raw.githubusercontent.com/koreainvestment/open-trading-api/main/examples_llm/domestic_stock/inquire_price/inquire_price.py",
+          "finding": "실전/모의 모두 FHKST01010100으로 현재가를 조회한다. J는 KRX이며 REST 조회와 WebSocket 실시간 시세를 구분한다."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/koreainvestment/open-trading-api/main/examples_llm/domestic_stock/inquire_daily_itemchartprice/inquire_daily_itemchartprice.py",
+          "finding": "모의 환경도 FHKST03010100으로 최대100건의 일봉을 조회한다. D는 일봉, 수정주가는 0이다."
+        }
+      ],
+      "decisions": "기존 kis/market 읽기 전용 API를 재사용하고 기본 화면에 실제 시세/거래일 차트를 표시한다. DEMO는 명시 선택으로 분리하며 실제 가격을 합성 원장에 쓰지 않는다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."
