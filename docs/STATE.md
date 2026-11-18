@@ -8,7 +8,7 @@
 - **#75 완료:** [11월 18일 실증](tasks/75-market-paper.md#11월-18일-장중-결과). 삼성전자 모의 시장가 1주 전량 체결, 잔량 0주, 보유 1주에서 2주로 증가. 해당 승인은 소진됐다. 다음 작업은 #25 실시간 수신·복구 검증이다.
 - **#92 실시간 경로:** PR93 통합 SHA에서 두 구독 승인·실제 시세·REST 대조 확인. [재시도 소진 및 복구 관측](tasks/92-ws.md#통합-sha-장중-재검증).
 - **#106·#107:** [정상 경로의 지연·취소 경합 연구](tasks/106-strategy-preflight.md) · [분리된 모의 테스트 실행기](tasks/107-vts-runner.md).
-- **#25 장중 실증 · Blocked:** [장중 주문·응답 유실 복구·전략 신호](verification/2026-11-18-live-transitions.md). 실제 PC·모바일 주문 행의 전송 중→접수→체결, 별도 실제 주문의 통제된 응답 유실→모바일 대조→복구를 확인했다. [기존 화면 4개 수용·14:02 주문 없는 복구](verification/2026-11-18-dynamic-ui.md)와 [격리 재생·미관측 조건](tasks/25-validation.md)을 함께 본다.
+- **#25 장중 실증 · Blocked:** [다음 정규장 재개 문구·완료 기준](tasks/25-validation.md#다음-정규장-재개). [장중 주문·응답 유실 복구·전략 신호](verification/2026-11-18-live-transitions.md). 실제 PC·모바일 주문 행의 전송 중→접수→체결, 별도 실제 주문의 통제된 응답 유실→모바일 대조→복구를 확인했다. [기존 화면 4개 수용·14:02 주문 없는 복구](verification/2026-11-18-dynamic-ui.md)와 [격리 재생·미관측 조건](tasks/25-validation.md)을 함께 본다.
 - **완료:** #71 연결·설정, #64/#65 안전성, #80 접속키 발급·앱 적용, #83 Graphify 추적·자동 전달은 통합했다. 15개 화면 수용은 초기/DEMO 표시·배치에 한정한다.
 - **실행 환경:** 17일19:17 현재 `/home/gon/llm-projects/gon-stock03`에서 4303/4304를 복구했다. 기존 `.local/workspace.sqlite`를 백업 후 사용한다. 주문 승인·WS 접속키 미주입, 구독·전략 정지. [재개 점검](tasks/75-market-paper.md#장외-재개-점검)을 확인한다.
 - **통합·정리:** [#85](tasks/85-consolidation.md), [브랜치 manifest](verification/2026-11-17-branch-consolidation.json). PR86으로 모든 기존 브랜치 이력을 main에 연결하고 초기 작업 브랜치29개를 정리했다. 원본18개 변경·fixture8개·작업 폴더를 보존했다. 구 worktree Graphify 재생성110개와 최종 검증은 #85 기록을 확인한다.
