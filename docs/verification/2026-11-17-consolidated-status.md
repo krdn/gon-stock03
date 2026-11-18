@@ -1,5 +1,7 @@
 # 완료 작업과 다음 세션 기준
 
+> **11월 18일 갱신:** [#75 실제 체결·잔고 대조](../tasks/75-market-paper.md#11월-18일-장중-결과)를 완료했다. 아래 11월 17일 기준 #75 재개 명령과 승인 재사용 안내는 종료됐다. 다음 작업은 [#25](../tasks/25-validation.md)다.
+
 **기능 구현은 main에 통합됐고 실제 장중 실증은 남아 있다.** 이번 정리는 코드 기능을 바꾸지 않고 원본 작업·이력·재개 자료를 모은다.
 상위 [#1](https://github.com/krdn/gon-stock03/issues/1), 공통 [#2](https://github.com/krdn/gon-stock03/issues/2), 화면 [#3](https://github.com/krdn/gon-stock03/issues/3)는 최종 실증·수용 전까지 열린 상태다.
 
