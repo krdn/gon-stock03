@@ -9,7 +9,7 @@ import type { StrategyEvaluation } from '../shared/model.ts';
 import type { RealtimeStatus } from '../shared/realtime.ts';
 import { orderInput, type OrderInput } from '../shared/contracts.ts';
 
-const URL = 'ws://ops.koreainvestment.com:31000';
+const URL = 'ws://ops.koreainvestment.com:31000/tryitout';
 const PRICE = 'H0STCNT0', NOTICE = 'H0STCNI9';
 const sessionSchema = z.object({ date: z.iso.date(), open: z.string().regex(/^\d{2}:\d{2}$/), close: z.string().regex(/^\d{2}:\d{2}$/), verified: z.literal(true) }).strict();
 export type RealtimeConfig = { approvalKey: string; htsId: string; session: z.infer<typeof sessionSchema> };

@@ -56,6 +56,7 @@ function noticeFrame(qty = '1') {
   return '1|H0STCNI9|001|' + Buffer.concat([cipher.update(row.join('^')), cipher.final()]).toString('base64');
 }
 function fixture(path = ':memory:', approval?: PaperApproval) {
+  const urls: string[] = [];
   const store = new Store(path); const sockets: FakeSocket[] = [], requests: string[] = [];
   const sentOrders: { tr: string | null }[] = [];
   const response = { positions: [] as Record<string, string>[], rows: [] as Record<string, string>[], before: async (_path: string) => {} };
@@ -75,9 +76,9 @@ function fixture(path = ':memory:', approval?: PaperApproval) {
   const paper = new PaperBroker(store, kis, approval);
   let now = base;
   const realtime = new Realtime(store, paper, { approvalKey: 'fixture-approval-secret', htsId: 'fixture-hts', session: { date: '2026-11-16', open: '09:00', close: '15:30', verified: true } }, ((url: string) => {
-    assert.equal(url, 'ws://ops.koreainvestment.com:31000'); const socket = new FakeSocket(); sockets.push(socket); return socket;
+    urls.push(url); const socket = new FakeSocket(); sockets.push(socket); return socket;
   }) as unknown as SocketFactory, () => now);
-  return { store, paper, realtime, sockets, requests, response, sentOrders, setNow: (n: number) => { now = n; }, close: () => { realtime.stop(); store.close(); }, start: () => { realtime.start('005930'); const socket = sockets.at(-1)!; socket.emit('open'); socket.acknowledge(); return socket; } };
+  return { store, paper, realtime, sockets, urls, requests, response, sentOrders, setNow: (n: number) => { now = n; }, close: () => { realtime.stop(); store.close(); }, start: () => { realtime.start('005930'); const socket = sockets.at(-1)!; socket.emit('open'); socket.acknowledge(); return socket; } };
 }
 const order = () => ({ code: '005930', side: 'buy' as const, price: 70000, qty: 1, requestId: randomUUID() });
 const row = () => ({ odno: '001', ord_dt: koreaDate(), pdno: '005930', prdt_name: '삼성전자', sll_buy_dvsn_cd: '02', ord_qty: '1', ord_unpr: '70000', tot_ccld_qty: '1', rmn_qty: '0', cncl_yn: 'N', ord_gno_brno: '12345' });
@@ -152,6 +153,7 @@ test('재연결은 재구독·대조 전 차단하고 이전 소켓 메시지를
     const old = f.start(); old.frame(priceFrame()); await f.realtime.reconcile();
     old.emit('close'); assert.equal(f.realtime.status().phase, 'disconnected');
     t.mock.timers.tick(1000); const next = f.sockets.at(-1)!; assert.notEqual(old, next);
+    assert.deepEqual(f.urls, Array(2).fill('ws://ops.koreainvestment.com:31000/tryitout'));
     next.emit('open'); next.acknowledge(); next.frame(priceFrame());
     assert.equal(f.realtime.status().ordersAllowed, false);
     old.frame(noticeFrame()); assert.equal(f.realtime.status().lastNoticeAt, null);
