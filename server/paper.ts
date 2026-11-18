@@ -3,6 +3,8 @@ import type { PaperOrder, BrokerOrder, PaperEvidence, ConnectionState, PaperRisk
 import { KisClient, KisRejected, KisNotSent, koreaDate } from './kis.ts';
 import { Store } from './store.ts';
 import { halt } from './engine.ts';
+import { assertStrategyTerms, strategyContractSchema, type StrategyContract } from './strategy-contract.ts';
+import type { Strategy } from '../shared/model.ts';
 import { z } from 'zod';
 
 export const paperApprovalSchema = z.object({ date: z.iso.date(), requestId: z.uuid(), cancelProbe: z.literal(true).optional(), code: z.enum(['069500', '005930']).optional(), maxAmount: z.number().int().positive().max(300000).optional(), orderType: z.literal('market').optional(), allowExistingHolding: z.literal(true).optional() }).strict().refine(value => value.orderType !== 'market' || (value.code === '005930' && !value.cancelProbe), '시장가는 삼성전자 매수1회·API 취소 없음 승인만 지원합니다.').refine(value => value.orderType === 'market' || (value.maxAmount ?? 100000) <= 200000, '지정가 승인 상한은 20만원입니다.');
@@ -24,13 +26,34 @@ export class PaperBroker {
   setRealtimeGuard(guard: (code: string) => () => void) { this.realtimeGuard = guard; }
   private queue: Promise<unknown> = Promise.resolve();
   private riskOrders: (NonNullable<PaperRiskSnapshot['orders']> & { day: string }) | null = null;
-  constructor(private store: Store, private kis: KisClient, private approval?: PaperApproval) {
+  constructor(private store: Store, private kis: KisClient, private approval?: PaperApproval, private contract?: StrategyContract) {
+    if (contract) {
+      this.contract = strategyContractSchema.parse(contract);
+      if (approval || store.path !== contract.ledgerPath || kis.accountFingerprint() !== contract.accountFingerprint) throw new Error('전략 계약의 승인·원장·계좌 설정이 다릅니다.');
+      store.bindStrategyContract(this.contract);
+    } else if (store.strategyContract()) throw new Error('원장에 고정된 전략 계약이 필요합니다.');
     if (!approval && store.hasPaperRun()) throw new Error('저장된 1회 승인 설정이 필요합니다. 제한 없이 재시작할 수 없습니다.');
     if (approval && store.configurePaperRun(paperApprovalSchema.parse(approval))) {
       kis.limitRequestsFor(0);
       store.update(state => halt(state, true));
     }
   }
+  strategyBudget() {
+    if (!this.contract) return undefined;
+    const { maxAttempts, maxTotalAmount } = this.contract;
+    return { ...this.store.strategyUsage(), maxAttempts, maxTotalAmount };
+  }
+  checkStrategyStart(strategy: Strategy) {
+    if (!this.contract) throw new Error('저장 전략을 시작하려면 별도 전략 계약이 필요합니다.');
+    assertStrategyTerms(this.contract, strategy);
+    if (this.store.paperOrders().some(o => o.status === 'unknown' || o.status === 'sending')) throw new Error('응답 불명 또는 전송 중 주문을 먼저 대조하세요.');
+    if (this.budgetExhausted()) throw new Error('전략 계약 한도가 소진됐습니다.');
+  }
+  budgetExhausted() {
+    const b = this.strategyBudget();
+    return b !== undefined && (b.attempts >= b.maxAttempts || b.amount >= b.maxTotalAmount);
+  }
+  contractExpired() { return this.contract !== undefined && Date.now() >= Date.parse(this.contract.endsAt); }
   approvalStatus() { return this.approval ? { active: true, ...this.approval } : { active: false }; }
   riskSnapshot(): PaperRiskSnapshot {
     const day = koreaDate();
@@ -129,15 +152,34 @@ export class PaperBroker {
   async submit(input: PaperOrderInput, checkSignal?: () => void, strategy?: PaperOrder['strategy']): Promise<PaperOrder> {
     return this.enqueue(async () => {
       const market = 'orderType' in input && input.orderType === 'market';
+      if (this.contract && (!strategy || market)) throw new KisNotSent('지정가 전략 계약 주문만 허용됩니다.');
       const existing = this.store.paperOrders().find(o => o.requestId === input.requestId);
       if (existing) {
+        if (existing.strategy?.id !== strategy?.id || existing.strategy?.revision !== strategy?.revision
+          || existing.strategy?.event !== strategy?.event || existing.strategy?.signal !== strategy?.signal) throw new Error('동일 요청 ID의 전략 출처가 다릅니다.');
         if (existing.code !== input.code || existing.side !== input.side || existing.qty !== input.qty || existing.price !== input.price || (existing.orderType ?? 'limit') !== (market ? 'market' : 'limit')) throw new Error('동일 요청 ID의 주문 내용이 다릅니다.');
         return existing;
       }
+      const checkContract = () => {
+        if (!this.contract) {
+          if (strategy) throw new KisNotSent(this.approval ? '전략은 1회 승인 범위 밖입니다.' : '저장 전략 전송에 별도 계약이 필요합니다.');
+          return;
+        }
+        const c = this.contract;
+        if (!strategy || market || strategy.id !== c.strategyId || strategy.revision !== c.revision
+          || strategy.signal !== input.side || input.code !== c.code || input.qty !== c.qty
+          || !Number.isSafeInteger(input.price) || input.price <= 0 || (input.side === 'sell' && c.sellPolicy === 'deny')) throw new KisNotSent('지정가 전략 계약의 주문 조건이 다릅니다.');
+        const saved = this.store.read().strategies.find(s => s.id === c.strategyId);
+        if (!saved?.active || !checkSignal || !this.realtimeGuard || !this.store.realtimeRequired()) throw new KisNotSent('실행 중인 승인 전략과 실시간 대조가 필요합니다.');
+        try { assertStrategyTerms(c, saved); }
+        catch (error) { throw new KisNotSent((error as Error).message); }
+      };
       if (market && (this.approval?.orderType !== 'market' || strategy)) throw new Error('시장가 1회 승인이 없습니다.');
       if (this.store.realtimeRequired() && !this.realtimeGuard) throw new KisNotSent('실시간 대조 안전장치 없이 신규 주문을 실행할 수 없습니다.');
       checkSignal?.();
       const checkRealtime = this.realtimeGuard?.(input.code);
+      checkContract();
+      if (this.contract) this.store.checkStrategyAmount(this.contract, input.price * input.qty);
       if (this.approval) {
         if ((this.approval.orderType === 'market') !== market || input.requestId !== this.approval.requestId || input.code !== (this.approval.code ?? '069500') || input.side !== 'buy' || input.qty !== 1 || !Number.isSafeInteger(input.price) || (market ? input.price !== 0 : input.price <= 0 || input.price > (this.approval.maxAmount ?? 100000))) throw new Error('조건부 1회 승인 범위와 주문이 다릅니다.');
         this.checkWindow();
@@ -178,21 +220,23 @@ export class PaperBroker {
         if (input.qty > power.qty || amount > power.cash) throw new Error('KIS 미수 없는 매수 가능 수량 또는 현금이 부족합니다.');
       } else {
         const reserved = brokerOrders.filter(o => o.code === input.code && o.side === 'sell' && !o.cancelled).reduce((a, o) => a + o.remaining, 0);
-        if (input.qty > (holding?.qty ?? 0) - reserved) throw new Error('KIS 매도 가능 보유 수량이 부족합니다.');
+        if ((this.contract && input.qty > (holding?.sellable ?? 0)) || input.qty > (holding?.qty ?? 0) - reserved) throw new Error('KIS 매도 가능 보유 수량이 부족합니다.');
       }
       const latestRisk = this.store.read().risk;
       if (latestRisk.halted || JSON.stringify(risk) !== JSON.stringify(latestRisk)) throw new Error('검증 중 위험 설정이 바뀌었습니다. 다시 확인하세요.');
       const local: PaperOrder = { ...input, ...(strategy ? { strategy } : {}), createdAt: new Date().toISOString(), tradeDate: koreaDate(), status: 'sending', filled: 0, remaining: input.qty, message: 'KIS 모의 전송 중' };
-      this.store.savePaper(local, { actor: 'system', action: 'sending', before: null });
+      this.store.savePaper(local, { actor: 'system', action: 'sending', before: null }, this.contract, this.contract && (() => { checkSignal?.(); checkRealtime?.(); checkContract(); }));
       this.riskOrders = null;
       try {
         const receipt = await this.kis.submit(input, () => {
           checkSignal?.();
           checkRealtime?.();
+          checkContract();
           this.checkWindow();
           if (this.approval && (performance.now() - quoteReceived > 5000 || Date.now() - Date.parse(quote.receivedAt) > 5000 || Date.now() < Date.parse(quote.receivedAt))) throw new KisNotSent('승인된 시세의 5초 유효기간이 지났습니다.');
           const currentRisk = this.store.read().risk;
           if (currentRisk.halted || JSON.stringify(currentRisk) !== JSON.stringify(risk)) throw new KisNotSent('전송 직전 위험 설정 변경으로 주문을 보내지 않았습니다.');
+          if (this.contract && !this.store.markStrategyDispatch(local)) throw new KisNotSent('전송 직전 계약 예약이 없거나 이미 사용됐습니다.');
         });
         Object.assign(local, receipt, { status: 'accepted', message: 'KIS 모의 주문 접수. 체결은 조회·대조로 확인하세요.' });
       } catch (error) {

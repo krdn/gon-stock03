@@ -25,6 +25,7 @@ if (realtime) {
 }
 const children = ['dev:server', 'dev:web'].map(script => {
   const env = { ...process.env };
+  if (script === 'dev:web') delete env.KIS_STRATEGY_CONTRACT;
   if (realtime) {
     delete env.KIS_WS_APPROVAL_KEY;
     if (script === 'dev:server') env.KIS_WS_APPROVAL_KEY = approvalKey;

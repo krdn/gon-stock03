@@ -8,9 +8,23 @@ import { paperEvent, presentEvent } from './events.ts';
 import { record } from './engine.ts';
 import type { DailyRun, MasterInstrument, MasterSnapshot, MasterState, RemovedInstrument, StoredBar } from '../shared/market-data.ts';
 
+import { assertStrategyIdentity, type StrategyContract } from './strategy-contract.ts';
+
 export class Store {
   private db: DatabaseSync;
-  constructor(path: string) {
+  private checkStrategyStartup(contract?: StrategyContract) {
+    const has = (name: string) => this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
+    const pinned = has('strategy_contract') && this.db.prepare('SELECT body FROM strategy_contract WHERE id=1').get()?.body;
+    if (pinned && pinned !== JSON.stringify(contract)) throw new Error('원장에 고정된 전략 계약이 필요합니다.');
+    if (contract && (has('paper_run') || !has('workspace'))) throw new Error('전략 전용 원장을 확인하세요.');
+    if (contract && !pinned) {
+      const row = this.db.prepare('SELECT body FROM workspace WHERE id=1').get();
+      const state: State = JSON.parse(String(row?.body));
+      const strategy = state.strategies.find(s => s.id === contract.strategyId);
+      assertStrategyIdentity(contract, strategy);
+    }
+  }
+  constructor(readonly path: string, startup?: { contract?: StrategyContract }) {
     if (path !== ':memory:') for (const suffix of ['', '-wal', '-shm']) {
       let fd: number;
       try {
@@ -26,8 +40,11 @@ export class Store {
       } finally { closeSync(fd); }
     }
     this.db = new DatabaseSync(path);
+    try { if (startup) this.checkStrategyStartup(startup.contract); }
+    catch (error) { this.db.close(); throw error; }
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1), schema_version INTEGER NOT NULL, body TEXT NOT NULL);');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_orders (request_id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS paper_baseline (day TEXT PRIMARY KEY, equity REAL NOT NULL);');
+    this.db.exec('CREATE TABLE IF NOT EXISTS strategy_contract (id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS strategy_claim (request_id TEXT PRIMARY KEY, event TEXT NOT NULL UNIQUE, amount INTEGER NOT NULL CHECK(amount>0), dispatched INTEGER NOT NULL DEFAULT 0);');
     this.db.exec('CREATE TABLE IF NOT EXISTS realtime_guard (id INTEGER PRIMARY KEY CHECK(id=1));');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_event_read (id TEXT PRIMARY KEY);');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_audit (id TEXT PRIMARY KEY, request_id TEXT NOT NULL, body TEXT NOT NULL); CREATE INDEX IF NOT EXISTS paper_audit_request ON paper_audit(request_id);');
@@ -102,17 +119,51 @@ export class Store {
   saveExperiment(experiment: Experiment) { this.db.prepare('INSERT OR IGNORE INTO backtest_experiments VALUES (?,?)').run(experiment.id, JSON.stringify(experiment)); }
   paperOrders(): PaperOrder[] { return this.db.prepare('SELECT body FROM paper_orders ORDER BY rowid DESC').all().map(row => JSON.parse(row.body as string) as PaperOrder); }
   hasPaperRun() { return Boolean(this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='paper_run'").get()); }
+  strategyContract() {
+    return this.db.prepare('SELECT body FROM strategy_contract WHERE id=1').get()?.body;
+  }
+  bindStrategyContract(contract: StrategyContract) {
+    this.db.exec('PRAGMA synchronous = FULL; BEGIN IMMEDIATE');
+    try {
+      if (this.hasPaperRun()) throw new Error('1회 승인 원장과 전략 계약을 혼용할 수 없습니다.');
+      const body = JSON.stringify(contract);
+      if (!this.strategyContract() && this.paperOrders().some(o => !['filled', 'cancelled', 'rejected'].includes(o.status))) throw new Error('미해결 주문이 있는 원장입니다.');
+      this.db.prepare('INSERT OR IGNORE INTO strategy_contract VALUES (1,?)').run(body);
+      if (this.strategyContract() !== body) throw new Error('원장에 고정된 전략 계약과 다릅니다.');
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  markStrategyDispatch(order: PaperOrder) {
+    const result = this.db.prepare(`UPDATE strategy_claim SET dispatched=1
+      WHERE request_id=? AND event=? AND dispatched=0
+      AND EXISTS (SELECT 1 FROM paper_orders WHERE request_id=? AND body=?)`)
+      .run(order.requestId, order.strategy!.event, order.requestId, JSON.stringify(order));
+    return result.changes === 1;
+  }
+  strategyUsage() {
+    return this.db.prepare('SELECT COUNT(*) AS attempts, COALESCE(SUM(amount),0) AS amount FROM strategy_claim').get() as { attempts: number; amount: number };
+  }
+  checkStrategyAmount(contract: StrategyContract, amount: number) {
+    const used = this.strategyUsage();
+    if (!Number.isSafeInteger(amount) || amount <= 0 || amount > contract.maxOrderAmount
+      || used.attempts >= contract.maxAttempts || amount > contract.maxTotalAmount - used.amount) throw new Error('전략 계약의 횟수 또는 주문대금 한도를 초과했습니다.');
+  }
   configurePaperRun(approval: { date: string; requestId: string; code?: string; maxAmount?: number; allowExistingHolding?: true; orderType?: 'market' }) {
-    this.db.exec('CREATE TABLE IF NOT EXISTS paper_run (id INTEGER PRIMARY KEY CHECK(id=1), day TEXT NOT NULL, request_id TEXT NOT NULL, attempted INTEGER NOT NULL DEFAULT 0);');
-    const columns = this.db.prepare('PRAGMA table_info(paper_run)').all();
-    if (!columns.some(column => column.name === 'code')) this.db.exec("ALTER TABLE paper_run ADD COLUMN code TEXT NOT NULL DEFAULT '069500';");
-    if (!columns.some(column => column.name === 'max_amount')) this.db.exec('ALTER TABLE paper_run ADD COLUMN max_amount INTEGER NOT NULL DEFAULT 100000;');
-    if (!columns.some(column => column.name === 'allow_holding')) this.db.exec('ALTER TABLE paper_run ADD COLUMN allow_holding INTEGER NOT NULL DEFAULT 0;');
-    if (!columns.some(column => column.name === 'order_type')) this.db.exec("ALTER TABLE paper_run ADD COLUMN order_type TEXT NOT NULL DEFAULT 'limit';");
-    this.db.prepare('INSERT OR IGNORE INTO paper_run (id,day,request_id,code,max_amount,allow_holding,order_type) VALUES (1,?,?,?,?,?,?)').run(approval.date, approval.requestId, approval.code ?? '069500', approval.maxAmount ?? 100000, Number(approval.allowExistingHolding === true), approval.orderType ?? 'limit');
-    const row = this.db.prepare('SELECT day,request_id,attempted,code,max_amount,allow_holding,order_type FROM paper_run WHERE id=1').get()!;
-    if (row.day !== approval.date || row.request_id !== approval.requestId || row.code !== (approval.code ?? '069500') || row.max_amount !== (approval.maxAmount ?? 100000) || row.allow_holding !== Number(approval.allowExistingHolding === true) || row.order_type !== (approval.orderType ?? 'limit')) throw new Error('저장된 1회 승인과 실행 설정이 다릅니다. 원장을 초기화하지 마세요.');
-    return Boolean(row.attempted);
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      if (this.strategyContract()) throw new Error('전략 계약과 1회 승인 원장을 혼용할 수 없습니다.');
+      this.db.exec('CREATE TABLE IF NOT EXISTS paper_run (id INTEGER PRIMARY KEY CHECK(id=1), day TEXT NOT NULL, request_id TEXT NOT NULL, attempted INTEGER NOT NULL DEFAULT 0);');
+      const columns = this.db.prepare('PRAGMA table_info(paper_run)').all();
+      if (!columns.some(column => column.name === 'code')) this.db.exec("ALTER TABLE paper_run ADD COLUMN code TEXT NOT NULL DEFAULT '069500';");
+      if (!columns.some(column => column.name === 'max_amount')) this.db.exec('ALTER TABLE paper_run ADD COLUMN max_amount INTEGER NOT NULL DEFAULT 100000;');
+      if (!columns.some(column => column.name === 'allow_holding')) this.db.exec('ALTER TABLE paper_run ADD COLUMN allow_holding INTEGER NOT NULL DEFAULT 0;');
+      if (!columns.some(column => column.name === 'order_type')) this.db.exec("ALTER TABLE paper_run ADD COLUMN order_type TEXT NOT NULL DEFAULT 'limit';");
+      this.db.prepare('INSERT OR IGNORE INTO paper_run (id,day,request_id,code,max_amount,allow_holding,order_type) VALUES (1,?,?,?,?,?,?)').run(approval.date, approval.requestId, approval.code ?? '069500', approval.maxAmount ?? 100000, Number(approval.allowExistingHolding === true), approval.orderType ?? 'limit');
+      const row = this.db.prepare('SELECT day,request_id,attempted,code,max_amount,allow_holding,order_type FROM paper_run WHERE id=1').get()!;
+      if (row.day !== approval.date || row.request_id !== approval.requestId || row.code !== (approval.code ?? '069500') || row.max_amount !== (approval.maxAmount ?? 100000) || row.allow_holding !== Number(approval.allowExistingHolding === true) || row.order_type !== (approval.orderType ?? 'limit')) throw new Error('저장된 1회 승인과 실행 설정이 다릅니다. 원장을 초기화하지 마세요.');
+      this.db.exec('COMMIT');
+      return Boolean(row.attempted);
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
   claimPaperRun() {
     const result = this.db.prepare('UPDATE paper_run SET attempted=1 WHERE id=1 AND attempted=0').run();
@@ -131,9 +182,21 @@ export class Store {
       this.db.exec('COMMIT');
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
-  savePaper(order: PaperOrder, audit?: Omit<PaperAudit, 'id' | 'at' | 'requestId' | 'after'>) {
+  savePaper(order: PaperOrder, audit?: Omit<PaperAudit, 'id' | 'at' | 'requestId' | 'after'>, contract?: StrategyContract, checkReservation?: () => void) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
+      if (audit?.action === 'sending') {
+        const bound = this.strategyContract();
+        if (bound !== (contract && JSON.stringify(contract))) throw new Error('원장에 고정된 전략 계약과 전송 설정이 다릅니다.');
+        if (contract) {
+          checkReservation?.();
+          const amount = order.qty * order.price;
+          if (!order.strategy) throw new Error('전략 주문 출처가 필요합니다.');
+          this.checkStrategyAmount(contract, amount);
+          if (this.paperOrders().some(o => o.requestId === order.requestId || o.status === 'sending' || o.status === 'unknown')) throw new Error('중복 또는 대조되지 않은 전략 주문입니다.');
+          this.db.prepare('INSERT INTO strategy_claim(request_id,event,amount) VALUES (?,?,?)').run(order.requestId, order.strategy.event, amount);
+        }
+      }
       this.db.prepare('INSERT INTO paper_orders (request_id,body) VALUES (?,?) ON CONFLICT(request_id) DO UPDATE SET body=excluded.body').run(order.requestId, JSON.stringify(order));
       if (audit) this.appendPaperAudit({ ...audit, requestId: order.requestId, after: order.status });
       this.db.exec('COMMIT');

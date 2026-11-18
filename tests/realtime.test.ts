@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { request } from 'node:http';
 import type { StateSnapshot } from '../shared/model.ts';
+import type { StrategyContract } from '../server/strategy-contract.ts';
 import { Store } from '../server/store.ts';
 import { makeServer } from '../server/http.ts';
 
@@ -26,6 +27,7 @@ test('실시간은 재시작 시 미연결이며 GET 상태는 비밀값이나 �
 });
 
 import { EventEmitter } from 'node:events';
+import { Worker } from 'node:worker_threads';
 import { createCipheriv, randomUUID } from 'node:crypto';
 import { Realtime, type SocketFactory } from '../server/realtime.ts';
 import { PaperBroker, type PaperApproval } from '../server/paper.ts';
@@ -55,7 +57,7 @@ function noticeFrame(qty = '1') {
   const cipher = createCipheriv('aes-256-cbc', key, iv);
   return '1|H0STCNI9|001|' + Buffer.concat([cipher.update(row.join('^')), cipher.final()]).toString('base64');
 }
-function fixture(path = ':memory:', approval?: PaperApproval) {
+function fixture(path = ':memory:', approval?: PaperApproval, terms?: Partial<StrategyContract>) {
   const urls: string[] = [];
   const store = new Store(path); const sockets: FakeSocket[] = [], requests: string[] = [];
   const sentOrders: { tr: string | null }[] = [];
@@ -73,7 +75,13 @@ function fixture(path = ':memory:', approval?: PaperApproval) {
     assert.fail(`unexpected REST endpoint ${path}`);
   };
   const kis = new KisClient({ key: 'fixture-key', secret: 'fixture-secret', account: '00000000', product: '01' }, transport, 0);
-  const paper = new PaperBroker(store, kis, approval);
+  const contract: StrategyContract | undefined = terms && {
+    contractId: 'ccc0ebaa-88a4-4aaf-a7e7-87b973b51254', ledgerPath: path, accountFingerprint: kis.accountFingerprint(),
+    strategyId: 'kis-strategy', revision: 1, code: '005930', fast: 2, slow: 3, qty: 1,
+    startsAt: '2020-01-01T00:00:00Z', endsAt: '2100-01-01T00:00:00Z',
+    maxOrderAmount: 90000, maxTotalAmount: 900000, maxAttempts: 10, sellPolicy: 'account', ...terms,
+  };
+  const paper = new PaperBroker(store, kis, approval, contract);
   let now = base;
   const realtime = new Realtime(store, paper, { approvalKey: 'fixture-approval-secret', htsId: 'fixture-hts', session: { date: '2026-11-16', open: '09:00', close: '15:30', verified: true } }, ((url: string) => {
     urls.push(url); const socket = new FakeSocket(); sockets.push(socket); return socket;
@@ -301,7 +309,7 @@ test('끊김 뒤 명시적 시작은 대기 중인 재연결 타이머를 대체
 });
 
 test('저장 KIS 전략은 각 이벤트의 관망·교차와 주문 연결을 보존하고 중복을 보내지 않는다', async () => {
-  const f = fixture();
+  const f = fixture(':memory:', undefined, {});
   try {
     const ws = f.start(); await f.realtime.reconcile();
     f.store.update(s => s.strategies.push({ id: 'kis-strategy', name: 'KIS 교차', code: '005930', fast: 2, slow: 3, qty: 1, active: true, lastTick: -1, lastSignal: 'hold', environment: 'kis-paper', revision: 1, run: 1 }));
@@ -321,7 +329,7 @@ test('저장 KIS 전략은 각 이벤트의 관망·교차와 주문 연결을 �
 });
 
 function savedStrategy(f: ReturnType<typeof fixture>) {
-  const id = randomUUID();
+  const id = 'kis-strategy';
   f.store.update(s => s.strategies.push({ id, name: '저장 KIS', code: '005930', fast: 2, slow: 3, qty: 1, active: true, lastTick: -1, lastSignal: 'hold', environment: 'kis-paper', revision: 1, run: 1 }));
   return id;
 }
@@ -339,7 +347,7 @@ function crossing(ws: FakeSocket, side: 'buy' | 'sell' = 'buy', offset = 0) {
 
 test('KIS 저장 전략도 공통 금액·종목·손실·긴급정지·수동 보유/예약 한도로 차단한다', async () => {
   for (const reason of ['order', 'position', 'loss', 'halt', 'holding', 'reserved'] as const) {
-    const f = fixture();
+    const f = fixture(':memory:', undefined, {});
     try {
       const ws = f.start(); await f.realtime.reconcile(); const id = savedStrategy(f);
       if (reason === 'order') f.store.update(s => { s.risk.maxOrder = 10000; });
@@ -357,9 +365,9 @@ test('KIS 저장 전략도 공통 금액·종목·손실·긴급정지·수동 �
 });
 
 test('KIS 매도 교차는 수동 보유를 공통 주문 경로로 매도하며 모의 도메인/TR을 유지한다', async () => {
-  const f = fixture();
+  const f = fixture(':memory:', undefined, {});
   try {
-    f.response.positions = [{ pdno: '005930', prdt_name: '삼성전자', hldg_qty: '1', pchs_avg_pric: '70000', prpr: '70000' }];
+    f.response.positions = [{ pdno: '005930', prdt_name: '삼성전자', hldg_qty: '1', ord_psbl_qty: '1', pchs_avg_pric: '70000', prpr: '70000' }];
     const ws = f.start(); await f.realtime.reconcile(); const id = savedStrategy(f); crossing(ws, 'sell');
     const evaluation = await evaluated(f, id); assert.equal(evaluation.signal, 'sell'); assert.equal(evaluation.status, 'accepted');
     assert.equal(f.store.paperOrders()[0].side, 'sell');
@@ -369,12 +377,13 @@ test('KIS 매도 교차는 수동 보유를 공통 주문 경로로 매도하며
 
 test('KIS 전략 정지와 즉시 재시작은 이미 큐에 들어간 신호를 부활시키지 않는다', async () => {
   for (const restart of [false, true]) {
-    const f = fixture();
+    const f = fixture(':memory:', undefined, {});
     try {
       const ws = f.start(); await f.realtime.reconcile(); const id = savedStrategy(f);
       f.response.before = async path => { if (path.endsWith('/inquire-psbl-order')) { f.realtime.setStrategyActive(id, false); if (restart) f.realtime.setStrategyActive(id, true); } };
       crossing(ws); const evaluation = await evaluated(f, id);
-      assert.equal(evaluation.status, 'rejected'); assert.match(evaluation.reason, /전략 정지/);
+      assert.equal(evaluation.status, 'blocked'); assert.match(evaluation.reason, /전략 정지/);
+      assert.equal(f.store.strategyUsage().attempts, 0);
       assert.equal(f.sentOrders.length, 0);
       ws.frame(priceFrame(4, 73000));
       assert.equal(f.store.read().strategies.find(s => s.id === id)!.evaluations!.length, 4);
@@ -383,7 +392,7 @@ test('KIS 전략 정지와 즉시 재시작은 이미 큐에 들어간 신호를
 });
 
 test('연결 중단 뒤 재대조만으로 전략이 재개되지 않고 시작도 과거 이벤트를 재전송하지 않는다', async () => {
-  const f = fixture();
+  const f = fixture(':memory:', undefined, {});
   try {
     let ws = f.start(); await f.realtime.reconcile(); const id = savedStrategy(f); crossing(ws); await evaluated(f, id);
     f.realtime.stop(); assert.equal(f.store.read().strategies.find(s => s.id === id)!.active, false);
@@ -397,7 +406,7 @@ test('연결 중단 뒤 재대조만으로 전략이 재개되지 않고 시작�
 
 test('KIS 전략 실행/이력은 DB 재시작 뒤 정지로 복구하며 합성 봉은 KIS 전략을 실행하지 않는다', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'strategy-restart-')), path = join(dir, 'db.sqlite');
-  const f = fixture(path); let reopened: Store | undefined;
+  const f = fixture(path, undefined, {}); let reopened: Store | undefined;
   try {
     const ws = f.start(); await f.realtime.reconcile(); const id = savedStrategy(f); crossing(ws); await evaluated(f, id);
     const { advanceTick } = await import('../server/engine.ts'); f.store.update(advanceTick);
@@ -422,7 +431,7 @@ test('고정 1회 승인 UUID를 전략 요청으로 바꾸거나 소비하지 �
 });
 
 test('최근 평가 한도 이후에도 영구 주문 원장의 전략·revision·이벤트 출처를 유지한다', async () => {
-  const f = fixture();
+  const f = fixture(':memory:', undefined, {});
   try {
     const ws = f.start(); await f.realtime.reconcile(); const id = savedStrategy(f); crossing(ws); const first = await evaluated(f, id);
     for (let i = 5; i < 160; i++) ws.frame(priceFrame(i, 73000));
@@ -435,13 +444,15 @@ test('최근 평가 한도 이후에도 영구 주문 원장의 전략·revision
 });
 
 test('응답 불명인 KIS 전략 주문은 재전송하지 않고 다음 교차도 차단한다', async () => {
-  const f = fixture();
+  const f = fixture(':memory:', undefined, {});
   try {
     const ws = f.start(); await f.realtime.reconcile(); const id = savedStrategy(f);
     f.response.before = async path => { if (path.endsWith('/order-cash')) throw new Error('fixture lost response'); };
     crossing(ws); assert.equal((await evaluated(f, id)).status, 'unknown');
-    ws.frame(priceFrame(5, 70000)); ws.frame(priceFrame(6, 69000)); const next = await evaluated(f, id);
-    assert.equal(next.status, 'blocked'); assert.match(next.reason, /응답 불명/);
+    ws.frame(priceFrame(5, 70000)); ws.frame(priceFrame(6, 69000));
+    assert.equal(f.store.read().strategies.find(s => s.id === id)?.active, false);
+    assert.throws(() => f.realtime.setStrategyActive(id, true), /응답 불명/);
+    assert.equal(f.store.strategyUsage().attempts, 1);
     assert.equal(f.sentOrders.length, 1);
   } finally { f.close(); }
 });
@@ -449,20 +460,20 @@ test('응답 불명인 KIS 전략 주문은 재전송하지 않고 다음 교차
 test('전략 정지 저장 실패도 메모리 전송 가드를 먼저 닫는다', async () => {
   const { DatabaseSync } = await import('node:sqlite');
   const dir = mkdtempSync(join(tmpdir(), 'strategy-storage-')), path = join(dir, 'db.sqlite');
-  const f = fixture(path), db = new DatabaseSync(path);
+  const f = fixture(path, undefined, {}), db = new DatabaseSync(path);
   try {
     const ws = f.start(); ws.frame(priceFrame()); await f.realtime.reconcile(); savedStrategy(f);
     db.exec("CREATE TRIGGER fail_workspace BEFORE UPDATE ON workspace BEGIN SELECT RAISE(FAIL, 'fixture storage failure'); END");
     assert.throws(() => f.realtime.stop(), /fixture storage failure/);
     assert.equal(f.realtime.status().ordersAllowed, false);
     assert.equal(ws.closed, true);
-    await assert.rejects(f.paper.submit(order()), /실시간/);
+    await assert.rejects(f.paper.submit(order()), /전략 계약/);
     assert.equal(f.sentOrders.length, 0);
   } finally { db.exec('DROP TRIGGER IF EXISTS fail_workspace'); db.close(); f.close(); rmSync(dir, { recursive: true }); }
 });
 
 test('전송 중 새 이벤트가 와도 최근 평가 100건의 시간순과 막 완료된 주문 연결을 유지한다', { timeout: 5000 }, async () => {
-  const f = fixture(); let release = () => {};
+  const f = fixture(':memory:', undefined, {}); let release = () => {};
   try {
     const ws = f.start(); await f.realtime.reconcile(); const id = savedStrategy(f);
     for (let volume = 1; volume <= 100; volume++) ws.frame(priceFrame(volume, 80000 - volume * 100));
@@ -481,4 +492,164 @@ test('전송 중 새 이벤트가 와도 최근 평가 100건의 시간순과 �
     assert.equal(history[2].event, '20261116:102'); assert.equal(history[2].status, 'accepted');
     assert.equal(history[2].requestId, f.store.paperOrders()[0].requestId); assert.equal(history.length, 100);
   } finally { release(); f.close(); }
+});
+
+test('전략 계약 누락·시간·revision·매도 정책·주문당 금액 거부 시 전송과 차감은 0이다', async () => {
+  for (const terms of [undefined, { revision: 2 }, { fast: 3, slow: 4 }, { maxOrderAmount: 72999 }, { endsAt: '2020-01-02T00:00:00Z' }, { sellPolicy: 'deny' as const }]) {
+    const f = fixture(':memory:', undefined, terms);
+    try {
+      const ws = f.start(); await f.realtime.reconcile(); const id = savedStrategy(f);
+      const reads = f.requests.length;
+      crossing(ws, terms?.sellPolicy ? 'sell' : 'buy');
+      assert.equal((await evaluated(f, id)).status, 'blocked');
+      assert.equal(f.sentOrders.length, 0); assert.equal(f.store.strategyUsage().attempts, 0);
+      assert.equal(f.requests.length, reads);
+    } finally { f.close(); }
+  }
+});
+
+test('계약 전송 총액·횟수 경계와 재시작 후 같은 승인만 유지한다', async () => {
+  for (const terms of [{ maxAttempts: 1 }, { maxOrderAmount: 73000, maxTotalAmount: 73000 }]) {
+    const dir = mkdtempSync(join(tmpdir(), 'contract-limit-')), path = join(dir, 'ledger');
+    try {
+      const f = fixture(path, undefined, terms);
+      try {
+        const ws = f.start(); await f.realtime.reconcile(); const id = savedStrategy(f); crossing(ws);
+        assert.equal((await evaluated(f, id)).status, 'accepted'); assert.equal(f.sentOrders.length, 1);
+        assert.equal(f.store.strategyUsage().amount, 73000);
+        await assert.rejects(f.paper.submit({ ...order(), requestId: f.store.paperOrders()[0].requestId, price: 73000 }), /전략 계약/);
+      } finally { f.close(); }
+      const next = fixture(path, undefined, terms);
+      try {
+        next.response.rows = [{ ...row(), ord_unpr: '73000' }];
+        const ws = next.start(); ws.frame(priceFrame()); await next.realtime.reconcile();
+        assert.throws(() => next.realtime.setStrategyActive('kis-strategy', true), /소진/);
+        assert.equal(next.store.strategyUsage().attempts, 1); assert.equal(next.sentOrders.length, 0);
+        const kis = new KisClient({ key: 'fixture', secret: 'fixture', account: '00000000', product: '01' });
+        assert.throws(() => new PaperBroker(next.store, kis), /계약이 필요/);
+        const pinned = JSON.parse(String(next.store.strategyContract()));
+        const differentAccount = new KisClient({ key: 'fixture', secret: 'fixture', account: '11111111', product: '01' });
+        assert.throws(() => new PaperBroker(next.store, differentAccount, undefined, pinned), /계좌/);
+        assert.throws(() => new PaperBroker(next.store, kis, undefined, { ...pinned, ledgerPath: path + '.copy' }), /원장/);
+        assert.throws(() => next.store.configurePaperRun({ date: '2026-11-16', requestId: randomUUID() }), /혼용/);
+        assert.equal(next.store.hasPaperRun(), false);
+        assert.throws(() => new PaperBroker(next.store, kis, undefined, { ...pinned, maxAttempts: 999 }), /고정된/);
+      } finally { next.close(); }
+    } finally { rmSync(dir, { recursive: true }); }
+  }
+});
+
+test('계약 원장 중복·경합, 거절 뒤 비복원, 감사 실패 롤백 및 wire 단일 소비', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const dir = mkdtempSync(join(tmpdir(), 'atomic-contract-')), path = join(dir, 'paper.db');
+  const f = fixture(path, undefined, { maxAttempts: 2, maxTotalAmount: 140000 });
+  const other = new Store(path);
+  const db = new DatabaseSync(path);
+  try {
+    const c = JSON.parse(String(f.store.strategyContract())) as StrategyContract;
+    const first = { ...order(), status: 'sending' as const, createdAt: new Date().toISOString(), tradeDate: koreaDate(), filled: 0, remaining: 1, message: '', strategy: { id: c.strategyId, revision: 1, signal: 'buy' as const, event: '1' } };
+    const audit = { actor: 'system' as const, action: 'sending' as const, before: null };
+    db.exec("CREATE TRIGGER fail_audit BEFORE INSERT ON paper_audit BEGIN SELECT RAISE(FAIL,'fixture'); END");
+    assert.throws(() => f.store.savePaper(first, audit, c), /fixture/);
+    assert.equal(other.strategyUsage().amount, 0); assert.equal(other.paperOrders().length, 0);
+    db.exec('DROP TRIGGER fail_audit');
+    f.store.savePaper(first, audit, c);
+    assert.equal(other.markStrategyDispatch({ ...first, price: first.price + 1 }), false);
+    assert.equal(other.markStrategyDispatch(first), true); assert.equal(f.store.markStrategyDispatch(first), false);
+    f.store.savePaper({ ...first, status: 'rejected' });
+    assert.throws(() => other.savePaper({ ...first, requestId: randomUUID() }, audit, c));
+    assert.throws(() => other.savePaper({ ...first, strategy: { ...first.strategy, event: '2' } }, audit, c));
+    assert.equal(other.strategyUsage().attempts, 1);
+    // 두 독립 writer가 마지막 예약을 동시에 시도한다.
+    const workers = [2, 3].map(event => new Worker(`
+      const { parentPort, workerData } = require('node:worker_threads');
+      const { Store } = require('tsx/cjs/api').require('./server/store.ts', process.cwd() + '/test.cjs');
+      const { path, order, audit, contract } = workerData;
+      const store = new Store(path);
+      parentPort.once('message', () => {
+        try { store.savePaper(order, audit, contract); parentPort.postMessage('reserved'); }
+        catch (e) { parentPort.postMessage(e.message); }
+        finally { store.close(); }
+      });
+      parentPort.postMessage('ready');
+    `, { eval: true, workerData: { path, order: { ...first, requestId: randomUUID(), strategy: { ...first.strategy, event: String(event) } }, audit, contract: c } }));
+    try {
+      await Promise.all(workers.map(w => once(w, 'message')));
+      const results = Promise.all(workers.map(w => once(w, 'message')));
+      workers.forEach(w => w.postMessage('reserve'));
+      const messages = (await results).flat();
+      assert.equal(messages.filter(m => m === 'reserved').length, 1);
+      assert.equal(messages.filter(m => /한도/.test(m)).length, 1);
+    } finally { await Promise.all(workers.map(w => w.terminate())); }
+    assert.equal(other.strategyUsage().amount, 140000);
+  } finally { other.close(); db.close(); f.close(); rmSync(dir, { recursive: true }); }
+});
+
+test('예약 후 시간창이 끝나면 wire 0회, 예약 한도는 그대로 소비된다', async t => {
+  const end = Date.now() + 60000;
+  const f = fixture(':memory:', undefined, { endsAt: new Date(end).toISOString() });
+  try {
+    const save = f.store.savePaper.bind(f.store);
+    t.mock.method(f.store, 'savePaper', (...args: Parameters<typeof save>) => {
+      save(...args);
+      if (args[0].status === 'sending') t.mock.method(Date, 'now', () => end);
+    });
+    const ws = f.start(); await f.realtime.reconcile(); const id = savedStrategy(f); crossing(ws);
+    assert.equal((await evaluated(f, id)).status, 'rejected'); assert.equal(f.sentOrders.length, 0);
+    assert.equal(f.store.strategyUsage().amount, 73000);
+  } finally { f.close(); }
+});
+
+test('원장 복구 전에 누락·변경 계약을 거부하고 sending은 재시작 후 불명·한도 유지', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'contract-crash-')), path = join(dir, 'db');
+  const f = fixture(path, undefined, {});
+  try {
+    const c = JSON.parse(String(f.store.strategyContract())) as StrategyContract;
+    const sending = { ...order(), status: 'sending' as const, createdAt: new Date().toISOString(), tradeDate: koreaDate(), filled: 0, remaining: 1, message: '', strategy: { id: c.strategyId, revision: 1, signal: 'buy' as const, event: 'fixture:1' } };
+    f.store.savePaper(sending, { actor: 'system', action: 'sending', before: null }, c);
+    assert.throws(() => new Store(path, {}), /고정된 전략 계약/);
+    assert.throws(() => new Store(path, { contract: { ...c, maxTotalAmount: c.maxTotalAmount + 1 } }), /고정된 전략 계약/);
+    assert.equal(f.store.paperOrders()[0].status, 'sending');
+    const reopened = new Store(path, { contract: c });
+    try {
+      assert.equal(reopened.paperOrders()[0].status, 'unknown'); assert.equal(reopened.strategyUsage().amount, 70000);
+      assert.equal(reopened.markStrategyDispatch(sending), false);
+    } finally { reopened.close(); }
+  } finally { f.close(); rmSync(dir, { recursive: true }); }
+});
+
+test('계약 매도는 계좌 주문가능수량 누락·부족 시 차감하지 않는다', async () => {
+  for (const sellable of [undefined, '0', 'invalid']) {
+    const f = fixture(':memory:', undefined, {});
+    try {
+      f.response.positions = [{ pdno: '005930', prdt_name: '삼성전자', hldg_qty: '3', pchs_avg_pric: '70000', prpr: '70000', ...(sellable === undefined ? {} : { ord_psbl_qty: sellable }) }];
+      const ws = f.start(); await f.realtime.reconcile(); const id = savedStrategy(f); crossing(ws, 'sell');
+      assert.match((await evaluated(f, id)).reason, /매도 가능/);
+      assert.equal(f.store.strategyUsage().attempts, 0); assert.equal(f.sentOrders.length, 0);
+    } finally { f.close(); }
+  }
+});
+
+test('격리 대조에서 부분체결이 되어도 최초 지정가×전체 수량만큼 계약 한도를 보존한다', async () => {
+  const f = fixture(':memory:', undefined, { qty: 2, maxOrderAmount: 146000, maxTotalAmount: 146000 });
+  try {
+    const ws = f.start(); await f.realtime.reconcile(); const id = savedStrategy(f);
+    f.store.update(s => { s.strategies.find(strategy => strategy.id === id)!.qty = 2; s.risk.maxOrder = 146000; });
+    crossing(ws); assert.equal((await evaluated(f, id)).status, 'accepted');
+    f.response.rows = [{ ...row(), ord_unpr: '73000', ord_qty: '2', tot_ccld_qty: '1', rmn_qty: '1' }];
+    await f.paper.refresh();
+    assert.equal(f.store.paperOrders()[0].status, 'partial');
+    assert.equal(f.store.strategyUsage().amount, 146000); assert.equal(f.store.strategyUsage().attempts, 1);
+    assert.equal(f.store.read().strategies.find(s => s.id === id)?.active, false);
+  } finally { f.close(); }
+});
+
+test('계약 도입 전 원장의 전략 주문 ID로 수동 요청을 재사용하지 않는다', async () => {
+  const f = fixture();
+  try {
+    const input = order();
+    f.store.savePaper({ ...input, status: 'filled', createdAt: new Date().toISOString(), tradeDate: koreaDate(), filled: 1, remaining: 0, message: '', strategy: { id: 'legacy', revision: 1, event: '20261116:2', signal: 'buy' } });
+    await assert.rejects(f.paper.submit(input), /전략 출처/);
+    assert.equal(f.requests.length, 0); assert.equal(f.sentOrders.length, 0);
+  } finally { f.close(); }
 });

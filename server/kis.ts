@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { ConnectionState, ConnectionFailure, KisQuote, KisBar, BrokerOrder } from '../shared/model.ts';
 import type { PaperOrderInput } from '../shared/contracts.ts';
@@ -10,7 +11,7 @@ const brokerId = z.string().regex(/^\d{1,10}$/).refine(value => Number(value) > 
 const organizationId = z.string().regex(/^\d{1,5}$/).refine(value => Number(value) > 0);
 const balanceSchema = z.object({
   rt_cd: z.literal('0'),
-  output1: z.array(z.object({ pdno: z.string(), prdt_name: z.string(), hldg_qty: amount, pchs_avg_pric: amount, prpr: z.union([amount, z.literal(''), z.null()]).optional().transform(value => typeof value === 'number' && value > 0 ? value : null) })),
+  output1: z.array(z.object({ pdno: z.string(), prdt_name: z.string(), hldg_qty: amount, ord_psbl_qty: z.string().regex(/^\d+$/).transform(Number).pipe(z.int().nonnegative()).optional().catch(undefined), pchs_avg_pric: amount, prpr: z.union([amount, z.literal(''), z.null()]).optional().transform(value => typeof value === 'number' && value > 0 ? value : null) })),
   output2: z.array(z.object({ dnca_tot_amt: amount, tot_evlu_amt: amount })).min(1),
   ctx_area_fk100: z.string().optional(), ctx_area_nk100: z.string().optional(),
 });
@@ -49,6 +50,10 @@ export class KisClient {
   constructor(private credentials: Credentials, private transport: typeof fetch = fetch, private spacing = 1100) {}
   static fromEnvironment() {
     return new KisClient({ key: process.env.KIS_APP_KEY ?? '', secret: process.env.KIS_APP_SECRET ?? '', account: process.env.KIS_CANO ?? '', product: process.env.KIS_ACNT_PRDT_CD ?? '' });
+  }
+  accountFingerprint() {
+    if (!this.configured()) throw new Error('전략 계약의 모의 계좌 설정을 확인하세요.');
+    return createHash('sha256').update(this.credentials.account + ':' + this.credentials.product).digest('hex');
   }
   configured() { const c = this.credentials; return Boolean(c.key.trim() && c.secret.trim() && /^\d{8}$/.test(c.account) && /^\d{2}$/.test(c.product)); }
   limitRequestsFor(ms: number) {
@@ -283,7 +288,7 @@ export class KisClient {
       if (page > 0 && (cash !== parsed.data.output2[0].dnca_tot_amt || totalEquity !== parsed.data.output2[0].tot_evlu_amt)) throw new KisFailure('KIS 잔고 페이지 사이에 계좌 합계가 바뀌었습니다. 다시 조회하세요.', 'contract');
       cash = parsed.data.output2[0].dnca_tot_amt;
       totalEquity = parsed.data.output2[0].tot_evlu_amt;
-      positions.push(...parsed.data.output1.filter(p => p.hldg_qty > 0).map(p => ({ code: p.pdno, name: p.prdt_name, qty: p.hldg_qty, average: p.pchs_avg_pric, price: p.prpr })));
+      positions.push(...parsed.data.output1.filter(p => p.hldg_qty > 0).map(p => ({ code: p.pdno, name: p.prdt_name, qty: p.hldg_qty, ...(p.ord_psbl_qty !== undefined ? { sellable: p.ord_psbl_qty } : {}), average: p.pchs_avg_pric, price: p.prpr })));
       if (new Set(positions.map(p => p.code)).size !== positions.length) throw new KisFailure('KIS 잔고 페이지에 중복 종목이 있어 전체 잔고를 확정할 수 없습니다.', 'contract');
       if (!['M', 'F'].includes(response.headers.get('tr_cont') ?? '')) {
         const now = new Date().toISOString();

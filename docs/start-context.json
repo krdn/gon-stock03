@@ -423,6 +423,20 @@
           "finding": "KISWebSocket(api_url=\"/tryitout\")로 국내주식 실시간 구독을 시작한다."
         }
       ]
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/98",
+      "checked_at": "2026-11-18T03:36:52.464231+00:00",
+      "sources": [
+        {
+          "url": "https://www.sqlite.org/lang_transaction.html",
+          "finding": "BEGIN IMMEDIATE는 쓰기 트랜잭션을 즉시 시작하며, 동시 쓰기 충돌은 실패할 수 있다."
+        },
+        {
+          "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/order_cash/order_cash.py",
+          "finding": "공식 현금주문 예제의 기존 지정가 경로를 유지한다. 계약 한도와 시도 원장은 로컬에서 집행한다."
+        }
+      ]
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."

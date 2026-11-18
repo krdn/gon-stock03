@@ -113,6 +113,7 @@ export class Realtime {
     this.watchdog = setInterval(() => {
       if (!this.sessionOpen() || this.store.read().risk.halted) this.stop();
       else if (this.now() - this.lastFrame > 45000 || this.now() < this.lastFrame) this.failed(generation, '실시간 수신 시간 초과 · REST 대조 필요');
+      else if (this.paper.contractExpired() || (this.state.phase === 'ready' && !this.status().fresh)) this.pauseStrategies();
     }, 1000);
     this.watchdog.unref();
     this.event('KIS 실시간 연결 시작', '구독 확인·REST 대조와 신선한 시세가 필요합니다.', 'info');
@@ -212,7 +213,10 @@ export class Realtime {
       this.state.phase = 'ready'; this.state.message = 'REST 대조 완료 · 신선한 시세에서만 주문 허용';
       this.event('KIS 실시간 REST 대조 완료', '대조를 확인했습니다. 전략은 자동 재개하지 않습니다.', 'info');
     } catch {
-      if (generation === this.generation && revision === this.revision) this.invalidate('REST 대조 실패 또는 대조 중 통보 수신 · 다시 대조 필요');
+      if (generation === this.generation && revision === this.revision) {
+        this.invalidate('REST 대조 실패 또는 대조 중 통보 수신 · 다시 대조 필요');
+        this.pauseStrategies();
+      }
       throw new Error('실시간 대조를 완료하지 못했습니다. 신규 주문 차단을 유지합니다.');
     }
   }
@@ -223,7 +227,7 @@ export class Realtime {
     try { this.store.update(state => {
       const strategy = state.strategies.find(s => s.id === id && s.environment === 'kis-paper');
       if (!strategy) throw new Error('KIS 전략을 찾지 못했습니다.');
-      if (active) this.assertReady(strategy.code);
+      if (active) { this.assertReady(strategy.code); this.paper.checkStrategyStart(strategy); }
       if (strategy.active === active) return;
       strategy.active = active; strategy.run = (strategy.run ?? 0) + 1;
       if (active) {
@@ -287,6 +291,10 @@ export class Realtime {
         const strategy = state.strategies.find(s => s.id === job.id)!;
         const evaluation = strategy.evaluations?.find(e => e.requestId === job.input.requestId);
         if (evaluation) Object.assign(evaluation, result);
+        if (strategy.active && (result.status === 'unknown' || this.paper.budgetExhausted() || this.paper.contractExpired())) {
+          strategy.active = false;
+          strategy.run = (strategy.run ?? 0) + 1;
+        }
         record(state, result.status === 'accepted' ? 'KIS 전략 주문 접수' : 'KIS 전략 주문 차단', `${strategy.name} · revision ${strategy.revision ?? 1} · ${result.reason}`, result.status === 'accepted' ? 'info' : 'warning', { environment: 'kis-paper', target: 'strategies', requestId: job.input.requestId });
       });
     }

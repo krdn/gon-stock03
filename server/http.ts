@@ -1,3 +1,4 @@
+import type { StrategyContract } from './strategy-contract.ts';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
@@ -24,8 +25,8 @@ async function body(req: IncomingMessage, limit = 16384) {
 function json(res: ServerResponse, status: number, data: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(data));
 }
-export function makeServer(store: Store, kis = KisClient.fromEnvironment(), ports = [4303, 4304], approval?: PaperApproval, realtimeOptions?: { config?: RealtimeConfig; connect?: SocketFactory; now?: () => number }) {
-  const paper = new PaperBroker(store, kis, approval);
+export function makeServer(store: Store, kis = KisClient.fromEnvironment(), ports = [4303, 4304], approval?: PaperApproval, realtimeOptions?: { config?: RealtimeConfig; connect?: SocketFactory; now?: () => number }, contract?: StrategyContract) {
+  const paper = new PaperBroker(store, kis, approval, contract);
   const realtime = new Realtime(store, paper, realtimeOptions?.config ?? Realtime.configuration(), realtimeOptions?.connect, realtimeOptions?.now);
   const market = new MarketData(store, kis);
   const instanceId = randomUUID();
@@ -42,7 +43,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         const snapshot: StateSnapshot = { ...store.read(), events: store.events(), instanceId, startedAt, status: { ...emptyStatus('demo'), phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now }, connection: kis.connection(), paperRisk: paper.riskSnapshot(), realtime: realtime.status() };
         json(res, 200, snapshot); return;
       }
-      if (path === '/api/kis/ledger' && req.method === 'GET') { json(res, 200, { orders: store.paperOrders(), minimumRun: paper.approvalStatus() }); return; }
+      if (path === '/api/kis/ledger' && req.method === 'GET') { json(res, 200, { orders: store.paperOrders(), minimumRun: paper.approvalStatus(), strategyBudget: paper.strategyBudget() }); return; }
       if (path === '/api/kis/capabilities' && req.method === 'GET') { json(res, 200, paperCapabilities); return; }
       if (path === '/api/kis/audit' && req.method === 'GET') {
         const id = idInput.parse({ id: new URL(req.url!, 'http://127.0.0.1').searchParams.get('requestId') }).id;
