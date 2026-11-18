@@ -96,6 +96,7 @@
   }
   .mobile-records td::before {
     content: attr(data-label);
+    content: attr(data-label) / "";
     color: #566b77;
     text-align: left;
   }
@@ -103,5 +104,12 @@
     min-width: 0;
     text-align: right;
     overflow-wrap: anywhere;
+  }
+  .mobile-records .stock-name small {
+    justify-content: flex-end;
+  }
+  .mobile-records .record-value a {
+    display: inline-block;
+    min-height: 24px;
   }
 }

@@ -71,7 +71,7 @@ function fixture(path = ':memory:', approval?: PaperApproval, terms?: Partial<St
     if (path.endsWith('/inquire-daily-ccld')) return Response.json({ rt_cd: '0', output1: response.rows });
     if (path.endsWith('/inquire-price')) return Response.json({ rt_cd: '0', output: { stck_prpr: '70000', prdy_ctrt: '1', stck_mxpr: '91000', stck_llam: '49000', aspr_unit: '100', temp_stop_yn: 'N' } });
     if (path.endsWith('/inquire-psbl-order')) return Response.json({ rt_cd: '0', output: { nrcvb_buy_qty: '100', nrcvb_buy_amt: '10000000', ord_psbl_cash: '10000000' } });
-    if (path.endsWith('/order-cash')) return Response.json({ rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } });
+    if (path.endsWith('/order-cash')) return Response.json({ rt_cd: '0', output: { ODNO: String(sentOrders.length).padStart(3, '0'), KRX_FWDG_ORD_ORGNO: '12345' } });
     assert.fail(`unexpected REST endpoint ${path}`);
   };
   const kis = new KisClient({ key: 'fixture-key', secret: 'fixture-secret', account: '00000000', product: '01' }, transport, 0);
@@ -652,4 +652,49 @@ test('계약 도입 전 원장의 전략 주문 ID로 수동 요청을 재사용
     await assert.rejects(f.paper.submit(input), /전략 출처/);
     assert.equal(f.requests.length, 0); assert.equal(f.sentOrders.length, 0);
   } finally { f.close(); }
+});
+
+test('10분 격리 계약은 매수·매도 신호를 각각 주문에 연결하고 재시작 뒤 소진 상태를 유지한다', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: base });
+  const terms = {
+    startsAt: new Date(base).toISOString(), endsAt: new Date(base + 600_000).toISOString(),
+    maxOrderAmount: 73000, maxAttempts: 2, maxTotalAmount: 140000, sellPolicy: 'account' as const,
+  };
+  const dir = mkdtempSync(join(tmpdir(), 'two-signal-contract-'));
+  const path = join(dir, 'ledger');
+  try {
+    const f = fixture(path, undefined, terms);
+    try {
+      f.response.positions = [{ pdno: '005930', prdt_name: '삼성전자', hldg_qty: '1', ord_psbl_qty: '1', pchs_avg_pric: '70000', prpr: '70000' }];
+      const ws = f.start();
+      await f.realtime.reconcile();
+      const id = savedStrategy(f);
+      crossing(ws);
+      const buy = await evaluated(f, id);
+      assert.equal(buy.status, 'accepted');
+      f.response.rows = [{ ...row(), ord_unpr: '73000' }];
+      ws.frame(priceFrame(4, 73000));
+      ws.frame(priceFrame(5, 67000));
+      ws.frame(priceFrame(6, 67000));
+      const sell = await evaluated(f, id);
+      assert.equal(sell.status, 'accepted', sell.reason);
+      assert.deepEqual(f.store.paperOrders().map(o => [o.strategy?.signal, o.requestId, o.price]), [
+        ['sell', sell.requestId, 67000], ['buy', buy.requestId, 73000],
+      ]);
+      assert.notEqual(buy.requestId, sell.requestId);
+      assert.deepEqual(f.sentOrders.map(o => o.tr), ['VTTC0012U', 'VTTC0011U']);
+      assert.equal(f.store.strategyUsage().amount, 140000);
+      assert.equal(f.store.strategyUsage().attempts, 2);
+    } finally { f.close(); }
+    const next = fixture(path, undefined, terms);
+    try {
+      next.response.rows = [
+        { ...row(), ord_unpr: '73000' },
+        { ...row(), odno: '002', sll_buy_dvsn_cd: '01', ord_unpr: '67000' },
+      ];
+      const ws = next.start(); ws.frame(priceFrame()); await next.realtime.reconcile();
+      assert.throws(() => next.realtime.setStrategyActive('kis-strategy', true), /소진/);
+      assert.equal(next.sentOrders.length, 0);
+    } finally { next.close(); }
+  } finally { rmSync(dir, { recursive: true }); }
 });
