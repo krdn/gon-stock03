@@ -622,6 +622,43 @@ test('cancel probe sends one VTS full-cancel and ACK stays unknown until REST re
   } finally { f.store.close(); }
 });
 
+test('fill reconciliation queued during a lost cancel response preserves the fill without a retry', { timeout: 5000 }, async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const order = approvedInput();
+  const f = fixture('success', 0, { ...approvalFor(order), cancelProbe: true });
+  const entered = deferred(), release = deferred();
+  try {
+    await f.broker.submit(order);
+    f.response.cancelMode = 'timeout';
+    f.response.before = async path => {
+      if (path.endsWith('/order-rvsecncl')) {
+        entered.resolve();
+        await release.promise;
+      }
+    };
+    const cancel = f.broker.cancelProbe(order.requestId);
+    await entered.promise;
+    assert.equal(f.store.paperOrders()[0].status, 'unknown');
+    f.response.rows = [brokerRow({ pdno: order.code, tot_ccld_qty: '1', rmn_qty: '0' })];
+    const balance = t.mock.method(f.client, 'balance');
+    const refresh = f.broker.refresh();
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(balance.mock.callCount(), 0);
+    release.resolve();
+    assert.equal((await cancel).status, 'unknown');
+    const [matched] = (await refresh).orders;
+    assert.deepEqual([matched.requestId, matched.status, matched.filled, matched.remaining], [order.requestId, 'filled', 1, 0]);
+    assert.equal(balance.mock.callCount(), 1);
+    assert.deepEqual(f.store.paperOrders(), [matched]);
+    await assert.rejects(f.broker.cancelProbe(order.requestId), /미체결 원주문/);
+    assert.equal(f.requests.filter(request => request.url.pathname.endsWith('/order-rvsecncl')).length, 1);
+    assert.equal(f.count(), 1);
+  } finally {
+    release.resolve();
+    f.store.close();
+  }
+});
+
 test('cancel rejection, lost response and malformed ACK consume attempt without retry or secret disclosure', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
   for (const mode of ['reject', 'timeout', 'malformed', 'unauthorized', 'error-code-only']) {
