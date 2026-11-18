@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-11-17T13:41:20.689516+00:00",
+  "checked_at": "2026-11-18T01:15:28.354758+00:00",
   "objective": "전체 브랜치 이력 통합·보존·정리와 새 세션 재개",
   "sources": [
     {
@@ -413,6 +413,16 @@
         }
       ],
       "decisions": "기존 kis/market 읽기 전용 API를 재사용하고 기본 화면에 실제 시세/거래일 차트를 표시한다. DEMO는 명시 선택으로 분리하며 실제 가격을 합성 원장에 쓰지 않는다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/92",
+      "checked_at": "2026-11-18T01:15:28.354758+00:00",
+      "sources": [
+        {
+          "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_user/domestic_stock/domestic_stock_examples_ws.py",
+          "finding": "KISWebSocket(api_url=\"/tryitout\")로 국내주식 실시간 구독을 시작한다."
+        }
+      ]
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."
