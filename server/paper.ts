@@ -16,6 +16,14 @@ export const paperCapabilities = {
 const normalizeId = (id: string) => id.replace(/^0+(?=\d)/, '');
 const sameId = (a: string, b: string) => normalizeId(a) === normalizeId(b);
 const matches = (local: PaperOrder, row: BrokerOrder) => row.date === local.tradeDate && row.code === local.code && row.side === local.side && row.qty === local.qty && row.price === local.price && (local.orderType ?? 'limit') === (row.orderType ?? 'limit');
+function recoveryCandidates(local: PaperOrder, rows: BrokerOrder[]) {
+  const candidates = rows.filter(row => matches(local, row));
+  if (candidates.length === 1) {
+    const [row] = candidates;
+    if (row.filled < local.filled || (row.cancelled && row.remaining > 0)) return [];
+  }
+  return candidates;
+}
 const reconciled = (local: PaperOrder, row: BrokerOrder): PaperOrder => ({ ...local, brokerId: row.brokerId, organization: row.organization, filled: row.filled, remaining: row.remaining,
   status: row.filled === local.qty ? 'filled' : row.remaining === 0 ? 'cancelled' : row.filled > 0 ? 'partial' : 'accepted', message: 'KIS 주문 조회와 대조했습니다.' });
 const evidence = (tradeDate: string, orders: BrokerOrder[], connection: ConnectionState): PaperEvidence => ({ observedAt: new Date().toISOString(), tradeDate, orders,
@@ -117,7 +125,7 @@ export class PaperBroker {
       const connection = await this.kis.balance(true); const rows = await this.kis.dailyOrders(order.tradeDate);
       const snapshot = evidence(order.tradeDate, rows, connection);
       const audit = this.store.appendPaperAudit({ requestId: id, actor: 'local-user', action: 'recovery-inspect', before: 'unknown', after: 'unknown', evidence: snapshot });
-      return { order, evidenceId: audit.id, evidence: snapshot, candidates: rows.filter(row => matches(order, row)), message: '주문번호·거래일·종목·방향·수량·가격을 확인하세요. 조회에 없다는 이유로 불명을 해제하지 않습니다.' };
+      return { order, evidenceId: audit.id, evidence: snapshot, candidates: recoveryCandidates(order, rows), message: '주문번호·거래일·종목·방향·수량·가격을 확인하세요. 조회에 없다는 이유로 불명을 해제하지 않습니다.' };
     });
   }
   confirmRecovery(raw: PaperRecoveryInput) {
@@ -132,12 +140,12 @@ export class PaperBroker {
       const order = this.numberlessUnknown(input.id);
       const inspected = audit.find(row => row.id === input.evidenceId && row.action === 'recovery-inspect');
       if (!inspected?.evidence || Date.now() - Date.parse(inspected.at) > 300000 || Date.now() < Date.parse(inspected.at)) throw new Error('복구 근거가 없거나 5분 유효기간이 지났습니다. 다시 조회하세요.');
-      const selected = inspected.evidence.orders.filter(row => matches(order, row));
+      const selected = recoveryCandidates(order, inspected.evidence.orders);
       if (selected.length !== 1 || !sameId(selected[0].brokerId, input.brokerId) || !sameId(selected[0].organization, input.organization)) throw new Error('일치하는 복구 후보가 유일하지 않거나 선택한 주문이 다릅니다. 불명을 유지합니다.');
       const connection = await this.kis.balance(true); const rows = await this.kis.dailyOrders(order.tradeDate);
-      const candidates = rows.filter(row => matches(order, row));
+      const candidates = recoveryCandidates(order, rows);
       const row = candidates.length === 1 ? candidates[0] : undefined;
-      if (!row || !sameId(row.brokerId, input.brokerId) || !sameId(row.organization, input.organization) || row.filled < selected[0].filled || row.filled < order.filled || (row.cancelled && row.remaining > 0)) throw new Error('최신 조회가 복구 근거와 일치하지 않습니다. 불명을 유지합니다.');
+      if (!row || !sameId(row.brokerId, input.brokerId) || !sameId(row.organization, input.organization) || row.filled < selected[0].filled) throw new Error('최신 조회가 복구 근거와 일치하지 않습니다. 불명을 유지합니다.');
       if (this.store.paperOrders().some(other => other.requestId !== input.id && other.tradeDate === row.date && other.brokerId && sameId(other.brokerId, row.brokerId) && (!other.organization || sameId(other.organization, row.organization)))) throw new Error('이미 다른 로컬 주문에 연결된 주문번호입니다.');
       const next = reconciled(order, row);
       this.store.savePaper(next, { actor: 'local-user', action: 'recovery-confirm', before: 'unknown', evidence: evidence(order.tradeDate, rows, connection), recovery: { evidenceId: input.evidenceId, brokerId: row.brokerId, organization: row.organization } });
@@ -149,7 +157,7 @@ export class PaperBroker {
     if (!order || order.status !== 'unknown' || order.brokerId) throw new Error('주문번호 없는 응답 불명 주문만 명시적 복구할 수 있습니다.');
     return order;
   }
-  async submit(input: PaperOrderInput, checkSignal?: () => void, strategy?: PaperOrder['strategy']): Promise<PaperOrder> {
+  async submit(input: PaperOrderInput, checkSignal?: (minimumWaitMs?: number) => void, strategy?: PaperOrder['strategy']): Promise<PaperOrder> {
     return this.enqueue(async () => {
       const market = 'orderType' in input && input.orderType === 'market';
       if (this.contract && (!strategy || market)) throw new KisNotSent('지정가 전략 계약 주문만 허용됩니다.');
@@ -190,10 +198,12 @@ export class PaperBroker {
       if (this.store.paperOrders().length >= 1000) throw new Error('KIS 주문 기록 한도에 도달했습니다.');
       if (this.approval && this.store.read().risk.halted) throw new Error('신규 주문 정지 상태입니다.');
       const { connection, brokerOrders } = await this.refreshInsideQueue(true); const balance = connection.balance!;
+      checkSignal?.();
       if (this.store.paperOrders().some(o => o.status === 'unknown')) throw new Error('계좌 대조 중 응답 불명 주문이 확인되었습니다.');
       if (this.approval && (brokerOrders.some(o => o.remaining > 0) || (!this.approval.allowExistingHolding && balance.positions.some(p => p.code === input.code && p.qty > 0)) || balance.cash <= input.price)) throw new Error('승인 조건의 빈 보유·미체결 없음·현금 여유를 충족하지 못했습니다.');
       const quoteStarted = performance.now(), quoteStartedAt = Date.now();
       const quote = await this.kis.quote(input.code, true);
+      checkSignal?.();
       const quoteReceived = performance.now();
       if (this.approval) {
         if (quoteReceived - quoteStarted > 5000 || Date.now() - quoteStartedAt > 5000) throw new Error('승인 시세 조회 지연: 5초를 초과했습니다.');
@@ -225,7 +235,11 @@ export class PaperBroker {
       const latestRisk = this.store.read().risk;
       if (latestRisk.halted || JSON.stringify(risk) !== JSON.stringify(latestRisk)) throw new Error('검증 중 위험 설정이 바뀌었습니다. 다시 확인하세요.');
       const local: PaperOrder = { ...input, ...(strategy ? { strategy } : {}), createdAt: new Date().toISOString(), tradeDate: koreaDate(), status: 'sending', filled: 0, remaining: input.qty, message: 'KIS 모의 전송 중' };
-      this.store.savePaper(local, { actor: 'system', action: 'sending', before: null }, this.contract, this.contract && (() => { checkSignal?.(); checkRealtime?.(); checkContract(); }));
+      this.store.savePaper(local, { actor: 'system', action: 'sending', before: null }, this.contract, this.contract && (() => {
+        checkSignal?.(this.kis.minimumRequestWaitMs());
+        checkRealtime?.();
+        checkContract();
+      }));
       this.riskOrders = null;
       try {
         const receipt = await this.kis.submit(input, () => {

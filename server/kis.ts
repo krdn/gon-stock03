@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import type { ConnectionState, ConnectionFailure, KisQuote, KisBar, BrokerOrder } from '../shared/model.ts';
-import type { PaperOrderInput } from '../shared/contracts.ts';
+import type { ConnectionState, ConnectionFailure, KisQuote, KisBar, BrokerOrder, PaperOrder } from '../shared/model.ts';
 import { authenticationStatus, disconnectedConnection, freshness, QUOTE_REFRESH_MS } from '../shared/status.ts';
 import { dailyInput, marketDate, type DailyInput, type DailyPrice } from '../shared/market-data.ts';
 
@@ -66,12 +65,15 @@ export class KisClient {
     const missing = (Object.keys(fields) as ConnectionState['injection']['missing']).filter(key => !fields[key].trim());
     return { phase: missing.length ? 'missing' : this.configured() ? 'present' : 'invalid', missing };
   }
+  minimumRequestWaitMs() {
+    return Math.max(0, this.spacing - (performance.now() - this.lastCall));
+  }
   private async send(path: string, init: RequestInit, beforeSend?: () => void, signal?: AbortSignal) {
     signal?.throwIfAborted();
     if (this.pending >= 30) throw new KisNotSent('KIS 요청 대기가 많습니다. 잠시 후 다시 확인하세요.', 'rate-limit');
     this.pending++;
     const job = this.queue.catch(() => {}).then(async () => {
-      for (let wait = this.spacing - (performance.now() - this.lastCall); wait > 0; wait = this.spacing - (performance.now() - this.lastCall)) await within(new Promise(resolve => setTimeout(resolve, wait)), signal);
+      for (let wait = this.minimumRequestWaitMs(); wait > 0; wait = this.minimumRequestWaitMs()) await within(new Promise(resolve => setTimeout(resolve, wait)), signal);
       signal?.throwIfAborted();
       beforeSend?.();
       const remaining = Math.min(this.requestDeadline - performance.now(), this.requestWallDeadline - Date.now());
@@ -216,7 +218,7 @@ export class KisClient {
     const receipt = z.object({ rt_cd: z.literal('0'), output: z.object({ ODNO: brokerId, KRX_FWDG_ORD_ORGNO: organizationId }) }).safeParse(data);
     if (!receipt.success) throw new Error('취소 응답을 확정할 수 없습니다. 재전송하지 마세요.');
   }
-  async submit(input: PaperOrderInput, beforeSend?: () => void) {
+  async submit(input: Pick<PaperOrder, 'requestId' | 'code' | 'side' | 'qty' | 'price' | 'orderType'>, beforeSend?: () => void) {
     const { data } = await this.request('/uapi/domestic-stock/v1/trading/order-cash', input.side === 'buy' ? 'VTTC0012U' : 'VTTC0011U', { ...this.accountParams(), PDNO: input.code, ORD_DVSN: 'orderType' in input && input.orderType === 'market' ? '01' : '00', ORD_QTY: String(input.qty), ORD_UNPR: String(input.price), EXCG_ID_DVSN_CD: 'KRX', SLL_TYPE: input.side === 'sell' ? '01' : '', CNDT_PRIC: '' }, true, '', beforeSend);
     const parsed = z.object({ rt_cd: z.literal('0'), output: z.object({ ODNO: brokerId, KRX_FWDG_ORD_ORGNO: organizationId }) }).safeParse(data);
     if (!parsed.success) throw new Error('주문 응답을 확정할 수 없습니다. 자동 재전송하지 않습니다.');

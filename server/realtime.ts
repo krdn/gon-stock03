@@ -44,10 +44,12 @@ export class Realtime {
   }
   private orderGuard(code: string) {
     const generation = this.generation, revision = this.revision, quoteTime = this.quoteTime;
-    const check = () => {
+    const check = (minimumWaitMs = 0) => {
       if (!this.required) return;
       this.assertReady(code);
-      if (generation !== this.generation || revision !== this.revision || this.now() - quoteTime > 5000 || this.now() < quoteTime) throw new KisNotSent('주문 검증 중 실시간 상태가 바뀌었습니다. 다시 확인하세요.');
+      const age = this.now() - quoteTime;
+      if (generation !== this.generation || revision !== this.revision || age > 5000 || age < 0) throw new KisNotSent('주문 검증 중 실시간 상태가 바뀌었습니다. 다시 확인하세요.');
+      if (age + minimumWaitMs > 5000) throw new KisNotSent('다음 전송 가능 시각에 원 신호가 만료됩니다.');
     };
     check(); return check;
   }
@@ -251,7 +253,7 @@ export class Realtime {
   }
   private async evaluateStrategies(event: string) {
     if (!this.store.read().strategies.some(s => s.active && s.environment === 'kis-paper' && s.code === this.state.code)) return;
-    const jobs: { id: string; input: OrderInput; check: () => void }[] = [];
+    const jobs: { id: string; input: OrderInput; check: (minimumWaitMs?: number) => void }[] = [];
     const prices = [...this.history], price = this.state.price!, code = this.state.code!;
     this.store.update(state => {
       for (const strategy of state.strategies) {
@@ -268,8 +270,8 @@ export class Realtime {
             if (strategy.evaluations?.some(e => e.status === 'sending')) throw new KisNotSent('이전 전략 주문 검사 중 · 이번 신호는 재전송하지 않습니다.');
             const input = orderInput.parse({ code, price, qty: strategy.qty, side: direction, requestId: randomUUID() });
             evaluation.status = 'sending'; evaluation.reason = '공통 승인·위험 검사 대기'; evaluation.requestId = input.requestId;
-            jobs.push({ id: strategy.id, input, check: () => {
-              ready();
+            jobs.push({ id: strategy.id, input, check: minimumWaitMs => {
+              ready(minimumWaitMs);
               const current = this.store.read().strategies.find(s => s.id === strategy.id);
               if (!current?.active || (current.run ?? 0) !== run || current.revision !== strategy.revision) throw new KisNotSent('전략 정지 또는 실행 변경으로 전송을 차단했습니다.');
             } });

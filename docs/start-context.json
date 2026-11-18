@@ -437,6 +437,22 @@
           "finding": "공식 현금주문 예제의 기존 지정가 경로를 유지한다. 계약 한도와 시도 원장은 로컬에서 집행한다."
         }
       ]
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/106",
+      "checked_at": "2026-11-18T06:51:55.022179+00:00",
+      "objective": "기존 전략 시세 유효시간 안에서 불필요한 조회를 줄이고 부분체결·잔량 취소의 공식 증거를 확인",
+      "sources": [
+        {
+          "url": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
+          "finding": "모의 VTTC0081R의 총체결수량·잔여수량·취소확인수량은 개별 필드다."
+        },
+        {
+          "url": "https://github.com/koreainvestment/open-trading-api/blob/74b0a082fa67a0be5bf53f561719c853890ed2df/examples_llm/domestic_stock/inquire_psbl_order/inquire_psbl_order.py",
+          "finding": "미수 없는 수량 검증에는 주문가능 조회의 별도 입력과 결과가 필요하다."
+        }
+      ],
+      "decisions": "원 신호를 유지하고 만료·중단된 전략은 남은 조회 전에 차단한다. 모바일 취소·REST 대조를 구분하며 이번에는 거래하지 않는다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."
