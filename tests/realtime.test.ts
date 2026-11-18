@@ -86,7 +86,7 @@ function fixture(path = ':memory:', approval?: PaperApproval, terms?: Partial<St
   const realtime = new Realtime(store, paper, { approvalKey: 'fixture-approval-secret', htsId: 'fixture-hts', session: { date: '2026-11-16', open: '09:00', close: '15:30', verified: true } }, ((url: string) => {
     urls.push(url); const socket = new FakeSocket(); sockets.push(socket); return socket;
   }) as unknown as SocketFactory, () => now);
-  return { store, paper, realtime, sockets, urls, requests, response, sentOrders, setNow: (n: number) => { now = n; }, close: () => { realtime.stop(); store.close(); }, start: () => { realtime.start('005930'); const socket = sockets.at(-1)!; socket.emit('open'); socket.acknowledge(); return socket; } };
+  return { store, kis, paper, realtime, sockets, urls, requests, response, sentOrders, setNow: (n: number) => { now = n; }, close: () => { realtime.stop(); store.close(); }, start: () => { realtime.start('005930'); const socket = sockets.at(-1)!; socket.emit('open'); socket.acknowledge(); return socket; } };
 }
 const order = () => ({ code: '005930', side: 'buy' as const, price: 70000, qty: 1, requestId: randomUUID() });
 const row = () => ({ odno: '001', ord_dt: koreaDate(), pdno: '005930', prdt_name: '삼성전자', sll_buy_dvsn_cd: '02', ord_qty: '1', ord_unpr: '70000', tot_ccld_qty: '1', rmn_qty: '0', cncl_yn: 'N', ord_gno_brno: '12345' });
@@ -344,6 +344,70 @@ async function evaluated(f: ReturnType<typeof fixture>, id: string) {
 function crossing(ws: FakeSocket, side: 'buy' | 'sell' = 'buy', offset = 0) {
   for (const [i, price] of (side === 'buy' ? [70000, 70000, 69000, 73000] : [70000, 70000, 71000, 67000]).entries()) ws.frame(priceFrame(i + 1 + offset, price));
 }
+
+for (const slowStage of ['inquire-daily-ccld', 'inquire-price']) {
+  test(`계약 전략은 ${slowStage} 중 원 신호가 만료되면 남은 조회를 생략한다`, async () => {
+    const f = fixture(':memory:', undefined, {});
+    try {
+      const ws = f.start();
+      await f.realtime.reconcile();
+      const id = savedStrategy(f);
+      const initial = f.requests.length;
+      f.response.before = async path => {
+        if (path.endsWith(slowStage)) f.setNow(base + 5001);
+      };
+      crossing(ws);
+      assert.equal((await evaluated(f, id)).status, 'blocked');
+      const reads = f.requests.slice(initial).map(path => path.split('/').at(-1));
+      const expected = ['inquire-balance', 'inquire-daily-ccld'];
+      if (slowStage === 'inquire-price') expected.push('inquire-price');
+      assert.deepEqual(reads, expected);
+      assert.equal(f.store.strategyUsage().attempts, 0);
+      assert.equal(f.store.paperOrders().length, 0);
+    } finally { f.close(); }
+  });
+}
+
+test('필수 요청 간격 안에 원 신호가 만료되면 예약과 전송을 모두 생략한다', async t => {
+  const f = fixture(':memory:', undefined, {});
+  try {
+    const ws = f.start();
+    await f.realtime.reconcile();
+    const id = savedStrategy(f);
+    f.response.before = async path => {
+      if (path.endsWith('/inquire-psbl-order')) {
+        f.setNow(base + 4300);
+        t.mock.method(f.kis, 'minimumRequestWaitMs').mock.mockImplementationOnce(() => 1100);
+      }
+    };
+    crossing(ws);
+    assert.equal((await evaluated(f, id)).status, 'blocked');
+    assert.equal(f.store.strategyUsage().attempts, 0);
+    assert.equal(f.sentOrders.length, 0);
+  } finally { f.close(); }
+});
+
+test('동일한 4407ms 사전검사도 원 신호의 나이에 따라 전송 직전에 다르게 판정한다', async t => {
+  for (const [signalAge, expected] of [[500, 'accepted'], [700, 'rejected']] as const) {
+    const f = fixture(':memory:', undefined, {});
+    try {
+      const ws = f.start();
+      await f.realtime.reconcile();
+      const id = savedStrategy(f);
+      f.setNow(base + signalAge);
+      // 장외 GET 측정의 다음 요청 가능 시점을 마지막 전송 검사 직전에 재생한다.
+      const save = f.store.savePaper.bind(f.store);
+      t.mock.method(f.store, 'savePaper', (...args: Parameters<typeof save>) => {
+        save(...args);
+        if (args[0].status === 'sending') f.setNow(base + signalAge + 4407);
+      });
+      crossing(ws);
+      assert.equal((await evaluated(f, id)).status, expected);
+      assert.equal(f.sentOrders.length, expected === 'accepted' ? 1 : 0);
+      assert.equal(f.store.strategyUsage().attempts, 1);
+    } finally { f.close(); }
+  }
+});
 
 test('KIS 저장 전략도 공통 금액·종목·손실·긴급정지·수동 보유/예약 한도로 차단한다', async () => {
   for (const reason of ['order', 'position', 'loss', 'halt', 'holding', 'reserved'] as const) {

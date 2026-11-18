@@ -1,0 +1,146 @@
+{
+  "market": "closed",
+  "date": "2026-11-18",
+  "code": "005930",
+  "historyStart": "20260901",
+  "historyEnd": "20261118",
+  "history": {
+    "pages": 1,
+    "rows": 8,
+    "multi": 0,
+    "partialOpen": 0,
+    "splitFinal": 0,
+    "cancelQtyMissing": 0
+  },
+  "probes": [
+    {
+      "calls": [
+        {
+          "path": "inquire-balance",
+          "send": 2,
+          "header": 145
+        },
+        {
+          "path": "inquire-daily-ccld",
+          "send": 1103,
+          "header": 779
+        },
+        {
+          "path": "inquire-price",
+          "send": 2205,
+          "header": 12
+        },
+        {
+          "path": "inquire-psbl-order",
+          "send": 3306,
+          "header": 61
+        }
+      ],
+      "stages": [
+        {
+          "stage": "balance",
+          "elapsed": 149
+        },
+        {
+          "stage": "orders",
+          "elapsed": 1735
+        },
+        {
+          "stage": "quote",
+          "elapsed": 335
+        },
+        {
+          "stage": "power",
+          "elapsed": 1150
+        }
+      ],
+      "earliest": 4407
+    },
+    {
+      "calls": [
+        {
+          "path": "inquire-balance",
+          "send": 0,
+          "header": 47
+        },
+        {
+          "path": "inquire-daily-ccld",
+          "send": 1101,
+          "header": 615
+        },
+        {
+          "path": "inquire-price",
+          "send": 2203,
+          "header": 11
+        },
+        {
+          "path": "inquire-psbl-order",
+          "send": 3304,
+          "header": 61
+        }
+      ],
+      "stages": [
+        {
+          "stage": "balance",
+          "elapsed": 48
+        },
+        {
+          "stage": "orders",
+          "elapsed": 1670
+        },
+        {
+          "stage": "quote",
+          "elapsed": 498
+        },
+        {
+          "stage": "power",
+          "elapsed": 1150
+        }
+      ],
+      "earliest": 4404
+    },
+    {
+      "calls": [
+        {
+          "path": "inquire-balance",
+          "send": 0,
+          "header": 46
+        },
+        {
+          "path": "inquire-daily-ccld",
+          "send": 1102,
+          "header": 302
+        },
+        {
+          "path": "inquire-price",
+          "send": 2203,
+          "header": 11
+        },
+        {
+          "path": "inquire-psbl-order",
+          "send": 3304,
+          "header": 60
+        }
+      ],
+      "stages": [
+        {
+          "stage": "balance",
+          "elapsed": 47
+        },
+        {
+          "stage": "orders",
+          "elapsed": 1359
+        },
+        {
+          "stage": "quote",
+          "elapsed": 809
+        },
+        {
+          "stage": "power",
+          "elapsed": 1150
+        }
+      ],
+      "earliest": 4405
+    }
+  ]
+}

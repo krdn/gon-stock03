@@ -251,6 +251,40 @@ test('empty, ambiguous or changed recovery evidence leaves unknown and sends not
   });
 });
 
+test('unknown recovery holds ambiguous partial cancellation evidence until a consistent inspection and recheck', async () => {
+  await apiFixture(async (f, post) => {
+    const order = { ...input(), qty: 3 };
+    await f.broker.submit(order);
+    const partial = brokerRow({ ord_qty: '3', tot_ccld_qty: '1', rmn_qty: '2' });
+    const uncertain = { ...partial, cncl_yn: 'Y' };
+    const final = { ...uncertain, tot_ccld_qty: '2', rmn_qty: '0' };
+    const inspect = async () => (await post('recovery/inspect', { id: order.requestId })).json();
+    const confirm = (evidenceId: string) => post('recovery/confirm', { id: order.requestId, evidenceId, brokerId: '001', organization: '12345', confirmed: true });
+
+    f.response.rows = [partial];
+    const first = await inspect();
+    f.response.rows = [uncertain];
+    assert.equal((await confirm(first.evidenceId)).status, 400);
+    const second = await inspect();
+    assert.deepEqual(second.candidates, []);
+    f.response.rows = [final];
+    assert.equal((await confirm(second.evidenceId)).status, 400);
+    assert.equal(f.store.paperOrders()[0].status, 'unknown');
+
+    f.response.rows = [partial, { ...uncertain, odno: '002' }];
+    const ambiguous = await inspect();
+    assert.notEqual(ambiguous.candidates.length, 1);
+    assert.equal((await confirm(ambiguous.evidenceId)).status, 400);
+    f.response.rows = [partial];
+    const refreshed = await inspect();
+    f.response.rows = [final];
+    assert.equal((await confirm(refreshed.evidenceId)).status, 200);
+    const saved = f.store.paperOrders()[0];
+    assert.deepEqual([saved.status, saved.filled, saved.remaining], ['cancelled', 2, 0]);
+    assert.equal(f.count(), 1);
+  });
+});
+
 test('recovery evidence expires, cannot bind another local order, and never clears on a read failure', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-16T02:00:00Z') });
   const f = fixture('timeout'); try {

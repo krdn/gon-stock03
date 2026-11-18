@@ -12,6 +12,7 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
+    "vts:test": "tsx scripts/vts-runner.ts",
     "test:e2e": "playwright test",
     "start": "tsx server/index.ts"
   },
