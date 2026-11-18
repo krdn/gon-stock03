@@ -66,3 +66,50 @@
 .live-trade .toolbar p{font-size:12px}
 .live-trade .chart-toolbar{margin-top:18px}
 @media(max-width:600px){.live-trade-selection{display:block}.live-trade-selection form{margin-top:12px}.live-trade .trade-facts{gap:8px}}
+
+@media (max-width: 700px) {
+  .mobile-records table, .mobile-records tbody, .mobile-records tr {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+  .mobile-records thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    clip-path: inset(50%);
+    overflow: hidden;
+  }
+  .mobile-records tbody tr {
+    padding: 8px 0;
+    border-top: 1px solid #dce3e7;
+  }
+  .mobile-records td {
+    display: grid;
+    grid-template-columns: minmax(90px, 38%) minmax(0, 1fr);
+    align-items: baseline;
+    gap: 8px;
+    padding: 7px 4px;
+    border: 0;
+    white-space: normal;
+    word-break: keep-all;
+  }
+  .mobile-records td::before {
+    content: attr(data-label);
+    content: attr(data-label) / "";
+    color: #566b77;
+    text-align: left;
+  }
+  .mobile-records .record-value {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  .mobile-records .stock-name small {
+    justify-content: flex-end;
+  }
+  .mobile-records .record-value a {
+    display: inline-block;
+    min-height: 24px;
+  }
+}

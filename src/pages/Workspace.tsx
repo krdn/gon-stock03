@@ -97,13 +97,13 @@ export function Portfolio() {
       {kis && <p className="muted tiny">KIS 계좌 총평가액: {money(connection.balance!.totalEquity)} · API 제공 참고값. 화면 합계는 예수금과 현재 보유 평가액으로 계산하므로 결제·미수 등의 반영 기준에 따라 다를 수 있습니다. 예수금은 주문 가능 금액이 아닙니다.</p>}
       <div className="grid-main">
         <Panel title="보유자산" action={<Badge>{kis ? 'KIS 모의' : 'DEMO'} · {portfolio.positions.length}종목</Badge>}>
-          {portfolio.positions.length ? <div className="table-scroll"><table><thead><tr><th>종목</th><th>보유수량</th><th>평균 매입가</th><th>현재가</th><th>평가액</th><th>평가손익</th><th>비중</th></tr></thead><tbody>
-            {portfolio.positions.map(p => <tr key={p.code}>
-              <td><Link className="stock-name" to={`${kis ? '/paper' : '/trade'}?code=${encodeURIComponent(p.code)}`}>{p.name}<small>{p.code}</small></Link></td>
-              <td className="number">{p.qty}주</td><td className="number">{p.average.toLocaleString('ko-KR', { maximumFractionDigits: 20 })}</td>
-              <td className="number">{p.price !== null && p.price > 0 ? won(p.price) : '평가 불가'}</td>
-              <td className="number">{money(p.value)}</td><td className={p.profit === null ? 'number' : p.profit >= 0 ? 'number up' : 'number down'}>{profit(p.profit)}</td>
-              <td className="number">{weight(p.weight)}</td>
+          {portfolio.positions.length ? <div className={kis ? 'table-scroll mobile-records' : 'table-scroll'}><table role="table"><thead role="rowgroup"><tr role="row"><th role="columnheader">종목</th><th role="columnheader">보유수량</th><th role="columnheader">평균 매입가</th><th role="columnheader">현재가</th><th role="columnheader">평가액</th><th role="columnheader">평가손익</th><th role="columnheader">비중</th></tr></thead><tbody role="rowgroup">
+            {portfolio.positions.map(p => <tr role="row" key={p.code}>
+              <td role="cell" data-label="종목"><span className="record-value"><Link className="stock-name" to={`${kis ? '/paper' : '/trade'}?code=${encodeURIComponent(p.code)}`}>{p.name}<small>{p.code}</small></Link></span></td>
+              <td role="cell" className="number" data-label="보유수량"><span className="record-value">{p.qty}주</span></td><td role="cell" className="number" data-label="평균 매입가"><span className="record-value">{p.average.toLocaleString('ko-KR', { maximumFractionDigits: 20 })}</span></td>
+              <td role="cell" className="number" data-label="현재가"><span className="record-value">{p.price !== null && p.price > 0 ? won(p.price) : '평가 불가'}</span></td>
+              <td role="cell" className="number" data-label="평가액"><span className="record-value">{money(p.value)}</span></td><td role="cell" className={p.profit === null ? 'number' : p.profit >= 0 ? 'number up' : 'number down'} data-label="평가손익"><span className="record-value">{profit(p.profit)}</span></td>
+              <td role="cell" className="number" data-label="비중"><span className="record-value">{weight(p.weight)}</span></td>
             </tr>)}
           </tbody></table></div> : <Empty title="보유종목 없음">보유수량이 0인 종목은 제외합니다.</Empty>}
         </Panel>
