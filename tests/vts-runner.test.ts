@@ -57,6 +57,7 @@ test('장 마감과 전송이 겹치면 브로커 호출 직전 차단되고 동
       if (++checks === 2) throw new KisNotSent('장 마감');
     });
     assert.equal(result.status, 'rejected');
+    assert.equal(result.remaining, 0);
     assert.equal((await testOrder(store, client, order, () => {})).status, 'rejected');
     assert.equal(orders.length, 0);
   } finally { store.close(); }

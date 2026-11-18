@@ -235,6 +235,7 @@ export class PaperBroker {
       const latestRisk = this.store.read().risk;
       if (latestRisk.halted || JSON.stringify(risk) !== JSON.stringify(latestRisk)) throw new Error('검증 중 위험 설정이 바뀌었습니다. 다시 확인하세요.');
       const local: PaperOrder = { ...input, ...(strategy ? { strategy } : {}), createdAt: new Date().toISOString(), tradeDate: koreaDate(), status: 'sending', filled: 0, remaining: input.qty, message: 'KIS 모의 전송 중' };
+      if (!this.contract) checkSignal?.(this.kis.minimumRequestWaitMs());
       this.store.savePaper(local, { actor: 'system', action: 'sending', before: null }, this.contract, this.contract && (() => {
         checkSignal?.(this.kis.minimumRequestWaitMs());
         checkRealtime?.();

@@ -42,6 +42,7 @@ export async function testOrder(store: Store, kis: KisClient, raw: unknown, chec
     Object.assign(local, await kis.submit(order, checkOpen), { status: 'accepted' });
   } catch (error) {
     local.status = error instanceof KisRejected || error instanceof KisNotSent ? 'rejected' : 'unknown';
+    if (local.status === 'rejected') local.remaining = 0;
     local.message = error instanceof Error ? error.message : '전송 결과 미확정';
   }
   store.savePaper(local, { actor: 'system', action: 'response', before: 'sending' });
@@ -61,6 +62,8 @@ async function main() {
   // Await batch input before taking the ledger lock. Validate every line before the first POST.
   const batch = command === 'batch' ? readFileSync(0, 'utf8').trim().split(/\r?\n/).map(line => instruction.parse(JSON.parse(line))) :
     command === 'submit' ? [instruction.parse(JSON.parse(arg!))] : [];
+  const inspectId = command === 'inspect' ? z.uuid().parse(arg) : undefined;
+  const confirmation = command === 'confirm' ? paperRecoveryInput.parse(JSON.parse(readFileSync(0, 'utf8'))) : undefined;
   const kis = KisClient.fromEnvironment();
   const root = fileURLToPath(new URL('../.local/vts-test-runner/', import.meta.url));
   const folder = join(root, kis.accountFingerprint());
@@ -78,11 +81,11 @@ async function main() {
         console.log(JSON.stringify({ mode: 'vts-test-runner', connected: account.connected, complete: account.status.complete, observedAt: account.status.observedAt, localOrders: store.paperOrders().length, maxOrderAmount: null, maxAttempts: null, signalExpiryMs: null }));
       } else if (command === 'orders') {
         console.log(JSON.stringify((await paper.refresh(true)).orders.map(summary)));
-      } else if (command === 'inspect') {
-        const preview = await paper.inspectRecovery(z.uuid().parse(arg));
+      } else if (inspectId) {
+        const preview = await paper.inspectRecovery(inspectId);
         console.log(JSON.stringify({ evidenceId: preview.evidenceId, candidates: preview.candidates.map(o => ({brokerId:o.brokerId,organization:o.organization,date:o.date,code:o.code,side:o.side,qty:o.qty,price:o.price,filled:o.filled,remaining:o.remaining})) }));
-      } else if (command === 'confirm') {
-        console.log(JSON.stringify(summary(await paper.confirmRecovery(paperRecoveryInput.parse(JSON.parse(readFileSync(0, 'utf8')))))));
+      } else if (confirmation) {
+        console.log(JSON.stringify(summary(await paper.confirmRecovery(confirmation))));
       } else {
         for (const input of batch) {
           const order = await testOrder(store, kis, input);
