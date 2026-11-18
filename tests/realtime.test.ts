@@ -643,3 +643,13 @@ test('격리 대조에서 부분체결이 되어도 최초 지정가×전체 수
     assert.equal(f.store.read().strategies.find(s => s.id === id)?.active, false);
   } finally { f.close(); }
 });
+
+test('계약 도입 전 원장의 전략 주문 ID로 수동 요청을 재사용하지 않는다', async () => {
+  const f = fixture();
+  try {
+    const input = order();
+    f.store.savePaper({ ...input, status: 'filled', createdAt: new Date().toISOString(), tradeDate: koreaDate(), filled: 1, remaining: 0, message: '', strategy: { id: 'legacy', revision: 1, event: '20261116:2', signal: 'buy' } });
+    await assert.rejects(f.paper.submit(input), /전략 출처/);
+    assert.equal(f.requests.length, 0); assert.equal(f.sentOrders.length, 0);
+  } finally { f.close(); }
+});

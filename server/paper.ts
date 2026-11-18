@@ -155,8 +155,8 @@ export class PaperBroker {
       if (this.contract && (!strategy || market)) throw new KisNotSent('지정가 전략 계약 주문만 허용됩니다.');
       const existing = this.store.paperOrders().find(o => o.requestId === input.requestId);
       if (existing) {
-        if (this.contract && (existing.strategy?.id !== strategy?.id || existing.strategy?.revision !== strategy?.revision
-          || existing.strategy?.event !== strategy?.event || existing.strategy?.signal !== strategy?.signal)) throw new Error('동일 요청 ID의 전략 출처가 다릅니다.');
+        if (existing.strategy?.id !== strategy?.id || existing.strategy?.revision !== strategy?.revision
+          || existing.strategy?.event !== strategy?.event || existing.strategy?.signal !== strategy?.signal) throw new Error('동일 요청 ID의 전략 출처가 다릅니다.');
         if (existing.code !== input.code || existing.side !== input.side || existing.qty !== input.qty || existing.price !== input.price || (existing.orderType ?? 'limit') !== (market ? 'market' : 'limit')) throw new Error('동일 요청 ID의 주문 내용이 다릅니다.');
         return existing;
       }
