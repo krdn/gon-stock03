@@ -1,0 +1,78 @@
+{
+  "productSHA": "7c3e92e616f0194caa2819696faae5e53aef11e8",
+  "environment": "KIS VTS",
+  "code": "005930",
+  "signalEvent": "20261119:1925216",
+  "evaluationAt": "2026-11-19T01:15:14.239Z",
+  "requestAlias": "A",
+  "brokerAlias": "B",
+  "trace": [
+    {
+      "at": "2026-11-19T01:15:14.245Z",
+      "action": "inquire-balance",
+      "ageMs": 244,
+      "sinceEvalMs": 5,
+      "headersMs": 615
+    },
+    {
+      "at": "2026-11-19T01:15:15.347Z",
+      "action": "inquire-daily-ccld",
+      "ageMs": 1347,
+      "sinceEvalMs": 1108,
+      "headersMs": 265
+    },
+    {
+      "at": "2026-11-19T01:15:16.449Z",
+      "action": "inquire-price",
+      "ageMs": 2448,
+      "sinceEvalMs": 2209,
+      "headersMs": 12
+    },
+    {
+      "at": "2026-11-19T01:15:17.550Z",
+      "action": "inquire-psbl-order",
+      "ageMs": 3549,
+      "sinceEvalMs": 3310,
+      "headersMs": 454
+    },
+    {
+      "at": "2026-11-19T01:15:18.654Z",
+      "action": "order-cash",
+      "ageMs": 4654,
+      "sinceEvalMs": 4415,
+      "headersMs": 360
+    }
+  ],
+  "audit": [
+    {
+      "at": "2026-11-19T01:15:18.007Z",
+      "action": "sending",
+      "before": null,
+      "after": "sending"
+    },
+    {
+      "at": "2026-11-19T01:15:19.015Z",
+      "action": "response",
+      "before": "sending",
+      "after": "accepted"
+    },
+    {
+      "at": "2026-11-19T01:15:21.010Z",
+      "action": "reconcile",
+      "before": "accepted",
+      "after": "filled"
+    }
+  ],
+  "initialHolding": 4,
+  "finalHolding": 6,
+  "reservationAmount": 388800,
+  "dispatched": 1,
+  "orderPosts": 1,
+  "cancelPosts": 0,
+  "limitPrice": 194400,
+  "filled": 2,
+  "remaining": 0,
+  "confirmedCancelQty": 0,
+  "accountOpenOrders": 0,
+  "strategyActiveAtEnd": false
+}
