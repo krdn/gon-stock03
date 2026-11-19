@@ -130,7 +130,7 @@ export function Settings() {
     if (connection.status.phase === 'partial') return { title: '잔고를 일부만 받았습니다', detail: '전체 잔고를 확인하려면 다시 조회하세요.', tone: 'warning' };
     if (connection.status.phase === 'error') return { title: '모의 잔고 조회에 실패했습니다', detail: '잠시 후 다시 조회하세요. 서버 상세 정보에서 오류를 확인할 수 있습니다.', tone: 'warning' };
     if (balance) return { title: '잔고를 다시 조회하세요', detail: '아래 금액은 마지막 조회 때 저장한 값입니다. 다시 조회하면 현재 잔고를 확인할 수 있습니다.', tone: 'warning' };
-    return { title: '모의 잔고를 조회하세요', detail: '첫 조회에서 계좌를 인증하고 예수금과 보유 종목을 불러옵니다.', tone: 'neutral' };
+    return { title: '모의 잔고를 조회하세요', detail: '조회하면 한국투자증권 모의 계좌의 예수금과 보유 종목을 불러옵니다.', tone: 'neutral' };
   }
   const summary = overview();
   const checkDisabled = !available || setupBlocked || busy || loading || retrySeconds > 0;
