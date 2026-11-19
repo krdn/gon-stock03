@@ -1,3 +1,4 @@
+import { krxHours, sessionBounds, type ExchangeNotice } from '../shared/trading-policy.ts';
 import { createDecipheriv, createHash, randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { z } from 'zod';
@@ -7,7 +8,7 @@ import { KisNotSent } from './kis.ts';
 import { record, signal } from './engine.ts';
 import type { StrategyEvaluation } from '../shared/model.ts';
 import type { RealtimeStatus } from '../shared/realtime.ts';
-import { orderInput, type OrderInput } from '../shared/contracts.ts';
+import { configuredPaperOrderInput, orderInput, type PaperOrderInput, type OrderInput } from '../shared/contracts.ts';
 
 const URL = 'ws://ops.koreainvestment.com:31000/tryitout';
 const PRICE = 'H0STCNT0', NOTICE = 'H0STCNI9';
@@ -48,14 +49,20 @@ export class Realtime {
       if (!this.required) return;
       this.assertReady(code);
       const age = this.now() - quoteTime;
-      if (generation !== this.generation || revision !== this.revision || age > 5000 || age < 0) throw new KisNotSent('주문 검증 중 실시간 상태가 바뀌었습니다. 다시 확인하세요.');
-      if (age + minimumWaitMs > 5000) throw new KisNotSent('다음 전송 가능 시각에 원 신호가 만료됩니다.');
+      const policy = this.paper.timingPolicy;
+      const signalMs = (policy && 'signalSeconds' in policy ? policy.signalSeconds : policy?.quoteSeconds ?? 5) * 1000;
+      if (generation !== this.generation || revision !== this.revision || age > signalMs || age < 0) throw new KisNotSent('주문 검증 중 실시간 상태가 바뀌었습니다. 다시 확인하세요.');
+      if (age + minimumWaitMs > signalMs) throw new KisNotSent('다음 전송 가능 시각에 원 신호가 만료됩니다.');
     };
     check(); return check;
   }
-  static configuration(): RealtimeConfig | undefined {
-    if (!process.env.KIS_WS_SESSION) return undefined;
-    try { return { approvalKey: process.env.KIS_WS_APPROVAL_KEY ?? '', htsId: process.env.KIS_HTS_ID ?? '', session: sessionSchema.parse(JSON.parse(process.env.KIS_WS_SESSION)) }; }
+  static configuration(notice?: ExchangeNotice): RealtimeConfig | undefined {
+    const setting = process.env.KIS_WS_SESSION;
+    if (!setting && !notice) return undefined;
+    try {
+      const session = sessionSchema.parse(setting ? JSON.parse(setting) : {date:notice!.date, open:notice!.open, close:notice!.close, verified:true});
+      return {approvalKey:process.env.KIS_WS_APPROVAL_KEY ?? '', htsId:process.env.KIS_HTS_ID ?? '', session};
+    }
     catch { return undefined; }
   }
   private sessionOpen() {
@@ -65,13 +72,19 @@ export class Realtime {
     const { date, open, close } = parsed.data;
     const begin = Date.parse(`${date}T${open}:00+09:00`), end = Date.parse(`${date}T${close}:00+09:00`);
     const day = new Date(`${date}T12:00:00+09:00`).getUTCDay();
+    const policy = this.paper.timingPolicy;
+    if (policy) {
+      const official = krxHours(date, policy.exchangeNotice), bounds = sessionBounds(date, policy.session, policy.exchangeNotice);
+      return !!bounds && open >= official.open && close <= official.close && begin < end &&
+        this.now() >= Math.max(begin, bounds.start) && this.now() < Math.min(end, bounds.end);
+    }
     return day !== 0 && day !== 6 && open >= '09:00' && close <= '15:30' && begin < end && this.now() >= begin && this.now() < end;
   }
   status(): RealtimeStatus {
     const age = this.now() - this.quoteTime;
-    const fresh = !this.stopped && this.quoteTime > 0 && age >= 0 && age <= 5000 && this.sessionOpen();
+    const fresh = !this.stopped && this.quoteTime > 0 && age >= 0 && age <= (this.paper.timingPolicy?.quoteSeconds ?? 5) * 1000 && this.sessionOpen();
     const ordersAllowed = this.state.phase === 'ready' && fresh && this.reconciledRevision === this.revision && !this.store.read().risk.halted;
-    return { ...this.state, required: this.required, fresh, ordersAllowed, message: this.state.phase === 'ready' && !ordersAllowed ? '신규 주문 차단 · 시세 지연/장외 또는 긴급정지를 확인하세요.' : this.state.message };
+    return { ...this.state, quoteSeconds:this.paper.timingPolicy?.quoteSeconds ?? 5, required: this.required, fresh, ordersAllowed, message: this.state.phase === 'ready' && !ordersAllowed ? '신규 주문 차단 · 시세 지연/장외 또는 긴급정지를 확인하세요.' : this.state.message };
   }
   private event(title: string, message: string, level: 'info' | 'warning' = 'warning') {
     this.store.update(state => record(state, title, message, level, { environment: 'kis-paper', target: 'paper' }));
@@ -114,7 +127,7 @@ export class Realtime {
     socket.on('close', () => this.failed(generation));
     this.watchdog = setInterval(() => {
       if (!this.sessionOpen() || this.store.read().risk.halted) this.stop();
-      else if (this.now() - this.lastFrame > 45000 || this.now() < this.lastFrame) this.failed(generation, '실시간 수신 시간 초과 · REST 대조 필요');
+      else if (this.now() - this.lastFrame > (this.paper.timingPolicy?.silenceSeconds ?? 45) * 1000 || this.now() < this.lastFrame) this.failed(generation, '실시간 수신 시간 초과 · REST 대조 필요');
       else if (this.paper.contractExpired() || (this.state.phase === 'ready' && !this.status().fresh)) this.pauseStrategies();
     }, 1000);
     this.watchdog.unref();
@@ -131,8 +144,8 @@ export class Realtime {
     this.detach(); this.invalidate(message); this.state.phase = 'disconnected';
     this.pauseStrategies();
     this.event('KIS 실시간 수신 중단', message);
-    if (this.attempts < 3 && this.sessionOpen() && !this.store.read().risk.halted) {
-      this.retry = setTimeout(() => { this.retry = undefined; this.open(); }, 1000 * 2 ** this.attempts++);
+    if (this.attempts < (this.paper.timingPolicy?.reconnects ?? 3) && this.sessionOpen() && !this.store.read().risk.halted) {
+      this.retry = setTimeout(() => { this.retry = undefined; this.open(); }, Math.min(60000, 1000 * 2 ** this.attempts++));
       this.retry.unref();
     }
   }
@@ -192,8 +205,10 @@ export class Realtime {
     const time = Date.parse(`${date}T${row[1].slice(0, 2)}:${row[1].slice(2, 4)}:${row[1].slice(4)}+09:00`);
     const price = Number(row[2]), volume = Number(row[13]), age = this.now() - time;
     if (!Number.isSafeInteger(price) || price <= 0 || !Number.isSafeInteger(volume) || !Number.isFinite(time)) throw new Error();
+    const configured = this.paper.timingPolicy && sessionBounds(date, this.paper.timingPolicy.session, this.paper.timingPolicy.exchangeNotice);
+    if (configured && (time < configured.start || time >= configured.end)) return;
     if (time < Date.parse(`${this.config!.session.date}T${this.config!.session.open}:00+09:00`)) return;
-    if (!this.sessionOpen() || date !== this.config!.session.date || age < 0 || age > 5000 || time < this.quoteTime || volume < this.volume) return;
+    if (!this.sessionOpen() || date !== this.config!.session.date || age < 0 || age > (this.paper.timingPolicy?.quoteSeconds ?? 5) * 1000 || time < this.quoteTime || volume < this.volume) return;
     if (row[35] === 'Y') { this.quoteTime = time; this.volume = volume; this.stopped = true; return; }
     if (volume === this.volume) return;
     this.stopped = false;
@@ -253,7 +268,7 @@ export class Realtime {
   }
   private async evaluateStrategies(event: string) {
     if (!this.store.read().strategies.some(s => s.active && s.environment === 'kis-paper' && s.code === this.state.code)) return;
-    const jobs: { id: string; input: OrderInput; check: (minimumWaitMs?: number) => void }[] = [];
+    const jobs: { id: string; input: PaperOrderInput; check: (minimumWaitMs?: number) => void }[] = [];
     const prices = [...this.history], price = this.state.price!, code = this.state.code!;
     this.store.update(state => {
       for (const strategy of state.strategies) {
@@ -268,7 +283,9 @@ export class Realtime {
           const ready = this.orderGuard(code);
           if (direction !== 'hold') {
             if (strategy.evaluations?.some(e => e.status === 'sending')) throw new KisNotSent('이전 전략 주문 검사 중 · 이번 신호는 재전송하지 않습니다.');
-            const input = orderInput.parse({ code, price, qty: strategy.qty, side: direction, requestId: randomUUID() });
+            const market = this.paper.strategyOrderType === 'market';
+            const input = configuredPaperOrderInput.parse({ code, price: market ? 0 : price, ...(market && {orderType:'market'}),
+              qty: strategy.qty, side: direction, requestId: randomUUID() });
             evaluation.status = 'sending'; evaluation.reason = '공통 승인·위험 검사 대기'; evaluation.requestId = input.requestId;
             jobs.push({ id: strategy.id, input, check: minimumWaitMs => {
               ready(minimumWaitMs);

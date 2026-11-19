@@ -4,6 +4,9 @@ import { randomUUID } from 'node:crypto';
 import { KisClient, koreaDate } from '../server/kis.ts';
 import { paperOrderInput, orderInput, paperLedgerSchema } from '../shared/contracts.ts';
 import { PaperBroker, paperApprovalSchema } from '../server/paper.ts';
+import { onceTerms, type TradingTerms } from '../shared/trading-plan.ts';
+import { defaultOncePolicy } from '../shared/trading-policy.ts';
+import { activeTerms, fixTradingDraft, readPreparedRun, saveTradingDraft } from '../server/trading-plans.ts';
 import { Store } from '../server/store.ts';
 import { once } from 'node:events';
 import { makeServer } from '../server/http.ts';
@@ -12,9 +15,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only', spacing = 0, approval?: { date: string; requestId: string; cancelProbe?: true; code?: '069500' | '005930'; maxAmount?: number; allowExistingHolding?: true; orderType?: 'market' }) {
+function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only', spacing = 0, approval?: { date: string; requestId: string; cancelProbe?: true; code?: '069500' | '005930'; maxQty?: number; maxAmount?: number; allowExistingHolding?: true; orderType?: 'market' }, ledger = ':memory:') {
   let submits = 0;
-  const response = { cancelMode: 'success', cash: '10000000', totalEquity: '10000000', nonCreditCash: '10000000', positions: [] as Record<string, string>[], price: '70000', upper: '91000', tick: '100', rows: [] as Record<string, string>[], before: async (_path: string) => {}, receipt: { rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } } as unknown };
+  const response = { cancelMode: 'success', cash: '10000000', totalEquity: '10000000', nonCreditCash: '10000000', nonCreditQty: '100', quoteFields: {} as Record<string, string | undefined>, positions: [] as Record<string, string>[], price: '70000', lower: '49000', upper: '91000', tick: '100', rows: [] as Record<string, string>[], before: async (_path: string) => {}, receipt: { rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } } as unknown };
   const requests: { url: URL; init: RequestInit | undefined; startedAt: number }[] = [];
   const transport: typeof fetch = async (url, init) => {
     requests.push({ url: new URL(String(url)), init, startedAt: performance.now() });
@@ -22,8 +25,8 @@ function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'erro
     await response.before(path);
     if (path.endsWith('/tokenP')) return Response.json({ access_token: 'test-token', expires_in: 86400 });
     if (path.endsWith('/inquire-balance')) return Response.json({ rt_cd: '0', output1: response.positions, output2: [{ dnca_tot_amt: response.cash, tot_evlu_amt: response.totalEquity }] });
-    if (path.endsWith('/inquire-price')) return Response.json({ rt_cd: '0', output: { stck_prpr: response.price, prdy_ctrt: '1.0', stck_mxpr: response.upper, stck_llam: '49000', aspr_unit: response.tick, temp_stop_yn: 'N' } });
-    if (path.endsWith('/inquire-psbl-order')) return Response.json({ rt_cd: '0', output: { nrcvb_buy_qty: '100', nrcvb_buy_amt: response.nonCreditCash, ord_psbl_cash: '10000000' } });
+    if (path.endsWith('/inquire-price')) return Response.json({ rt_cd: '0', output: { stck_prpr: response.price, prdy_ctrt: '1.0', stck_mxpr: response.upper, stck_llam: response.lower, aspr_unit: response.tick, temp_stop_yn: 'N', ...response.quoteFields } });
+    if (path.endsWith('/inquire-psbl-order')) return Response.json({ rt_cd: '0', output: { nrcvb_buy_qty: response.nonCreditQty, nrcvb_buy_amt: response.nonCreditCash, ord_psbl_cash: '10000000' } });
     if (path.endsWith('/inquire-daily-ccld')) return Response.json({ rt_cd: '0', output1: response.rows.filter(row => row.ord_dt === new URL(String(url)).searchParams.get('INQR_STRT_DT')) });
     if (path.endsWith('/order-rvsecncl')) {
       if (response.cancelMode === 'timeout') throw new Error('secret transport error');
@@ -43,7 +46,7 @@ function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'erro
     }
     assert.fail(`unexpected endpoint: ${path}`);
   };
-  const store = new Store(':memory:');
+  const store = new Store(ledger);
   const client = new KisClient({ key: 'key', secret: 'secret', account: '00000000', product: '01' }, transport, spacing);
   return { store, client, broker: new PaperBroker(store, client, approval), count: () => submits, response, requests };
 }
@@ -558,6 +561,7 @@ test('approved HTTP order path exposes the active restriction and persists halt 
   try {
     const ledgerResponse = await fetch(`${base}/api/kis/ledger`, { headers }); assert.equal(ledgerResponse.status, 200);
     const ledger = await ledgerResponse.json();
+    assert.deepEqual(paperLedgerSchema.parse(ledger).minimumRun, { active: true, requestId: order.requestId, maxQty: 1 });
     assert.deepEqual(ledger.minimumRun, { active: true, ...approvalFor(order) }); assert.equal(f.requests.length, 0);
     const response = await fetch(`${base}/api/kis/order`, { method: 'POST', headers, body: JSON.stringify(order) });
     assert.equal(response.status, 200); assert.equal((await response.json()).order.status, 'accepted');
@@ -977,5 +981,650 @@ test('market reconciliation fails closed on missing order type or changed zero o
       assert.equal((await f.broker.refresh()).orders[0].status, 'unknown');
       assert.equal(f.count(), 1); assert.equal(f.store.read().risk.halted, true);
     } finally { f.store.close(); }
+  }
+});
+
+test('page cancellation rechecks broker state and skips the cancel wire when the trade filled first', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const input = approvedInput();
+  const f = fixture('success', 0, { ...approvalFor(input), cancelProbe: true });
+  try {
+    const order = await f.broker.submit(input);
+    f.response.rows = [brokerRow({ pdno: input.code, tot_ccld_qty: '1', rmn_qty: '0' })];
+    await assert.rejects(f.broker.cancelProbe(order.requestId, true), /미체결 원주문/);
+    assert.equal(f.store.paperOrders()[0].status, 'filled');
+    assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 0);
+  } finally { f.store.close(); }
+});
+
+test('UI cancellation candidate is scoped to the valid unsent probe and cannot reappear after REST refresh', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const input = approvedInput();
+  const f = fixture('success', 0, { ...approvalFor(input), cancelProbe: true });
+  try {
+    assert.equal(f.broker.cancellation([]).candidate, null);
+    const order = await f.broker.submit(input);
+    const read = () => f.broker.cancellation(f.store.paperOrders()).candidate;
+    assert.deepEqual(read(), { requestId: input.requestId, expiresAt: new Date(Date.parse(order.createdAt) + 120000).toISOString() });
+    assert.equal(f.broker.cancellation([{ ...order, requestId: randomUUID() }]).candidate, null);
+    assert.equal(f.broker.cancellation([{ ...order, qty: 2 }]).candidate, null);
+    assert.equal(f.broker.cancellation([{ ...order, createdAt: new Date(Date.now() - 120000).toISOString() }]).candidate, null);
+    await f.broker.cancelProbe(order.requestId);
+    f.response.rows = [brokerRow({ pdno: input.code })];
+    await f.broker.refresh();
+    assert.equal(f.store.paperOrders()[0].status, 'accepted');
+    assert.equal(read(), null);
+    f.response.rows = [brokerRow({ pdno: input.code, rmn_qty: '0', cncl_yn: 'Y', cncl_cfrm_qty: '1' })];
+    const result = await f.broker.refresh();
+    assert.equal(result.brokerOrders[0].confirmedCancelQty, 1);
+    assert.equal(result.orders[0].status, 'cancelled');
+    assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 1);
+  } finally { f.store.close(); }
+});
+
+test('manual quantity defaults to five and editable settings can exceed five without a broker call', async () => {
+  await apiFixture(async (f, post) => {
+    const order = { ...input(), qty: 6 };
+    await assert.rejects(f.broker.submit(order), /수량/);
+    for (const maxQty of [0, 1.5, 100001]) assert.equal((await post('quantity-setting', { maxQty })).status, 400);
+    assert.equal((await post('quantity-setting', { maxQty: 7 })).status, 200);
+    assert.equal(f.store.read().paperManualMaxQty, 7);
+    assert.equal(f.requests.length, 0);
+    assert.equal((await f.broker.submit(order)).status, 'unknown');
+    assert.equal(f.count(), 1);
+  });
+});
+
+test('manual quantity change during preflight blocks outbound order', async () => {
+  const f = fixture('success');
+  try {
+    f.response.before = async path => {
+      if (path.endsWith('/inquire-psbl-order')) f.store.update(s => { s.paperManualMaxQty = 1; });
+    };
+    assert.equal((await f.broker.submit({ ...input(), qty: 2 })).status, 'rejected');
+    assert.equal(f.count(), 0);
+  } finally { f.store.close(); }
+});
+
+test('five-share approval enforces both quantity and total and cancels only the remaining shares', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const order = { ...input(), qty: 5, price: 40000 };
+  const approval = { ...approvalFor(order), code: '005930' as const, maxQty: 5, maxAmount: 200000, cancelProbe: true as const };
+  const f = fixture('success', 0, approval);
+  try {
+    f.response.price = '40000'; f.response.lower = '30000';
+    f.store.update(s => { s.paperManualMaxQty = 9; });
+    await assert.rejects(f.broker.submit({ ...order, qty: 6, price: 30000 }), /승인/);
+    await assert.rejects(f.broker.submit({ ...order, price: 40100 }), /승인/);
+    assert.equal(f.requests.length, 0);
+    assert.equal((await f.broker.submit(order)).status, 'accepted');
+    f.response.rows = [brokerRow({ ord_qty: '5', ord_unpr: '40000', tot_ccld_qty: '2', rmn_qty: '3' })];
+    assert.equal((await f.broker.refresh()).orders[0].status, 'partial');
+    assert.equal(f.broker.cancellation(f.store.paperOrders()).candidate?.requestId, order.requestId);
+    await f.broker.cancelProbe(order.requestId, true);
+    f.response.rows = [brokerRow({ ord_qty: '5', ord_unpr: '40000', tot_ccld_qty: '2', rmn_qty: '0', cncl_yn: 'Y', cncl_cfrm_qty: '3' })];
+    const final = await f.broker.refresh();
+    assert.deepEqual([final.orders[0].filled, final.brokerOrders[0].confirmedCancelQty, final.orders[0].remaining], [2,3,0]);
+    assert.equal(f.count(), 1);
+    assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 1);
+    assert.throws(() => new PaperBroker(f.store, f.client, { ...approval, maxQty: 6 }), /저장된 1회 승인/);
+    assert.equal(paperApprovalSchema.safeParse({ ...approval, orderType: 'market', cancelProbe: undefined }).success, false);
+  } finally { f.store.close(); }
+});
+
+test('legacy one-share approval cannot be enlarged by reopening; manual setting survives restart', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'paper-qty-'));
+  const path = join(tmp, 'run.sqlite'), order = approvedInput(), approval = approvalFor(order);
+  const db = new DatabaseSync(path);
+  db.exec('CREATE TABLE paper_run (id INTEGER PRIMARY KEY, day TEXT, request_id TEXT, attempted INTEGER DEFAULT 0)');
+  db.prepare('INSERT INTO paper_run(id,day,request_id) VALUES(1,?,?)').run(approval.date,order.requestId); db.close();
+  let store = new Store(path);
+  try {
+    assert.throws(() => store.configurePaperRun({ ...approval, maxQty: 5 }), /저장된 1회 승인/);
+    assert.equal(store.configurePaperRun(approval), false);
+    store.update(s => { s.paperManualMaxQty = 7; }); store.close();
+    store = new Store(path);
+    assert.equal(store.read().paperManualMaxQty, 7);
+    assert.throws(() => store.configurePaperRun({ ...approval, maxQty: 5 }), /저장된 1회 승인/);
+  } finally { store.close(); rmSync(tmp, { recursive:true,force:true }); }
+});
+
+
+test('actual ledger GET provides the fixed five-share approval to the page', async () => {
+  const input = approvedInput(), f = fixture('success'), port = apiPort++;
+  const server = makeServer(f.store, f.client, [port], { ...approvalFor(input), maxQty: 5 });
+  server.listen(port, '127.0.0.1'); await once(server, 'listening');
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/kis/ledger`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(paperLedgerSchema.parse(await response.json()).minimumRun, { active: true, requestId: input.requestId, maxQty: 5 });
+    assert.equal(f.requests.length, 0);
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); f.store.close(); }
+});
+
+function lowerLimitFixture() {
+  const dir = mkdtempSync(join(tmpdir(), 'stock03-lower-limit-'));
+  const ledgerPath = join(dir, 'run.sqlite');
+  const f = fixture('success', 0, undefined, ledgerPath);
+  const order = { ...input(), price: 136300 };
+  const approval = { code: '005930' as const, date: '2026-11-19', requestId: order.requestId,
+    maxAmount: 200000, accountFingerprint: f.client.accountFingerprint(), ledgerPath };
+  const candidate = { ...approval, lowerLimitPrice: order.price,
+    krxSession: { date: approval.date, open: '10:00', close: '16:30' } };
+  Object.assign(f.response, { price: '190700', lower: '136300', upper: '253100',
+    quoteFields: { stck_shrn_iscd: '005930', sltr_yn: 'N' } });
+  return { ...f, order, approval, candidate, close() { f.store.close(); rmSync(dir, { recursive: true }); } };
+}
+
+test('같은 136300원 HTTP 주문은 기존 계약에서 차단되고 새 하한가 계약만 지정가로 전송한다', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-19T12:16:00+09:00') });
+  for (const candidate of [false, true]) {
+    const f = lowerLimitFixture(), port = apiPort++;
+    if (candidate) f.store.configurePaperRun(f.candidate);
+    const server = makeServer(f.store, f.client, [port], candidate ? f.candidate : f.approval);
+    server.listen(port, '127.0.0.1'); await once(server, 'listening');
+    try {
+      const submit = () => fetch(`http://127.0.0.1:${port}/api/kis/order`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(f.order) });
+      const res = await submit();
+      const body = await res.json();
+      assert.equal(res.status, candidate ? 200 : 400);
+      const power = f.requests.find(r => r.url.pathname.endsWith('/inquire-psbl-order'));
+      if (candidate) {
+        assert.equal(body.order.status, 'accepted');
+        assert.equal(power?.url.searchParams.get('ORD_DVSN'), '01');
+        assert.equal(power?.url.searchParams.get('ORD_UNPR'), '136300');
+        const wire = f.requests.find(r => r.url.pathname.endsWith('/order-cash'))!;
+        assert.equal(new Headers(wire.init?.headers).get('tr_id'), 'VTTC0012U');
+        const { PDNO, ORD_DVSN, ORD_QTY, ORD_UNPR, EXCG_ID_DVSN_CD } = JSON.parse(String(wire.init?.body));
+        assert.deepEqual([PDNO, ORD_DVSN, ORD_QTY, ORD_UNPR, EXCG_ID_DVSN_CD], ['005930', '00', '1', '136300', 'KRX']);
+        assert.equal(f.store.paperOrders()[0].filled, 0);
+      } else {
+        assert.match(body.error, /136300원.*190700원/);
+        assert.equal(power, undefined);
+        assert.equal(f.store.paperOrders().length, 0);
+      }
+      assert.equal(f.store.read().risk.halted, true);
+      const calls = f.requests.length;
+      const repeated = await submit();
+      assert.equal(repeated.status, candidate ? 200 : 400);
+      if (!candidate) assert.match((await repeated.json()).error, /이미 사용/);
+      assert.equal(f.requests.length, calls);
+      assert.equal(f.count(), candidate ? 1 : 0);
+      assert.equal(f.requests.some(r => r.url.pathname.endsWith('/order-rvsecncl')), false);
+    } finally { await new Promise<void>(resolve => server.close(() => resolve())); f.close(); }
+  }
+});
+
+test('하한가 후보는 새 원장에 단가와 정책을 함께 고정하고 기존 운영 입력은 거부한다', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-19T12:16:00+09:00') });
+  for (const legacy of [false, true]) {
+    const f = lowerLimitFixture();
+    try {
+      assert.equal(paperApprovalSchema.safeParse(f.candidate).success, false);
+      const draft = { kind: 'once', date: f.approval.date, code: '005930', orderType: 'limit', maxQty: 1,
+        maxAmount: 200000, cancelProbe: false, allowExistingHolding: false };
+      assert.equal(onceTerms.safeParse(draft).success, true);
+      assert.equal(onceTerms.safeParse({ ...draft, lowerLimitPrice: f.order.price }).success, false);
+      assert.equal(f.store.hasPaperRun(), false);
+      assert.throws(() => new PaperBroker(f.store, f.client, f.candidate), /미리 고정/);
+      if (!legacy) f.store.configurePaperRun(f.candidate);
+      for (const [change, reason] of [
+        [{ code: '069500' }, /005930/], [{ orderType: 'market' }, /하한가 검증/],
+        [{ cancelProbe: true }, /하한가 검증/], [{ ledgerPath: ':memory:' }, /하한가 검증/],
+        [{ ledgerPath: undefined }, /ledgerPath/], [{ accountFingerprint: undefined }, /accountFingerprint/],
+        [{ accountFingerprint: '0'.repeat(64) }, /전용 원장·계좌/], [{ lowerLimitPrice: 0 }, /lowerLimitPrice/],
+        [{ maxAmount: 100000 }, /하한가 검증/], [{ maxAmount: 300000 }, /지정가 승인 상한/],
+        [{ krxSession: undefined }, /krxSession/],
+        [{ krxSession: { ...f.candidate.krxSession, date: '2026-11-20' } }, /승인 거래일/],
+        [{ krxSession: { ...f.candidate.krxSession, open: '17:00' } }, /시간창/],
+        [{ krxSession: { ...f.candidate.krxSession, close: '25:99' } }, /krxSession/],
+      ] as const) assert.throws(() => new PaperBroker(f.store, f.client, { ...f.candidate, ...change }), reason);
+      const terms = legacy ? f.approval : f.candidate;
+      const broker = new PaperBroker(f.store, f.client, terms);
+      assert.throws(() => new PaperBroker(f.store, f.client, legacy ? f.candidate : f.approval), /저장된 1회 승인/);
+      if (legacy) await assert.rejects(broker.submit(f.order), /지정가 불일치/);
+      else assert.equal((await broker.submit(f.order)).status, 'accepted');
+      const reopened = new Store(f.approval.ledgerPath);
+      try {
+        assert.throws(() => new PaperBroker(reopened, f.client, legacy ? f.candidate : f.approval), /저장된 1회 승인/);
+        assert.throws(() => new PaperBroker(reopened, f.client, { ...f.candidate, lowerLimitPrice: 136400 }), /저장된 1회 승인/);
+        assert.throws(() => new PaperBroker(reopened, f.client, {
+          ...f.candidate, krxSession: { ...f.candidate.krxSession, open: '09:00' },
+        }), /저장된 1회 승인/);
+        const restored = new PaperBroker(reopened, f.client, terms);
+        if (legacy) await assert.rejects(restored.submit(f.order), /이미 사용/);
+        else assert.equal((await restored.submit(f.order)).status, 'accepted');
+        assert.equal(f.count(), legacy ? 0 : 1);
+      } finally { reopened.close(); }
+    } finally { f.close(); }
+  }
+});
+
+test('하한가 후보도 시세 식별·가격 범위·호가·정지·미수·소진 및 재전송 방지를 집행한다', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-19T12:16:00+09:00') });
+  for (const [change, expected] of [
+    [{ lower: '136400' }, /고정 단가/], [{ upper: '190600' }, /가격 범위/], [{ price: '136200' }, /가격 범위/],
+    [{ tick: '500' }, /호가단위/], [{ quoteFields: { sltr_yn: 'N' } }, /응답 종목/],
+    [{ quoteFields: { stck_shrn_iscd: '069500' } }, /현재가 응답/],
+    [{ quoteFields: { stck_shrn_iscd: '005930' } }, /정리매매/],
+    [{ quoteFields: { stck_shrn_iscd: '005930', sltr_yn: 'Y' } }, /정리매매/],
+    [{ quoteFields: { stck_shrn_iscd: '005930', sltr_yn: 'N', temp_stop_yn: 'Y' } }, /거래정지/],
+    [{ nonCreditQty: '0' }, /가능 수량/], [{ nonCreditCash: '136300' }, /현금 여유/],
+  ] as const) {
+    const f = lowerLimitFixture();
+    try {
+      Object.assign(f.response, change);
+      f.store.configurePaperRun(f.candidate);
+      const broker = new PaperBroker(f.store, f.client, f.candidate);
+      await assert.rejects(broker.submit(f.order), expected);
+      await assert.rejects(broker.submit(f.order), /이미 사용/);
+      assert.equal(f.store.read().risk.halted, true);
+      assert.equal(f.count(), 0);
+    } finally { f.close(); }
+  }
+  for (const price of [136300, 136350]) {
+    const f = lowerLimitFixture();
+    try {
+      Object.assign(f.response, { price: '200500', tick: '500', lower: String(price) });
+      // The limit belongs to the 100-won band even though the last trade is in the 500-won band.
+      const terms = { ...f.candidate, lowerLimitPrice: price };
+      f.store.configurePaperRun(terms);
+      const broker = new PaperBroker(f.store, f.client, terms);
+      const submit = broker.submit({ ...f.order, price });
+      if (price === 136300) assert.equal((await submit).status, 'accepted');
+      else await assert.rejects(submit, /호가 단위/);
+      assert.equal(f.count(), price === 136300 ? 1 : 0);
+    } finally { f.close(); }
+  }
+});
+
+test('하한가 후보는 주문자가 바꾼 단가·2주 총액 초과·전송 직전 시세 만료를 차단한다', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-19T12:16:00+09:00') });
+  let monotonic = 1000;
+  t.mock.method(performance, 'now', () => monotonic);
+  for (const scenario of ['price', 'amount', 'wall', 'monotonic']) {
+    const f = lowerLimitFixture();
+    try {
+      const terms = { ...f.candidate, maxQty: 2 };
+      f.store.configurePaperRun(terms);
+      const broker = new PaperBroker(f.store, f.client, terms);
+      if (scenario === 'price') await assert.rejects(broker.submit({ ...f.order, price: 190700 }), /고정 단가/);
+      if (scenario === 'amount') {
+        await assert.rejects(broker.submit({ ...f.order, qty: 2 }), /승인 범위/);
+        assert.equal(f.requests.length, 0);
+      }
+      if (scenario === 'wall' || scenario === 'monotonic') {
+        f.response.before = async path => {
+          if (path.endsWith('/inquire-psbl-order')) {
+            if (scenario === 'wall') t.mock.timers.tick(5001);
+            else monotonic += 5001;
+          }
+        };
+        const result = await broker.submit(f.order);
+        assert.equal(result.status, 'rejected');
+        assert.match(result.message, /5초 유효기간/);
+        assert.equal(f.store.paperOrders()[0].status, 'rejected');
+      }
+      assert.equal(f.count(), 0);
+    } finally { f.close(); }
+  }
+});
+
+test('하한가 후보는 고정한 특별장과 기존 시간창의 교집합을 소진 전과 전송 직전에 집행한다', async t => {
+  const instant = (time: string) => Date.parse('2026-11-19T' + time + '+09:00');
+  t.mock.timers.enable({ apis: ['Date'], now: instant('09:30:00') });
+  for (const time of ['09:30:00', '09:59:59', '10:00:00', '15:29:59', '15:30:00', '16:29:59', '16:30:00']) {
+    t.mock.timers.setTime(instant(time));
+    const f = lowerLimitFixture();
+    try {
+      f.store.configurePaperRun(f.candidate);
+      const broker = new PaperBroker(f.store, f.client, f.candidate);
+      const submit = broker.submit(f.order);
+      if (time >= '10:00:00' && time < '15:30:00') {
+        assert.equal((await submit).status, 'accepted', time);
+        assert.equal(f.count(), 1);
+      } else {
+        await assert.rejects(submit, /시간창/, time);
+        assert.equal(f.requests.length, 0);
+        assert.equal(f.store.configurePaperRun(f.candidate), false);
+      }
+    } finally { f.close(); }
+  }
+  const f = lowerLimitFixture();
+  try {
+    t.mock.timers.setTime(instant('12:29:59'));
+    const terms = { ...f.candidate, krxSession: { ...f.candidate.krxSession, close: '12:30' } };
+    f.store.configurePaperRun(terms);
+    const broker = new PaperBroker(f.store, f.client, terms);
+    f.response.before = async path => { if (path.endsWith('/inquire-psbl-order')) t.mock.timers.tick(1000); };
+    const result = await broker.submit(f.order);
+    assert.equal(result.status, 'rejected');
+    assert.match(result.message, /시간창/);
+    assert.equal(f.count(), 0);
+    assert.equal(f.store.configurePaperRun(terms), true);
+  } finally { f.close(); }
+});
+
+function pinSettings(f: ReturnType<typeof lowerLimitFixture>, terms: Extract<TradingTerms, { kind: 'once' }>) {
+  const draft = saveTradingDraft(f.store, { expectedId: null, terms }).draft;
+  const pin = fixTradingDraft(f.store, f.client, { kind: 'once', expectedId: draft.id }).draft;
+  const file = join(f.store.path, '..', 'trading-runs', 'approval-' + draft.id, 'approval-' + pin.runId + '.json');
+  const prepared = readPreparedRun(file, 'once');
+  assert.ok('requestId' in prepared.config && 'policy' in prepared.config);
+  assert.deepEqual(activeTerms(prepared.config), terms);
+  return { file, config: prepared.config, store: new Store(prepared.path), check: prepared.checkInstrument };
+}
+
+test('제품 설정으로 16:05 하한가 2주를 고정하고 미전송 실패만 직접 재검사한다', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-19T16:05:00+09:00') });
+  const f = lowerLimitFixture(),
+    date = f.approval.date;
+  try {
+    const terms = {
+      kind: 'once',
+      date,
+      code: '005930',
+      orderType: 'limit',
+      maxQty: 2,
+      maxAmount: 300000,
+      allowExistingHolding: true,
+      cancelProbe: false,
+      policy: { ...defaultOncePolicy(date), priceMode: 'lower', limitPrice: 136300, consumeAt: 'validated' },
+    } as const;
+    const pin = pinSettings(f, terms);
+    try {
+      assert.equal(f.requests.length, 0);
+      assert.throws(
+        () =>
+          new PaperBroker(pin.store, f.client, { ...pin.config, policy: { ...pin.config.policy, quoteSeconds: 6 } }),
+        /저장된 1회 승인/,
+      );
+      const broker = new PaperBroker(pin.store, f.client, pin.config, undefined, pin.check);
+      const order = { ...f.order, requestId: pin.config.requestId, qty: 2 };
+      f.response.nonCreditQty = '0';
+      await assert.rejects(broker.submit(order), /미수 없는 매수 가능/);
+      assert.equal(pin.store.configurePaperRun(pin.config), false);
+      assert.equal(pin.store.read().risk.halted, false);
+      assert.equal(f.count(), 0);
+      f.response.nonCreditQty = '2';
+      assert.equal((await broker.submit(order)).status, 'accepted');
+      const wire = JSON.parse(String(f.requests.find((r) => r.url.pathname.endsWith('/order-cash'))?.init?.body));
+      assert.deepEqual([wire.ORD_DVSN, wire.ORD_UNPR, wire.ORD_QTY], ['00', '136300', '2']);
+      assert.equal(pin.store.configurePaperRun(pin.config), true);
+      assert.equal((await broker.submit(order)).filled, 0);
+      assert.equal(f.count(), 1);
+      assert.equal(broker.cancelProbeEnabled(), false);
+    } finally {
+      pin.store.close();
+    }
+  } finally {
+    f.close();
+  }
+});
+
+test('다주 시장가는 고정 조건에서만 허용하고 상한가 총액 및 매도가능수량을 검사한다', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-19T12:00:00+09:00') });
+  for (const mode of ['cash-limit', 'buy', 'sell', 'unavailable'] as const) {
+    const f = lowerLimitFixture(),
+      date = f.approval.date,
+      sell = mode === 'sell' || mode === 'unavailable';
+    try {
+      const pin = pinSettings(f, {
+        kind: 'once',
+        date,
+        code: '069500',
+        orderType: 'market',
+        maxQty: 2,
+        maxAmount: mode === 'cash-limit' ? 300000 : 600000,
+        allowExistingHolding: true,
+        cancelProbe: false,
+        policy: { ...defaultOncePolicy(date), side: sell ? 'sell' : 'buy' },
+      });
+      try {
+        f.response.quoteFields = { stck_shrn_iscd: '069500', sltr_yn: 'N' };
+        if (sell)
+          f.response.positions = [
+            {
+              pdno: '069500',
+              prdt_name: 'ETF',
+              hldg_qty: '3',
+              ord_psbl_qty: mode === 'unavailable' ? '1' : '2',
+              pchs_avg_pric: '50000',
+              prpr: '190700',
+            },
+          ];
+        const port = apiPort++,
+          server = makeServer(pin.store, f.client, [port], pin.config, undefined, undefined, pin.check);
+        server.listen(port, '127.0.0.1');
+        await once(server, 'listening');
+        try {
+          const order = {
+            code: '069500',
+            side: pin.config.policy.side,
+            orderType: 'market',
+            price: 0,
+            qty: 2,
+            requestId: pin.config.requestId,
+          };
+          const res = await fetch(`http://127.0.0.1:${port}/api/kis/order`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' },
+            body: JSON.stringify(order),
+          });
+          const body = await res.json();
+          if (mode === 'cash-limit' || mode === 'unavailable') {
+            assert.equal(res.status, 400);
+            assert.match(body.error, mode === 'cash-limit' ? /상한가/ : /매도 가능/);
+            assert.equal(f.count(), 0);
+          } else {
+            assert.equal(res.status, 200);
+            assert.equal(body.order.status, 'accepted');
+            assert.equal(f.count(), 1);
+            const sent = f.requests.find((r) => r.url.pathname.endsWith('/order-cash'))!;
+            assert.equal(new Headers(sent.init?.headers).get('tr_id'), sell ? 'VTTC0011U' : 'VTTC0012U');
+            const wire = JSON.parse(String(sent.init?.body));
+            assert.deepEqual([wire.PDNO, wire.ORD_DVSN, wire.ORD_QTY, wire.ORD_UNPR], ['069500', '01', '2', '0']);
+          }
+        } finally {
+          await new Promise<void>((resolve) => server.close(() => resolve()));
+        }
+      } finally {
+        pin.store.close();
+      }
+    } finally {
+      f.close();
+    }
+  }
+});
+
+test('확장 종목은 고정 및 전송 시 원본 마스터를 검사하고 만료 뒤에도 대조 원장을 열 수 있다', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-19T12:00:00+09:00') });
+  const f = lowerLimitFixture(),
+    date = f.approval.date;
+  try {
+    const terms = {
+      kind: 'once',
+      date,
+      code: '000660',
+      orderType: 'limit',
+      maxQty: 1,
+      maxAmount: 300000,
+      allowExistingHolding: false,
+      cancelProbe: false,
+      policy: { ...defaultOncePolicy(date), priceMode: 'fixed', limitPrice: 136300 },
+    } as const;
+    const draft = saveTradingDraft(f.store, { expectedId: null, terms }).draft;
+    const fix = () => fixTradingDraft(f.store, f.client, { kind: 'once', expectedId: draft.id }).draft;
+    assert.throws(fix, /마스터/);
+    const master = {
+      exchange: 'KOSPI' as const,
+      source: 'fixture',
+      collectedAt: new Date().toISOString(),
+      sha256: 'a'.repeat(64),
+      rows: [
+        {
+          code: '000660',
+          name: 'SK하이닉스',
+          isin: 'KR7000660001',
+          kind: 'stock' as const,
+          exchange: 'KOSPI' as const,
+          group: 'ST',
+          tradingHalted: false,
+          liquidation: false,
+        },
+      ],
+    };
+    f.store.saveMasters([master]);
+    const pin = fix();
+    const file = join(f.store.path, '..', 'trading-runs', 'approval-' + draft.id, 'approval-' + pin.runId + '.json');
+    f.store.saveMasters([{ ...master, rows: [{ ...master.rows[0], tradingHalted: true }] }]);
+    const prepared = readPreparedRun(file, 'once');
+    assert.throws(() => prepared.checkInstrument!(), /마스터/);
+    assert.ok('requestId' in prepared.config);
+    const run = new Store(prepared.path);
+    try {
+      const broker = new PaperBroker(run, f.client, prepared.config, undefined, prepared.checkInstrument);
+      await assert.rejects(
+        broker.submit({ ...f.order, code: '000660', requestId: prepared.config.requestId }),
+        /마스터/,
+      );
+      assert.equal(f.count(), 0);
+      await broker.refresh();
+    } finally {
+      run.close();
+    }
+  } finally {
+    f.close();
+  }
+});
+
+test('상한을 명시한 현재가 매수는 마지막 시세로 금액·원장·지정가를 고정하고 같은 요청은 다시 보내지 않는다', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-19T14:59:00+09:00') });
+  const f = lowerLimitFixture();
+  try {
+    Object.assign(f.response, {
+      price: '79835',
+      lower: '55580',
+      upper: '103220',
+      tick: '5',
+      quoteFields: { stck_shrn_iscd: '069500', sltr_yn: 'N' },
+    });
+    const pin = pinSettings(f, {
+      kind: 'once',
+      date: f.approval.date,
+      code: '069500',
+      orderType: 'limit',
+      maxQty: 2,
+      maxAmount: 160000,
+      allowExistingHolding: false,
+      cancelProbe: true,
+      policy: {
+        ...defaultOncePolicy(f.approval.date),
+        priceMode: 'cappedCurrent',
+        limitPrice: 80000,
+        consumeAt: 'validated',
+      },
+    });
+    try {
+      const broker = new PaperBroker(pin.store, f.client, pin.config, undefined, pin.check);
+      const request = {
+        code: '069500',
+        qty: 2,
+        side: 'buy' as const,
+        price: 80000,
+        priceMode: 'cappedCurrent' as const,
+        requestId: pin.config.requestId,
+      };
+      assert.equal((await f.client.quote('069500', true)).price, 79835);
+      await assert.rejects(broker.submit({ ...request, price: 79999 }), /상한/);
+      const { priceMode, ...withoutMode } = request;
+      await assert.rejects(broker.submit(withoutMode), /상한/);
+      f.response.price = '80005';
+      await assert.rejects(broker.submit(request), /상한/);
+      assert.equal(pin.store.paperOrders().length, 0);
+      assert.equal(f.count(), 0);
+      f.response.price = '79830';
+      const port = apiPort++;
+      const server = makeServer(pin.store, f.client, [port], pin.config, undefined, undefined, pin.check);
+      server.listen(port, '127.0.0.1');
+      await once(server, 'listening');
+      try {
+        const base = 'http://127.0.0.1:' + port + '/api/kis/';
+        const ledger = paperLedgerSchema.parse(await (await fetch(base + 'ledger')).json());
+        assert.ok(ledger.minimumRun?.active);
+        assert.equal(ledger.minimumRun.policy?.priceMode, 'cappedCurrent');
+        assert.equal(ledger.minimumRun.policy.limitPrice, 80000);
+        const response = await fetch(base + 'order', {
+          method: 'POST', headers: {'Content-Type':'application/json','X-Workbench':'local'}, body: JSON.stringify(request),
+        });
+        assert.equal(response.status, 200);
+        const {order} = await response.json();
+        assert.equal(order.price, 79830);
+        assert.equal(order.priceCeiling, 80000);
+      } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+      const [accepted] = pin.store.paperOrders();
+      assert.equal(accepted.status, 'accepted');
+      assert.equal(accepted.price, 79830);
+      assert.equal(pin.store.paperOrders()[0].price, 79830);
+      assert.equal(
+        f.requests.find((x) => x.url.pathname.endsWith('/inquire-psbl-order'))?.url.searchParams.get('ORD_UNPR'),
+        '79830',
+      );
+      assert.equal(
+        JSON.parse(String(f.requests.find((x) => x.url.pathname.endsWith('/order-cash'))?.init?.body)).ORD_UNPR,
+        '79830',
+      );
+      const reads = f.requests.length;
+      f.response.price = '79000';
+      assert.deepEqual(await broker.submit(request), accepted);
+      assert.equal(f.requests.length, reads);
+      assert.equal(f.count(), 1);
+      f.response.rows = [
+        brokerRow({
+          pdno: '069500',
+          ord_qty: '2',
+          ord_unpr: '79830',
+          tot_ccld_qty: '1',
+          rmn_qty: '1',
+          cncl_cfrm_qty: '0',
+        }),
+      ];
+      assert.equal((await broker.refresh(true)).orders[0].status, 'partial');
+      await broker.cancelProbe(request.requestId, true);
+      f.response.rows = [
+        brokerRow({
+          pdno: '069500',
+          ord_qty: '2',
+          ord_unpr: '79830',
+          tot_ccld_qty: '1',
+          rmn_qty: '0',
+          cncl_cfrm_qty: '1',
+          cncl_yn: 'Y',
+        }),
+      ];
+      const final = await broker.refresh(true);
+      assert.deepEqual(
+        [
+          final.orders[0].status,
+          final.orders[0].filled,
+          final.brokerOrders[0].confirmedCancelQty,
+          final.orders[0].remaining,
+        ],
+        ['cancelled', 1, 1, 0],
+      );
+      assert.equal(f.requests.filter((x) => x.url.pathname.endsWith('/order-rvsecncl')).length, 1);
+      const reopened = new Store(pin.store.path);
+      try {
+        assert.equal((await new PaperBroker(reopened, f.client, pin.config).submit(request)).price, 79830);
+        assert.equal(f.count(), 1);
+      } finally {
+        reopened.close();
+      }
+    } finally {
+      pin.store.close();
+    }
+  } finally {
+    f.close();
   }
 });

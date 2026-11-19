@@ -1,3 +1,4 @@
+import { strategyPolicy } from '../shared/trading-policy.ts';
 import { z } from 'zod';
 import type { Strategy } from '../shared/model.ts';
 
@@ -9,8 +10,8 @@ export const strategyContractSchema = z.object({
   fast: z.int().min(2).max(60), slow: z.int().min(3).max(100), qty: positive.max(10000),
   startsAt: instant, endsAt: instant,
   maxOrderAmount: positive, maxAttempts: positive, maxTotalAmount: positive,
-  sellPolicy: z.enum(['deny', 'account']),
-}).strict().refine(c => c.fast < c.slow && c.maxOrderAmount <= c.maxTotalAmount && Date.parse(c.startsAt) < Date.parse(c.endsAt), '전략 계약의 기간·한도를 확인하세요.');
+  sellPolicy: z.enum(['deny', 'account', 'contract']), policy: strategyPolicy.optional(),
+}).strict().refine(c => (c.sellPolicy !== 'contract' || !!c.policy) && c.fast < c.slow && c.maxOrderAmount <= c.maxTotalAmount && Date.parse(c.startsAt) < Date.parse(c.endsAt), '전략 계약의 기간·한도를 확인하세요.');
 export type StrategyContract = z.infer<typeof strategyContractSchema>;
 
 export function assertStrategyIdentity(contract: StrategyContract, strategy: Strategy | undefined) {

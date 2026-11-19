@@ -11,7 +11,7 @@ test('risk save response preserves edits made while the request is pending', asy
     Object.assign(state.risk, data); state.revision++;
     await route.fulfill({ json: {} });
   });
-  await page.goto('/risk');
+  await page.goto('/settings/trading/general');
   const input = page.getByLabel('1회 주문 한도 (원)', { exact: true });
   await expect(input).toHaveValue('500000'); await input.fill('600000');
   const requested = page.waitForRequest('**/api/risk'); await page.getByRole('button', { name: '한도 저장', exact: true }).click(); await requested;
@@ -35,7 +35,7 @@ test('risk displays DEMO exposure and formulas without treating KIS missing data
   await expect(page.getByText('KIS 사용량 미확인', { exact: true })).toBeVisible();
   expect(brokerPosts).toBe(0);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole('button', { name: '한도 저장', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: '매매 한도 변경' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
@@ -77,7 +77,7 @@ test('KIS risk separates its baseline and reservations, and expires without any 
 
 test('risk save failure keeps the draft and reports the server reason', async ({ page }) => {
   await page.route('**/api/risk', route => route.fulfill({ status: 400, json: { error: '입력값을 확인하세요.' } }));
-  await page.goto('/risk'); const input = page.getByLabel('1회 주문 한도 (원)', { exact: true });
+  await page.goto('/settings/trading/general'); const input = page.getByLabel('1회 주문 한도 (원)', { exact: true });
   await input.fill('700000'); await page.getByRole('button', { name: '한도 저장', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('입력값을 확인하세요.');
   await expect(input).toHaveValue('700000'); await expect(page.getByText('저장하지 않은 변경이 있습니다.', { exact: true })).toBeVisible();
@@ -87,7 +87,7 @@ test('successful risk save followed by unavailable polling retains the submitted
   const state = snapshot(); let fail = false;
   await page.route('**/api/state', route => fail ? route.fulfill({ status: 503, json: {} }) : route.fulfill({ json: state }));
   await page.route('**/api/risk', route => { fail = true; return route.fulfill({ json: {} }); });
-  await page.goto('/risk'); const input = page.getByLabel('1회 주문 한도 (원)', { exact: true });
+  await page.goto('/settings/trading/general'); const input = page.getByLabel('1회 주문 한도 (원)', { exact: true });
   await input.fill('700000'); await page.getByRole('button', { name: '한도 저장', exact: true }).click();
   await expect(input).toBeDisabled(); await expect(input).toHaveValue('700000');
 });

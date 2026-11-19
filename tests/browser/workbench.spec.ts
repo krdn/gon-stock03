@@ -7,7 +7,7 @@ test('stored risk limits hydrate after reload without overwriting user edits on 
   const before = (await (await request.get('/api/state')).json()).risk;
   await request.post('/api/risk', { headers: { 'X-Workbench': 'local' }, data: { maxOrder: 500000, maxPosition: 3000000, dailyLoss: 250000 } });
   try {
-    await page.clock.install(); await page.goto('/risk');
+    await page.clock.install(); await page.goto('/settings/trading/general');
     await expect(page.getByLabel('1회 주문 한도 (원)', { exact: true })).toHaveValue('500000');
     await page.getByLabel('1회 주문 한도 (원)', { exact: true }).fill('600000');
     await request.post('/api/risk', { headers: { 'X-Workbench': 'local' }, data: { maxOrder: 500000, maxPosition: 3500000, dailyLoss: 250000 } });
@@ -90,12 +90,12 @@ test('strategy saves, automatic replay advances, backtest computes, halt stops a
   await page.goto('/risk'); await page.getByRole('button', { name: '신규 주문 허용' }).click();
   await page.goto('/backtest'); await page.getByRole('combobox', { name: '데이터 출처', exact: true }).selectOption('demo'); await page.getByRole('button', { name: '백테스트 실행' }).click(); await expect(page.getByRole('heading', { name: '자산 곡선' })).toBeVisible();
 });
-test('journal treats input as text and saves; missing KIS credentials show failure rather than success', async ({ page }) => {
+test('journal treats input as text and saves; missing KIS credentials show recovery before querying', async ({ page }) => {
   await page.goto('/journal'); const text = '<script>alert("not code")</script> 규칙을 지켰다.';
   await page.getByLabel('매매 메모').fill(text); await page.getByRole('button', { name: '일지 저장' }).click();
   await page.reload(); await expect(page.getByText(text, { exact: true })).toBeVisible();
-  await page.goto('/settings'); await page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' }).click();
-  await expect(page.getByRole('alert')).toContainText('환경변수'); await expect(page.getByText('조회 확인', { exact: true })).toHaveCount(0);
+  await page.goto('/settings'); await expect(page.getByRole('button', { name: '모의 잔고 조회' })).toBeDisabled();
+  await expect(page.getByLabel('연결 복구 안내')).toContainText('Infisical'); await expect(page.getByRole('heading', { name: '모의 잔고를 확인했습니다' })).toHaveCount(0);
   await page.goto('/paper'); await expect(page.getByRole('button', { name: 'KIS 모의 주문 확인', exact: true })).toBeDisabled();
 });
 test('journal rejects empty and whitespace notes without losing the draft', async ({ page }) => {

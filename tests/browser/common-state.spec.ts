@@ -94,8 +94,8 @@ test('KIS partial data keeps last complete money visibly separate from DEMO acro
   const failed = page.waitForResponse('**/api/state'); await page.clock.fastForward(3500); await failed;
   await expect(page.getByLabel('KIS 계좌 상태', { exact: true })).toContainText('부분실패');
   await expect(page.getByText('123,456원', { exact: true })).toBeVisible();
-  await expect(page.getByText('이전 전체 성공값 · 최신 아님', { exact: true })).toBeVisible();
-  await expect(page.getByText('조회 확인', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('이전 조회 잔고', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '모의 잔고를 확인했습니다' })).toHaveCount(0);
   await page.getByRole('navigation').getByRole('link', { name: 'KIS 모의 매매', exact: true }).click();
   await expect(page.getByLabel('KIS 계좌 상태', { exact: true })).toContainText('부분실패');
   await expect(page.getByText('123,456원', { exact: true })).toBeVisible();
@@ -114,7 +114,7 @@ test('KIS success becomes stale with time even while local polling succeeds', as
   await page.clock.fastForward(61_000);
   await expect(page.getByLabel('로컬 상태', { exact: true })).toContainText('정상');
   await expect(page.getByLabel('KIS 계좌 상태', { exact: true })).toContainText('오래됨');
-  await expect(page.getByText('조회 확인', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '모의 잔고를 확인했습니다' })).toHaveCount(0);
 });
 
 test('emergency halt remains visible on every screen including mobile', async ({ page }) => {
@@ -135,7 +135,7 @@ test('loss of local transport clears KIS loading and ready instead of claiming b
   const state = snapshot(); let offline = false;
   await page.route('**/api/state', route => offline ? route.fulfill({ status: 503, body: 'fixture-secret' }) : route.fulfill({ json: state }));
   await page.route('**/api/kis/check', async route => { offline = true; await route.abort(); });
-  await page.goto('/settings'); await page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' }).click();
+  await page.goto('/settings'); await page.getByRole('button', { name: '모의 잔고 조회' }).click();
   await expect(page.getByLabel('로컬 상태', { exact: true })).toContainText('오래됨');
   await expect(page.getByLabel('KIS 계좌 상태', { exact: true })).toContainText('미연결');
   await expect(page.getByLabel('KIS 계좌 상태', { exact: true })).not.toContainText('로딩');
@@ -171,7 +171,7 @@ test('revision regression also clears the account loading state after a check', 
   const state = { ...snapshot(), revision: 20 };
   await page.route('**/api/state', route => route.fulfill({ json: state }));
   await page.route('**/api/kis/check', async route => { state.revision = 1; await route.fulfill({ json: {} }); });
-  await page.goto('/settings'); await page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' }).click();
+  await page.goto('/settings'); await page.getByRole('button', { name: '모의 잔고 조회' }).click();
   await expect(page.getByRole('group', { name: '로컬 상태', exact: true })).toContainText('이전 버전');
   await expect(page.getByRole('group', { name: 'KIS 계좌 상태', exact: true })).toContainText('미연결');
 });
