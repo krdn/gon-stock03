@@ -7,7 +7,7 @@ test('stored risk limits hydrate after reload without overwriting user edits on 
   const before = (await (await request.get('/api/state')).json()).risk;
   await request.post('/api/risk', { headers: { 'X-Workbench': 'local' }, data: { maxOrder: 500000, maxPosition: 3000000, dailyLoss: 250000 } });
   try {
-    await page.clock.install(); await page.goto('/risk');
+    await page.clock.install(); await page.goto('/settings/trading/general');
     await expect(page.getByLabel('1회 주문 한도 (원)', { exact: true })).toHaveValue('500000');
     await page.getByLabel('1회 주문 한도 (원)', { exact: true }).fill('600000');
     await request.post('/api/risk', { headers: { 'X-Workbench': 'local' }, data: { maxOrder: 500000, maxPosition: 3500000, dailyLoss: 250000 } });

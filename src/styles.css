@@ -175,3 +175,12 @@
   .settings-holdings li { grid-template-columns: minmax(0, 1fr); }
   .settings-summary { margin: 14px 0; }
 }
+.plan-menu,.plan-page{display:grid;gap:16px;max-width:780px}
+.plan-link{display:flex;align-items:center;gap:16px;color:var(--navy)}
+.plan-link>span{flex:1}
+.plan-link strong,.plan-link small{display:block}
+.plan-link small{margin-top:5px;color:var(--muted)}
+.plan-fields{border:0;margin:12px 0;padding:0;min-width:0}
+.plan-fields>.field,.plan-fields>details,.plan-fields>.button-row{margin:14px 0}
+.plan-page code,.plan-page dd{overflow-wrap:anywhere}
+.plan-page .top-gap{margin-top:0}

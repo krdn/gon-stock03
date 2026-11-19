@@ -9,10 +9,7 @@ import { authenticationStatus } from '../../shared/status';
 
 export function Risk() {
   const { state, act, busy, available, connection, paperRisk } = useWorkbench();
-  const [maxOrder, setMaxOrder] = useState(state.risk.maxOrder), [maxPosition, setMaxPosition] = useState(state.risk.maxPosition), [dailyLoss, setDailyLoss] = useState(state.risk.dailyLoss);
-  const [dirty, setDirty] = useState(false), [environment, setEnvironment] = useState<'demo' | 'kis'>('demo');
-  const editVersion = useRef(0);
-  useEffect(() => { if (!dirty && available) { setMaxOrder(state.risk.maxOrder); setMaxPosition(state.risk.maxPosition); setDailyLoss(state.risk.dailyLoss); } }, [dirty, available, state.risk.maxOrder, state.risk.maxPosition, state.risk.dailyLoss]);
+  const [environment, setEnvironment] = useState<'demo' | 'kis'>('demo');
   const demo = environment === 'demo';
   const ordersAge = paperRisk?.orders ? Date.now() - Date.parse(paperRisk.orders.observedAt) : Infinity;
   const known = available && (demo || (connection.connected && connection.status.complete && connection.balance && paperRisk?.orders && ordersAge >= 0 && ordersAge < 60000 && paperRisk.unresolvedCount === 0));
@@ -24,20 +21,9 @@ export function Risk() {
   const loss = baseline != null && currentEquity != null ? Math.max(0, baseline - currentEquity) : null;
   const resumeBlocked = state.risk.halted && (!paperRisk || paperRisk.unresolvedCount > 0);
   const changes = state.events.filter(e => ['위험 한도 변경', '신규 주문 긴급정지', '신규 주문 허용', '위험관리 요청 차단', '주문 요청 차단', '전략 주문 차단'].includes(e.title)).slice(0, 5);
-  async function save(e: React.FormEvent) {
-    e.preventDefault(); const submittedVersion = editVersion.current;
-    try { await act('risk', { maxOrder, maxPosition, dailyLoss }); if (editVersion.current === submittedVersion) setDirty(false); } catch { /* Workspace displays the failure. */ }
-  }
-  const edit = () => { editVersion.current++; setDirty(true); };
   return <>
     <div className="stats-grid three"><Stat label="1회 주문 한도" value={available ? `${won(state.risk.maxOrder)}원` : '미확인'} sub="주문 1건의 지정가 × 수량" /><Stat label="종목별 한도" value={available ? `${won(state.risk.maxPosition)}원` : '미확인'} sub="보유 평가액 + 미체결 매수 + 신규 매수" /><Stat label="공통 손실 한도" value={available ? `${won(state.risk.dailyLoss)}원` : '미확인'} sub="매수·매도 모두 검사 · 환경별 기준 분리" /></div>
-    <div className="grid-main"><Panel title="매매 한도" action={<ShieldCheck size={20} />}><form onSubmit={save}>
-      <label className="field">1회 주문 한도 (원)<input type="number" min="10000" max="100000000" step="1" required disabled={!available} value={maxOrder} onChange={e => { edit(); setMaxOrder(Number(e.target.value)); }} /></label>
-      <label className="field">종목별 최대 투자금 (원)<input type="number" min="10000" max="100000000" step="1" required disabled={!available} value={maxPosition} onChange={e => { edit(); setMaxPosition(Number(e.target.value)); }} /></label>
-      <label className="field">공통 손실 한도 (원)<input type="number" min="1000" max="100000000" step="1" required disabled={!available} value={dailyLoss} onChange={e => { edit(); setDailyLoss(Number(e.target.value)); }} /></label>
-      <p className="muted prose">금액 한도는 DEMO 수동·전략과 KIS 모의 수동·전략 주문에 공통 적용됩니다. KIS 전략은 실시간·승인 검사도 통과해야 합니다. 이미 접수된 주문은 한도 변경으로 취소되지 않습니다.</p>
-      {dirty && <p role="status">저장하지 않은 변경이 있습니다.</p>}<button className="button primary" disabled={!available || busy}>한도 저장</button>
-    </form></Panel><Panel title="긴급정지" className="risk-panel"><div className="risk-symbol"><AlertTriangle size={32} /></div><h3>{state.risk.halted ? '신규 주문 정지 중' : '신규 주문을 멈출 수 있어요'}</h3>
+    <div className="grid-main"><Panel title="매매 한도"><Link className="button secondary" to="/settings/trading/general?from=risk">매매 한도 변경</Link></Panel><Panel title="긴급정지" className="risk-panel"><div className="risk-symbol"><AlertTriangle size={32} /></div><h3>{state.risk.halted ? '신규 주문 정지 중' : '신규 주문을 멈출 수 있어요'}</h3>
       <p className="prose">정지하면 수동·전략의 신규 주문을 차단하고 모든 전략을 정지합니다. 보유자산을 매도하거나 접수된 주문을 취소하지는 않습니다. 정지 상태는 서버를 다시 시작해도 유지됩니다.</p>
       {paperRisk && paperRisk.unresolvedCount > 0 && <p role="alert">KIS 불명·전송 중 {paperRisk.unresolvedCount}건 · 대조 전 재개 금지</p>}
       {state.risk.halted && !paperRisk && <p role="status">주문 원장 상태 미확인 · 새로고침 후 재개하세요.</p>}
