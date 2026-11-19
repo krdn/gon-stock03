@@ -1,5 +1,5 @@
 import { DEFAULT_PAPER_MAX_QTY, MAX_ORDER_QTY, paperRecoveryInput, type PaperOrderInput, type PaperRecoveryInput } from '../shared/contracts.ts';
-import type { PaperOrder, BrokerOrder, PaperEvidence, ConnectionState, PaperRiskSnapshot } from '../shared/model.ts';
+import type { PaperOrder, BrokerOrder, PaperEvidence, ConnectionState, PaperRiskSnapshot, KisQuote } from '../shared/model.ts';
 import { KisClient, KisRejected, KisNotSent, koreaDate } from './kis.ts';
 import { Store } from './store.ts';
 import { halt } from './engine.ts';
@@ -9,6 +9,46 @@ import { z } from 'zod';
 
 export const paperApprovalSchema = z.object({ date: z.iso.date(), requestId: z.uuid(), ledgerPath: z.string().min(1).optional(), accountFingerprint: z.string().regex(/^[0-9a-f]{64}$/).optional(), cancelProbe: z.literal(true).optional(), code: z.enum(['069500', '005930']).optional(), maxQty: z.int().positive().max(MAX_ORDER_QTY).optional(), maxAmount: z.number().int().positive().max(300000).optional(), orderType: z.literal('market').optional(), allowExistingHolding: z.literal(true).optional() }).strict().refine(v => Boolean(v.ledgerPath) === Boolean(v.accountFingerprint), '한정 실행의 전용 원장과 계좌 바인딩이 필요합니다.').refine(value => value.orderType !== 'market' || (value.code === '005930' && !value.cancelProbe && (value.maxQty ?? 1) === 1), '시장가는 삼성전자 매수1회·API 취소 없음 승인만 지원합니다.').refine(value => value.orderType === 'market' || (value.maxAmount ?? 100000) <= 200000, '지정가 승인 상한은 20만원입니다.');
 export type PaperApproval = z.infer<typeof paperApprovalSchema>;
+
+// Only the isolated broker probe supplies this contract. File, JSON and draft entry points use the legacy schema.
+const sessionTime = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
+const krxSession = z.object({ date: z.iso.date(), open: sessionTime, close: sessionTime }).strict();
+export type PaperKrxSession = z.infer<typeof krxSession>;
+const lowerLimitApprovalSchema = paperApprovalSchema.safeExtend({
+  krxSession,
+  lowerLimitPrice: z.int().positive(),
+  ledgerPath: z.string().min(1),
+  accountFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+  code: z.literal('005930'),
+}).refine(a => a.krxSession.date === a.date && a.krxSession.open < a.krxSession.close
+  && a.krxSession.open < '15:30' && a.krxSession.close > '09:00'
+  && ![0, 6].includes(new Date(a.date + 'T12:00:00+09:00').getUTCDay()),
+  '승인 거래일과 KRX 정규장 시간창을 확인하세요.').refine(a => a.ledgerPath !== ':memory:' && !a.orderType && !a.cancelProbe && a.lowerLimitPrice <= (a.maxAmount ?? 100000),
+  '하한가 검증에는 단가를 감당하는 삼성전자 지정가 전용 원장과 취소 없는 승인이 필요합니다.');
+
+function kospiStockTick(price: number) {
+  if (price < 2000) return 1;
+  if (price < 5000) return 5;
+  if (price < 20000) return 10;
+  if (price < 50000) return 50;
+  if (price < 200000) return 100;
+  if (price < 500000) return 500;
+  return 1000;
+}
+
+function checkApprovedLimit(price: number, quote: KisQuote, lowerLimitPrice?: number) {
+  let tick = quote.tickSize;
+  if (lowerLimitPrice === undefined) {
+    if (price !== quote.price) throw new Error(`승인 지정가 불일치: 지정가 ${price}원, 재조회 현재가 ${quote.price}원.`);
+  } else {
+    if (price !== lowerLimitPrice || price !== quote.lower) throw new Error('지정가·고정 단가·재조회 하한가가 일치해야 합니다.');
+    if (quote.liquidation !== false || !Number.isSafeInteger(quote.price) || !Number.isSafeInteger(quote.upper)
+      || quote.lower > quote.price || quote.price > quote.upper || quote.tickSize !== kospiStockTick(quote.price)
+      || quote.price % quote.tickSize !== 0) throw new Error('재조회 시세의 가격 범위·호가단위·정리매매 상태를 확인하세요.');
+    tick = kospiStockTick(price);
+  }
+  if (!Number.isSafeInteger(tick) || tick <= 0 || price % tick !== 0) throw new Error(`승인 호가 단위 오류: 지정가 ${price}원, 호가 단위 ${tick}원.`);
+}
 
 function withinApproval(approval: PaperApproval, qty: number, price: number) {
   return Number.isSafeInteger(qty) && qty >= 1 && qty <= (approval.maxQty ?? 1) &&
@@ -40,15 +80,18 @@ export class PaperBroker {
   private restoredApproval = false;
   private queue: Promise<unknown> = Promise.resolve();
   private riskOrders: (NonNullable<PaperRiskSnapshot['orders']> & { day: string }) | null = null;
-  constructor(private store: Store, private kis: KisClient, private approval?: PaperApproval, private contract?: StrategyContract) {
+  constructor(private store: Store, private kis: KisClient, private approval?: PaperApproval & { lowerLimitPrice?: number; krxSession?: PaperKrxSession }, private contract?: StrategyContract) {
     if (contract) {
       this.contract = strategyContractSchema.parse(contract);
       if (approval || store.path !== contract.ledgerPath || kis.accountFingerprint() !== contract.accountFingerprint) throw new Error('전략 계약의 승인·원장·계좌 설정이 다릅니다.');
       store.bindStrategyContract(this.contract);
     } else if (store.strategyContract()) throw new Error('원장에 고정된 전략 계약이 필요합니다.');
     if (!approval && store.hasPaperRun()) throw new Error('저장된 1회 승인 설정이 필요합니다. 제한 없이 재시작할 수 없습니다.');
+    if (approval) {
+      this.approval = 'lowerLimitPrice' in approval ? lowerLimitApprovalSchema.parse(approval) : paperApprovalSchema.parse(approval);
+    }
     if (approval?.ledgerPath && (approval.ledgerPath !== store.path || approval.accountFingerprint !== kis.accountFingerprint())) throw new Error('승인된 전용 원장·계좌가 아닙니다.');
-    if (approval && store.configurePaperRun(paperApprovalSchema.parse(approval))) {
+    if (this.approval && store.configurePaperRun(this.approval, this.approval.lowerLimitPrice !== undefined)) {
       this.restoredApproval = true;
       kis.limitRequestsFor(0);
       store.update(state => halt(state, true));
@@ -80,8 +123,12 @@ export class PaperBroker {
     return { day, baselineEquity: this.store.paperBaselineValue(day), unresolvedCount: this.store.paperOrders().filter(o => o.status === 'unknown' || o.status === 'sending').length, orders: this.riskOrders?.day === day ? this.riskOrders : null };
   }
   private checkWindow() {
+    if (!this.approval) return;
+    const { date, krxSession } = this.approval;
+    const open = krxSession && krxSession.open > '09:00' ? krxSession.open : '09:00';
+    const close = krxSession && krxSession.close < '15:30' ? krxSession.close : '15:30';
     const now = Date.now();
-    if (this.approval && (now < Date.parse(`${this.approval.date}T09:00:00+09:00`) || now >= Date.parse(`${this.approval.date}T15:30:00+09:00`))) throw new KisNotSent('승인된 수동 실행 시간창 밖입니다.');
+    if (now < Date.parse(`${date}T${open}:00+09:00`) || now >= Date.parse(`${date}T${close}:00+09:00`)) throw new KisNotSent('승인된 수동 실행 시간창 밖입니다.');
   }
   private enqueue<T>(run: () => Promise<T>): Promise<T> {
     const job = this.queue.catch(() => {}).then(run); this.queue = job; return job;
@@ -243,13 +290,12 @@ export class PaperBroker {
       if (this.store.paperOrders().some(o => o.status === 'unknown')) throw new Error('계좌 대조 중 응답 불명 주문이 확인되었습니다.');
       if (this.approval && (brokerOrders.some(o => o.remaining > 0) || (!this.approval.allowExistingHolding && balance.positions.some(p => p.code === input.code && p.qty > 0)) || balance.cash <= input.price)) throw new Error('승인 조건의 빈 보유·미체결 없음·현금 여유를 충족하지 못했습니다.');
       const quoteStarted = performance.now(), quoteStartedAt = Date.now();
-      const quote = await this.kis.quote(input.code, true);
+      const quote = await this.kis.quote(input.code, this.approval?.lowerLimitPrice === undefined ? true : 'identified');
       checkSignal?.();
       const quoteReceived = performance.now();
       if (this.approval) {
         if (quoteReceived - quoteStarted > 5000 || Date.now() - quoteStartedAt > 5000) throw new Error('승인 시세 조회 지연: 5초를 초과했습니다.');
-        if (!market && input.price !== quote.price) throw new Error(`승인 지정가 불일치: 지정가 ${input.price}원, 재조회 현재가 ${quote.price}원.`);
-        if (!market && (!Number.isSafeInteger(quote.tickSize) || quote.tickSize <= 0 || input.price % quote.tickSize !== 0)) throw new Error(`승인 호가 단위 오류: 지정가 ${input.price}원, 호가 단위 ${quote.tickSize}원.`);
+        if (!market) checkApprovedLimit(input.price, quote, this.approval.lowerLimitPrice);
       }
       const valuationPrice = market ? quote.upper : input.price;
       if (market && (!Number.isSafeInteger(valuationPrice) || valuationPrice < quote.price || valuationPrice <= 0 || valuationPrice > (this.approval!.maxAmount ?? 100000))) throw new Error('시장가 상한가가 승인 금액을 초과하거나 유효하지 않습니다.');

@@ -1,21 +1,33 @@
 {
-  "checked_at": "2026-11-19T03:46:08.890035+00:00",
-  "objective": "Opus 5.5 설계 판정에 따른 매매 설정 UI와 전용 실행 고정본 연결",
+  "checked_at": "2026-11-19T04:29:33.145454+00:00",
+  "objective": "#123 고정한 하한가 지정가의 격리 검증 및 후속 서버 정책 집행 범위 확인",
   "sources": [
     {
-      "url": "https://design-system.service.gov.uk/components/tabs/",
-      "finding": "페이지 간 탐색이나 여러 섹션 비교를 탭으로 처리할 때 생기는 문제와 대안을 설명한다."
+      "url": "https://github.com/koreainvestment/open-trading-api/blob/74b0a082fa67a0be5bf53f561719c853890ed2df/examples_llm/domestic_stock/order_cash/order_cash.py",
+      "finding": "KRX 모의 지정가 매수 VTTC0012U, ORD_DVSN=00, 수량·단가 문자열."
     },
     {
-      "url": "https://www.w3.org/WAI/tutorials/forms/multi-page/",
-      "finding": "논리적인 단계로 폼을 나누고 페이지 제목과 단계 위치를 제공한다."
+      "url": "https://github.com/koreainvestment/open-trading-api/blob/74b0a082fa67a0be5bf53f561719c853890ed2df/examples_llm/domestic_stock/inquire_psbl_order/inquire_psbl_order.py",
+      "finding": "VTTC8908R, 미수 없는 가능수량을 위한 01 조회와 nrcvb_buy_qty·nrcvb_buy_amt."
     },
     {
-      "url": "https://design-system.service.gov.uk/patterns/check-answers/",
-      "finding": "최종 검토와 항목별 수정·입력 보존을 제공한다."
+      "url": "https://github.com/koreainvestment/open-trading-api/blob/74b0a082fa67a0be5bf53f561719c853890ed2df/examples_llm/domestic_stock/inquire_price/chk_inquire_price.py",
+      "finding": "현재가·상한가·하한가·호가단위·임시정지·단축코드·정리매매 응답 필드."
+    },
+    {
+      "url": "https://github.com/koreainvestment/open-trading-api/blob/74b0a082fa67a0be5bf53f561719c853890ed2df/examples_llm/domestic_stock/chk_holiday/chk_holiday.py",
+      "finding": "CTCA0903R의 opnd_yn은 날짜별 개장 여부. 특별일의 시작·종료 시각은 별도 근거가 필요하다."
+    },
+    {
+      "url": "https://global.krx.co.kr/contents/GLB/06/0602/0602010201/GLB0602010201T3.jsp",
+      "finding": "유가증권시장 주식 호가단위는 호가의 가격대에 따라 결정된다."
+    },
+    {
+      "url": "https://kind.krx.co.kr/external/2026/11/05/000141/20261105000216/99303.htm",
+      "finding": "2026-11-19 KRX 유가증권시장 주식·ETF의 정규장이 10:00~16:30 KST로 변경됐다."
     }
   ],
-  "decisions": "현행 승인 스키마만 편집한다. 저장·고정·시작 분리, 전용 원장·계좌 고정, 기존 계약 재사용 방지.",
+  "decisions": "삼성전자 KRX 매수에 한해 새 전용 원장에 단가를 고정한 하한가 후보를 fake transport로 시험한다. 제품의 승인 JSON·고정 파일·초안 입력은 현행 규격을 유지한다. 다른 정책과 #25 실증은 별도로 판정한다.",
   "status": "reviewed",
   "task_contexts": [
     {
@@ -573,6 +585,38 @@
         }
       ],
       "decisions": "현행 승인 스키마만 편집한다. 저장·고정·시작 분리, 전용 원장·계좌 고정, 기존 계약 재사용 방지."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/123",
+      "checked_at": "2026-11-19T04:29:33.145454+00:00",
+      "objective": "#123 고정한 하한가 지정가의 격리 검증 및 후속 서버 정책 집행 범위 확인",
+      "sources": [
+        {
+          "url": "https://github.com/koreainvestment/open-trading-api/blob/74b0a082fa67a0be5bf53f561719c853890ed2df/examples_llm/domestic_stock/order_cash/order_cash.py",
+          "finding": "KRX 모의 지정가 매수 VTTC0012U, ORD_DVSN=00, 수량·단가 문자열."
+        },
+        {
+          "url": "https://github.com/koreainvestment/open-trading-api/blob/74b0a082fa67a0be5bf53f561719c853890ed2df/examples_llm/domestic_stock/inquire_psbl_order/inquire_psbl_order.py",
+          "finding": "VTTC8908R, 미수 없는 가능수량을 위한 01 조회와 nrcvb_buy_qty·nrcvb_buy_amt."
+        },
+        {
+          "url": "https://github.com/koreainvestment/open-trading-api/blob/74b0a082fa67a0be5bf53f561719c853890ed2df/examples_llm/domestic_stock/inquire_price/chk_inquire_price.py",
+          "finding": "현재가·상한가·하한가·호가단위·임시정지·단축코드·정리매매 응답 필드."
+        },
+        {
+          "url": "https://github.com/koreainvestment/open-trading-api/blob/74b0a082fa67a0be5bf53f561719c853890ed2df/examples_llm/domestic_stock/chk_holiday/chk_holiday.py",
+          "finding": "CTCA0903R의 opnd_yn은 날짜별 개장 여부. 특별일의 시작·종료 시각은 별도 근거가 필요하다."
+        },
+        {
+          "url": "https://global.krx.co.kr/contents/GLB/06/0602/0602010201/GLB0602010201T3.jsp",
+          "finding": "유가증권시장 주식 호가단위는 호가의 가격대에 따라 결정된다."
+        },
+        {
+          "url": "https://kind.krx.co.kr/external/2026/11/05/000141/20261105000216/99303.htm",
+          "finding": "2026-11-19 KRX 유가증권시장 주식·ETF의 정규장이 10:00~16:30 KST로 변경됐다."
+        }
+      ],
+      "decisions": "삼성전자 KRX 매수에 한해 새 전용 원장에 단가를 고정한 하한가 후보를 fake transport로 시험한다. 제품의 승인 JSON·고정 파일·초안 입력은 현행 규격을 유지한다. 다른 정책과 #25 실증은 별도로 판정한다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."

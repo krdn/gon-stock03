@@ -133,12 +133,12 @@ export class KisClient {
     }
   }
   private accountParams() { return { CANO: this.credentials.account, ACNT_PRDT_CD: this.credentials.product }; }
-  async quote(code: string, fresh = false): Promise<KisQuote> {
+  async quote(code: string, fresh: boolean | 'identified' = false): Promise<KisQuote> {
     const cached = this.quotes.get(code);
     if (!fresh && cached && Date.now() - Date.parse(cached.receivedAt) < QUOTE_REFRESH_MS) return cached;
     const pending = this.quoteRequests.get(code);
     if (!fresh && pending) return pending;
-    const request = this.loadQuote(code);
+    const request = this.loadQuote(code, fresh === 'identified');
     if (!fresh) this.quoteRequests.set(code, request);
     try {
       const quote = await request;
@@ -146,11 +146,12 @@ export class KisClient {
       this.quotes.set(code, quote); return quote;
     } finally { if (!fresh) this.quoteRequests.delete(code); }
   }
-  private async loadQuote(code: string): Promise<KisQuote> {
+  private async loadQuote(code: string, requireIdentity: boolean): Promise<KisQuote> {
     const { data } = await this.request('/uapi/domestic-stock/v1/quotations/inquire-price', 'FHKST01010100', { FID_COND_MRKT_DIV_CODE: 'J', FID_INPUT_ISCD: code });
-    const parsed = z.object({ output: z.object({ stck_prpr: amount, prdy_ctrt: z.string().regex(/^-?\d+(\.\d+)?$/).transform(Number).refine(Number.isFinite), stck_mxpr: amount, stck_llam: amount, aspr_unit: amount, temp_stop_yn: z.enum(['Y', 'N']), acml_vol: amount.refine(Number.isSafeInteger).optional(), bstp_kor_isnm: z.string().optional(), sltr_yn: z.enum(['Y', 'N']).optional(), stck_shrn_iscd: z.string().optional() }) }).safeParse(data);
+    const parsed = z.object({ rt_cd: z.unknown().optional(), output: z.object({ stck_prpr: amount, prdy_ctrt: z.string().regex(/^-?\d+(\.\d+)?$/).transform(Number).refine(Number.isFinite), stck_mxpr: amount, stck_llam: amount, aspr_unit: amount, temp_stop_yn: z.enum(['Y', 'N']), acml_vol: amount.refine(Number.isSafeInteger).optional(), bstp_kor_isnm: z.string().optional(), sltr_yn: z.enum(['Y', 'N']).optional(), stck_shrn_iscd: z.string().optional() }) }).safeParse(data);
     if (!parsed.success || parsed.data.output.stck_prpr <= 0 || (parsed.data.output.stck_shrn_iscd !== undefined && parsed.data.output.stck_shrn_iscd !== code)) throw new Error('KIS 현재가 응답을 확인할 수 없습니다.');
     const q = parsed.data.output;
+    if (requireIdentity && (parsed.data.rt_cd !== '0' || q.stck_shrn_iscd !== code)) throw new Error('KIS 시세의 성공 코드·응답 종목을 확인하세요.');
     return { code, price: q.stck_prpr, change: q.prdy_ctrt, upper: q.stck_mxpr, lower: q.stck_llam, tickSize: q.aspr_unit, stopped: q.temp_stop_yn === 'Y', receivedAt: new Date().toISOString(), volume: q.acml_vol, sector: q.bstp_kor_isnm, liquidation: q.sltr_yn === undefined ? undefined : q.sltr_yn === 'Y' };
   }
   async bars(code: string): Promise<KisBar[]> {

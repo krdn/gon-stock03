@@ -1,3 +1,4 @@
+import type { PaperKrxSession } from './paper.ts';
 import type { PlanKind, PlanRecord } from '../shared/trading-plan.ts';
 import { DatabaseSync } from 'node:sqlite';
 import { closeSync, constants, fchmodSync, fstatSync, openSync } from 'node:fs';
@@ -166,14 +167,23 @@ export class Store {
     if (!Number.isSafeInteger(amount) || amount <= 0 || amount > contract.maxOrderAmount
       || used.attempts >= contract.maxAttempts || amount > contract.maxTotalAmount - used.amount) throw new Error('전략 계약의 횟수 또는 주문대금 한도를 초과했습니다.');
   }
-  configurePaperRun(approval: { ledgerPath?: string; accountFingerprint?: string; cancelProbe?: true; date: string; requestId: string; code?: string; maxQty?: number; maxAmount?: number; allowExistingHolding?: true; orderType?: 'market' }) {
+  configurePaperRun(approval: { lowerLimitPrice?: number; krxSession?: PaperKrxSession; ledgerPath?: string; accountFingerprint?: string; cancelProbe?: true; date: string; requestId: string; code?: string; maxQty?: number; maxAmount?: number; allowExistingHolding?: true; orderType?: 'market' }, existingOnly = false) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
+      if (existingOnly && (!this.hasPaperRun() || !this.db.prepare('SELECT 1 FROM paper_run WHERE id=1').get())) {
+        throw new Error('하한가 후보는 미리 고정한 새 승인 원장이 필요합니다.');
+      }
       if (this.strategyContract()) throw new Error('전략 계약과 1회 승인 원장을 혼용할 수 없습니다.');
       this.db.exec('CREATE TABLE IF NOT EXISTS paper_run (id INTEGER PRIMARY KEY CHECK(id=1), day TEXT NOT NULL, request_id TEXT NOT NULL, attempted INTEGER NOT NULL DEFAULT 0);');
       const columns = this.db.prepare('PRAGMA table_info(paper_run)').all();
       if (!columns.some(column => column.name === 'binding')) this.db.exec('ALTER TABLE paper_run ADD COLUMN binding TEXT;');
-      const binding = approval.ledgerPath ? JSON.stringify([approval.ledgerPath,approval.accountFingerprint,!!approval.cancelProbe]) : null;
+      const terms: unknown[] = [approval.ledgerPath, approval.accountFingerprint, !!approval.cancelProbe];
+      if (approval.lowerLimitPrice !== undefined) {
+        const session = approval.krxSession;
+        if (!session) throw new Error('하한가 후보의 KRX 세션이 필요합니다.');
+        terms.push('lower-limit-v1', approval.lowerLimitPrice, session.date, session.open, session.close);
+      }
+      const binding = approval.ledgerPath ? JSON.stringify(terms) : null;
       if (!columns.some(column => column.name === 'code')) this.db.exec("ALTER TABLE paper_run ADD COLUMN code TEXT NOT NULL DEFAULT '069500';");
       if (!columns.some(column => column.name === 'max_qty')) this.db.exec('ALTER TABLE paper_run ADD COLUMN max_qty INTEGER NOT NULL DEFAULT 1;');
       if (!columns.some(column => column.name === 'max_amount')) this.db.exec('ALTER TABLE paper_run ADD COLUMN max_amount INTEGER NOT NULL DEFAULT 100000;');
