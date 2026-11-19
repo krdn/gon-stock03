@@ -4,7 +4,7 @@
 
 프로젝트를 처음 볼 때는 [한 장 그림](architecture/figures/gon-stock-overview.png)에서 KIS 모의 주문과 DEMO 연습 흐름을 따라간다. [구조도 작업 #110](https://github.com/krdn/gon-stock03/issues/110)
 
-- **남은 이슈는 #25와 상위 #3·#2·#1.** #123 정책 검증을 완료했고 #20·#12 화면을 사용자가 수용했다. 세 상위 이슈는 #25 장중 실증까지 열린 상태로 둔다. [처리 순서와 검증](verification/2026-11-19-issue-closeout.md)
+- **남은 이슈는 #25와 상위 #3·#2·#1.** #123 정책 검증을 완료했고 #20·#12 화면을 사용자가 수용했다. 11월 20일 KIS 사후 조회에서 원주문 전량 체결·연결 취소 행 0건을 확인했다. [#25 취소 시각·결과 대조 대기](tasks/25-validation.md#다음-정규장-재개). [처리 순서와 검증](verification/2026-11-19-issue-closeout.md)
 - **자동진화 #129 → #130 → #131:** [오프라인 기준선 및 재생](tasks/129-offline.md) · [설계](plans/agent-evolution.md).
 - **오프라인 파일럿 #130:** [거래일지 초안 오류와 관심종목 코드 복사](tasks/130-product.md) · [선행 기준선 PR #133](https://github.com/krdn/gon-stock03/pull/133).
 - **#128 자동진화 설계:** [연구·설계와 인수인계](tasks/128-agent-evolution.md). 첫 구현 후보는 [#129 관심종목 회귀의 오프라인 재생](https://github.com/krdn/gon-stock03/issues/129)이다.

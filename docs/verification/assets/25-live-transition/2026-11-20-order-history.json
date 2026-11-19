@@ -1,0 +1,91 @@
+{
+  "checkedAt": "2026-11-19T15:19:15.671Z",
+  "product": "KIS VTS",
+  "tr": "VTTC0081R",
+  "businessDate": "20261119",
+  "code": "005930",
+  "gets": 2,
+  "oauth": 1,
+  "orderPosts": 0,
+  "cancelPosts": 0,
+  "history": [
+    {
+      "exchange": "KRX",
+      "complete": true,
+      "error": null,
+      "pages": [
+        {
+          "http": 200,
+          "rt_cd": "0",
+          "code": "20310000",
+          "continuation": "E"
+        }
+      ],
+      "returnedRows": 3,
+      "targetCodeRows": 3,
+      "candidates": 1,
+      "original": {
+        "date": "20261119",
+        "orderTime": "145246",
+        "qty": 2,
+        "price": 193100,
+        "filled": 2,
+        "cancelConfirmed": 0,
+        "remaining": 0,
+        "cancelled": "N",
+        "rejected": 0,
+        "orderTypeName": "보통가"
+      },
+      "relatedRows": [],
+      "otherNearbySameSymbolRows": [],
+      "presence": {
+        "orgn_odno": true,
+        "rjct_qty": true,
+        "cncl_cfrm_qty": true,
+        "ord_tmd": true,
+        "ord_gno_brno": true,
+        "cncl_yn": true
+      },
+      "matchedFirstLookup": null
+    },
+    {
+      "exchange": "ALL",
+      "complete": true,
+      "error": null,
+      "pages": [
+        {
+          "http": 200,
+          "rt_cd": "0",
+          "code": "20310000",
+          "continuation": "E"
+        }
+      ],
+      "returnedRows": 3,
+      "targetCodeRows": 3,
+      "candidates": 1,
+      "original": {
+        "date": "20261119",
+        "orderTime": "145246",
+        "qty": 2,
+        "price": 193100,
+        "filled": 2,
+        "cancelConfirmed": 0,
+        "remaining": 0,
+        "cancelled": "N",
+        "rejected": 0,
+        "orderTypeName": "보통가"
+      },
+      "relatedRows": [],
+      "otherNearbySameSymbolRows": [],
+      "presence": {
+        "orgn_odno": true,
+        "rjct_qty": true,
+        "cncl_cfrm_qty": true,
+        "ord_tmd": true,
+        "ord_gno_brno": true,
+        "cncl_yn": true
+      },
+      "matchedFirstLookup": true
+    }
+  ]
+}
