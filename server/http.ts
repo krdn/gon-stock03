@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z, ZodError } from 'zod';
-import { backtestInput, codeSchema, eventReadInput, haltInput, idInput, journalInput, orderInput, paperOrderInput, paperQuantitySetting, paperRecoveryInput, riskInput, storageErrorMessage, strategyInput } from '../shared/contracts.ts';
+import { backtestInput, codeSchema, eventReadInput, haltInput, idInput, journalInput, orderInput, configuredPaperOrderInput, paperOrderInput, paperQuantitySetting, paperRecoveryInput, riskInput, storageErrorMessage, strategyInput } from '../shared/contracts.ts';
 import { advanceTick, backtest, cancelOrder, halt, placeOrder, record } from './engine.ts';
 import { recordConnection, recordKisEvent } from './events.ts';
 import { KisClient, KisFailure } from './kis.ts';
@@ -26,9 +26,9 @@ async function body(req: IncomingMessage, limit = 16384) {
 function json(res: ServerResponse, status: number, data: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(data));
 }
-export function makeServer(store: Store, kis = KisClient.fromEnvironment(), ports = [4303, 4304], approval?: PaperApproval, realtimeOptions?: { config?: RealtimeConfig; connect?: SocketFactory; now?: () => number }, contract?: StrategyContract) {
-  const paper = new PaperBroker(store, kis, approval, contract);
-  const realtime = new Realtime(store, paper, realtimeOptions?.config ?? Realtime.configuration(), realtimeOptions?.connect, realtimeOptions?.now);
+export function makeServer(store: Store, kis = KisClient.fromEnvironment(), ports = [4303, 4304], approval?: PaperApproval, realtimeOptions?: { config?: RealtimeConfig; connect?: SocketFactory; now?: () => number }, contract?: StrategyContract, checkInstrument?: () => void) {
+  const paper = new PaperBroker(store, kis, approval, contract, checkInstrument);
+  const realtime = new Realtime(store, paper, realtimeOptions?.config ?? Realtime.configuration(paper.timingPolicy?.exchangeNotice), realtimeOptions?.connect, realtimeOptions?.now);
   const market = new MarketData(store, kis);
   const instanceId = randomUUID();
   const startedAt = new Date().toISOString();
@@ -107,7 +107,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
           const order = await paper.confirmRecovery(paperRecoveryInput.parse(input)); json(res, 200, { order, message: order.message }); return;
         }
         if (path === '/api/kis/order') {
-          const order = await paper.submit(paperOrderInput.parse(input)); json(res, 200, { order, message: order.message, warning: order.status === 'unknown' || order.status === 'rejected' }); return;
+          const order = await paper.submit((approval?.policy ? configuredPaperOrderInput : paperOrderInput).parse(input)); json(res, 200, { order, message: order.message, warning: order.status === 'unknown' || order.status === 'rejected' }); return;
         }
         if (path === '/api/backtest/daily') { json(res, 200, { experiment: createExperiment(store, input), message: '저장 일봉의 입력과 결과를 보존했습니다.' }); return; }
         if (path === '/api/backtest/replay') { const replay = replayExperiment(store, idInput.parse(input).id); json(res, 200, { ...replay, message: replay.matches ? '고정 입력 재현 결과가 일치합니다.' : '재현 불일치: 엔진·저장 결과를 점검하세요.', warning: !replay.matches }); return; }
@@ -133,10 +133,12 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
             }
             case '/api/strategies': {
               const strategy = strategyInput.parse(input);
-              if (!state.instruments.some(s => s.code === strategy.code)) throw new Error('지원하지 않는 종목입니다.');
+              if (!state.instruments.some(s => s.code === strategy.code) &&
+                  !(strategy.environment === 'kis-paper' && store.masterData().instruments.some(s => s.code === strategy.code && s.tradingHalted === false && s.liquidation === false && ['ST','EF'].includes(s.group)))) throw new Error('지원하지 않는 종목입니다.');
               if (state.strategies.length >= 30) throw new Error('전략은 최대 30개까지 저장할 수 있습니다.');
-              state.strategies.push({ ...strategy, id: randomUUID(), active: false, lastSignal: 'hold', lastTick: -1, revision: 1, run: 0, evaluations: [] });
-              record(state, '전략 저장', strategy.name); return {};
+              const id = randomUUID();
+              state.strategies.push({ ...strategy, id, active: false, lastSignal: 'hold', lastTick: -1, revision: 1, run: 0, evaluations: [] });
+              record(state, '전략 저장', strategy.name); return {id, revision:1};
             }
             case '/api/strategies/toggle': {
               const strategy = state.strategies.find(s => s.id === idInput.parse(input).id);

@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { defaultStrategyPolicy } from '../shared/trading-policy.ts';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
@@ -69,7 +70,7 @@ function fixture(path = ':memory:', approval?: PaperApproval, terms?: Partial<St
     if (path.endsWith('/tokenP')) return Response.json({ access_token: 'test-token', expires_in: 86400 });
     if (path.endsWith('/inquire-balance')) return Response.json({ rt_cd: '0', output1: response.positions, output2: [{ dnca_tot_amt: '10000000', tot_evlu_amt: '10000000' }] });
     if (path.endsWith('/inquire-daily-ccld')) return Response.json({ rt_cd: '0', output1: response.rows });
-    if (path.endsWith('/inquire-price')) return Response.json({ rt_cd: '0', output: { stck_prpr: '70000', prdy_ctrt: '1', stck_mxpr: '91000', stck_llam: '49000', aspr_unit: '100', temp_stop_yn: 'N' } });
+    if (path.endsWith('/inquire-price')) return Response.json({ rt_cd: '0', output: { stck_prpr: '70000', prdy_ctrt: '1', stck_mxpr: '91000', stck_llam: '49000', aspr_unit: '100', temp_stop_yn: 'N', stck_shrn_iscd: '005930', sltr_yn: 'N' } });
     if (path.endsWith('/inquire-psbl-order')) return Response.json({ rt_cd: '0', output: { nrcvb_buy_qty: '100', nrcvb_buy_amt: '10000000', ord_psbl_cash: '10000000' } });
     if (path.endsWith('/order-cash')) return Response.json({ rt_cd: '0', output: { ODNO: String(sentOrders.length).padStart(3, '0'), KRX_FWDG_ORD_ORGNO: '12345' } });
     assert.fail(`unexpected REST endpoint ${path}`);
@@ -762,3 +763,120 @@ test('10분 격리 계약은 매수·매도 신호를 각각 주문에 연결하
     } finally { next.close(); }
   } finally { rmSync(dir, { recursive: true }); }
 });
+
+test('고정한 시세와 원 신호 유효시간이 각각 지연 주문을 제한한다', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: base });
+  for (const [quoteSeconds, signalSeconds, expected] of [
+    [5, 15, 'blocked'],
+    [15, 5, 'blocked'],
+    [15, 15, 'accepted'],
+  ] as const) {
+    const f = fixture(':memory:', undefined, { policy: { ...defaultStrategyPolicy(), quoteSeconds, signalSeconds } });
+    try {
+      const ws = f.start();
+      await f.realtime.reconcile();
+      const id = savedStrategy(f);
+      f.response.before = async (path) => {
+        if (path.endsWith('/inquire-price')) f.setNow(base + 6000);
+      };
+      crossing(ws);
+      const outcome = await evaluated(f, id);
+      assert.equal(outcome.status, expected, outcome.reason);
+      assert.equal(f.sentOrders.length, expected === 'accepted' ? 1 : 0);
+    } finally {
+      f.close();
+    }
+  }
+});
+test('계약 체결분 매도는 기존 계좌 보유만으로 전송하지 않는다', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: base });
+  const f = fixture(':memory:', undefined, { policy: defaultStrategyPolicy(), sellPolicy: 'contract' });
+  try {
+    f.response.positions = [
+      {
+        pdno: '005930',
+        prdt_name: '삼성전자',
+        hldg_qty: '3',
+        ord_psbl_qty: '3',
+        pchs_avg_pric: '70000',
+        prpr: '70000',
+      },
+    ];
+    const ws = f.start();
+    await f.realtime.reconcile();
+    const id = savedStrategy(f);
+    crossing(ws, 'sell');
+    assert.match((await evaluated(f, id)).reason, /계약의 확인된 매수/);
+    assert.equal(f.sentOrders.length, 0);
+  } finally {
+    f.close();
+  }
+});
+
+test('전략 시장가 주문은 단가 0으로 전송하고 KRX 상한가를 SQLite 계약 예산에 예약한다', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: base });
+  for (const cap of [90999, 91000]) {
+    const f = fixture(':memory:', undefined, {
+      policy: { ...defaultStrategyPolicy(), orderType: 'market' },
+      maxOrderAmount: cap,
+      maxTotalAmount: cap,
+    });
+    try {
+      const ws = f.start();
+      await f.realtime.reconcile();
+      const id = savedStrategy(f);
+      crossing(ws);
+      const result = await evaluated(f, id);
+      assert.equal(result.status, cap === 91000 ? 'accepted' : 'blocked', result.reason);
+      assert.equal(f.store.strategyUsage().amount, cap === 91000 ? 91000 : 0);
+      assert.equal(f.sentOrders.length, cap === 91000 ? 1 : 0);
+      if (cap === 91000) {
+        const order = f.store.paperOrders()[0];
+        assert.equal(order.price, 0);
+        assert.equal(order.orderType, 'market');
+      }
+    } finally {
+      f.close();
+    }
+  }
+});
+
+for (const expiry of ['REST 시세', 'KIS 요청창'] as const)
+  test(`확장 전략의 전송 직전 ${expiry} 만료 시 예약을 보존하고 dispatched는 0이다`, async (t) => {
+    const { DatabaseSync } = await import('node:sqlite');
+    t.mock.timers.enable({ apis: ['Date'], now: base });
+    const dir = mkdtempSync(join(tmpdir(), 'strategy-dispatch-ttl-')),
+      path = join(dir, 'run.sqlite');
+    const f = fixture(path, undefined, { policy: { ...defaultStrategyPolicy(), quoteSeconds: 1, signalSeconds: 15 } });
+    try {
+      const ws = f.start();
+      await f.realtime.reconcile();
+      const id = savedStrategy(f);
+      if (expiry === 'REST 시세')
+        f.response.before = async (path) => {
+          if (path.endsWith('/inquire-psbl-order')) t.mock.timers.tick(1001);
+        };
+      else {
+        const save = f.store.savePaper.bind(f.store);
+        t.mock.method(f.store, 'savePaper', (...args: Parameters<typeof save>) => {
+          save(...args);
+          if (args[0].status === 'sending') f.kis.limitRequestsFor(0);
+        });
+      }
+      crossing(ws);
+      const result = await evaluated(f, id);
+      assert.equal(result.status, 'rejected');
+      assert.match(result.reason, expiry === 'REST 시세' ? /1초 유효기간/ : /조회 시간이 종료/);
+      const db = new DatabaseSync(path, { readOnly: true });
+      try {
+        assert.equal(db.prepare('SELECT dispatched FROM strategy_claim').get()?.dispatched, 0);
+      } finally {
+        db.close();
+      }
+      assert.equal(f.store.strategyUsage().attempts, 1);
+      assert.equal(f.sentOrders.length, 0);
+    } finally {
+      f.close();
+      rmSync(dir, { recursive: true });
+    }
+  });

@@ -1,3 +1,4 @@
+import { approvalBinding, type OncePolicy } from '../shared/trading-policy.ts';
 import type { PaperKrxSession } from './paper.ts';
 import type { PlanKind, PlanRecord } from '../shared/trading-plan.ts';
 import { DatabaseSync } from 'node:sqlite';
@@ -146,18 +147,36 @@ export class Store {
     try {
       if (this.hasPaperRun()) throw new Error('1회 승인 원장과 전략 계약을 혼용할 수 없습니다.');
       const body = JSON.stringify(contract);
+      if (!this.strategyContract() && !contract.policy && !this.read().instruments.some(row => row.code === contract.code))
+        throw new Error('확장 종목은 매매설정의 새 전략 정책을 고정해야 합니다.');
       if (!this.strategyContract() && this.paperOrders().some(o => !['filled', 'cancelled', 'rejected'].includes(o.status))) throw new Error('미해결 주문이 있는 원장입니다.');
       this.db.prepare('INSERT OR IGNORE INTO strategy_contract VALUES (1,?)').run(body);
       if (this.strategyContract() !== body) throw new Error('원장에 고정된 전략 계약과 다릅니다.');
       this.db.exec('COMMIT');
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
-  markStrategyDispatch(order: PaperOrder) {
-    const result = this.db.prepare(`UPDATE strategy_claim SET dispatched=1
-      WHERE request_id=? AND event=? AND dispatched=0
-      AND EXISTS (SELECT 1 FROM paper_orders WHERE request_id=? AND body=?)`)
-      .run(order.requestId, order.strategy!.event, order.requestId, JSON.stringify(order));
-    return result.changes === 1;
+  markStrategyDispatch(order: PaperOrder, beforeDispatch?: () => void) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      beforeDispatch?.();
+      const result = this.db.prepare(`UPDATE strategy_claim SET dispatched=1
+        WHERE request_id=? AND event=? AND dispatched=0
+        AND EXISTS (SELECT 1 FROM paper_orders WHERE request_id=? AND body=?)`)
+        .run(order.requestId, order.strategy!.event, order.requestId, JSON.stringify(order));
+      this.db.exec('COMMIT');
+      return result.changes === 1;
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  strategyAvailableShares(code: string) {
+    const rows = this.db.prepare('SELECT p.body FROM paper_orders p JOIN strategy_claim c ON c.request_id=p.request_id WHERE c.dispatched=1').all();
+    let shares = 0;
+    for (const row of rows) {
+      const order: PaperOrder = JSON.parse(String(row.body));
+      if (order.code !== code) continue;
+      shares += order.side === 'buy' ? order.filled : -order.filled;
+      if (order.side === 'sell' && ['accepted', 'partial'].includes(order.status)) shares -= order.remaining;
+    }
+    return shares;
   }
   strategyUsage() {
     return this.db.prepare('SELECT COUNT(*) AS attempts, COALESCE(SUM(amount),0) AS amount FROM strategy_claim').get() as { attempts: number; amount: number };
@@ -167,7 +186,7 @@ export class Store {
     if (!Number.isSafeInteger(amount) || amount <= 0 || amount > contract.maxOrderAmount
       || used.attempts >= contract.maxAttempts || amount > contract.maxTotalAmount - used.amount) throw new Error('전략 계약의 횟수 또는 주문대금 한도를 초과했습니다.');
   }
-  configurePaperRun(approval: { lowerLimitPrice?: number; krxSession?: PaperKrxSession; ledgerPath?: string; accountFingerprint?: string; cancelProbe?: true; date: string; requestId: string; code?: string; maxQty?: number; maxAmount?: number; allowExistingHolding?: true; orderType?: 'market' }, existingOnly = false) {
+  configurePaperRun(approval: { policy?: OncePolicy; assetKind?: 'stock' | 'etf'; lowerLimitPrice?: number; krxSession?: PaperKrxSession; ledgerPath?: string; accountFingerprint?: string; cancelProbe?: true; date: string; requestId: string; code?: string; maxQty?: number; maxAmount?: number; allowExistingHolding?: true; orderType?: 'market' }, existingOnly = false) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       if (existingOnly && (!this.hasPaperRun() || !this.db.prepare('SELECT 1 FROM paper_run WHERE id=1').get())) {
@@ -177,13 +196,7 @@ export class Store {
       this.db.exec('CREATE TABLE IF NOT EXISTS paper_run (id INTEGER PRIMARY KEY CHECK(id=1), day TEXT NOT NULL, request_id TEXT NOT NULL, attempted INTEGER NOT NULL DEFAULT 0);');
       const columns = this.db.prepare('PRAGMA table_info(paper_run)').all();
       if (!columns.some(column => column.name === 'binding')) this.db.exec('ALTER TABLE paper_run ADD COLUMN binding TEXT;');
-      const terms: unknown[] = [approval.ledgerPath, approval.accountFingerprint, !!approval.cancelProbe];
-      if (approval.lowerLimitPrice !== undefined) {
-        const session = approval.krxSession;
-        if (!session) throw new Error('하한가 후보의 KRX 세션이 필요합니다.');
-        terms.push('lower-limit-v1', approval.lowerLimitPrice, session.date, session.open, session.close);
-      }
-      const binding = approval.ledgerPath ? JSON.stringify(terms) : null;
+      const binding = approvalBinding(approval);
       if (!columns.some(column => column.name === 'code')) this.db.exec("ALTER TABLE paper_run ADD COLUMN code TEXT NOT NULL DEFAULT '069500';");
       if (!columns.some(column => column.name === 'max_qty')) this.db.exec('ALTER TABLE paper_run ADD COLUMN max_qty INTEGER NOT NULL DEFAULT 1;');
       if (!columns.some(column => column.name === 'max_amount')) this.db.exec('ALTER TABLE paper_run ADD COLUMN max_amount INTEGER NOT NULL DEFAULT 100000;');
@@ -213,7 +226,7 @@ export class Store {
       this.db.exec('COMMIT');
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
-  savePaper(order: PaperOrder, audit?: Omit<PaperAudit, 'id' | 'at' | 'requestId' | 'after'>, contract?: StrategyContract, checkReservation?: () => void) {
+  savePaper(order: PaperOrder, audit?: Omit<PaperAudit, 'id' | 'at' | 'requestId' | 'after'>, contract?: StrategyContract, checkReservation?: () => void, marketAmount?: number) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       if (audit?.action === 'sending') {
@@ -221,9 +234,11 @@ export class Store {
         if (bound !== (contract && JSON.stringify(contract))) throw new Error('원장에 고정된 전략 계약과 전송 설정이 다릅니다.');
         if (contract) {
           checkReservation?.();
-          const amount = order.qty * order.price;
+          const amount = order.orderType === 'market' && contract.policy?.orderType === 'market' ? marketAmount ?? 0 : order.qty * order.price;
           if (!order.strategy) throw new Error('전략 주문 출처가 필요합니다.');
           this.checkStrategyAmount(contract, amount);
+          if (contract.sellPolicy === 'contract' && order.side === 'sell' && order.qty > this.strategyAvailableShares(order.code))
+            throw new Error('이 전략 계약의 확인된 매수 잔량이 부족합니다.');
           if (this.paperOrders().some(o => o.requestId === order.requestId || o.status === 'sending' || o.status === 'unknown')) throw new Error('중복 또는 대조되지 않은 전략 주문입니다.');
           this.db.prepare('INSERT INTO strategy_claim(request_id,event,amount) VALUES (?,?,?)').run(order.requestId, order.strategy.event, amount);
         }

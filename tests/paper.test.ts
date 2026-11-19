@@ -4,7 +4,9 @@ import { randomUUID } from 'node:crypto';
 import { KisClient, koreaDate } from '../server/kis.ts';
 import { paperOrderInput, orderInput, paperLedgerSchema } from '../shared/contracts.ts';
 import { PaperBroker, paperApprovalSchema } from '../server/paper.ts';
-import { onceTerms } from '../shared/trading-plan.ts';
+import { onceTerms, type TradingTerms } from '../shared/trading-plan.ts';
+import { defaultOncePolicy } from '../shared/trading-policy.ts';
+import { activeTerms, fixTradingDraft, readPreparedRun, saveTradingDraft } from '../server/trading-plans.ts';
 import { Store } from '../server/store.ts';
 import { once } from 'node:events';
 import { makeServer } from '../server/http.ts';
@@ -1302,4 +1304,197 @@ test('하한가 후보는 고정한 특별장과 기존 시간창의 교집합�
     assert.equal(f.count(), 0);
     assert.equal(f.store.configurePaperRun(terms), true);
   } finally { f.close(); }
+});
+
+function pinSettings(f: ReturnType<typeof lowerLimitFixture>, terms: Extract<TradingTerms, { kind: 'once' }>) {
+  const draft = saveTradingDraft(f.store, { expectedId: null, terms }).draft;
+  const pin = fixTradingDraft(f.store, f.client, { kind: 'once', expectedId: draft.id }).draft;
+  const file = join(f.store.path, '..', 'trading-runs', 'approval-' + draft.id, 'approval-' + pin.runId + '.json');
+  const prepared = readPreparedRun(file, 'once');
+  assert.ok('requestId' in prepared.config && 'policy' in prepared.config);
+  assert.deepEqual(activeTerms(prepared.config), terms);
+  return { file, config: prepared.config, store: new Store(prepared.path), check: prepared.checkInstrument };
+}
+
+test('제품 설정으로 16:05 하한가 2주를 고정하고 미전송 실패만 직접 재검사한다', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-19T16:05:00+09:00') });
+  const f = lowerLimitFixture(),
+    date = f.approval.date;
+  try {
+    const terms = {
+      kind: 'once',
+      date,
+      code: '005930',
+      orderType: 'limit',
+      maxQty: 2,
+      maxAmount: 300000,
+      allowExistingHolding: true,
+      cancelProbe: false,
+      policy: { ...defaultOncePolicy(date), priceMode: 'lower', limitPrice: 136300, consumeAt: 'validated' },
+    } as const;
+    const pin = pinSettings(f, terms);
+    try {
+      assert.equal(f.requests.length, 0);
+      assert.throws(
+        () =>
+          new PaperBroker(pin.store, f.client, { ...pin.config, policy: { ...pin.config.policy, quoteSeconds: 6 } }),
+        /저장된 1회 승인/,
+      );
+      const broker = new PaperBroker(pin.store, f.client, pin.config, undefined, pin.check);
+      const order = { ...f.order, requestId: pin.config.requestId, qty: 2 };
+      f.response.nonCreditQty = '0';
+      await assert.rejects(broker.submit(order), /미수 없는 매수 가능/);
+      assert.equal(pin.store.configurePaperRun(pin.config), false);
+      assert.equal(pin.store.read().risk.halted, false);
+      assert.equal(f.count(), 0);
+      f.response.nonCreditQty = '2';
+      assert.equal((await broker.submit(order)).status, 'accepted');
+      const wire = JSON.parse(String(f.requests.find((r) => r.url.pathname.endsWith('/order-cash'))?.init?.body));
+      assert.deepEqual([wire.ORD_DVSN, wire.ORD_UNPR, wire.ORD_QTY], ['00', '136300', '2']);
+      assert.equal(pin.store.configurePaperRun(pin.config), true);
+      assert.equal((await broker.submit(order)).filled, 0);
+      assert.equal(f.count(), 1);
+      assert.equal(broker.cancelProbeEnabled(), false);
+    } finally {
+      pin.store.close();
+    }
+  } finally {
+    f.close();
+  }
+});
+
+test('다주 시장가는 고정 조건에서만 허용하고 상한가 총액 및 매도가능수량을 검사한다', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-19T12:00:00+09:00') });
+  for (const mode of ['cash-limit', 'buy', 'sell', 'unavailable'] as const) {
+    const f = lowerLimitFixture(),
+      date = f.approval.date,
+      sell = mode === 'sell' || mode === 'unavailable';
+    try {
+      const pin = pinSettings(f, {
+        kind: 'once',
+        date,
+        code: '069500',
+        orderType: 'market',
+        maxQty: 2,
+        maxAmount: mode === 'cash-limit' ? 300000 : 600000,
+        allowExistingHolding: true,
+        cancelProbe: false,
+        policy: { ...defaultOncePolicy(date), side: sell ? 'sell' : 'buy' },
+      });
+      try {
+        f.response.quoteFields = { stck_shrn_iscd: '069500', sltr_yn: 'N' };
+        if (sell)
+          f.response.positions = [
+            {
+              pdno: '069500',
+              prdt_name: 'ETF',
+              hldg_qty: '3',
+              ord_psbl_qty: mode === 'unavailable' ? '1' : '2',
+              pchs_avg_pric: '50000',
+              prpr: '190700',
+            },
+          ];
+        const port = apiPort++,
+          server = makeServer(pin.store, f.client, [port], pin.config, undefined, undefined, pin.check);
+        server.listen(port, '127.0.0.1');
+        await once(server, 'listening');
+        try {
+          const order = {
+            code: '069500',
+            side: pin.config.policy.side,
+            orderType: 'market',
+            price: 0,
+            qty: 2,
+            requestId: pin.config.requestId,
+          };
+          const res = await fetch(`http://127.0.0.1:${port}/api/kis/order`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' },
+            body: JSON.stringify(order),
+          });
+          const body = await res.json();
+          if (mode === 'cash-limit' || mode === 'unavailable') {
+            assert.equal(res.status, 400);
+            assert.match(body.error, mode === 'cash-limit' ? /상한가/ : /매도 가능/);
+            assert.equal(f.count(), 0);
+          } else {
+            assert.equal(res.status, 200);
+            assert.equal(body.order.status, 'accepted');
+            assert.equal(f.count(), 1);
+            const sent = f.requests.find((r) => r.url.pathname.endsWith('/order-cash'))!;
+            assert.equal(new Headers(sent.init?.headers).get('tr_id'), sell ? 'VTTC0011U' : 'VTTC0012U');
+            const wire = JSON.parse(String(sent.init?.body));
+            assert.deepEqual([wire.PDNO, wire.ORD_DVSN, wire.ORD_QTY, wire.ORD_UNPR], ['069500', '01', '2', '0']);
+          }
+        } finally {
+          await new Promise<void>((resolve) => server.close(() => resolve()));
+        }
+      } finally {
+        pin.store.close();
+      }
+    } finally {
+      f.close();
+    }
+  }
+});
+
+test('확장 종목은 고정 및 전송 시 원본 마스터를 검사하고 만료 뒤에도 대조 원장을 열 수 있다', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-19T12:00:00+09:00') });
+  const f = lowerLimitFixture(),
+    date = f.approval.date;
+  try {
+    const terms = {
+      kind: 'once',
+      date,
+      code: '000660',
+      orderType: 'limit',
+      maxQty: 1,
+      maxAmount: 300000,
+      allowExistingHolding: false,
+      cancelProbe: false,
+      policy: { ...defaultOncePolicy(date), priceMode: 'fixed', limitPrice: 136300 },
+    } as const;
+    const draft = saveTradingDraft(f.store, { expectedId: null, terms }).draft;
+    const fix = () => fixTradingDraft(f.store, f.client, { kind: 'once', expectedId: draft.id }).draft;
+    assert.throws(fix, /마스터/);
+    const master = {
+      exchange: 'KOSPI' as const,
+      source: 'fixture',
+      collectedAt: new Date().toISOString(),
+      sha256: 'a'.repeat(64),
+      rows: [
+        {
+          code: '000660',
+          name: 'SK하이닉스',
+          isin: 'KR7000660001',
+          kind: 'stock' as const,
+          exchange: 'KOSPI' as const,
+          group: 'ST',
+          tradingHalted: false,
+          liquidation: false,
+        },
+      ],
+    };
+    f.store.saveMasters([master]);
+    const pin = fix();
+    const file = join(f.store.path, '..', 'trading-runs', 'approval-' + draft.id, 'approval-' + pin.runId + '.json');
+    f.store.saveMasters([{ ...master, rows: [{ ...master.rows[0], tradingHalted: true }] }]);
+    const prepared = readPreparedRun(file, 'once');
+    assert.throws(() => prepared.checkInstrument!(), /마스터/);
+    assert.ok('requestId' in prepared.config);
+    const run = new Store(prepared.path);
+    try {
+      const broker = new PaperBroker(run, f.client, prepared.config, undefined, prepared.checkInstrument);
+      await assert.rejects(
+        broker.submit({ ...f.order, code: '000660', requestId: prepared.config.requestId }),
+        /마스터/,
+      );
+      assert.equal(f.count(), 0);
+      await broker.refresh();
+    } finally {
+      run.close();
+    }
+  } finally {
+    f.close();
+  }
 });

@@ -79,7 +79,7 @@ export default function App() {
     let message = '요청을 처리하지 못했습니다. 잠시 후 다시 확인하세요.';
     let definitive = false;
     const controller = path === 'kis/check' ? new AbortController() : undefined;
-    const timer = controller ? window.setTimeout(() => controller.abort(), 125_000) : undefined;
+    const timer = controller ? window.setTimeout(() => controller.abort(), ((connection.balanceSeconds ?? 120) + 5) * 1000) : undefined;
     try {
       const response = await fetch('/api/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(body ?? {}), ...(controller ? { signal: controller.signal } : {}) });
       const result = await response.json();

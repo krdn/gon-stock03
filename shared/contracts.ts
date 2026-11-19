@@ -11,7 +11,8 @@ export const MAX_ORDER_QTY = 100000;
 export const paperQuantitySetting = z.object({ maxQty: integer(1, MAX_ORDER_QTY) }).strict();
 export const orderInput = z.object({ code: codeSchema, side: z.enum(['buy', 'sell']), qty: integer(1, MAX_ORDER_QTY), price: integer(1, 10000000), requestId: z.uuid() }).strict();
 export const paperOrderInput = z.union([orderInput, orderInput.extend({ code: z.literal('005930'), side: z.literal('buy'), qty: z.literal(1), price: z.literal(0), orderType: z.literal('market') })]);
-export type PaperOrderInput = z.infer<typeof paperOrderInput>;
+export const configuredPaperOrderInput = z.union([orderInput, orderInput.extend({ price: z.literal(0), orderType: z.literal('market') })]);
+export type PaperOrderInput = z.infer<typeof configuredPaperOrderInput>;
 export const strategyInput = z.object({ name: z.string().trim().min(1).max(60), code: codeSchema, fast: integer(2, 60), slow: integer(3, 100), qty: integer(1, 10000), environment: z.enum(['demo', 'kis-paper']).default('demo') }).strict().refine(v => v.fast < v.slow, '단기 기간은 장기 기간보다 작아야 합니다.');
 export const backtestInput = z.object({ code: codeSchema, fast: integer(2, 60), slow: integer(3, 100), capital: integer(100000, 100000000), feeBps: z.number().min(0).max(100), slippageBps: z.number().min(0).max(100) }).strict().refine(v => v.fast < v.slow, '단기 기간은 장기 기간보다 작아야 합니다.');
 export const riskInput = z.object({ maxOrder: integer(10000, 100000000), maxPosition: integer(10000, 100000000), dailyLoss: integer(1000, 100000000) }).strict();
@@ -25,7 +26,7 @@ export type OrderInput = z.infer<typeof orderInput>;
 
 const paperRunViewSchema = z.discriminatedUnion('active', [
   z.object({ active: z.literal(false) }),
-  z.object({ active: z.literal(true), requestId: z.uuid(), maxQty: paperQuantitySetting.shape.maxQty.default(1) }),
+  z.object({ active: z.literal(true), requestId: z.uuid(), maxQty: paperQuantitySetting.shape.maxQty.default(1), orderType: z.literal('market').optional(), code: codeSchema.optional(), policy: z.object({ side: z.enum(['buy','sell']), limitPrice: z.int().positive().optional() }).optional() }),
 ]);
 
 export const paperCancellationSchema = z.object({
@@ -52,6 +53,7 @@ export const dataStatusSchema = z.object({
 });
 const connectionFailureSchema = z.object({ kind: z.enum(['missing', 'invalid', 'expired', 'permission', 'rate-limit', 'network', 'upstream', 'contract', 'rejected']), message: z.string() });
 export const connectionSchema = z.object({
+  balanceSeconds: z.int().min(1).max(600).optional(),
   checkStartedAt: z.iso.datetime().nullable(),
   configured: z.boolean(), mode: z.literal('paper'), connected: z.boolean(), checkedAt: z.iso.datetime().optional(), message: z.string(),
   status: dataStatusSchema.extend({ environment: z.literal('kis-paper'), source: z.literal('kis-rest') }),
@@ -73,6 +75,6 @@ export const stateSnapshotSchema = z.object({
   journal: z.array(z.object({ id: z.string(), date: z.string(), code: codeSchema, text: z.string() })),
   tick: z.number(), playing: z.boolean(), revision: z.number().int().nonnegative(), updatedAt: z.string(), instanceId: z.string().min(1), startedAt: z.iso.datetime(),
   status: dataStatusSchema.extend({ environment: z.literal('demo'), source: z.literal('synthetic') }), connection: connectionSchema,
-  realtime: z.object({ phase: z.enum(['stopped', 'connecting', 'reconciling', 'ready', 'disconnected', 'error']), required: z.boolean(), ordersAllowed: z.boolean(), message: z.string(), code: codeSchema.nullable(), lastQuoteAt: z.iso.datetime().nullable(), lastNoticeAt: z.iso.datetime().nullable(), reconciledAt: z.iso.datetime().nullable(), price: z.number().positive().nullable(), fresh: z.boolean() }).optional(),
+  realtime: z.object({ quoteSeconds: z.int().positive().max(600).optional(), phase: z.enum(['stopped', 'connecting', 'reconciling', 'ready', 'disconnected', 'error']), required: z.boolean(), ordersAllowed: z.boolean(), message: z.string(), code: codeSchema.nullable(), lastQuoteAt: z.iso.datetime().nullable(), lastNoticeAt: z.iso.datetime().nullable(), reconciledAt: z.iso.datetime().nullable(), price: z.number().positive().nullable(), fresh: z.boolean() }).optional(),
   paperRisk: z.object({ day: z.string().regex(/^\d{8}$/), baselineEquity: z.number().nonnegative().nullable(), unresolvedCount: z.number().int().nonnegative(), orders: z.object({ observedAt: z.iso.datetime(), rows: z.array(z.object({ code: codeSchema, side: z.enum(['buy', 'sell']), price: z.number().nonnegative(), remaining: z.number().int().nonnegative(), cancelled: z.boolean() })) }).nullable() }).optional(),
 }) satisfies z.ZodType<StateSnapshot>;

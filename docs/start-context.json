@@ -1,6 +1,6 @@
 {
-  "checked_at": "2026-11-19T04:29:33.145454+00:00",
-  "objective": "#123 고정한 하한가 지정가의 격리 검증 및 후속 서버 정책 집행 범위 확인",
+  "checked_at": "2026-11-19T05:10:16.373047+00:00",
+  "objective": "#123 매매 테스트 차단 조건을 설정·고정·실제 서버 집행에 연결",
   "sources": [
     {
       "url": "https://github.com/koreainvestment/open-trading-api/blob/74b0a082fa67a0be5bf53f561719c853890ed2df/examples_llm/domestic_stock/order_cash/order_cash.py",
@@ -11,23 +11,19 @@
       "finding": "VTTC8908R, 미수 없는 가능수량을 위한 01 조회와 nrcvb_buy_qty·nrcvb_buy_amt."
     },
     {
-      "url": "https://github.com/koreainvestment/open-trading-api/blob/74b0a082fa67a0be5bf53f561719c853890ed2df/examples_llm/domestic_stock/inquire_price/chk_inquire_price.py",
-      "finding": "현재가·상한가·하한가·호가단위·임시정지·단축코드·정리매매 응답 필드."
-    },
-    {
-      "url": "https://github.com/koreainvestment/open-trading-api/blob/74b0a082fa67a0be5bf53f561719c853890ed2df/examples_llm/domestic_stock/chk_holiday/chk_holiday.py",
-      "finding": "CTCA0903R의 opnd_yn은 날짜별 개장 여부. 특별일의 시작·종료 시각은 별도 근거가 필요하다."
-    },
-    {
       "url": "https://global.krx.co.kr/contents/GLB/06/0602/0602010201/GLB0602010201T3.jsp",
       "finding": "유가증권시장 주식 호가단위는 호가의 가격대에 따라 결정된다."
     },
     {
       "url": "https://kind.krx.co.kr/external/2026/11/05/000141/20261105000216/99303.htm",
       "finding": "2026-11-19 KRX 유가증권시장 주식·ETF의 정규장이 10:00~16:30 KST로 변경됐다."
+    },
+    {
+      "url": "https://global.krx.co.kr/contents/GLB/06/0605/0605010101/GLB0605010101T1.jsp",
+      "finding": "KRX ETF 거래규정의 호가단위는 2,000원 미만 1원, 그 이상 5원이다. 보통주 가격대별 표와 분리한다."
     }
   ],
-  "decisions": "삼성전자 KRX 매수에 한해 새 전용 원장에 단가를 고정한 하한가 후보를 fake transport로 시험한다. 제품의 승인 JSON·고정 파일·초안 입력은 현행 규격을 유지한다. 다른 정책과 #25 실증은 별도로 판정한다.",
+  "decisions": "일반 위험 한도와 한정·전략의 새 계약을 분리하고 기존 계약 집행을 유지한다. 실제 계좌 호출 없이 매매설정·고정 파일·원장·전송을 격리 검증한다.",
   "status": "reviewed",
   "task_contexts": [
     {
@@ -617,6 +613,34 @@
         }
       ],
       "decisions": "삼성전자 KRX 매수에 한해 새 전용 원장에 단가를 고정한 하한가 후보를 fake transport로 시험한다. 제품의 승인 JSON·고정 파일·초안 입력은 현행 규격을 유지한다. 다른 정책과 #25 실증은 별도로 판정한다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/123",
+      "checked_at": "2026-11-19T05:10:16.373047+00:00",
+      "objective": "#123 매매 테스트 차단 조건을 설정·고정·실제 서버 집행에 연결",
+      "sources": [
+        {
+          "url": "https://github.com/koreainvestment/open-trading-api/blob/74b0a082fa67a0be5bf53f561719c853890ed2df/examples_llm/domestic_stock/order_cash/order_cash.py",
+          "finding": "KRX 모의 지정가 매수 VTTC0012U, ORD_DVSN=00, 수량·단가 문자열."
+        },
+        {
+          "url": "https://github.com/koreainvestment/open-trading-api/blob/74b0a082fa67a0be5bf53f561719c853890ed2df/examples_llm/domestic_stock/inquire_psbl_order/inquire_psbl_order.py",
+          "finding": "VTTC8908R, 미수 없는 가능수량을 위한 01 조회와 nrcvb_buy_qty·nrcvb_buy_amt."
+        },
+        {
+          "url": "https://global.krx.co.kr/contents/GLB/06/0602/0602010201/GLB0602010201T3.jsp",
+          "finding": "유가증권시장 주식 호가단위는 호가의 가격대에 따라 결정된다."
+        },
+        {
+          "url": "https://kind.krx.co.kr/external/2026/11/05/000141/20261105000216/99303.htm",
+          "finding": "2026-11-19 KRX 유가증권시장 주식·ETF의 정규장이 10:00~16:30 KST로 변경됐다."
+        },
+        {
+          "url": "https://global.krx.co.kr/contents/GLB/06/0605/0605010101/GLB0605010101T1.jsp",
+          "finding": "KRX ETF 거래규정의 호가단위는 2,000원 미만 1원, 그 이상 5원이다. 보통주 가격대별 표와 분리한다."
+        }
+      ],
+      "decisions": "일반 위험 한도와 한정·전략의 새 계약을 분리하고 기존 계약 집행을 유지한다. 실제 계좌 호출 없이 매매설정·고정 파일·원장·전송을 격리 검증한다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."

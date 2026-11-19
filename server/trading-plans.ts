@@ -22,10 +22,12 @@ import {
   type TradingTerms,
   type TradingSettingsData,
 } from '../shared/trading-plan.ts';
+import { approvalBinding, sessionBounds } from '../shared/trading-policy.ts';
+import type { MasterInstrument, MasterState } from '../shared/market-data.ts';
 import { DEFAULT_PAPER_MAX_QTY } from '../shared/contracts.ts';
 import type { State } from '../shared/model.ts';
 import { Store } from './store.ts';
-import { paperApprovalSchema, type PaperApproval } from './paper.ts';
+import { preparedApprovalSchema, type PaperApproval } from './paper.ts';
 import { assertStrategyIdentity, strategyContractSchema, type StrategyContract } from './strategy-contract.ts';
 import { koreaDate, type KisClient } from './kis.ts';
 
@@ -37,10 +39,42 @@ function selectedStrategy(state: State, terms: Extract<TradingTerms, { kind: 'st
   const strategy = state.strategies.find((s) => s.id === terms.strategyId && s.environment === 'kis-paper');
   if (!strategy || strategy.revision !== terms.revision)
     throw new Error('저장 전략 revision이 달라졌습니다. 대상을 다시 선택하세요.');
+  if (!terms.policy && !state.instruments.some((row) => row.code === strategy.code))
+    throw new Error('확장 종목은 매매설정의 새 전략 정책을 고정해야 합니다.');
   return strategy;
+}
+function assetKind(
+  code: string,
+  maxDays: number,
+  row?: MasterInstrument,
+  source?: MasterState,
+  removed = false,
+): 'stock' | 'etf' {
+  if (!row && !removed && !source && (code === '005930' || code === '069500'))
+    return code === '069500' ? 'etf' : 'stock';
+  if (
+    !row ||
+    !source ||
+    source.phase !== 'ready' ||
+    !source.lastSuccessAt ||
+    Date.parse(source.lastSuccessAt) > Date.now() ||
+    !(Date.now() - Date.parse(source.lastSuccessAt) < maxDays * 86400000) ||
+    row.tradingHalted !== false ||
+    row.liquidation !== false ||
+    !['ST', 'EF'].includes(row.group)
+  )
+    throw new Error(
+      '고정한 유효기간 안의 KRX 주식·ETF 마스터와 거래정지·정리매매 상태를 확인하세요. 데이터 화면에서 마스터를 갱신하세요.',
+    );
+  return row.kind;
 }
 function validWindow(terms: TradingTerms) {
   if (terms.kind === 'once') {
+    if (terms.policy) {
+      const window = sessionBounds(terms.date, terms.policy.session, terms.policy.exchangeNotice);
+      if (!window || Date.now() >= window.end) throw new Error('남은 KRX 실행 시간창을 확인하세요.');
+      return;
+    }
     const day = new Date(terms.date + 'T12:00:00+09:00').getUTCDay();
     if (
       terms.date.replaceAll('-', '') < koreaDate() ||
@@ -56,6 +90,16 @@ function validWindow(terms: TradingTerms) {
     end = Date.parse(terms.endsAt);
   const day = new Date(begin + 9 * 3600000).toISOString().slice(0, 10);
   const open = Date.parse(day + 'T09:00:00+09:00');
+  if (terms.policy) {
+    // Four consecutive dates cover normal weekday sessions. A dated notice can be much later.
+    const dates = new Set(['2026-11-19', terms.policy.exchangeNotice?.date].filter((d): d is string => !!d));
+    for (let offset = 0; offset < 4; offset++) dates.add(new Date(open + offset * 86400000).toISOString().slice(0, 10));
+    for (const date of dates) {
+      const window = sessionBounds(date, terms.policy.session, terms.policy.exchangeNotice);
+      if (window && Math.max(begin, window.start) < Math.min(end, window.end)) return;
+    }
+    throw new Error('전략 계약 기간과 설정한 KRX 시간창이 겹치지 않습니다.');
+  }
   for (let offset = 0; offset < 4; offset++) {
     const start = open + offset * 86400000;
     const weekday = new Date(start).getUTCDay();
@@ -74,6 +118,7 @@ export function activeTerms(approval?: PaperApproval, contract?: StrategyContrac
       maxAmount: approval.maxAmount ?? 100000,
       allowExistingHolding: !!approval.allowExistingHolding,
       cancelProbe: !!approval.cancelProbe,
+      ...(approval.policy && { policy: approval.policy }),
     };
   if (contract) {
     const { strategyId, revision, startsAt, endsAt, maxOrderAmount, maxAttempts, maxTotalAmount, sellPolicy } =
@@ -88,6 +133,7 @@ export function activeTerms(approval?: PaperApproval, contract?: StrategyContrac
       maxAttempts,
       maxTotalAmount,
       sellPolicy,
+      ...(contract.policy && { policy: contract.policy }),
     };
   }
   return null;
@@ -151,6 +197,20 @@ export function fixTradingDraft(store: Store, kis: KisClient, raw: unknown) {
         strategy.qty !== draft.qty)
     )
       throw new Error('저장 전략 조건을 다시 확인하세요.');
+    let instrumentKind: 'stock' | 'etf' | undefined;
+    if (terms.policy) {
+      const code = terms.kind === 'once' ? terms.code : strategy!.code;
+      const master = store.masterData();
+      const row = master.instruments.find((r) => r.code === code);
+      const source = master.sources.find((r) => r.exchange === (row?.exchange ?? 'KOSPI'));
+      instrumentKind = assetKind(
+        code,
+        terms.policy.masterDays,
+        row,
+        source,
+        master.removed.some((r) => r.code === code),
+      );
+    }
     const root = join(dirname(realpathSync(store.path)), 'trading-runs');
     mkdirSync(root, { recursive: true, mode: 0o700 });
     if (realpathSync(root) !== root) throw new Error('전용 원장 디렉터리 경로를 확인하세요.');
@@ -170,12 +230,13 @@ export function fixTradingDraft(store: Store, kis: KisClient, raw: unknown) {
     const accountFingerprint = kis.accountFingerprint();
     const config =
       terms.kind === 'once'
-        ? paperApprovalSchema.parse({
+        ? preparedApprovalSchema.parse({
             date: terms.date,
             requestId: runId,
             ledgerPath,
             accountFingerprint,
             code: terms.code,
+            ...(terms.policy && { policy: terms.policy, assetKind: instrumentKind }),
             maxQty: terms.maxQty,
             maxAmount: terms.maxAmount,
             ...(terms.orderType === 'market' && { orderType: 'market' }),
@@ -259,7 +320,7 @@ function inspectPreparedRun(file: string, kind: PlanKind, db: string | undefined
     .strict()
     .parse(JSON.parse(readFileSync(path, 'utf8')));
   const raw = bundle.config;
-  const config = kind === 'once' ? paperApprovalSchema.parse(raw) : strategyContractSchema.parse(raw);
+  const config = kind === 'once' ? preparedApprovalSchema.parse(raw) : strategyContractSchema.parse(raw);
   const stem = planStem(kind, 'requestId' in config ? config.requestId : config.contractId);
   const expected = join(dirname(path), stem + '.sqlite');
   if (
@@ -287,10 +348,7 @@ function inspectPreparedRun(file: string, kind: PlanKind, db: string | undefined
     try {
       if ('requestId' in config) {
         const row = ledger.prepare('SELECT request_id,binding FROM paper_run WHERE id=1').get();
-        if (
-          row?.request_id !== runId ||
-          row.binding !== JSON.stringify([expected, config.accountFingerprint, !!config.cancelProbe])
-        )
+        if (row?.request_id !== runId || row.binding !== approvalBinding(config))
           throw new Error('고정 시 준비한 승인 원장이 아닙니다.');
       } else {
         if (ledger.prepare('SELECT body FROM strategy_contract WHERE id=1').get()?.body !== JSON.stringify(config))
@@ -307,5 +365,29 @@ function inspectPreparedRun(file: string, kind: PlanKind, db: string | undefined
   } finally {
     source.close();
   }
-  return { config, path: expected };
+  // A stale master blocks new sends, while the same ledger remains available for reconciliation.
+  const checkInstrument =
+    'policy' in config && config.policy
+      ? () => {
+          const db = new DatabaseSync(bundle.sourceLedger, { readOnly: true });
+          try {
+            const record = db.prepare('SELECT body FROM market_instruments WHERE code=?').get(config.code!);
+            const row: MasterInstrument | undefined = record && JSON.parse(String(record.body));
+            const market = db.prepare('SELECT body FROM market_master WHERE exchange=?').get(row?.exchange ?? 'KOSPI');
+            const removed = !!db.prepare('SELECT 1 FROM market_removed WHERE code=?').get(config.code!);
+            const kind = assetKind(
+              config.code!,
+              config.policy!.masterDays,
+              row,
+              market && JSON.parse(String(market.body)),
+              removed,
+            );
+            if ('assetKind' in config && config.assetKind !== kind)
+              throw new Error('고정한 종목 유형과 현재 마스터가 다릅니다.');
+          } finally {
+            db.close();
+          }
+        }
+      : undefined;
+  return { config, path: expected, checkInstrument };
 }

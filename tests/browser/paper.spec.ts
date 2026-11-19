@@ -149,3 +149,57 @@ test('manual share limit is editable above five, survives reload and respects a 
   await expect(page.getByLabel('수량 (주)',{exact:true})).toHaveAttribute('max','3');
   expect(saves).toBe(1);
 });
+
+test('고정한 시장가 매도 계약은 종목·방향·단가를 묶고 확인 후 2주만 제출한다', async ({ page }) => {
+  await setup(page);
+  await page.route('**/api/kis/ledger', (r) =>
+    r.fulfill({
+      json: {
+        orders: [],
+        minimumRun: {
+          active: true,
+          code: '069500',
+          requestId: order.requestId,
+          orderType: 'market',
+          maxQty: 2,
+          policy: { side: 'sell' },
+        },
+      },
+    }),
+  );
+  await page.route('**/api/kis/market', (r) =>
+    r.fulfill({
+      json: {
+        quote: {
+          code: '069500',
+          price: 50000,
+          upper: 65000,
+          lower: 35000,
+          tickSize: 5,
+          stopped: false,
+          change: 0,
+          receivedAt: new Date().toISOString(),
+        },
+        bars: [],
+      },
+    }),
+  );
+  const posts: unknown[] = [];
+  await page.route('**/api/kis/order', (r) => {
+    posts.push(r.request().postDataJSON());
+    return r.abort();
+  });
+  await page.goto('/paper');
+  await expect(page.getByLabel('KIS 종목코드')).toHaveValue('069500');
+  await expect(page.getByRole('button', { name: '매수', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: '시세·일봉 조회' }).click();
+  await page.getByLabel('수량 (주)', { exact: true }).fill('2');
+  await expect(page.getByLabel('시장가 주문단가 (원)')).toHaveValue('0');
+  await page.getByRole('button', { name: 'KIS 모의 주문 확인', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('2주 × 시장가');
+  expect(posts).toEqual([]);
+  await page.getByRole('button', { name: 'KIS 모의 주문 전송', exact: true }).click();
+  await expect
+    .poll(() => posts)
+    .toEqual([{ code: '069500', side: 'sell', orderType: 'market', price: 0, qty: 2, requestId: order.requestId }]);
+});
