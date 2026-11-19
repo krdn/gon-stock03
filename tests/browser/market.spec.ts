@@ -26,6 +26,70 @@ async function setup(page: Page, state = snapshot()) {
   return calls;
 }
 
+test('watchlist copies exact selected codes and ignores a late clipboard rejection after switching', async ({ page }) => {
+  const state = snapshot();
+  state.watchlist = ['00088K', '005930'];
+  await setup(page, state);
+  const orderRequests: string[] = [];
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith('/api/') && /order/i.test(path) && request.method() !== 'GET') orderRequests.push(path);
+  });
+  await page.goto('/watchlist');
+  await page.evaluate(() => {
+    const clipboard = {
+      writes: [] as string[],
+      async writeText(code: string) {
+        this.writes.push(code);
+        if (this.writes.length === 2) {
+          await new Promise<void>((_, reject) => window.addEventListener('deny-pending-copy', () => reject(new Error('denied')), { once: true }));
+        }
+      },
+    };
+    Object.defineProperty(navigator, 'clipboard', { value: clipboard });
+  });
+  const detail = page.getByRole('region', { name: '종목 상세' });
+  const copy = detail.getByRole('button', { name: '종목코드 복사', exact: true });
+  await page.getByRole('button', { name: '한화우 상세' }).click();
+  await copy.click();
+  await expect(detail.getByRole('status')).toContainText('00088K');
+  await copy.click();
+  await page.getByRole('button', { name: '삼성전자 상세' }).click();
+  await expect(detail.getByRole('status')).toHaveCount(0);
+  await copy.click();
+  await expect(detail.getByRole('status')).toContainText('005930');
+  await page.evaluate(() => { window.dispatchEvent(new Event('deny-pending-copy')); });
+  await expect(detail.getByRole('alert')).toHaveCount(0);
+  await expect(detail.getByRole('status')).toContainText('005930');
+  expect(await page.evaluate(() => (navigator.clipboard as Clipboard & { writes: string[] }).writes)).toEqual(['00088K', '00088K', '005930']);
+  await page.goto('/market');
+  await page.getByRole('button', { name: '한화우 상세' }).click();
+  await expect(detail).toBeVisible();
+  await expect(copy).toHaveCount(0);
+  expect(orderRequests).toEqual([]);
+});
+
+for (const failure of ['unavailable', 'denied'] as const) {
+  test(`watchlist reports ${failure} clipboard in the selected detail`, async ({ page }) => {
+    const state = snapshot();
+    state.watchlist = ['00088K', '005930'];
+    await setup(page, state);
+    await page.goto('/watchlist');
+    await page.evaluate(mode => {
+      Object.defineProperty(navigator, 'clipboard', { value: mode === 'unavailable' ? undefined : {
+        writeText: async () => { throw new DOMException('denied', 'NotAllowedError'); },
+      } });
+    }, failure);
+    const detail = page.getByRole('region', { name: '종목 상세' });
+    await page.getByRole('button', { name: '한화우 상세' }).click();
+    await detail.getByRole('button', { name: '종목코드 복사', exact: true }).click();
+    await expect(detail.getByRole('alert')).toBeVisible();
+    await expect(detail.getByRole('alert')).toContainText('복사에 실패');
+    await page.getByRole('button', { name: '삼성전자 상세' }).click();
+    await expect(detail.getByRole('alert')).toHaveCount(0);
+  });
+}
+
 test('market searches actual master with combined filters, limits quote reads, keeps codes and opens matching details', async ({ page }) => {
   const calls = await setup(page); await page.goto('/market');
   await expect(page.getByText('총 13개 종목', { exact: false })).toBeVisible();
