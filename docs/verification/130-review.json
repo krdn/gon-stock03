@@ -1,0 +1,16 @@
+{
+  "scope": "두 제품 사례의 diff와 고정 Chromium 관찰 자료. 읽기 전용 검토",
+  "productCommit": "7d6870d",
+  "reviewedHead": "cf32a2ad38661b5dddffa8e0567dee2c24c15de0",
+  "requestedModel": "gemini-4-argon-high",
+  "requestedEffort": "high",
+  "initModel": "gemini-4-argon-high",
+  "providerResolvedModel": null,
+  "providerResolvedEffort": null,
+  "status": "SUCCESS",
+  "verdict": "PASS",
+  "conversationId": "614f50b6-42b0-440c-8d76-744ec159d843",
+  "packetSha256": "95c9f7dedbe250107078222a3b9ca1a4e7c6913a6151ac4b472c6f114bfe453b",
+  "responseSha256": "af094522370de939f24eb29aa24478e77c749342d5e5d388c99e949fc7d9388e",
+  "blockingFindings": 0
+}
