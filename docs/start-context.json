@@ -481,6 +481,26 @@
         }
       ],
       "decisions": "일반 모의 수동 주문의 현재 한도 5주를 /paper에서 1~100,000주로 수정·저장한다. 한정 승인 maxQty와 기존 원장 1주·시장가 1주·총액은 독립 집행한다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/120",
+      "checked_at": "2026-11-19T03:38:19.580107+00:00",
+      "objective": "매매 제한 설정 화면 분리와 적용 시점 UX 연구",
+      "sources": [
+        {
+          "url": "https://design-system.service.gov.uk/components/tabs/",
+          "finding": "페이지 간 탐색이나 여러 섹션 비교를 탭으로 처리할 때 생기는 문제와 대안을 설명한다."
+        },
+        {
+          "url": "https://www.w3.org/WAI/tutorials/forms/multi-page/",
+          "finding": "논리적인 단계로 폼을 나누고 페이지 제목과 단계 위치를 제공한다."
+        },
+        {
+          "url": "https://design-system.service.gov.uk/patterns/check-answers/",
+          "finding": "최종 검토와 항목별 수정·입력 보존을 제공한다."
+        }
+      ],
+      "decisions": "연구 제안은 매매 설정 목차와 일반 주문·위험, 다음 한정 실행, 다음 전략 계약으로 구성한다. 구현 결정 대기."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."
