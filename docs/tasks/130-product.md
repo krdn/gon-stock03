@@ -11,4 +11,4 @@
 
 오류 수정 `24d51e5`, 기능 `7d6870d`. [고정 외부 검사](../verification/130-acceptance.mjs)와 [양쪽 입력/관찰·파일 해시](../verification/130-acceptance.json)를 대조했다. 검사 초안의 종목 선택 라벨이 정확히 일치하지 않아 역할 기반 선택자로 바로잡은 뒤 두 버전에 동일한 검사를 적용했다. 로컬 Node 24 격리 환경에서 타입 검사·빌드, 단위·통합 271건, 관련 브라우저 25건 통과. 실제 KIS·운영 계정·사용자 체감 수요는 미측정이다.
 
-다음 행동은 원격 application·configuration 및 지정 독립 리뷰 확인이다. 최종 제품 병합은 사용자가 검토한다. #131의 모델 실험은 이 전달 조건을 충족한 뒤 시작한다.
+[제품 PR #134](https://github.com/krdn/gon-stock03/pull/134)의 두 제품 커밋을 함께 검토했다. 첫 지정 독립 리뷰 Argon/high가 PASS, 차단 결함 0건을 반환했다. 요청·init은 gemini-4-argon-high였고 서버 내부 모델·effort는 별도 미측정이다. [리뷰 근거](../verification/130-review.json). 최종 기록 커밋의 원격 application·configuration은 이슈에서 SHA와 함께 대조한다. 최종 제품 병합은 사용자가 검토한다. #131의 모델 실험은 이 전달 조건을 충족한 뒤 시작한다.
