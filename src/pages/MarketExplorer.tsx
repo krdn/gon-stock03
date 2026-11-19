@@ -13,6 +13,24 @@ const unverified = (row: Row) => 'unverified' in row;
 const removed = (row: Row): row is RemovedInstrument => 'removedAt' in row;
 const time = (value: string) => new Date(value).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
 
+function CopyStockCode({ code }: { code: string }) {
+  const [result, setResult] = useState<'idle' | 'copied' | 'error'>('idle');
+  async function copy() {
+    setResult('idle');
+    try {
+      await navigator.clipboard.writeText(code);
+      setResult('copied');
+    } catch {
+      setResult('error');
+    }
+  }
+  return <div>
+    <button type="button" className="button secondary" onClick={copy}>종목코드 복사</button>
+    {result === 'copied' && <p role="status">종목코드 {code}를 복사했습니다.</p>}
+    {result === 'error' && <p role="alert">종목코드 복사에 실패했습니다. {code}를 직접 복사하세요.</p>}
+  </div>;
+}
+
 export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
   const { state, act, busy, available, server, status } = useWorkbench();
   const watchlist = useMemo(() => server ? state.watchlist : [], [state.watchlist, server?.instanceId]);
@@ -148,6 +166,6 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
       })}</tbody></table></div> : <Empty title={watchOnly && !watchlist.length ? '관심종목이 없습니다' : loadingMaster ? '종목 마스터를 확인하고 있습니다' : '표시할 종목이 없습니다'}>{watchOnly && !watchlist.length ? '시장 탐색에서 관심종목을 추가하세요.' : emptyMessage}</Empty>}
       {(!watchOnly || server) && <div className="table-foot"><span>총 {filtered.length}개 종목 · {currentPage + 1} / {lastPage + 1}페이지</span><div className="button-row"><button className="button quiet" disabled={currentPage === 0} onClick={() => { setPage(currentPage - 1); setSelected(null); }}>이전 페이지</button><button className="button quiet" disabled={currentPage === lastPage} onClick={() => { setPage(currentPage + 1); setSelected(null); }}>다음 페이지</button></div></div>}
     </Panel>
-    {detail && <section id="market-detail" ref={detailSection} tabIndex={-1} aria-label="종목 상세"><Panel title={`${detail.name} · ${detail.code}`} action={<button className="button quiet" onClick={() => { setSelected(null); detailTrigger.current?.focus(); }}>상세 닫기</button>}><div className="check-row"><span>시장 / 종류</span><strong>{detail.exchange ?? '마스터 미확인'} / {unverified(detail) ? '확인 필요' : detail.kind === 'etf' ? 'ETF' : '주식'}</strong></div><div className="check-row"><span>업종</span><strong>{removed(detail) ? '확인 필요' : quotes[detail.code]?.quote?.sector || '미수신'}</strong></div><div className="check-row"><span>거래 상태</span><Badge>{tradingLabel(detail)}</Badge></div><div className="check-row"><span>시세 상태</span><strong>{quoteLabel(detail)}</strong></div><p className="muted prose">{unverified(detail) ? '저장된 코드의 마스터 정보를 확인하지 못했습니다. 마스터 갱신 후 다시 확인하세요.' : removed(detail) ? `마스터 제외 확인: ${time(detail.removedAt)}. 제외 사유와 상장폐지 여부는 별도 확인이 필요합니다.` : '가격·업종·거래량은 KIS REST 응답 기준입니다. 거래정지 해제·주문 가능 여부는 주문 전 별도 검사가 필요합니다.'}</p><Link className="subtle-link" to="/settings">KIS 연결 상태 확인 ↗</Link></Panel></section>}
+    {detail && <section id="market-detail" ref={detailSection} tabIndex={-1} aria-label="종목 상세"><Panel title={`${detail.name} · ${detail.code}`} action={<button className="button quiet" onClick={() => { setSelected(null); detailTrigger.current?.focus(); }}>상세 닫기</button>}>{watchOnly && <CopyStockCode key={detail.code} code={detail.code} />}<div className="check-row"><span>시장 / 종류</span><strong>{detail.exchange ?? '마스터 미확인'} / {unverified(detail) ? '확인 필요' : detail.kind === 'etf' ? 'ETF' : '주식'}</strong></div><div className="check-row"><span>업종</span><strong>{removed(detail) ? '확인 필요' : quotes[detail.code]?.quote?.sector || '미수신'}</strong></div><div className="check-row"><span>거래 상태</span><Badge>{tradingLabel(detail)}</Badge></div><div className="check-row"><span>시세 상태</span><strong>{quoteLabel(detail)}</strong></div><p className="muted prose">{unverified(detail) ? '저장된 코드의 마스터 정보를 확인하지 못했습니다. 마스터 갱신 후 다시 확인하세요.' : removed(detail) ? `마스터 제외 확인: ${time(detail.removedAt)}. 제외 사유와 상장폐지 여부는 별도 확인이 필요합니다.` : '가격·업종·거래량은 KIS REST 응답 기준입니다. 거래정지 해제·주문 가능 여부는 주문 전 별도 검사가 필요합니다.'}</p><Link className="subtle-link" to="/settings">KIS 연결 상태 확인 ↗</Link></Panel></section>}
   </>;
 }

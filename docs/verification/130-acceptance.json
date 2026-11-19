@@ -1,0 +1,69 @@
+{
+  "base": "6e88f877dd992c5f3f13c14fd287aa4b8aefd9d1",
+  "run": "run_2e122eaeec9a",
+  "task": "task_e5fd9a7ee1fc",
+  "dispatch": "ctx_b5fea2476f97",
+  "session": "01a1f3f2-5ff8-75e0-b0c9-f228c368ee66",
+  "checkerSHA256": "d6ae9efb013f00dc819c35fd626b8e048a4eba713deb00eda889684b1d406bc5",
+  "before": {
+    "journal": {
+      "submitted": "005930",
+      "selected": "000660",
+      "draft": "",
+      "persisted": [
+        "005930"
+      ],
+      "pass": false
+    },
+    "copy": {
+      "button": 0,
+      "values": [],
+      "denial": false,
+      "orders": [],
+      "pass": false
+    }
+  },
+  "after": {
+    "journal": {
+      "submitted": "005930",
+      "selected": "000660",
+      "draft": "같은 내용의 두 번째 종목 메모",
+      "persisted": [
+        "005930"
+      ],
+      "pass": true
+    },
+    "copy": {
+      "button": 1,
+      "values": [
+        "005930",
+        "00088K"
+      ],
+      "denial": true,
+      "orders": [],
+      "pass": true
+    }
+  },
+  "meter": {
+    "phase": "post",
+    "model": "gpt-6.2-astra",
+    "status": "completed",
+    "usage": {
+      "input_tokens": 26544,
+      "cached_input_tokens": 0,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 5282,
+      "reasoning_output_tokens": 2549,
+      "total_tokens": 31826
+    },
+    "time": 85163.769797019
+  },
+  "trialSeconds": 120.88,
+  "retry": 0,
+  "files": {
+    "src/pages/Operations.tsx": "e07ef9decef99e35545b8542419528cc210307ab68e67664bc76a4ddb7674da6",
+    "src/pages/MarketExplorer.tsx": "3d56119f3ce4b2a050a403b2f69251811393f8b7f433b78047aacd50071e04ca",
+    "tests/browser/market.spec.ts": "f0597422a7035071b0d9e9b8864ceddb89eeb5f7f0ec8e3f62145470f449a020",
+    "tests/browser/workbench.spec.ts": "6ee8a2a64ee24864953c343124b28eaee59952fa14c81bd2a546e9b735f707ac"
+  }
+}
