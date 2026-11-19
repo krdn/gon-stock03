@@ -32,6 +32,7 @@ const evidence = (tradeDate: string, orders: BrokerOrder[], connection: Connecti
 export class PaperBroker {
   private realtimeGuard?: (code: string) => () => void;
   setRealtimeGuard(guard: (code: string) => () => void) { this.realtimeGuard = guard; }
+  private restoredApproval = false;
   private queue: Promise<unknown> = Promise.resolve();
   private riskOrders: (NonNullable<PaperRiskSnapshot['orders']> & { day: string }) | null = null;
   constructor(private store: Store, private kis: KisClient, private approval?: PaperApproval, private contract?: StrategyContract) {
@@ -42,6 +43,7 @@ export class PaperBroker {
     } else if (store.strategyContract()) throw new Error('원장에 고정된 전략 계약이 필요합니다.');
     if (!approval && store.hasPaperRun()) throw new Error('저장된 1회 승인 설정이 필요합니다. 제한 없이 재시작할 수 없습니다.');
     if (approval && store.configurePaperRun(paperApprovalSchema.parse(approval))) {
+      this.restoredApproval = true;
       kis.limitRequestsFor(0);
       store.update(state => halt(state, true));
     }
@@ -95,16 +97,39 @@ export class PaperBroker {
     return { connection, brokerOrders: orders, orders: this.store.paperOrders() };
   }
   cancelProbeEnabled() { return this.approval?.cancelProbe === true; }
-  cancelProbe(id: string) {
+  private probeOrder(orders: PaperOrder[]) {
+    const order = orders.find(row => row.requestId === this.approval?.requestId);
+    if (!order || !order.brokerId || !order.organization || order.code !== (this.approval?.code ?? '069500') || order.side !== 'buy' || order.qty !== 1 || order.price <= 0 || order.price > (this.approval?.maxAmount ?? 100000) || !['accepted', 'partial'].includes(order.status) || order.remaining <= 0) return undefined;
+    return { ...order, brokerId: order.brokerId, organization: order.organization };
+  }
+  private probeExpiry(order: PaperOrder) {
+    return Math.min(Date.parse(order.createdAt) + 120000, Date.parse(this.approval!.date + 'T15:30:00+09:00'));
+  }
+  private checkProbeWindow(order: PaperOrder) {
+    this.checkWindow();
+    const now = Date.now(), created = Date.parse(order.createdAt);
+    if (order.tradeDate !== koreaDate() || order.tradeDate !== this.approval!.date.replaceAll('-', '') || !Number.isFinite(created) || now < created || now >= this.probeExpiry(order)) throw new KisNotSent('전량취소 검증 시간이 종료되었습니다.');
+  }
+  cancellation(orders: PaperOrder[]) {
+    if (!this.cancelProbeEnabled()) return { candidate: null, reason: paperCapabilities.changeOrders.reason };
+    const order = this.probeOrder(orders);
+    if (!order || this.restoredApproval || this.store.paperAudit(order.requestId).some(a => a.action === 'cancel-attempt')) {
+      return { candidate: null, reason: '이 실행에서 취소할 수 있는 승인 원주문이 없습니다.' };
+    }
+    try { this.checkProbeWindow(order); }
+    catch { return { candidate: null, reason: '한정 전량취소 유효시간이 종료되었습니다.' }; }
+    return { candidate: { requestId: order.requestId, expiresAt: new Date(this.probeExpiry(order)).toISOString() }, reason: '승인된 원주문의 미체결 잔량만 한 번 취소할 수 있습니다.' };
+  }
+  cancelProbe(id: string, reconcileFirst = false) {
     return this.enqueue(async () => {
       if (!this.cancelProbeEnabled() || id !== this.approval!.requestId) throw new Error('전량취소 검증 승인이 없습니다.');
-      const order = this.store.paperOrders().find(row => row.requestId === id);
-      if (!order || !order.brokerId || !order.organization || order.code !== (this.approval!.code ?? '069500') || order.side !== 'buy' || order.qty !== 1 || order.price <= 0 || order.price > (this.approval!.maxAmount ?? 100000) || !['accepted', 'partial'].includes(order.status) || order.remaining <= 0) throw new Error('승인된 미체결 원주문을 확인할 수 없습니다.');
-      const check = () => {
-        this.checkWindow();
-        const age = Date.now() - Date.parse(order.createdAt);
-        if (order.tradeDate !== koreaDate() || order.tradeDate !== this.approval!.date.replaceAll('-', '') || !Number.isFinite(age) || age < 0 || age >= 120000) throw new KisNotSent('전량취소 검증 시간이 종료되었습니다.');
-      };
+      if (reconcileFirst) {
+        if (this.cancellation(this.store.paperOrders()).candidate?.requestId !== id) throw new Error('현재 취소할 수 있는 승인 원주문이 없습니다.');
+        await this.refreshInsideQueue(true);
+      }
+      const order = this.probeOrder(this.store.paperOrders());
+      if (!order) throw new Error('승인된 미체결 원주문을 확인할 수 없습니다.');
+      const check = () => this.checkProbeWindow(order);
       check();
       const pending: PaperOrder = { ...order, status: 'unknown', message: '전량취소 검증 시도. 최종 상태는 주문 조회로 확인하세요.' };
       this.store.claimPaperCancel(pending);

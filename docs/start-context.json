@@ -1,13 +1,17 @@
 {
-  "checked_at": "2026-11-18T01:15:28.354758+00:00",
-  "objective": "전체 브랜치 이력 통합·보존·정리와 새 세션 재개",
+  "checked_at": "2026-11-19T02:52:49.315886+00:00",
+  "objective": "/paper 잔량취소 조작과 결과 재대조",
   "sources": [
     {
-      "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_user/kis_auth.py",
-      "finding": "auth_ws는 모의 앱키와 secretkey로 /oauth2/Approval에 POST하고 approval_key를 헤더에 사용한다."
+      "url": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/order-rvsecncl",
+      "finding": "VTTC0013U 전량취소와 선행 psbl_qty 확인 요구."
+    },
+    {
+      "url": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/inquire-psbl-rvsecncl",
+      "finding": "모의 TR 미지원. 일반 취소 가능수량을 일별 미체결에서 추정할 수 없다."
     }
   ],
-  "decisions": "명시적 dev:realtime만 인증한다. 접속키는 서버 자식 환경에만 전달하며 파일/로그 저장·자동 구독·거래는 하지 않는다.",
+  "decisions": "기존 한정 승인·시간·원장 검사를 서버에서 확인해 UI에 표시한다. 일반 차단과 누락된 취소확인은 명시한다.",
   "status": "reviewed",
   "task_contexts": [
     {
@@ -453,6 +457,22 @@
         }
       ],
       "decisions": "원 신호를 유지하고 만료·중단된 전략은 남은 조회 전에 차단한다. 모바일 취소·REST 대조를 구분하며 이번에는 거래하지 않는다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/116",
+      "checked_at": "2026-11-19T02:52:49.315886+00:00",
+      "objective": "/paper 잔량취소 조작과 결과 재대조",
+      "sources": [
+        {
+          "url": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/order-rvsecncl",
+          "finding": "VTTC0013U 전량취소와 선행 psbl_qty 확인 요구."
+        },
+        {
+          "url": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/inquire-psbl-rvsecncl",
+          "finding": "모의 TR 미지원. 일반 취소 가능수량을 일별 미체결에서 추정할 수 없다."
+        }
+      ],
+      "decisions": "기존 한정 승인·시간·원장 검사를 서버에서 확인해 UI에 표시한다. 일반 차단과 누락된 취소확인은 명시한다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."
