@@ -1,13 +1,13 @@
 {
-  "checked_at": "2026-11-19T02:35:42.950324+00:00",
-  "objective": "연결·설정 첫 화면에서 KIS 인증과 잔고 유효 시각을 구분하고 다음 행동을 안내한다.",
+  "checked_at": "2026-11-19T03:08:40.423134+00:00",
+  "objective": "한정 지정가 매수 수량 상한 5주와 하한가 1주 재검사",
   "sources": [
     {
-      "url": "https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/",
-      "finding": "펼침 컨트롤은 열림 상태와 대상 내용을 연결하고 Enter·Space로 조작할 수 있어야 한다."
+      "url": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/order-cash",
+      "finding": "모의 현금 매수의 주문수량과 주문단가는 별도 필드다. 승인 수량과 총 주문대금은 앱에서 별도로 집행한다."
     }
   ],
-  "decisions": "조회와 로컬 갱신에 별도 명칭을 사용한다. 기술 진단은 접고 화면 너비와 관계없이 상태와 다음 행동을 먼저 표시한다.",
+  "decisions": "일반 모의 수동 주문의 현재 한도 5주를 /paper에서 1~100,000주로 수정·저장한다. 한정 승인 maxQty와 기존 원장 1주·시장가 1주·총액은 독립 집행한다.",
   "status": "reviewed",
   "task_contexts": [
     {
@@ -497,6 +497,34 @@
         }
       ],
       "decisions": "조회와 로컬 갱신에 별도 명칭을 사용한다. 기술 진단은 접고 화면 너비와 관계없이 상태와 다음 행동을 먼저 표시한다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/116",
+      "checked_at": "2026-11-19T02:52:49.315886+00:00",
+      "objective": "/paper 잔량취소 조작과 결과 재대조",
+      "sources": [
+        {
+          "url": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/order-rvsecncl",
+          "finding": "VTTC0013U 전량취소와 선행 psbl_qty 확인 요구."
+        },
+        {
+          "url": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/inquire-psbl-rvsecncl",
+          "finding": "모의 TR 미지원. 일반 취소 가능수량을 일별 미체결에서 추정할 수 없다."
+        }
+      ],
+      "decisions": "기존 한정 승인·시간·원장 검사를 서버에서 확인해 UI에 표시한다. 일반 차단과 누락된 취소확인은 명시한다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/118",
+      "checked_at": "2026-11-19T03:08:40.423134+00:00",
+      "objective": "한정 지정가 매수 수량 상한 5주와 하한가 1주 재검사",
+      "sources": [
+        {
+          "url": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/order-cash",
+          "finding": "모의 현금 매수의 주문수량과 주문단가는 별도 필드다. 승인 수량과 총 주문대금은 앱에서 별도로 집행한다."
+        }
+      ],
+      "decisions": "일반 모의 수동 주문의 현재 한도 5주를 /paper에서 1~100,000주로 수정·저장한다. 한정 승인 maxQty와 기존 원장 1주·시장가 1주·총액은 독립 집행한다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."

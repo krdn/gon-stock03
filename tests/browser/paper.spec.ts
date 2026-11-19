@@ -120,3 +120,25 @@ for (const path of ['/paper', '/orders']) test(`market order ledger shows market
   await expect(row).toContainText('시장가');
   await expect(row).not.toContainText('0원');
 });
+
+test('manual share limit is editable above five, survives reload and respects a tighter fixed approval', async ({page}) => {
+  const state = snapshot(); let maxQty = 5, saves = 0;
+  await setup(page);
+  await page.route('**/api/state', r => r.fulfill({json:{...state,paperManualMaxQty:maxQty}}));
+  await page.route('**/api/kis/quantity-setting', r => {
+    maxQty=r.request().postDataJSON().maxQty; saves++;
+    return r.fulfill({json:{maxQty,message:'저장했습니다.'}});
+  });
+  await page.goto('/paper');
+  const setting=page.getByLabel('주문당 수량 상한 (주)');
+  await expect(setting).toHaveValue('5');
+  await setting.fill('8'); await page.getByRole('button',{name:'수량 한도 저장'}).click();
+  await expect(page.getByText('저장된 수동 주문 한도 8주')).toBeVisible();
+  await page.reload(); await expect(setting).toHaveValue('8');
+  await expect(page.getByLabel('수량 (주)',{exact:true})).toHaveAttribute('max','8');
+  await page.route('**/api/kis/ledger', r => r.fulfill({json:{orders:[],minimumRun:{active:true,requestId:order.requestId,maxQty:3}}}));
+  await page.reload();
+  await expect(page.getByText(/이번 1회 승인 상한 3주 · 적용 한도 3주/)).toBeVisible();
+  await expect(page.getByLabel('수량 (주)',{exact:true})).toHaveAttribute('max','3');
+  expect(saves).toBe(1);
+});
