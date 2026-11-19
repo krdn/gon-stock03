@@ -148,19 +148,20 @@ export class Store {
     if (!Number.isSafeInteger(amount) || amount <= 0 || amount > contract.maxOrderAmount
       || used.attempts >= contract.maxAttempts || amount > contract.maxTotalAmount - used.amount) throw new Error('전략 계약의 횟수 또는 주문대금 한도를 초과했습니다.');
   }
-  configurePaperRun(approval: { date: string; requestId: string; code?: string; maxAmount?: number; allowExistingHolding?: true; orderType?: 'market' }) {
+  configurePaperRun(approval: { date: string; requestId: string; code?: string; maxQty?: number; maxAmount?: number; allowExistingHolding?: true; orderType?: 'market' }) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       if (this.strategyContract()) throw new Error('전략 계약과 1회 승인 원장을 혼용할 수 없습니다.');
       this.db.exec('CREATE TABLE IF NOT EXISTS paper_run (id INTEGER PRIMARY KEY CHECK(id=1), day TEXT NOT NULL, request_id TEXT NOT NULL, attempted INTEGER NOT NULL DEFAULT 0);');
       const columns = this.db.prepare('PRAGMA table_info(paper_run)').all();
       if (!columns.some(column => column.name === 'code')) this.db.exec("ALTER TABLE paper_run ADD COLUMN code TEXT NOT NULL DEFAULT '069500';");
+      if (!columns.some(column => column.name === 'max_qty')) this.db.exec('ALTER TABLE paper_run ADD COLUMN max_qty INTEGER NOT NULL DEFAULT 1;');
       if (!columns.some(column => column.name === 'max_amount')) this.db.exec('ALTER TABLE paper_run ADD COLUMN max_amount INTEGER NOT NULL DEFAULT 100000;');
       if (!columns.some(column => column.name === 'allow_holding')) this.db.exec('ALTER TABLE paper_run ADD COLUMN allow_holding INTEGER NOT NULL DEFAULT 0;');
       if (!columns.some(column => column.name === 'order_type')) this.db.exec("ALTER TABLE paper_run ADD COLUMN order_type TEXT NOT NULL DEFAULT 'limit';");
-      this.db.prepare('INSERT OR IGNORE INTO paper_run (id,day,request_id,code,max_amount,allow_holding,order_type) VALUES (1,?,?,?,?,?,?)').run(approval.date, approval.requestId, approval.code ?? '069500', approval.maxAmount ?? 100000, Number(approval.allowExistingHolding === true), approval.orderType ?? 'limit');
-      const row = this.db.prepare('SELECT day,request_id,attempted,code,max_amount,allow_holding,order_type FROM paper_run WHERE id=1').get()!;
-      if (row.day !== approval.date || row.request_id !== approval.requestId || row.code !== (approval.code ?? '069500') || row.max_amount !== (approval.maxAmount ?? 100000) || row.allow_holding !== Number(approval.allowExistingHolding === true) || row.order_type !== (approval.orderType ?? 'limit')) throw new Error('저장된 1회 승인과 실행 설정이 다릅니다. 원장을 초기화하지 마세요.');
+      this.db.prepare('INSERT OR IGNORE INTO paper_run (id,day,request_id,code,max_qty,max_amount,allow_holding,order_type) VALUES (1,?,?,?,?,?,?,?)').run(approval.date, approval.requestId, approval.code ?? '069500', approval.maxQty ?? 1, approval.maxAmount ?? 100000, Number(approval.allowExistingHolding === true), approval.orderType ?? 'limit');
+      const row = this.db.prepare('SELECT day,request_id,attempted,code,max_qty,max_amount,allow_holding,order_type FROM paper_run WHERE id=1').get()!;
+      if (row.day !== approval.date || row.request_id !== approval.requestId || row.code !== (approval.code ?? '069500') || row.max_qty !== (approval.maxQty ?? 1) || row.max_amount !== (approval.maxAmount ?? 100000) || row.allow_holding !== Number(approval.allowExistingHolding === true) || row.order_type !== (approval.orderType ?? 'limit')) throw new Error('저장된 1회 승인과 실행 설정이 다릅니다. 원장을 초기화하지 마세요.');
       this.db.exec('COMMIT');
       return Boolean(row.attempted);
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }

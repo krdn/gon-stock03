@@ -1,4 +1,4 @@
-import { paperRecoveryInput, type PaperOrderInput, type PaperRecoveryInput } from '../shared/contracts.ts';
+import { DEFAULT_PAPER_MAX_QTY, MAX_ORDER_QTY, paperRecoveryInput, type PaperOrderInput, type PaperRecoveryInput } from '../shared/contracts.ts';
 import type { PaperOrder, BrokerOrder, PaperEvidence, ConnectionState, PaperRiskSnapshot } from '../shared/model.ts';
 import { KisClient, KisRejected, KisNotSent, koreaDate } from './kis.ts';
 import { Store } from './store.ts';
@@ -7,8 +7,13 @@ import { assertStrategyTerms, strategyContractSchema, type StrategyContract } fr
 import type { Strategy } from '../shared/model.ts';
 import { z } from 'zod';
 
-export const paperApprovalSchema = z.object({ date: z.iso.date(), requestId: z.uuid(), cancelProbe: z.literal(true).optional(), code: z.enum(['069500', '005930']).optional(), maxAmount: z.number().int().positive().max(300000).optional(), orderType: z.literal('market').optional(), allowExistingHolding: z.literal(true).optional() }).strict().refine(value => value.orderType !== 'market' || (value.code === '005930' && !value.cancelProbe), '시장가는 삼성전자 매수1회·API 취소 없음 승인만 지원합니다.').refine(value => value.orderType === 'market' || (value.maxAmount ?? 100000) <= 200000, '지정가 승인 상한은 20만원입니다.');
+export const paperApprovalSchema = z.object({ date: z.iso.date(), requestId: z.uuid(), cancelProbe: z.literal(true).optional(), code: z.enum(['069500', '005930']).optional(), maxQty: z.int().positive().max(MAX_ORDER_QTY).optional(), maxAmount: z.number().int().positive().max(300000).optional(), orderType: z.literal('market').optional(), allowExistingHolding: z.literal(true).optional() }).strict().refine(value => value.orderType !== 'market' || (value.code === '005930' && !value.cancelProbe && (value.maxQty ?? 1) === 1), '시장가는 삼성전자 매수1회·API 취소 없음 승인만 지원합니다.').refine(value => value.orderType === 'market' || (value.maxAmount ?? 100000) <= 200000, '지정가 승인 상한은 20만원입니다.');
 export type PaperApproval = z.infer<typeof paperApprovalSchema>;
+
+function withinApproval(approval: PaperApproval, qty: number, price: number) {
+  return Number.isSafeInteger(qty) && qty >= 1 && qty <= (approval.maxQty ?? 1) &&
+    Number.isSafeInteger(price) && price >= 0 && qty * price <= (approval.maxAmount ?? 100000);
+}
 
 export const paperCapabilities = {
   changeOrders: { status: 'blocked', reason: '정정취소 전 필수 가능수량 조회는 모의투자 미지원입니다. KIS 모의 앱에서 수동 처리 후 주문을 대조하세요.', source: 'https://apiportal.koreainvestment.com/apiservice-apiservice?/uapi/domestic-stock/v1/trading/inquire-psbl-rvsecncl' },
@@ -99,7 +104,7 @@ export class PaperBroker {
   cancelProbeEnabled() { return this.approval?.cancelProbe === true; }
   private probeOrder(orders: PaperOrder[]) {
     const order = orders.find(row => row.requestId === this.approval?.requestId);
-    if (!order || !order.brokerId || !order.organization || order.code !== (this.approval?.code ?? '069500') || order.side !== 'buy' || order.qty !== 1 || order.price <= 0 || order.price > (this.approval?.maxAmount ?? 100000) || !['accepted', 'partial'].includes(order.status) || order.remaining <= 0) return undefined;
+    if (!this.approval || !order || !order.brokerId || !order.organization || order.code !== (this.approval.code ?? '069500') || order.side !== 'buy' || order.price <= 0 || !withinApproval(this.approval, order.qty, order.price) || !['accepted', 'partial'].includes(order.status) || order.remaining <= 0) return undefined;
     return { ...order, brokerId: order.brokerId, organization: order.organization };
   }
   private probeExpiry(order: PaperOrder) {
@@ -193,6 +198,12 @@ export class PaperBroker {
         if (existing.code !== input.code || existing.side !== input.side || existing.qty !== input.qty || existing.price !== input.price || (existing.orderType ?? 'limit') !== (market ? 'market' : 'limit')) throw new Error('동일 요청 ID의 주문 내용이 다릅니다.');
         return existing;
       }
+      const checkManualQuantity = () => {
+        if (!strategy && !checkSignal && input.qty > (this.store.read().paperManualMaxQty ?? DEFAULT_PAPER_MAX_QTY)) {
+          throw new KisNotSent('KIS 수동 주문 한도(수량)를 초과했습니다.');
+        }
+      };
+      checkManualQuantity();
       const checkContract = () => {
         if (!this.contract) {
           if (strategy) throw new KisNotSent(this.approval ? '전략은 1회 승인 범위 밖입니다.' : '저장 전략 전송에 별도 계약이 필요합니다.');
@@ -214,7 +225,7 @@ export class PaperBroker {
       checkContract();
       if (this.contract) this.store.checkStrategyAmount(this.contract, input.price * input.qty);
       if (this.approval) {
-        if ((this.approval.orderType === 'market') !== market || input.requestId !== this.approval.requestId || input.code !== (this.approval.code ?? '069500') || input.side !== 'buy' || input.qty !== 1 || !Number.isSafeInteger(input.price) || (market ? input.price !== 0 : input.price <= 0 || input.price > (this.approval.maxAmount ?? 100000))) throw new Error('조건부 1회 승인 범위와 주문이 다릅니다.');
+        if ((this.approval.orderType === 'market') !== market || input.requestId !== this.approval.requestId || input.code !== (this.approval.code ?? '069500') || input.side !== 'buy' || !withinApproval(this.approval, input.qty, input.price) || (market ? input.price !== 0 : input.price <= 0)) throw new Error('조건부 1회 승인 범위와 주문이 다릅니다.');
         this.checkWindow();
         this.store.claimPaperRun();
       }
@@ -274,6 +285,7 @@ export class PaperBroker {
           checkContract();
           this.checkWindow();
           if (this.approval && (performance.now() - quoteReceived > 5000 || Date.now() - Date.parse(quote.receivedAt) > 5000 || Date.now() < Date.parse(quote.receivedAt))) throw new KisNotSent('승인된 시세의 5초 유효기간이 지났습니다.');
+          checkManualQuantity();
           const currentRisk = this.store.read().risk;
           if (currentRisk.halted || JSON.stringify(currentRisk) !== JSON.stringify(risk)) throw new KisNotSent('전송 직전 위험 설정 변경으로 주문을 보내지 않았습니다.');
           if (this.contract && !this.store.markStrategyDispatch(local)) throw new KisNotSent('전송 직전 계약 예약이 없거나 이미 사용됐습니다.');
