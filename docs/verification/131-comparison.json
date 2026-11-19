@@ -1,0 +1,133 @@
+{
+  "setSha256": "210cdd9b3e9e4acb52cfba26148b13f77f18afee6b93397b6d085c24d1f065c6",
+  "graderSha256": "73bb137b6d8b2d404696077f1298e79a1dbd075f15effda0ba5c9d45452ec30e",
+  "versions": {
+    "A": "9a5263b4adc4ac99ca8c2f947369841617d241c8fd9648b2ce9fb4ce1bfc5216",
+    "B": "b0121076e47b5313c2ebcb19c0115e238543f02a827230fb53bc431ce8cee865"
+  },
+  "totalTrials": 24,
+  "totals": {
+    "A": {
+      "first": 6,
+      "both": 6,
+      "scores": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "calls": 12,
+      "seconds": 153.13,
+      "tokens": 246621,
+      "regressions": 0,
+      "forbidden": 0
+    },
+    "B": {
+      "first": 6,
+      "both": 6,
+      "scores": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "calls": 12,
+      "seconds": 140.69,
+      "tokens": 246927,
+      "regressions": 0,
+      "forbidden": 0
+    }
+  },
+  "pairwise": [
+    "무",
+    "무",
+    "무",
+    "무",
+    "무",
+    "무"
+  ],
+  "modelAttemptIdsVerified": true,
+  "serverReturnedModelSeparatelyVerified": false,
+  "providerEffort": null,
+  "bill": null,
+  "base": "6e88f877dd992c5f3f13c14fd287aa4b8aefd9d1",
+  "productPR": 134,
+  "productHead": "e6c34a2ad296977955d4d4d26ea3da322608aa65",
+  "run": "run_2e122eaeec9a",
+  "task": "task_506e4e9836de",
+  "dispatch": "ctx_d4884356e25c",
+  "candidateAuthorSession": "01a1f3fd-27ee-7973-8b75-b07e48f56287",
+  "control": {
+    "maxConcurrent": 1,
+    "maxCallsPerTrial": 8,
+    "maxSecondsPerTrial": 600,
+    "maxTrials": 24,
+    "attemptModelIDs": [
+      "gpt-6.2-astra"
+    ],
+    "uniqueTrialSessions": 24,
+    "maxObservedCallsPerTrial": 1,
+    "maxObservedTrialSeconds": 35.949,
+    "blockedOrDenied": 0,
+    "runtimeItems": {
+      "error": 48,
+      "agent_message": 24
+    },
+    "scope": "6 sealed project-inspired pure-JS contracts, no tool actions; result code executed in a separate offline process",
+    "startupWarnings": {
+      "experimentalSkipHostSkillDiscovery": 24,
+      "codeModeHostDisabledFailClosed": 24
+    }
+  },
+  "restart": {
+    "concurrent": {
+      "existingKeyClaim": "refused",
+      "ownerBefore": "running",
+      "newRows": 0,
+      "newCalls": 0
+    },
+    "beforeRestart": {
+      "rows": 24,
+      "resultsSha": "0d0543cdd1b3beb37606462a0db04a18d06b799be57118eb759a0c41cc00e2a6",
+      "meterSha": "ae8fd553816184713de4a1dcd03f0f5097999e28fc217303ac0e102d8d41fc14",
+      "calls": 24
+    },
+    "afterRestart": {
+      "rows": 24,
+      "resultsSha": "0d0543cdd1b3beb37606462a0db04a18d06b799be57118eb759a0c41cc00e2a6",
+      "meterSha": "ae8fd553816184713de4a1dcd03f0f5097999e28fc217303ac0e102d8d41fc14",
+      "calls": 24
+    },
+    "newModelCalls": 0
+  },
+  "boundary": {
+    "inputDirectoryReadable": true,
+    "inputDirectoryWritable": false,
+    "sealedSetReadable": false,
+    "graderReadable": false,
+    "gitHistoryReadable": false,
+    "hostConfigReadable": false,
+    "hostSocketReadable": false,
+    "ipv4RouteTableEntries": 0,
+    "probe": "Codex named permission profile, installed CLI launcher; native binary-only namespace probe failed closed before command execution",
+    "candidateOutput": "allowlisted candidate file, empty files permitted, expected answers remain in controller"
+  },
+  "decision": "B 보류, 기존 A 유지",
+  "decisionReason": "반복 성공 과제의 순증이 없고 서버 반환 모델/effort 별도 확인값이 없다.",
+  "independentAggregateReview": {
+    "requestedModel": "gemini-4-argon-high",
+    "requestedEffort": "high",
+    "initModel": "gemini-4-argon-high",
+    "conversationId": "72e6ac45-c92b-477c-be62-c5d7d9ac8856",
+    "verdict": "PASS",
+    "blockingFindings": 0,
+    "serverResolvedModel": null,
+    "serverResolvedEffort": null,
+    "packetSha256": "2debf856203ce7bc2fd32276b2f62a7a0ecc69d9fb541dd210bae42c71f38ae5",
+    "responseSha256": "f97aadeffd794cfaa2b8ee926228a5d15ef035454ee70176f154522ea02a77e5"
+  }
+}

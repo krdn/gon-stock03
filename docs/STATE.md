@@ -5,6 +5,7 @@
 프로젝트를 처음 볼 때는 [한 장 그림](architecture/figures/gon-stock-overview.png)에서 KIS 모의 주문과 DEMO 연습 흐름을 따라간다. [구조도 작업 #110](https://github.com/krdn/gon-stock03/issues/110)
 
 - **자동진화 #129 → #130 → #131:** [오프라인 기준선 및 재생](tasks/129-offline.md) · [설계](plans/agent-evolution.md).
+- **오프라인 파일럿 #130:** [거래일지 초안 오류와 관심종목 코드 복사](tasks/130-product.md) · [선행 기준선 PR #133](https://github.com/krdn/gon-stock03/pull/133).
 - **#128 자동진화 설계:** [연구·설계와 인수인계](tasks/128-agent-evolution.md). 첫 구현 후보는 [#129 관심종목 회귀의 오프라인 재생](https://github.com/krdn/gon-stock03/issues/129)이다.
 - **#113 설정 UX:** [4303 실측과 회귀 검증](tasks/113-settings-ux.md). 4303에 계좌 인증과 잔고 갱신 동선을 적용하고, 미주입 복구 및 기본 개발 서버 자동 주입을 검증했다.
 - **#12 실제 시세:** [트레이딩 연동](tasks/12-trading.md#실제-주가-연동). 기본 화면은 KIS 실제 현재가·일봉, DEMO는 명시 탭. [실제 응답·검증](verification/2026-11-17-trade-live.md). 현재 작업 폴더에서 Infisical 주입 후 4303/4304 실행, 동일 원장 보존. 단위216·브라우저150 PASS. PR90 통합. 아래 #25에서 일봉 전환 장면 수용.
@@ -21,3 +22,4 @@
 - **통합·정리:** [#85](tasks/85-consolidation.md), [브랜치 manifest](verification/2026-11-17-branch-consolidation.json). PR86으로 모든 기존 브랜치 이력을 main에 연결하고 초기 작업 브랜치29개를 정리했다. 원본18개 변경·fixture8개·작업 폴더를 보존했다. 구 worktree Graphify 재생성110개와 최종 검증은 #85 기록을 확인한다.
 - **보존·금지:** 기존 원장·보유·백업·작업 폴더·.codex·node_modules·Graphify 파일을 보존한다. 원장 초기화·ID 자동 재발급·예약·자동 재개·실전 전환·강제푸시·보호 우회 없음.
 - **리뷰·재개:** 필요한 구현 경계에서 지정 Fable5.2/high 또는 Argon/high만 사용한다. 이 파일·선택 작업·필수 자료·관련 이슈/PR/CI부터 읽는다. 신규 초기화와 전체 과거 기록 재독은 하지 않는다. [재개 명령과 전달 문구](verification/2026-11-17-consolidated-status.md#새-세션-시작)를 따른다.
+- **자동진화 파일럿 #131:** [Astra 지침 비교·부모 복구](tasks/131-agent-comparison.md) · [제품 검토 PR #134](https://github.com/krdn/gon-stock03/pull/134) · [기준선 PR #133](https://github.com/krdn/gon-stock03/pull/133).
