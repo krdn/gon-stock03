@@ -8,7 +8,7 @@ type Check = [kind: Kind, requirement: string, state: string, file: string | nul
 const checks: Record<string, Check[]> = JSON.parse(readFileSync('scripts/pilot/checks.json', 'utf8'));
 const registry = new Map(screens.map(screen => ['/' + screen.id, screen] as const));
 const common = '공통 서비스';
-const rows: object[] = [];
+const rows: Array<{ feature: string; reason: string } & Record<string, unknown>> = [];
 
 function row(feature: string, kind: string, requirement: string, state: string, evidenceLevel: string, reason: string, details: Record<string, unknown> = {}) {
   rows.push({ feature, kind, requirement, state, evidenceLevel, status: '미측정', reason, executionSha: null, observation: null, ...details });
@@ -145,15 +145,29 @@ for (const feature of features) {
   for (const [kind, requirement, state, file, test, level, reference] of entries) {
     const reasons: string[] = [];
     if (kind !== 'behavior' && !screen?.[kind].includes(requirement)) reasons.push('매핑의 원래 명세 문구가 사라지거나 변경됨');
+    let lookup = reference ? 'referenceOnly' : 'noEvidence';
     if (file && test) {
       const titles = testNames(file);
+      lookup = !titles ? 'missingFile' : titles.has(test) ? 'declared' : 'missingTitle';
       if (!titles) reasons.push('테스트 파일 없음');
       else if (!titles.has(test)) reasons.push('지정 파일에 해당 테스트 선언 없음');
       else reasons.push('검사 선언 확인, 실행 SHA와 관찰 결과 없음');
     } else reasons.push(reference ? '기록 참조, 이 실행에서 독립 관찰 없음' : '관찰 근거 없음');
     const evidence = level ?? (file?.startsWith('tests/browser/') ? '브라우저 재생' : '서버·통합 검사');
-    row(feature, kind, requirement, state, evidence, reasons.join(' / '), { testPath: file, testName: test, ...(reference ? { reference } : {}) });
+    row(feature, kind, requirement, state, evidence, reasons.join(' / '), { lookup, testPath: file, testName: test, ...(reference ? { reference } : {}) });
   }
 }
 
-console.log(JSON.stringify({ rows }, null, 2));
+const mapped = rows.filter(row => typeof row.lookup === 'string');
+const gaps = rows.filter(row => row.lookup === undefined);
+const summary = {
+  entries: rows.length,
+  mapped: mapped.length,
+  staleRequirementMappings: mapped.filter(row => row.reason.includes('매핑의 원래 명세 문구가 사라지거나 변경됨')).length,
+  lookup: Object.fromEntries(['declared', 'missingFile', 'missingTitle', 'referenceOnly', 'noEvidence'].map(
+    key => [key, mapped.filter(row => row.lookup === key).length])),
+  gaps: gaps.length,
+  gapReasons: Object.fromEntries([...new Set(gaps.map(row => row.reason))].map(
+    reason => [reason, gaps.filter(row => row.reason === reason).length])),
+};
+console.log(JSON.stringify({ summary, rows }, null, 2));

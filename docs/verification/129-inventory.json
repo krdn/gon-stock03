@@ -1,1 +1,44 @@
-{"entries": 186, "unknown": 186, "linkedTestsByFeature": {"*": 0, "/": 0, "/alerts": 4, "/backtest": 5, "/dashboard": 7, "/data": 5, "/design": 4, "/journal": 4, "/market": 5, "/orders": 7, "/paper": 8, "/portfolio": 4, "/risk": 5, "/settings": 4, "/settings/trading/*": 7, "/strategies": 5, "/trade": 6, "/watchlist": 7, "공통 서비스": 10}, "mutation": {"newScreen": true, "newRoute": true, "newRequirement": true, "missingTest": true}}
+{
+  "entries": 186,
+  "mapped": 104,
+  "staleRequirementMappings": 0,
+  "lookup": {
+    "declared": 97,
+    "missingFile": 0,
+    "missingTitle": 0,
+    "referenceOnly": 1,
+    "noEvidence": 6
+  },
+  "gaps": 82,
+  "gapReasons": {
+    "현재 명세 문구와 일치하는 매핑 없음": 82
+  },
+  "unknown": 186,
+  "linkedTestsByFeature": {
+    "*": 0,
+    "/": 0,
+    "/alerts": 4,
+    "/backtest": 5,
+    "/dashboard": 7,
+    "/data": 5,
+    "/design": 4,
+    "/journal": 4,
+    "/market": 5,
+    "/orders": 7,
+    "/paper": 8,
+    "/portfolio": 4,
+    "/risk": 5,
+    "/settings": 4,
+    "/settings/trading/*": 7,
+    "/strategies": 5,
+    "/trade": 6,
+    "/watchlist": 7,
+    "공통 서비스": 10
+  },
+  "mutation": {
+    "newScreen": true,
+    "newRoute": true,
+    "newRequirement": true,
+    "missingTest": true
+  }
+}

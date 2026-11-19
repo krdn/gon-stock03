@@ -6,11 +6,12 @@
   "evaluator": "Linux network/mount/PID namespaces, read-only allowlisted git archive and tests, in-memory SQLite and loopback-only Chromium",
   "runs": [
     {
-      "key": "4c762ce3d2e036bca9d1cff541083456af6a7b9393b1828dffdc11b7617de5ab",
+      "key": "79756a51e957ace773efb10e6cdfdc53eb726d6c3f5c27e18afc86d95077f762",
       "reused": false,
       "status": "verified",
       "result": {
-        "key": "4c762ce3d2e036bca9d1cff541083456af6a7b9393b1828dffdc11b7617de5ab",
+        "key": "79756a51e957ace773efb10e6cdfdc53eb726d6c3f5c27e18afc86d95077f762",
+        "attempt": 1,
         "contract": {
           "issue": 129,
           "sha": "71a7a5442d5c07a99c1c806bbd2f8085d8c5c309",
@@ -18,26 +19,56 @@
           "trial": 1,
           "case": "watchlist-503+controls",
           "checks": {
-            "replay.mjs": "df3d5432c2d2db94ae57b4bc984a73c82fcb654661a7edf6a4e75811b30e7e2d",
-            "replay-entry.sh": "5a939482ddcf420e88e6cb9b74049363124465ef50f340f74f6fa18df3eb4a6d",
-            "replay.py": "4f196d51147edf912ddf7231b4725720defdb815a55117310b31d6150817fcdb"
+            "replay.mjs": "7f186679f01e47ba34156930eb2a30d59ae82da0aa0e419a2a89678dfdf17223",
+            "replay-entry.sh": "3cad49ca604a9fa7a2c8f66759bacf105c6ff4939ad56dae1645401eee746614",
+            "replay.py": "88ceb72c2eeab14a669a6ca3e6bffd2c2b9f0724cb7061672e8e4f2fa49d5155"
           },
-          "lock": "2ab79fca82e617663a2f575b17227821ef0750c93b29606d70215a085935e9d5"
+          "lock": "2ab79fca82e617663a2f575b17227821ef0750c93b29606d70215a085935e9d5",
+          "runtime": {
+            "node": "v24.22.3",
+            "nodeSha256": "a7ec1b37e6ff9d187e4198c5b6df9a4eb1c74dd31804fb3bac55cc4ceca1ac01",
+            "nodeModulesSha256": "a9b4e57cc8674d750c267e76606fb8c3d21cbd0ab75e65b11a4f1350bec7ad17",
+            "browserTreeSha256": "ea5b691c64c37c86a7b847f12277b3bd91507a1c2d2c4fdb81bfed26a8d9270e"
+          }
         },
         "exit": 1,
-        "stdoutSha": "33178c7599dec7120afcc484aea829cfe497eac577cd1b6cfdfbfcfae12d28e8",
+        "stdoutSha": "9311ff806ac833734d90676112d0a49d7b4b2e95b0e93f2561a083032046234a",
         "stderrSha": "351b524197fb492920789369e7f1a271420c757633fbb553b280a181ac4c31a4",
+        "runtime": {
+          "node": "v24.22.3",
+          "playwright": "1.65.1",
+          "chromium": "159.0.8154.6"
+        },
+        "boundary": {
+          "interfaces": [
+            "lo"
+          ],
+          "routes": 0,
+          "credentialNames": 0,
+          "absent": [
+            "/home/gon",
+            "/input/.git",
+            "/input/.local",
+            "/run/docker.sock"
+          ],
+          "refusedPorts": [
+            4303,
+            4304
+          ]
+        },
         "observations": [
           {
             "name": "first 503 and confirmed empty after retry",
             "observed": {
               "previewRows": 4,
               "quoteRequests": 4,
+              "issuedMarketFetches": 4,
               "confirmedEmpty": true
             },
             "expected": {
               "previewRows": 0,
               "quoteRequests": 0,
+              "issuedMarketFetches": 0,
               "confirmedEmpty": true
             },
             "pass": false
@@ -46,11 +77,13 @@
             "name": "confirmed list survives later 503",
             "observed": {
               "savedRows": 1,
-              "toggleDisabled": true
+              "toggleDisabled": true,
+              "quoteSeen": true
             },
             "expected": {
               "savedRows": 1,
-              "toggleDisabled": true
+              "toggleDisabled": true,
+              "quoteSeen": true
             },
             "pass": true
           },
@@ -58,24 +91,27 @@
             "name": "journal draft survives failed save",
             "observed": {
               "draft": "오프라인 초안",
-              "savedEntries": 0
+              "savedEntries": 0,
+              "failureVisible": true
             },
             "expected": {
               "draft": "오프라인 초안",
-              "savedEntries": 0
+              "savedEntries": 0,
+              "failureVisible": true
             },
             "pass": true
           }
         ],
-        "elapsedSeconds": 5.52
+        "elapsedSeconds": 2.217
       }
     },
     {
-      "key": "ce62829a01d07fc450e60800640e977b1a1f30d12a750b96ef08257ecf3eda08",
+      "key": "b6ddb7db8dfd054fa1819c6d752f015bbe47c0a0acd38022f12ea25b643865a9",
       "reused": false,
       "status": "verified",
       "result": {
-        "key": "ce62829a01d07fc450e60800640e977b1a1f30d12a750b96ef08257ecf3eda08",
+        "key": "b6ddb7db8dfd054fa1819c6d752f015bbe47c0a0acd38022f12ea25b643865a9",
+        "attempt": 1,
         "contract": {
           "issue": 129,
           "sha": "7bcea9d29563e37e27370a6b8c4ee8dce86734e3",
@@ -83,26 +119,56 @@
           "trial": 1,
           "case": "watchlist-503+controls",
           "checks": {
-            "replay.mjs": "df3d5432c2d2db94ae57b4bc984a73c82fcb654661a7edf6a4e75811b30e7e2d",
-            "replay-entry.sh": "5a939482ddcf420e88e6cb9b74049363124465ef50f340f74f6fa18df3eb4a6d",
-            "replay.py": "4f196d51147edf912ddf7231b4725720defdb815a55117310b31d6150817fcdb"
+            "replay.mjs": "7f186679f01e47ba34156930eb2a30d59ae82da0aa0e419a2a89678dfdf17223",
+            "replay-entry.sh": "3cad49ca604a9fa7a2c8f66759bacf105c6ff4939ad56dae1645401eee746614",
+            "replay.py": "88ceb72c2eeab14a669a6ca3e6bffd2c2b9f0724cb7061672e8e4f2fa49d5155"
           },
-          "lock": "2ab79fca82e617663a2f575b17227821ef0750c93b29606d70215a085935e9d5"
+          "lock": "2ab79fca82e617663a2f575b17227821ef0750c93b29606d70215a085935e9d5",
+          "runtime": {
+            "node": "v24.22.3",
+            "nodeSha256": "a7ec1b37e6ff9d187e4198c5b6df9a4eb1c74dd31804fb3bac55cc4ceca1ac01",
+            "nodeModulesSha256": "a9b4e57cc8674d750c267e76606fb8c3d21cbd0ab75e65b11a4f1350bec7ad17",
+            "browserTreeSha256": "ea5b691c64c37c86a7b847f12277b3bd91507a1c2d2c4fdb81bfed26a8d9270e"
+          }
         },
         "exit": 0,
-        "stdoutSha": "5e8bc02f6674f61ce41307497082d5b704793528ef8d91ea6ab1c371a21c1bd6",
+        "stdoutSha": "472b6595ffc6903827c5577abb20924d6113aaacaeaa65308dafb2ac05b894b2",
         "stderrSha": "351b524197fb492920789369e7f1a271420c757633fbb553b280a181ac4c31a4",
+        "runtime": {
+          "node": "v24.22.3",
+          "playwright": "1.65.1",
+          "chromium": "159.0.8154.6"
+        },
+        "boundary": {
+          "interfaces": [
+            "lo"
+          ],
+          "routes": 0,
+          "credentialNames": 0,
+          "absent": [
+            "/home/gon",
+            "/input/.git",
+            "/input/.local",
+            "/run/docker.sock"
+          ],
+          "refusedPorts": [
+            4303,
+            4304
+          ]
+        },
         "observations": [
           {
             "name": "first 503 and confirmed empty after retry",
             "observed": {
               "previewRows": 0,
               "quoteRequests": 0,
+              "issuedMarketFetches": 0,
               "confirmedEmpty": true
             },
             "expected": {
               "previewRows": 0,
               "quoteRequests": 0,
+              "issuedMarketFetches": 0,
               "confirmedEmpty": true
             },
             "pass": true
@@ -111,11 +177,13 @@
             "name": "confirmed list survives later 503",
             "observed": {
               "savedRows": 1,
-              "toggleDisabled": true
+              "toggleDisabled": true,
+              "quoteSeen": true
             },
             "expected": {
               "savedRows": 1,
-              "toggleDisabled": true
+              "toggleDisabled": true,
+              "quoteSeen": true
             },
             "pass": true
           },
@@ -123,29 +191,166 @@
             "name": "journal draft survives failed save",
             "observed": {
               "draft": "오프라인 초안",
-              "savedEntries": 0
+              "savedEntries": 0,
+              "failureVisible": true
             },
             "expected": {
               "draft": "오프라인 초안",
-              "savedEntries": 0
+              "savedEntries": 0,
+              "failureVisible": true
             },
             "pass": true
           }
         ],
-        "elapsedSeconds": 5.39
+        "elapsedSeconds": 2.187
       }
     }
   ],
   "duplicates": [
     {
-      "key": "4c762ce3d2e036bca9d1cff541083456af6a7b9393b1828dffdc11b7617de5ab",
+      "key": "79756a51e957ace773efb10e6cdfdc53eb726d6c3f5c27e18afc86d95077f762",
       "status": "running",
       "reused": true
     },
     {
-      "key": "4c762ce3d2e036bca9d1cff541083456af6a7b9393b1828dffdc11b7617de5ab",
+      "key": "79756a51e957ace773efb10e6cdfdc53eb726d6c3f5c27e18afc86d95077f762",
       "status": "verified",
       "reused": true
     }
-  ]
+  ],
+  "reviewVerification": {
+    "behavioralNegativeControl": {
+      "kind": "synthetic double mutation of the fixed UI",
+      "status": "unexpected-behavior",
+      "observations": [
+        {
+          "name": "first 503 and confirmed empty after retry",
+          "observed": {
+            "previewRows": 0,
+            "quoteRequests": 1,
+            "issuedMarketFetches": 1,
+            "confirmedEmpty": false
+          },
+          "expected": {
+            "previewRows": 0,
+            "quoteRequests": 0,
+            "issuedMarketFetches": 0,
+            "confirmedEmpty": true
+          },
+          "pass": false
+        },
+        {
+          "name": "confirmed list survives later 503",
+          "observed": {
+            "savedRows": 1,
+            "toggleDisabled": true,
+            "quoteSeen": true
+          },
+          "expected": {
+            "savedRows": 1,
+            "toggleDisabled": true,
+            "quoteSeen": true
+          },
+          "pass": true
+        },
+        {
+          "name": "journal draft survives failed save",
+          "observed": {
+            "draft": "오프라인 초안",
+            "savedEntries": 0,
+            "failureVisible": true
+          },
+          "expected": {
+            "draft": "오프라인 초안",
+            "savedEntries": 0,
+            "failureVisible": true
+          },
+          "pass": true
+        }
+      ],
+      "behavioralFailureReused": true,
+      "infraRetryAllowed": false,
+      "key": "d2dc80a493218ead28e9ae283e1c4278f84f3a8814f8ab0f616d6f75d71f5230",
+      "sourceRevision": "a92ea9df59750f5fa9fb9ea60b319f3b62ba3c3d",
+      "checks": {
+        "replay.mjs": "7f186679f01e47ba34156930eb2a30d59ae82da0aa0e419a2a89678dfdf17223",
+        "replay-entry.sh": "3cad49ca604a9fa7a2c8f66759bacf105c6ff4939ad56dae1645401eee746614",
+        "replay.py": "88ceb72c2eeab14a669a6ca3e6bffd2c2b9f0724cb7061672e8e4f2fa49d5155"
+      },
+      "runtime": {
+        "node": "v24.22.3",
+        "nodeSha256": "a7ec1b37e6ff9d187e4198c5b6df9a4eb1c74dd31804fb3bac55cc4ceca1ac01",
+        "nodeModulesSha256": "a9b4e57cc8674d750c267e76606fb8c3d21cbd0ab75e65b11a4f1350bec7ad17",
+        "browserTreeSha256": "ea5b691c64c37c86a7b847f12277b3bd91507a1c2d2c4fdb81bfed26a8d9270e"
+      },
+      "boundary": {
+        "interfaces": [
+          "lo"
+        ],
+        "routes": 0,
+        "credentialNames": 0,
+        "absent": [
+          "/home/gon",
+          "/input/.git",
+          "/input/.local",
+          "/run/docker.sock"
+        ],
+        "refusedPorts": [
+          4303,
+          4304
+        ]
+      }
+    },
+    "infrastructureRetry": {
+      "first": "infrastructure-error",
+      "duplicateBeforeDiagnosis": true,
+      "retryResult": "verified",
+      "attempts": 2,
+      "keyPreserved": true,
+      "finishedResultReused": true,
+      "failureAfterBothAttempts": "infrastructure-error",
+      "thirdAttemptBlocked": true,
+      "runningOwnerRecorded": true,
+      "attemptEvidence": [
+        {
+          "key": "b6ddb7db8dfd054fa1819c6d752f015bbe47c0a0acd38022f12ea25b643865a9",
+          "attempt": 1,
+          "checks": {
+            "replay.mjs": "7f186679f01e47ba34156930eb2a30d59ae82da0aa0e419a2a89678dfdf17223",
+            "replay-entry.sh": "3cad49ca604a9fa7a2c8f66759bacf105c6ff4939ad56dae1645401eee746614",
+            "replay.py": "88ceb72c2eeab14a669a6ca3e6bffd2c2b9f0724cb7061672e8e4f2fa49d5155"
+          },
+          "runtime": {
+            "node": "v24.22.3",
+            "nodeSha256": "a7ec1b37e6ff9d187e4198c5b6df9a4eb1c74dd31804fb3bac55cc4ceca1ac01",
+            "nodeModulesSha256": "a9b4e57cc8674d750c267e76606fb8c3d21cbd0ab75e65b11a4f1350bec7ad17",
+            "browserTreeSha256": "ea5b691c64c37c86a7b847f12277b3bd91507a1c2d2c4fdb81bfed26a8d9270e"
+          },
+          "elapsedSeconds": 0.002
+        },
+        {
+          "key": "b6ddb7db8dfd054fa1819c6d752f015bbe47c0a0acd38022f12ea25b643865a9",
+          "attempt": 2,
+          "checks": {
+            "replay.mjs": "7f186679f01e47ba34156930eb2a30d59ae82da0aa0e419a2a89678dfdf17223",
+            "replay-entry.sh": "3cad49ca604a9fa7a2c8f66759bacf105c6ff4939ad56dae1645401eee746614",
+            "replay.py": "88ceb72c2eeab14a669a6ca3e6bffd2c2b9f0724cb7061672e8e4f2fa49d5155"
+          },
+          "runtime": {
+            "node": "v24.22.3",
+            "nodeSha256": "a7ec1b37e6ff9d187e4198c5b6df9a4eb1c74dd31804fb3bac55cc4ceca1ac01",
+            "nodeModulesSha256": "a9b4e57cc8674d750c267e76606fb8c3d21cbd0ab75e65b11a4f1350bec7ad17",
+            "browserTreeSha256": "ea5b691c64c37c86a7b847f12277b3bd91507a1c2d2c4fdb81bfed26a8d9270e"
+          },
+          "elapsedSeconds": 2.409
+        }
+      ]
+    },
+    "serverReadinessControl": {
+      "status": "infrastructure-error",
+      "key": "edd6131c7557625c471f3a0d8fbf35600261e562f33b2b3d268d9caa14c21753",
+      "exit": 70,
+      "readinessDiagnostic": true
+    }
+  }
 }
