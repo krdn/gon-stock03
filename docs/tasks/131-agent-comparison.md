@@ -25,4 +25,4 @@
 
 독립 Argon/high 리뷰는 공개 집계·후보 차이·복구 근거·판정 기준을 대조해 PASS(차단 지적 0건)를 반환했다. 내부 모델 ID·effort는 별도 미측정이다.
 
-[실험 결과 PR #135](https://github.com/krdn/gon-stock03/pull/135)에 공개 기록을 전달했다. 파일럿의 제품 PR #134는 사용자 검토 대기다. #129의 기능 기준선은 검증됐고, 기준선 도구 PR #133의 지정 외부 코드 리뷰는 Fable 사용 크레디트 요구로 보류다. 각 PR의 실제 SHA와 CI는 해당 이슈에 연결한다.
+[실험 결과 PR #135](https://github.com/krdn/gon-stock03/pull/135)에 공개 기록을 전달했다. 파일럿의 제품 PR #134는 사용자 검토 대기다. 기준선 도구 PR #133은 Fable의 크레디트 요구 이후 사용자가 지정한 Opus 5.5/high로 독립 리뷰를 마쳤다. 수정분 재검토 판정은 차단 결함 없음이다. [#129 리뷰 영수증](https://github.com/krdn/gon-stock03/blob/fc197165d4704b02c6a0fe4dbc89898ee40e1f1a/docs/verification/129-review.json). 각 PR의 실제 SHA와 CI는 해당 이슈에 연결한다.
