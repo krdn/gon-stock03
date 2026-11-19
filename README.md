@@ -14,7 +14,7 @@ npm ci
 npm run dev
 ```
 
-KIS 모의 계좌는 `infisical secrets-manager run --env dev --path /kis -- npm run dev`로 연결합니다. Node 24가 필요합니다. [실행·중지·복구 안내](docs/operations/local.md)를 참고하세요.
+Infisical CLI에 로그인하면 `npm run dev`가 `dev /kis`의 모의 계좌 설정 4개를 읽어 API 서버에 전달합니다. Node 24가 필요합니다. [실행·중지·복구 안내](docs/operations/local.md)를 참고하세요.
 
 15개 화면, 로컬 주문·취소·전략 자동 재생·백테스트·한도·일지·관심목록을 구현했습니다. 실제 KIS 모의 인증·잔고·현재가·최근 100일봉·당일 주문 조회를 확인했습니다. KIS 주문 접수·대조 코드는 네트워크 fixture로 검증했으며 실제 주문 전송·체결은 아직 검증하지 않았습니다. 웹 정정취소·WebSocket 연속 자동매매·불명 주문 수동 해제는 남아 있습니다. 실전 주문은 지원하지 않습니다.
 

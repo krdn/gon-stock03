@@ -22,3 +22,12 @@
 - 격리 환경에서 형식 오류 복구, 인증 대기·타임아웃, 조회 성공·실패와 이전 잔고 표시를 확인했다. 실제 KIS 인증·잔고 조회와 주문은 실행하지 않았다.
 - Argon 독립 리뷰에서 P1~P3 지적 0건. 요청과 init 모델은 `gemini-4-argon-high`, 요청 effort는 high였다. 제공자 내부 모델과 effort의 별도 확인값은 없다.
 - PR의 application/configuration 검사와 병합 상태는 이슈의 PR 링크에서 확인한다.
+
+## 일반 개발 서버의 자동 주입
+
+사용자 요청으로 `npm run dev`의 시작 스크립트가 Infisical CLI에서 모의 계좌 필수 값 4개를 이름으로 조회한다. API 자식 환경에 값을 넣고 웹 자식 환경에서는 KIS·Infisical 변수를 제거한다. 네 값이 이미 있으면 재조회하지 않는다. 일부만 있으면 Infisical 쪽 전체 집합과 일치하는 항목을 확인한 뒤에만 채운다. 실패하면 로컬 데모와 설정 화면에서 복구할 수 있다. 실시간 접속키 발급은 기존 명시 실행을 유지한다.
+
+- 원본 실행 폴더 `/home/gon/llm-projects/gon-stock03`에도 실행 코드와 안내를 적용했다. KIS 변수를 제거한 환경에서 실제 `npm run dev`, 기존 CLI 로그인, 메모리 DB로 검사했다. 4303의 GET 응답은 `configured=true`, 필수 설정 `present`, 인증 `unverified`였다.
+- API 프로세스의 필수 값 4개 존재, 웹 프로세스의 KIS·Infisical 변수 0개, API의 주문 승인·전략 계약·WS 접속키 미주입을 확인했다. Chromium 설정 화면에서 ‘필수 값 있음’, 조회 버튼 활성화와 `npm run dev` 안내를 확인했다. KIS 업무 호출·주문·영구 원장 접근 없이 검증용 프로세스를 종료했다.
+- 빌드·단위 242개·설정 Playwright 16개 통과. CLI 미설치·권한 거부·불완전하거나 손상된 응답·기존 값 충돌을 포함한다. 변경 SHA와 원격 CI는 PR #114에서 확인한다.
+- 이번 시작 스크립트 변경도 지정 Argon 독립 리뷰를 받았다. 요청·init `gemini-4-argon-high`, 요청 effort high, P1~P3 지적 0건. 공급자 내부 effort는 별도 미확인이다.

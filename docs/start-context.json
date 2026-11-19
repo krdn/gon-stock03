@@ -1,17 +1,17 @@
 {
-  "checked_at": "2026-11-19T01:23:45.062929+00:00",
-  "objective": "설정 화면의 KIS 연결 상태·복구 동선과 모바일 조작 검증",
+  "checked_at": "2026-11-19T02:01:29.520540+00:00",
+  "objective": "npm run dev에서 KIS 모의 필수 설정 4개를 API 프로세스에 주입",
   "sources": [
     {
-      "url": "https://www.w3.org/WAI/WCAG22/Understanding/reflow.html",
-      "finding": "320 CSS 픽셀 폭에서 본문과 조작에 가로 스크롤이 필요하지 않은지 확인한다."
+      "url": "https://nodejs.org/api/child_process.html",
+      "finding": "spawnSync는 자식의 환경과 표준 입출력, timeout을 지정할 수 있고 stdout을 부모 메모리로 수신한다."
     },
     {
-      "url": "https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html",
-      "finding": "사용자 동작의 대기·완료·오류 메시지는 포커스를 옮기지 않고 보조 기술에 전달할 수 있어야 한다."
+      "url": "https://infisical.com/docs/cli/commands/secrets",
+      "finding": "설치된 공식 CLI 0.45.10의 secrets-manager secrets get 도움말과 실제 dev /kis 명시 이름 4개 조회에서 JSON 배열의 secretKey·secretValue 필드를 확인했다."
     }
   ],
-  "decisions": "주입 누락·형식 오류는 조회 전에 안내한다. 로컬 상태 새로고침과 외부 모의 잔고 확인을 구분한다.",
+  "decisions": "완전한 기존 설정을 유지한다. 서버에 주입할 네 값의 묶음을 검증하며 웹 환경에서 KIS·Infisical 변수를 제거한다. 실제 인증·주문 없이 메모리 DB로 검증한다.",
   "status": "reviewed",
   "task_contexts": [
     {
@@ -473,6 +473,22 @@
         }
       ],
       "decisions": "주입 누락·형식 오류는 조회 전에 안내한다. 로컬 상태 새로고침과 외부 모의 잔고 확인을 구분한다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/113",
+      "checked_at": "2026-11-19T02:01:29.520540+00:00",
+      "objective": "npm run dev에서 KIS 모의 필수 설정 4개를 API 프로세스에 주입",
+      "sources": [
+        {
+          "url": "https://nodejs.org/api/child_process.html",
+          "finding": "spawnSync는 자식의 환경과 표준 입출력, timeout을 지정할 수 있고 stdout을 부모 메모리로 수신한다."
+        },
+        {
+          "url": "https://infisical.com/docs/cli/commands/secrets",
+          "finding": "설치된 공식 CLI 0.45.10의 secrets-manager secrets get 도움말과 실제 dev /kis 명시 이름 4개 조회에서 JSON 배열의 secretKey·secretValue 필드를 확인했다."
+        }
+      ],
+      "decisions": "완전한 기존 설정을 유지한다. 서버에 주입할 네 값의 묶음을 검증하며 웹 환경에서 KIS·Infisical 변수를 제거한다. 실제 인증·주문 없이 메모리 DB로 검증한다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."

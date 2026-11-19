@@ -166,7 +166,7 @@ export function Settings() {
           <li>로그인이 만료되면 터미널에서 다시 인증하세요. 권한 오류가 나면 프로젝트·환경·경로의 읽기 권한을 확인하세요.</li>
           <li>아래 명령으로 서버를 실행한 뒤 연결 상태를 새로고침하고 모의 잔고를 조회하세요.</li>
         </ol>
-        <code className="connection-command">infisical secrets-manager run --env dev --path /kis -- npm run dev</code>
+        <code className="connection-command">npm run dev</code>
         <p>키·토큰·계좌번호는 서버에서만 사용하세요. 채팅·브라우저·Git에 입력하지 마세요.</p>
       </div>
     </Panel>

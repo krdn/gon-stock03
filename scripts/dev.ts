@@ -1,5 +1,32 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { z } from 'zod';
 import { Realtime } from '../server/realtime.ts';
+
+const kisVariables = ['KIS_APP_KEY', 'KIS_APP_SECRET', 'KIS_CANO', 'KIS_ACNT_PRDT_CD'] as const;
+function loadDevCredentials(env: NodeJS.ProcessEnv) {
+  if (kisVariables.every(key => env[key]?.trim())) return;
+  const result = spawnSync('infisical', [
+    'secrets-manager', 'secrets', 'get', ...kisVariables, '--env', 'dev', '--path', '/kis', '-o', 'json', '--silent',
+  ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15_000 });
+  if (result.status === 0) {
+    try {
+      const records = z.array(z.object({
+        secretKey: z.string(),
+        secretValue: z.string().refine(value => !value.includes('\0')),
+      })).parse(JSON.parse(result.stdout));
+      const values = new Map(records.map(record => [record.secretKey, record.secretValue]));
+      const completeAndCompatible = kisVariables.every(key => {
+        const value = values.get(key);
+        return value?.trim() && (!env[key]?.trim() || env[key] === value);
+      });
+      if (completeAndCompatible) {
+        for (const key of kisVariables) env[key] = values.get(key);
+        return;
+      }
+    } catch { /* CLI output may contain secrets. Report only the recovery steps below. */ }
+  }
+  console.warn('KIS 설정을 불러오지 못했습니다. Infisical CLI 설치·로그인, dev /kis 읽기 권한과 기존 환경변수를 확인한 뒤 npm run dev를 다시 실행하세요. 로컬 데모를 시작합니다.');
+}
 
 const realtime = process.argv.includes('--realtime');
 let approvalKey: string | undefined;
@@ -23,15 +50,14 @@ if (realtime) {
     process.exit(1);
   }
 }
-const children = ['dev:server', 'dev:web'].map(script => {
-  const env = { ...process.env };
-  if (script === 'dev:web') delete env.KIS_STRATEGY_CONTRACT;
-  if (realtime) {
-    delete env.KIS_WS_APPROVAL_KEY;
-    if (script === 'dev:server') env.KIS_WS_APPROVAL_KEY = approvalKey;
-  }
-  return spawn('npm', ['run', script], { stdio: 'inherit', env });
-});
+const serverEnv = { ...process.env };
+if (realtime) serverEnv.KIS_WS_APPROVAL_KEY = approvalKey;
+else loadDevCredentials(serverEnv);
+const webEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('KIS_') && !name.startsWith('INFISICAL_')));
+const children = [
+  spawn('npm', ['run', 'dev:server'], { stdio: 'inherit', env: serverEnv }),
+  spawn('npm', ['run', 'dev:web'], { stdio: 'inherit', env: webEnv }),
+];
 let stopping = false;
 function stop() { if (stopping) return; stopping = true; children.forEach(child => child.kill('SIGTERM')); }
 process.on('SIGINT', stop); process.on('SIGTERM', stop);
