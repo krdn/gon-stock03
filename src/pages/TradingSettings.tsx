@@ -16,6 +16,9 @@ import { PaperQuantitySetting } from '../components/PaperQuantitySetting';
 import { RiskLimitSettings } from '../components/RiskLimitSettings';
 import { useWorkbench } from '../context';
 
+import { defaultOncePolicy, defaultStrategyPolicy, krxHours, validOncePolicy } from '../../shared/trading-policy';
+import { NumberField, priceNames, TradingPolicyFields } from '../components/TradingPolicyFields';
+
 const home = '/settings/trading';
 const titles = { general: '일반 주문·위험', once: '다음 한정 실행', strategy: '다음 전략 계약' };
 const stages = ['대상·기간', '한도·조건', '검토·고정'];
@@ -30,6 +33,7 @@ function defaults(kind: PlanKind, strategy?: Strategy): TradingTerms {
     ? {
         kind,
         date: kst(start).slice(0, 10),
+        policy: defaultOncePolicy(kst(start).slice(0, 10)),
         code: '005930',
         orderType: 'limit',
         maxQty: 1,
@@ -47,28 +51,82 @@ function defaults(kind: PlanKind, strategy?: Strategy): TradingTerms {
         maxAttempts: 1,
         maxTotalAmount: 100000,
         sellPolicy: 'deny',
+        policy: defaultStrategyPolicy(),
       };
 }
 function description(t: TradingTerms): [string, string][] {
-  return t.kind === 'once'
-    ? [
-        ['실행일', t.date],
-        ['종목', t.code],
-        ['주문 방식', t.orderType === 'market' ? '시장가 매수' : '지정가 매수'],
-        ['수량 상한', t.maxQty + '주'],
-        ['금액 상한', won(t.maxAmount) + '원'],
-        ['기존 보유', t.allowExistingHolding ? '허용' : '차단'],
-        ['잔량 취소', t.cancelProbe ? '한정 1회' : '사용 안 함'],
-      ]
-    : [
-        ['저장 전략', t.strategyId + ' · revision ' + t.revision],
-        ['시작', localTime(t.startsAt)],
-        ['종료', localTime(t.endsAt)],
-        ['주문당 금액', won(t.maxOrderAmount) + '원'],
-        ['총 시도', t.maxAttempts + '회'],
-        ['누적 금액', won(t.maxTotalAmount) + '원'],
-        ['매도 범위', t.sellPolicy === 'account' ? '기존 계좌 보유 포함' : '매수만'],
-      ];
+  const p = t.policy;
+  const rows: [string, string][] =
+    t.kind === 'once'
+      ? [
+          ['실행일', t.date],
+          ['종목', t.code],
+          [
+            '주문 방식',
+            (t.orderType === 'market' ? '시장가 ' : '지정가 ') + (t.policy?.side === 'sell' ? '매도' : '매수'),
+          ],
+          ['수량 상한', t.maxQty + '주'],
+          ['금액 상한', won(t.maxAmount) + '원'],
+          ['기존 보유', t.allowExistingHolding ? '허용' : '차단'],
+          ['잔량 취소', t.cancelProbe ? '한정 API 1회' : '모의 앱 수동 대응'],
+        ]
+      : [
+          ['저장 전략', t.strategyId + ' · revision ' + t.revision],
+          ['시작', localTime(t.startsAt)],
+          ['종료', localTime(t.endsAt)],
+          ['주문당 금액', won(t.maxOrderAmount) + '원'],
+          ['총 시도', t.maxAttempts + '회'],
+          ['누적 금액', won(t.maxTotalAmount) + '원'],
+          [
+            '매도 범위',
+            t.sellPolicy === 'account'
+              ? '기존 계좌 보유 포함'
+              : t.sellPolicy === 'contract'
+                ? '계약 체결분만'
+                : '매수만',
+          ],
+        ];
+  if (p) {
+    rows.push(
+      ['KIS 응답 대기', p.requestSeconds + '초'],
+      ['잔고 전체 조회', p.balanceSeconds + '초'],
+      ['호출 간 추가 대기', p.extraSpacingMs + 'ms'],
+      ['종목 마스터', p.masterDays + '일 이내'],
+      ['실행 시간창', p.session.open + '~' + p.session.close + ' KST'],
+      ['시세 유효시간', p.quoteSeconds + '초'],
+      ['시세 재연결', p.reconnects + '회'],
+      ['실시간 수신 대기', p.silenceSeconds + '초'],
+      ['복구 근거 유효시간', p.recoverySeconds + '초'],
+    );
+    if (p.exchangeNotice)
+      rows.push(
+        ['공식 공지 거래일', p.exchangeNotice.date],
+        ['공지 정규장', p.exchangeNotice.open + '~' + p.exchangeNotice.close],
+        ['공지 출처', p.exchangeNotice.source],
+      );
+    if ('signalSeconds' in p)
+      rows.push(
+        ['원 신호 유효시간', p.signalSeconds + '초'],
+        ['전략 주문 방식', p.orderType === 'market' ? '시장가 · 상한가로 예약' : '신호 가격 지정가'],
+      );
+    else {
+      if (t.kind === 'once' && t.orderType === 'limit')
+        rows.push(
+          ['지정가 기준', priceNames[p.priceMode]],
+          [
+            p.priceMode === 'cappedCurrent' ? '매수 단가 상한' : '고정 단가',
+            p.limitPrice ? won(p.limitPrice) + '원' : '재조회 현재가',
+          ],
+        );
+      rows.push(
+        ['기존 미체결', p.allowPending ? '예약 반영 후 허용' : '차단'],
+        ['매수 후 남길 현금', won(p.cashReserve) + '원'],
+        ['승인 소진', p.consumeAt === 'validated' ? '사전검사 통과 후' : '사전검사 시작 시'],
+        ['조회·잔량 대응', p.observationSeconds + '초'],
+      );
+    }
+  }
+  return rows;
 }
 function Comparison({
   next,
@@ -102,32 +160,6 @@ function Comparison({
         </tbody>
       </table>
     </div>
-  );
-}
-function NumberField({
-  label,
-  value,
-  max,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  max?: number;
-  onChange: (n: number) => void;
-}) {
-  return (
-    <label className="field">
-      {label}
-      <input
-        type="number"
-        min="1"
-        max={max}
-        step="1"
-        required
-        value={value || ''}
-        onChange={(e) => onChange(Number(e.target.value))}
-      />
-    </label>
   );
 }
 function initialEdit(key: string, base: string | null, fallback: TradingTerms) {
@@ -195,6 +227,13 @@ function Editor({
     return undefined;
   });
   const [importText, setImportText] = useState('');
+  const [newStrategy, setNewStrategy] = useState<{
+    name: string;
+    code: string;
+    qty: number;
+    fast: number;
+    slow: number;
+  } | null>(null);
   const locked = busy || !available || base !== id;
   const selected = terms.kind === 'strategy' ? strategies.find((s) => s.id === terms.strategyId) : undefined;
   const mismatch = terms.kind === 'strategy' && (!selected || selected.revision !== terms.revision);
@@ -202,6 +241,8 @@ function Editor({
   const limitsChanged =
     !!initial && !initial.fixed && JSON.stringify(initial.limits) !== JSON.stringify(planLimits(state));
   function edit(t: TradingTerms) {
+    if (!t.policy)
+      t = t.kind === 'once' ? { ...t, policy: defaultOncePolicy(t.date) } : { ...t, policy: defaultStrategyPolicy() };
     setTerms(t);
     setError('');
     try {
@@ -304,7 +345,21 @@ function Editor({
                   type="date"
                   required
                   value={terms.date}
-                  onChange={(e) => edit({ ...terms, date: e.target.value })}
+                  onChange={(e) => {
+                    const policy = terms.policy ?? defaultOncePolicy(terms.date);
+                    const previous = krxHours(terms.date, policy.exchangeNotice);
+                    const defaultWindow =
+                      policy.session.open === previous.open && policy.session.close === previous.close;
+                    edit({
+                      ...terms,
+                      date: e.target.value,
+                      policy: {
+                        ...policy,
+                        exchangeNotice: undefined,
+                        session: defaultWindow ? krxHours(e.target.value) : policy.session,
+                      },
+                    });
+                  }}
                 />
               </label>
               <label className="field">
@@ -312,29 +367,65 @@ function Editor({
                 <select
                   value={terms.orderType}
                   onChange={(e) =>
-                    edit(
-                      e.target.value === 'market'
-                        ? { ...terms, orderType: 'market', code: '005930', maxQty: 1, cancelProbe: false }
-                        : { ...terms, orderType: 'limit', maxAmount: Math.min(terms.maxAmount, 200000) },
-                    )
+                    edit({
+                      ...terms,
+                      orderType: e.target.value as 'market' | 'limit',
+                      cancelProbe: false,
+                      policy: {
+                        ...(terms.policy ?? defaultOncePolicy(terms.date)),
+                        priceMode: 'current',
+                        limitPrice: undefined,
+                      },
+                    })
                   }
                 >
-                  <option value="limit">지정가 매수</option>
-                  <option value="market">시장가 매수</option>
+                  <option value="limit">지정가</option>
+                  <option value="market">시장가</option>
                 </select>
               </label>
               <label className="field">
                 대상 종목
-                <select
-                  disabled={terms.orderType === 'market'}
+                <input
+                  list="plan-symbols"
+                  required
+                  pattern="[0-9]{6}"
+                  maxLength={6}
                   value={terms.code}
-                  onChange={(e) => edit({ ...terms, code: e.target.value as '005930' | '069500' })}
+                  onChange={(e) => edit({ ...terms, code: e.target.value })}
+                />
+                <datalist id="plan-symbols">
+                  <option value="005930">삼성전자</option>
+                  <option value="069500">KODEX 200</option>
+                </datalist>
+              </label>
+              <p className="muted">
+                다른 국내 주식·ETF는 6자리 종목코드를 입력하고 <Link to="/data">데이터</Link>에서 종목 마스터를
+                갱신하세요.
+              </p>
+              <label className="field">
+                주문 방향
+                <select
+                  value={terms.policy?.side ?? 'buy'}
+                  onChange={(e) =>
+                    edit({
+                      ...terms,
+                      cancelProbe: false,
+                      policy: {
+                        ...(terms.policy ?? defaultOncePolicy(terms.date)),
+                        side: e.target.value as 'buy' | 'sell',
+                        ...(e.target.value === 'sell' &&
+                          terms.policy?.priceMode === 'cappedCurrent' && {
+                            priceMode: 'current' as const,
+                            limitPrice: undefined,
+                          }),
+                      },
+                    })
+                  }
                 >
-                  <option value="005930">삼성전자 005930</option>
-                  <option value="069500">KODEX 200 069500</option>
+                  <option value="buy">매수</option>
+                  <option value="sell">매도</option>
                 </select>
               </label>
-              <p>당일 확인된 거래시간과 제품의 09:00~15:30 KST 범위에서 1회 실행합니다.</p>
             </>
           )}
           {step === 1 && terms.kind === 'strategy' && (
@@ -372,6 +463,73 @@ function Editor({
                     </button>
                   )}
                 </p>
+              )}
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() =>
+                  setNewStrategy(
+                    newStrategy
+                      ? null
+                      : {
+                          name: selected ? selected.name + ' 복사' : '모의 교차 전략',
+                          code: selected?.code ?? '005930',
+                          qty: selected?.qty ?? 1,
+                          fast: selected?.fast ?? 2,
+                          slow: selected?.slow ?? 3,
+                        },
+                  )
+                }
+              >
+                {newStrategy ? '전략 입력 닫기' : '종목·수량·교차 주기로 새 전략 만들기'}
+              </button>
+              {newStrategy && (
+                <fieldset className="plan-fields">
+                  <legend>새 KIS 전략</legend>
+                  <label className="field">
+                    전략 이름
+                    <input
+                      value={newStrategy.name}
+                      onChange={(e) => setNewStrategy({ ...newStrategy, name: e.target.value })}
+                    />
+                  </label>
+                  <label className="field">
+                    전략 종목코드
+                    <input
+                      maxLength={6}
+                      value={newStrategy.code}
+                      onChange={(e) => setNewStrategy({ ...newStrategy, code: e.target.value })}
+                    />
+                  </label>
+                  {(['qty', 'fast', 'slow'] as const).map((k, i) => (
+                    <NumberField
+                      key={k}
+                      label={['신호당 수량 (주)', '단기 주기', '장기 주기'][i]}
+                      value={newStrategy[k]}
+                      min={[1, 2, 3][i]}
+                      max={[10000, 60, 100][i]}
+                      onChange={(value) => setNewStrategy({ ...newStrategy, [k]: value })}
+                    />
+                  ))}
+                  <button
+                    type="button"
+                    className="button secondary"
+                    onClick={async () => {
+                      try {
+                        const result = await act<{ id: string; revision: number }>('strategies', {
+                          ...newStrategy,
+                          environment: 'kis-paper',
+                        });
+                        edit({ ...terms, strategyId: result.id, revision: result.revision });
+                        setNewStrategy(null);
+                      } catch (e) {
+                        setError(e instanceof Error ? e.message : '전략 저장 실패');
+                      }
+                    }}
+                  >
+                    정지 상태로 저장하고 선택
+                  </button>
+                </fieldset>
               )}
               {(['startsAt', 'endsAt'] as const).map((field, i) => (
                 <label className="field" key={field}>
@@ -418,15 +576,42 @@ function Editor({
           )}
           {step === 2 && terms.kind === 'once' && (
             <>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() =>
+                  edit({
+                    ...terms,
+                    code: '005930',
+                    orderType: 'limit',
+                    maxQty: 2,
+                    maxAmount: 300000,
+                    allowExistingHolding: true,
+                    cancelProbe: false,
+                    policy: {
+                      ...defaultOncePolicy(terms.date),
+                      priceMode: 'lower',
+                      limitPrice: 136300,
+                      consumeAt: 'validated',
+                      observationSeconds: 600,
+                    },
+                  })
+                }
+              >
+                11월 19일 하한가 2주 예시 불러오기
+              </button>
+              <small>
+                당시 단가 136,300원 · 합계 272,600원. 실행일의 실제 하한가를 확인하고 고정 단가를 수정하세요.
+              </small>
               <NumberField
                 label="승인 최대 수량 (주)"
-                max={terms.orderType === 'market' ? 1 : 100000}
+                max={100000}
                 value={terms.maxQty}
                 onChange={(maxQty) => edit({ ...terms, maxQty })}
               />
               <NumberField
                 label="승인 주문대금 (원)"
-                max={terms.orderType === 'market' ? 300000 : 200000}
+                max={100000000}
                 value={terms.maxAmount}
                 onChange={(maxAmount) => edit({ ...terms, maxAmount })}
               />
@@ -441,21 +626,46 @@ function Editor({
               <label className="check-row">
                 <input
                   type="checkbox"
-                  disabled={terms.orderType === 'market'}
+                  disabled={
+                    !terms.cancelProbe &&
+                    !validOncePolicy(
+                      terms.policy ?? defaultOncePolicy(terms.date),
+                      terms.orderType,
+                      terms.code,
+                      terms.maxAmount,
+                      true,
+                    )
+                  }
                   checked={terms.cancelProbe}
                   onChange={(e) => edit({ ...terms, cancelProbe: e.target.checked })}
                 />
-                승인 원주문 잔량 취소 1회 허용
+                승인 원주문 잔량 취소 1회 허용 (기존 두 종목·현재가 매수·승인액 20만원 이내)
               </label>
+              <TradingPolicyFields terms={terms} edit={edit} />
               <p className="muted">
-                {terms.orderType === 'limit'
-                  ? '지정가는 재조회 현재가와 일치해야 합니다. 허용 시세 나이 5초, 취소 확인 창 120초입니다.'
-                  : '시장가는 삼성전자 매수 1주에 한해 상한가 기준으로 주문대금을 검사합니다.'}
+                공통 수동 {state.paperManualMaxQty ?? DEFAULT_PAPER_MAX_QTY}주 · 주문당 {won(state.risk.maxOrder)}원 ·
+                종목별 {won(state.risk.maxPosition)}원. <Link to={home + '/general'}>일반 한도 수정</Link>
+              </p>
+              <p>
+                시장가는 상한가 × 전체 수량으로 검사합니다. 하한가·시장가 주문의 잔량은 KIS 모의 앱에서 직접 취소하고
+                원장으로 대조하세요.
               </p>
             </>
           )}
           {step === 2 && terms.kind === 'strategy' && (
             <>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() =>
+                  edit({
+                    ...terms,
+                    policy: { ...(terms.policy ?? defaultStrategyPolicy()), quoteSeconds: 15, signalSeconds: 15 },
+                  })
+                }
+              >
+                지연 재현용 시세·신호 15초 적용
+              </button>
               <NumberField
                 label="주문당 최대 금액 (원)"
                 value={terms.maxOrderAmount}
@@ -475,15 +685,15 @@ function Editor({
                 매도 범위
                 <select
                   value={terms.sellPolicy}
-                  onChange={(e) => edit({ ...terms, sellPolicy: e.target.value as 'account' | 'deny' })}
+                  onChange={(e) => edit({ ...terms, sellPolicy: e.target.value as 'account' | 'deny' | 'contract' })}
                 >
                   <option value="deny">매수만</option>
                   <option value="account">기존 계좌 보유 포함</option>
+                  <option value="contract">이 계약에서 체결된 순매수 수량만</option>
                 </select>
               </label>
-              <p className="muted">
-                지정가와 원 신호 5초를 적용합니다. 거절·응답 불명에도 예약한 한도는 복원되지 않습니다.
-              </p>
+              <TradingPolicyFields terms={terms} edit={edit} />
+              <p>교차 신호가 없으면 대상 단계에서 종목·수량·교차 주기를 바꾼 새 전략을 저장하고 선택하세요.</p>
             </>
           )}
           {step === 3 && (
@@ -499,6 +709,13 @@ function Editor({
                   공통 한도 · 주문당 {won(initial.limits.maxOrder)}원 · 종목별 {won(initial.limits.maxPosition)}원 ·
                   손실 {won(initial.limits.dailyLoss)}원 · 수동 {initial.limits.manualQty}주 · 긴급정지{' '}
                   {initial.limits.halted ? '켜짐' : '꺼짐'}
+                </p>
+              )}
+              {initial?.limits && terms.kind === 'once' && (
+                <p>
+                  실제 적용 상한 · 수량 {Math.min(initial.limits.manualQty, terms.maxQty)}주 · 주문당{' '}
+                  {won(Math.min(initial.limits.maxOrder, terms.maxAmount))}원. 종목별 투자금과 KIS 가능수량을 전송 전에
+                  다시 검사합니다.
                 </p>
               )}
               {limitsChanged && <p role="alert">공통 한도가 변경됐습니다. 한도·조건 단계에서 다시 저장하세요.</p>}
@@ -617,7 +834,7 @@ export function TradingSettings() {
     return (
       <Panel title="현재 실행 조건">
         <p>전용 실행 원장 · 읽기 전용</p>
-        {data.active.kind === 'once' && (
+        {data.active.kind === 'once' && !data.active.policy && (
           <p className="muted">
             {data.active.orderType === 'limit'
               ? '지정가는 재조회 현재가와 일치해야 합니다.'
@@ -685,6 +902,22 @@ export function TradingSettings() {
             </Link>
           );
         })}
+        <details className="panel">
+          <summary>테스트 중단 사유와 조치</summary>
+          <p>
+            가격·수량·금액·시간창은 다음 한정 실행에서, 신호 만료·재연결 소진은 다음 전략 계약에서 변경하세요. 고정은 새
+            원장에 조건만 저장합니다.
+          </p>
+          <p>
+            거래정지·미수 없는 매수 가능수량·계좌 매도 가능수량은 KIS가 결정합니다. 인증과 잔고는{' '}
+            <Link to="/settings">연결 설정</Link>, 긴급정지는 <Link to="/risk">위험관리</Link>, 불명 주문과 체결·잔량은{' '}
+            <Link to="/paper">모의 주문</Link>에서 확인하세요.
+          </p>
+          <p>
+            부분체결은 증권사의 체결 결과입니다. 실증에는 같은 주문의 일부 체결·양수 잔량, 잔량 취소 시도, 최종
+            체결·취소확인·잔량 기록이 필요합니다.
+          </p>
+        </details>
       </div>
     );
   const from = params.get('from'),

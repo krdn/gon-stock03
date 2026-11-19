@@ -15,7 +15,7 @@ export function InstrumentTable({ instruments }: { instruments: Instrument[] }) 
 export function Dashboard() {
   const { state, status, connection, paperRisk, available, realtime } = useWorkbench();
   const quoteAge = realtime?.lastQuoteAt ? Date.now() - Date.parse(realtime.lastQuoteAt) : Infinity;
-  const realtimeReady = available && realtime?.fresh && realtime.ordersAllowed && quoteAge >= 0 && quoteAge <= 5000;
+  const realtimeReady = available && realtime?.fresh && realtime.ordersAllowed && quoteAge >= 0 && quoteAge <= (realtime.quoteSeconds ?? 5) * 1000;
   const demo = portfolioValue(state.cash, state.positions.map(p => ({ ...p, name: p.code, price: state.instruments.find(s => s.code === p.code)?.price ?? null })));
   const kis = connection.balance ? portfolioValue(connection.balance.cash, connection.balance.positions) : null;
   const money = (value: number | null) => value === null ? '평가 불가' : `${won(value)}원`;

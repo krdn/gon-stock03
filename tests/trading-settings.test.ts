@@ -299,3 +299,27 @@ test('fix requires re-review if the common risk limits changed after draft save'
     f.close();
   }
 });
+
+test('새 마스터 종목으로 구형 전략 초안이나 원시 계약을 처음 바인딩할 수 없다', () => {
+  const f = fixture();
+  try {
+    f.store.update((s) => {
+      s.strategies.at(-1)!.code = '123456';
+    });
+    assert.throws(() => saveTradingDraft(f.store, { expectedId: null, terms: strategyDraft }), /확장 종목/);
+    const raw = {
+      ...strategyDraft,
+      contractId: randomUUID(),
+      ledgerPath: f.store.path,
+      accountFingerprint: f.kis.accountFingerprint(),
+      code: '123456',
+      fast: 2,
+      slow: 3,
+      qty: 2,
+    };
+    assert.throws(() => f.store.bindStrategyContract(raw as StrategyContract), /확장 종목/);
+    assert.equal(f.store.strategyContract(), undefined);
+  } finally {
+    f.close();
+  }
+});

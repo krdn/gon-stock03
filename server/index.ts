@@ -20,6 +20,7 @@ const rawContract = prepared && 'contractId' in prepared.config ? prepared.confi
 const rawApproval = prepared && 'requestId' in prepared.config ? prepared.config : undefined;
 const contract = process.env.KIS_STRATEGY_CONTRACT === undefined ? rawContract : strategyContractSchema.parse(JSON.parse(process.env.KIS_STRATEGY_CONTRACT));
 const approval = process.env.KIS_PAPER_APPROVAL === undefined ? rawApproval : paperApprovalSchema.parse(JSON.parse(process.env.KIS_PAPER_APPROVAL));
+if (process.env.KIS_STRATEGY_CONTRACT !== undefined && contract?.policy) throw new Error('확장 전략 정책은 매매설정에서 고정한 파일이 필요합니다.');
 const port = Number(process.env.STOCK_PORT ?? 4304);
 const path = prepared?.path ?? (db === ':memory:' ? db : resolve(db ?? '.local/workspace.sqlite'));
 if (contract && (approval || (!prepared && !process.env.STOCK_DB) || path !== contract.ledgerPath || path === ':memory:' || basename(path) !== 'strategy-' + contract.contractId + '.sqlite')) throw new Error('별도 전략 계약에는 명시한 전용 영구 원장이 필요합니다.');
@@ -29,7 +30,7 @@ if (contract && (!existsSync(path) || realpathSync(path) !== contract.ledgerPath
 if (approval?.ledgerPath && (approval.ledgerPath !== path || !existsSync(path) || realpathSync(path)!==path || approval.accountFingerprint !== kis.accountFingerprint())) throw new Error('승인된 전용 원장·계좌가 아닙니다.');
 if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 const store = new Store(path, { contract });
-const server = makeServer(store, kis, [4303, port], approval, undefined, contract);
+const server = makeServer(store, kis, [4303, port], approval, undefined, contract, prepared?.checkInstrument);
 const playback = setInterval(() => {
   if (!store.read().playing) return;
   try { store.update(advanceTick); }
