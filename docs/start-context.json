@@ -693,6 +693,22 @@
         }
       ],
       "decisions": "제품 패치는 별도 PR로 평가하고 프로젝트 전용 에이전트 지침은 동일 조건의 비공개 쌍별 평가를 거친다. 첫 단계는 #20 과거 회귀의 오프라인 재생이다. #25 실증·거래·스케줄 및 에이전트 가동은 별도다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/12",
+      "objective": "장외 시세 회귀 검사 종료 시 상태 응답의 브라우저 접근 경합 수정",
+      "checked_at": "2026-11-19T15:03:59.199346+00:00",
+      "sources": [
+        {
+          "url": "https://playwright.dev/docs/clock",
+          "finding": "page.clock은 페이지의 Date와 타이머를 제어하며 fastForward로 가상 시각을 전진시킨다."
+        },
+        {
+          "url": "https://playwright.dev/docs/mock#mock-api-requests",
+          "finding": "page.route의 콜백에서 테스트 쪽 JSON을 route.fulfill에 전달해 API 응답을 구성할 수 있다."
+        }
+      ],
+      "decisions": "상태 fixture의 수신 시각은 기존 snapshot()이 제공한다. 시세 성공·실패 및 자동 갱신 단정은 유지한다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."
