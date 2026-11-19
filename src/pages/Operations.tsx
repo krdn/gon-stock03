@@ -1,7 +1,7 @@
 import { RealtimeStatus } from '../components/RealtimeStatus';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Check, Link2, LockKeyhole, ShieldCheck, Square } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, Landmark, RefreshCw, Server, Settings2, ShieldCheck, Square, Wallet } from 'lucide-react';
 import { useWorkbench } from '../context';
 import { Badge, Empty, Panel, Stat } from '../components/ui';
 import { equity, won, type ConnectionFailure } from '../../shared/model';
@@ -90,7 +90,7 @@ export function Alerts() {
 }
 export { DataStatus } from './DataInventory';
 const connectionRecovery: Record<ConnectionFailure['kind'], { label: string; action: string }> = {
-  missing: { label: '미주입', action: 'Infisical의 dev /kis에 필수 값을 확인하고 서버를 다시 실행하세요. 아래 안전한 연결 안내를 따르세요.' },
+  missing: { label: '필수 설정 미주입', action: '연결 설정 방법을 열어 Infisical에 모의 계좌 정보를 등록한 뒤 서버를 다시 실행하세요.' },
   invalid: { label: '설정 형식 오류', action: 'Infisical에서 계좌번호 앞 8자리와 상품코드 2자리를 확인하고 서버를 다시 실행하세요.' },
   expired: { label: '만료·갱신 필요', action: '인증 갱신 대기 시각 이후 다시 조회하세요. 토큰은 서버에서 갱신하며 잔고 응답까지 확인합니다.' },
   permission: { label: '인증·권한 거부', action: '모의투자 API 서비스 신청, 모의 전용 키와 계좌 권한을 확인하세요. 키를 바꿨다면 서버를 다시 실행하세요.' },
@@ -101,50 +101,127 @@ const connectionRecovery: Record<ConnectionFailure['kind'], { label: string; act
   rejected: { label: '요청 거부', action: '모의 계좌·키·서비스 이용 가능 시간을 확인한 뒤 다시 조회하세요.' },
 };
 export function Settings() {
-  const { act, busy, available, connection, refresh, server, serverNow } = useWorkbench();
+  const { act, busy, available, connection, refresh, server, serverNow, status } = useWorkbench();
   const [checking, setChecking] = useState(false), [showGuide, setShowGuide] = useState(false);
+  const [refreshState, setRefreshState] = useState<'idle' | 'pending' | 'done'>('idle');
+  useEffect(() => {
+    if (refreshState !== 'done') return;
+    const timer = window.setTimeout(() => setRefreshState('idle'), 5000);
+    return () => window.clearTimeout(timer);
+  }, [refreshState]);
   const authentication = authenticationStatus(connection.authentication, serverNow);
   const retrySeconds = authentication.retryAt ? Math.max(0, Math.ceil((Date.parse(authentication.retryAt) - serverNow) / 1000)) : 0;
   const elapsed = connection.checkStartedAt ? Math.max(0, Math.floor((serverNow - Date.parse(connection.checkStartedAt)) / 1000)) : 0;
   const loading = checking || connection.status.phase === 'loading';
-  const currentBalance = available && connection.connected && !loading;
-  const time = (value: string | null) => value ? new Date(value).toLocaleString('ko-KR') : '없음';
+  const currentBalance = available && connection.connected && connection.status.complete && Boolean(connection.balance) && !loading;
+  const time = (value: string | null) => value ? new Date(value).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '없음';
   const injectionLabel = { unverified: '미확인', missing: '미주입', invalid: '설정 형식 오류', present: '필수 값 있음' }[connection.injection.phase];
-  const authLabel = { unverified: '미확인', loading: '인증 중', ready: '토큰 발급 확인', expired: '만료·갱신 필요', error: '인증 실패' }[authentication.phase];
-  const balanceLabel = { disconnected: '미조회', loading: '조회 중', ready: '전체 조회 확인', stale: '오래됨', partial: '부분실패', error: '조회 실패' }[connection.status.phase];
+  const authLabel = { unverified: '미확인', loading: '인증 중', ready: '토큰 발급됨', expired: '만료·갱신 필요', error: '인증 실패' }[authentication.phase];
+  const balanceLabel = { disconnected: '미조회', loading: '조회 중', ready: '전체 조회 확인', stale: '다시 조회 필요', partial: '일부만 수신', error: '조회 실패' }[connection.status.phase];
   const injectionFailure: ConnectionFailure | null = connection.injection.phase === 'missing' || connection.injection.phase === 'invalid' ? { kind: connection.injection.phase, message: '서버 필수 환경변수와 계좌 형식을 확인하세요.' } : null;
-  const failure = available && !loading ? connection.failure ?? authentication.failure ?? injectionFailure : null;
+  const setupBlocked = available && injectionFailure !== null;
+  const failure = available && !loading ? injectionFailure ?? connection.failure ?? authentication.failure : null;
+  const balance = connection.balance;
+  const missingSettings = connection.injection.phase === 'missing';
+  const initialLoad = !available && status.phase === 'loading';
+  function overview() {
+    if (initialLoad) return { title: '서버 상태를 확인하고 있습니다', detail: '저장된 연결 정보를 불러오는 중입니다.', tone: 'neutral' };
+    if (!available) return { title: '로컬 서버 연결을 확인하세요', detail: '개발 서버를 실행한 뒤 서버 상태를 새로고침하세요.', tone: 'warning' };
+    if (loading) return { title: '모의 잔고를 조회하고 있습니다', detail: '한국투자증권에서 전체 잔고를 받아오고 있습니다.', tone: 'neutral' };
+    if (injectionFailure) return { title: missingSettings ? '모의 계좌 설정이 필요합니다' : '모의 계좌 설정을 수정하세요', detail: connectionRecovery[injectionFailure.kind].action, tone: 'warning' };
+    if (failure) return { title: connectionRecovery[failure.kind].label, detail: connectionRecovery[failure.kind].action, tone: 'warning' };
+    if (retrySeconds > 0) return { title: '인증 갱신을 기다리고 있습니다', detail: '대기 시간이 끝나면 모의 잔고를 다시 조회할 수 있습니다.', tone: 'neutral' };
+    if (currentBalance) return { title: '모의 잔고를 확인했습니다', detail: '아래에서 예수금과 보유 종목을 확인할 수 있습니다.', tone: 'success' };
+    if (connection.status.phase === 'partial') return { title: '잔고를 일부만 받았습니다', detail: '전체 잔고를 확인하려면 다시 조회하세요.', tone: 'warning' };
+    if (connection.status.phase === 'error') return { title: '모의 잔고 조회에 실패했습니다', detail: '잠시 후 다시 조회하세요. 서버 상세 정보에서 오류를 확인할 수 있습니다.', tone: 'warning' };
+    if (balance) return { title: '잔고를 다시 조회하세요', detail: '아래 금액은 마지막 조회 때 저장한 값입니다. 다시 조회하면 현재 잔고를 확인할 수 있습니다.', tone: 'warning' };
+    return { title: '모의 잔고를 조회하세요', detail: '조회하면 한국투자증권 모의 계좌의 예수금과 보유 종목을 불러옵니다.', tone: 'neutral' };
+  }
+  const summary = overview();
+  const checkDisabled = !available || setupBlocked || busy || loading || retrySeconds > 0;
   async function check() {
     setChecking(true);
-    try { await act('kis/check'); } catch {} finally { setChecking(false); }
+    try { await act('kis/check'); } catch { /* App displays the request error. */ } finally { setChecking(false); }
   }
-  return <>
-    <div className="grid-main">
-      <Panel title="한국투자증권 연결" eyebrow="BROKER CONNECTION" action={<Badge tone="teal">모의투자 전용</Badge>}>
-        <div className="broker-card"><span className="broker-mark">KIS</span><div><h3>한국투자증권 Open API</h3><p>국내 주식·ETF · 모의 계좌 조회</p></div><Badge tone={currentBalance ? 'teal' : 'neutral'}>{currentBalance ? '조회 확인' : '연결 확인 필요'}</Badge></div>
-        <div className="check-row"><span>대상 서버</span><code>openapivts.koreainvestment.com</code></div>
-        <div className="check-row"><span>비밀정보 관리 경로</span><strong>Infisical · dev /kis</strong></div>
-        <div aria-label="실행 서버 식별"><p>서버 시작: {server ? time(server.startedAt) : '미확인'} · 인스턴스: {server?.instanceId.slice(0, 8) ?? '미확인'}{!available && ' · 서버 상태 확인 필요'}</p><p className="muted tiny">키 변경 후에는 주입한 서버를 다시 실행하고 시작 시각·인스턴스를 확인하세요. 상태 새로고침은 재주입하지 않습니다.</p></div>
-        <ol className="workflow-list connection-steps" aria-label="연결 확인 단계">
-          <li><span>01</span><div role="group" aria-label="서버 필수 설정 상태"><strong>서버 필수 설정</strong><p><Badge>{available ? injectionLabel : '서버 상태 확인 필요'}</Badge></p><p>필수 환경변수의 존재·계좌 형식만 확인합니다. 주입 출처 미확인: Infisical 로그인·권한 성공을 뜻하지 않습니다.</p>{available && connection.injection.missing.length > 0 && <p>미주입 항목: {connection.injection.missing.join(', ')}</p>}</div></li>
-          <li><span>02</span><div role="group" aria-label="KIS 인증 상태"><strong>KIS 모의 인증</strong><p><Badge tone={available && authentication.phase === 'ready' ? 'teal' : 'neutral'}>{available ? authLabel : '서버 상태 확인 필요'}</Badge></p><p>최근 토큰 발급 확인: {time(authentication.lastSuccessAt)}</p><p>토큰 재확인 시각: {time(authentication.validUntil)}</p>{retrySeconds > 0 && <p>인증 갱신 대기: {retrySeconds}초 · {time(authentication.retryAt)} 이후</p>}<p>토큰 발급 확인과 계좌 조회 성공은 별개입니다.</p></div></li>
-          <li><span>03</span><div role="group" aria-label="모의 잔고 조회 상태"><strong>모의 잔고 전체 조회</strong><p><Badge tone={currentBalance ? 'teal' : 'neutral'}>{!available ? '서버 상태 확인 필요' : loading ? '조회 중' : balanceLabel}</Badge></p><p>확인한 페이지: {connection.status.pages}{loading && <> · 경과 {elapsed}초</>} · 최종 전체 성공: {time(connection.status.lastSuccessAt)}</p>{connection.status.error && !loading && <p>{connection.status.error}</p>}<p>모든 페이지를 확인한 뒤 잔고를 표시합니다. 실패를 0원으로 대체하지 않습니다.</p></div></li>
-        </ol>
-        {failure && <div className="notice warning connection-recovery" role="status" aria-label="연결 복구 안내"><strong>{connectionRecovery[failure.kind].label}</strong><p>{failure.message}</p><p>{connectionRecovery[failure.kind].action}</p></div>}
-        <div className="toolbar"><button disabled={!available || busy || loading || retrySeconds > 0} className="button primary" onClick={() => void check()}><Link2 size={16} />KIS 모의 연결·잔고 확인</button><button className="button secondary" onClick={() => void refresh()}>연결 상태 새로고침</button></div>
-        <p className="muted tiny">연결 상태 새로고침: 외부 KIS 호출 없음. 서버의 마지막 관측을 읽습니다.</p>
-        <p className="muted tiny">이 동작은 모의 잔고를 조회하며 주문하지 않습니다. 조회 결과는 로컬 데모 잔고에 합산하지 않습니다.</p>
-      </Panel>
-      <Panel title="안전한 연결 안내">
-        <p className="prose">키와 계좌 정보는 서버에만 주입합니다. 이 화면에는 비밀값을 입력하지 않습니다.</p>
-        <button className="button secondary" aria-expanded={showGuide} aria-controls="connection-guide" onClick={() => setShowGuide(!showGuide)}>안전한 연결 안내</button>
-        {showGuide && <div id="connection-guide"><ol className="plain-list"><li>모의투자 API 서비스 신청과 모의 전용 키·계좌를 확인하세요.</li><li>Infisical의 프로젝트·dev /kis에 KIS_APP_KEY, KIS_APP_SECRET, KIS_CANO, KIS_ACNT_PRDT_CD를 등록하세요. 계좌번호는 앞 8자리, 상품코드는 2자리입니다.</li><li>Infisical 로그인이 만료되면 실제 터미널의 안전한 로그인 화면에서 다시 인증하세요. 권한 거부는 해당 프로젝트·환경·경로의 읽기 권한을 확인하세요.</li><li>주입 명령이 성공한 뒤 서버를 다시 실행하고 이 화면에서 모의 연결·잔고를 확인하세요.</li></ol><code className="connection-command">infisical secrets-manager run --env dev --path /kis -- npm run dev</code><p className="prose">주입 실패 시 앱이 시작되지 않을 수 있습니다. 기존 서버의 표시는 새 주입 성공을 증명하지 않습니다. 오류 원문이나 비밀값을 복사하지 마세요.</p></div>}
-        <div className="soft-note"><LockKeyhole size={17} />키·토큰·계좌번호를 채팅·브라우저 입력란·Git에 복사하지 마세요.</div>
-        <div className="check-row"><span>실전 환경 전환</span><Badge>미지원</Badge></div>
-        <p className="prose">만료·권한·호출제한·네트워크 오류가 발생해도 실전 서버나 로컬 평문 비밀 파일로 자동 대체하지 않습니다.</p>
-      </Panel>
-    </div>
-    {connection.balance && <Panel title="KIS 모의 계좌 조회 결과" className="top-gap" action={<Badge>{currentBalance ? '전체 조회 성공값' : '이전 전체 성공값 · 최신 아님'}</Badge>}><p className="muted">기준 시각: {time(connection.status.lastSuccessAt)} · KIS 모의 / REST</p><div className="check-row"><span>예수금</span><strong>{won(connection.balance.cash)}원</strong></div>{connection.balance.positions.length ? <div className="table-scroll"><table><thead><tr><th>종목</th><th>수량</th><th>평균 매입가</th><th>현재가</th></tr></thead><tbody>{connection.balance.positions.map(p => <tr key={p.code}><td>{p.name} · {p.code}</td><td>{p.qty}</td><td>{won(p.average)}</td><td>{p.price === null ? '평가 불가' : won(p.price)}</td></tr>)}</tbody></table></div> : <Empty title="보유 종목 없음">{currentBalance ? '조회한 모의 계좌에 수량이 있는 잔고가 없습니다.' : '이전 전체 조회 시 보유 종목이 없었습니다. 현재 잔고는 다시 확인하세요.'}</Empty>}</Panel>}
-    <Panel title="데이터와 운영 경계" className="top-gap"><div className="two-columns"><div><h3>로컬 데모</h3><p className="prose">합성 시세·가상 현금으로 수동/전략 주문을 검증합니다. SQLite에 저장하므로 서버를 다시 시작해도 일지·주문·한도가 남습니다.</p></div><div><h3>KIS 모의투자</h3><p className="prose">연결 확인은 모의 API 인증·잔고 조회에 한정합니다. 주문·체결·취소·연속 전략과 장중 전체 흐름은 별도로 검증합니다.</p></div></div></Panel>
-  </>;
+  async function refreshStatus() {
+    setRefreshState('pending');
+    try { await refresh(); } finally { setRefreshState('done'); }
+  }
+  const guideButton = <button key="guide" className={`button ${setupBlocked ? 'primary' : 'secondary'}`} aria-expanded={showGuide}
+    aria-controls="connection-guide" onClick={() => setShowGuide(open => !open)}>연결 설정 방법<ChevronDown size={15} aria-hidden="true" /></button>;
+  const checkButton = <button key="check" className={`button ${checkDisabled ? 'secondary' : 'primary'}`} disabled={checkDisabled}
+    aria-describedby={available && retrySeconds > 0 ? 'settings-retry' : undefined} onClick={() => void check()}><Wallet size={17} aria-hidden="true" />모의 잔고 조회</button>;
+  return <div className="settings-page">
+    <section className="settings-overview" aria-label="모의 계좌 연결">
+      <div className="settings-task">
+        <header className="settings-provider"><span className="settings-provider-icon"><Landmark size={20} aria-hidden="true" /></span>
+          <strong>한국투자증권</strong><Badge>모의 계좌</Badge>
+        </header>
+        <div className={`settings-summary ${summary.tone}`} role="status" aria-label={failure ? '연결 복구 안내' : '현재 연결 상태'}>
+          <h2>{summary.title}</h2><p>{summary.detail}</p>
+        </div>
+        {available && retrySeconds > 0 && <p id="settings-retry">{retrySeconds}초 후 다시 조회할 수 있습니다.</p>}
+        <div className="settings-actions">{setupBlocked ? [guideButton, checkButton] : [checkButton, guideButton]}</div>
+        <div id="connection-guide" className="settings-guide" hidden={!showGuide}>
+          <h3>모의 계좌 연결 방법</h3>
+          <ol>
+            <li>한국투자증권에서 모의투자 API를 신청하고 모의 전용 키와 계좌를 준비하세요.</li>
+            <li>Infisical의 <code>dev /kis</code>에 <code>KIS_APP_KEY</code>, <code>KIS_APP_SECRET</code>, <code>KIS_CANO</code>(계좌번호 앞 8자리), <code>KIS_ACNT_PRDT_CD</code>(상품코드 2자리)를 등록하세요.</li>
+            <li>프로젝트 폴더에서 <code className="connection-command">npm run dev</code>로 서버를 다시 실행하세요. 로그인 오류가 있으면 터미널에서 Infisical에 다시 로그인하세요.</li>
+          </ol>
+          <p>비밀값은 Infisical에서만 관리하세요. 서버가 준비되면 모의 잔고를 조회할 수 있습니다.</p>
+        </div>
+      </div>
+      <section className="settings-checks" aria-label="연결 점검">
+        <h3>연결 점검</h3>
+        <div className="settings-stages">
+          <div role="group" aria-label="서버 필수 설정 상태"><span><Settings2 size={16} />계좌 설정</span>
+            <Badge>{available ? injectionLabel : '서버 상태 확인 필요'}</Badge></div>
+          <div role="group" aria-label="KIS 인증 상태"><span><ShieldCheck size={16} />KIS 인증</span>
+            <Badge tone={available && authentication.phase === 'ready' ? 'teal' : 'neutral'}>{available ? authLabel : '서버 상태 확인 필요'}</Badge></div>
+          <div role="group" aria-label="모의 잔고 조회 상태"><span><Wallet size={16} />잔고 조회</span>
+            <Badge tone={currentBalance ? 'teal' : 'neutral'}>{!available ? '서버 상태 확인 필요' : loading ? '조회 중' : balanceLabel}</Badge></div>
+        </div>
+        {available && loading && <p className="settings-progress">확인한 페이지: {connection.status.pages} · 경과 {elapsed}초</p>}
+        <button className={`button ${!available && !initialLoad ? 'primary' : 'secondary'}`} disabled={refreshState === 'pending'} onClick={() => void refreshStatus()}>
+          <RefreshCw size={15} aria-hidden="true" />서버 상태 새로고침</button>
+        <p className="settings-hint">로컬 서버에 저장된 상태만 읽습니다.</p>
+        <p className="settings-feedback" role="status" aria-label="새로고침 결과">{refreshState === 'pending' ? '서버 응답을 기다리고 있습니다.' : refreshState === 'done' && (available ? '서버 상태를 확인했습니다. 외부 KIS 호출 없음.' : '서버에 연결할 수 없습니다.')}</p>
+      </section>
+    </section>
+    {balance && <Panel title="모의 계좌 잔고" className="settings-balance" action={<Badge tone={currentBalance ? 'teal' : 'neutral'}>{currentBalance ? '조회 완료' : '이전 조회 잔고'}</Badge>}>
+      <p className="settings-hint">조회 기준 (한국시간) <time dateTime={connection.status.lastSuccessAt ?? undefined}>{time(connection.status.lastSuccessAt)}</time></p>
+      <dl className="settings-cash"><dt>예수금</dt><dd>{won(balance.cash)}원</dd></dl>
+      {balance.positions.length ? <>
+        <h3>보유 종목 <span>{balance.positions.length}개</span></h3>
+        <ul className="settings-holdings">{balance.positions.map(p =>
+          <li key={p.code}><div className="settings-stock"><strong>{p.name}</strong><small>{p.code}</small></div>
+            <dl><div><dt>보유 수량</dt><dd>{p.qty}주</dd></div><div><dt>평균 매입가</dt><dd>{won(p.average)}원</dd></div><div><dt>현재가</dt><dd>{p.price === null ? '평가 불가' : `${won(p.price)}원`}</dd></div></dl>
+          </li>)}</ul></> : <p className="settings-no-holdings">{currentBalance ? '보유 종목 없음' : '이전 조회 시 보유 종목 없음'}</p>}
+    </Panel>}
+    <details className="settings-technical">
+      <summary><Server size={17} aria-hidden="true" />서버·인증 상세 정보<ChevronDown size={16} aria-hidden="true" /></summary>
+      <div className="settings-technical-body">
+        <div><h3>실행 서버</h3>
+          <dl className="settings-server" aria-label="실행 서버 식별">
+            <dt>모의 API</dt><dd><code>openapivts.koreainvestment.com</code></dd>
+            <dt>비밀정보 경로</dt><dd>Infisical · dev /kis</dd>
+            <dt>서버 시작 (한국시간)</dt><dd>{server ? time(server.startedAt) : '미확인'}</dd>
+            <dt>인스턴스</dt><dd>{server?.instanceId.slice(0, 8) ?? '미확인'}</dd>
+          </dl>
+          <p>필수 값과 계좌 형식만 검사합니다. 주입 출처 미확인. 키를 바꾸면 서버를 다시 실행하세요.</p>
+          {available && connection.injection.missing.length > 0 && <p>미주입 항목: {connection.injection.missing.join(', ')}</p>}
+        </div>
+        <div><h3>마지막 관측 기록 (한국시간)</h3>
+          <dl className="settings-server">
+            <dt>토큰 발급</dt><dd>{time(authentication.lastSuccessAt)}</dd><dt>토큰 재확인</dt><dd>{time(authentication.validUntil)}</dd>
+            <dt>잔고 전체 조회</dt><dd>{time(connection.status.lastSuccessAt)}</dd><dt>확인한 페이지</dt><dd>{connection.status.pages}</dd>
+          </dl>
+          {connection.status.error && !loading && <p>{connection.status.error}</p>}
+          {failure && failure.message !== connection.status.error && <p>{failure.message}</p>}
+          <p>이 화면은 KIS 모의 계좌만 조회합니다. 로컬 데모 잔고와 별개이며 실전 전환은 지원하지 않습니다.</p>
+        </div>
+      </div>
+    </details>
+  </div>;
 }
