@@ -1,0 +1,33 @@
+{
+  "evaluator": {
+    "hostHomeMounted": false,
+    "sharedGitMounted": false,
+    "productionLedgerMounted": false,
+    "dockerSocketMounted": false,
+    "credentialEnvNames": 0,
+    "networkInterfaces": [
+      "lo"
+    ],
+    "routes": 0,
+    "reachableHostPorts": [],
+    "testedPorts": [
+      4303,
+      4304
+    ],
+    "externalTestAddressReachable": false
+  },
+  "budgetGuardControlledProcess": {
+    "ninthRequest": {
+      "admitted": 8,
+      "blocked": 1,
+      "trialProcessSignal": 9
+    },
+    "expiredDeadline": {
+      "admitted": 0,
+      "blocked": 1,
+      "trialProcessSignal": 9
+    },
+    "sourceSha256": "ce9da76f4fce07e990ae54967c0a225334e2f162c76c8914e64e17df001f2e6f",
+    "scope": "제어기가 새 프로세스 그룹으로 시작한 전용 프로세스에서 확인. 손상된 PID 상태 또는 다른 실행기의 차단은 미측정."
+  }
+}

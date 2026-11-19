@@ -1,0 +1,51 @@
+{
+  "initialHead": "c941d3698e78a54a7b3687a8a6620aad4d040571",
+  "reviews": [
+    {
+      "scope": "initial",
+      "requestedModel": "claude-opus-5-5",
+      "requestedEffort": "high",
+      "returnedModel": "claude-opus-5-5",
+      "returnedEffort": null,
+      "session": "2a0d8ee8-1634-4331-892c-a07ed2e4ea55",
+      "packetSHA256": "79cad2c8d30e685ab733af06b3c580b3ffece6a6059e05a67b24cab743437d77",
+      "responseSHA256": "1a63ad89eed84ccb40071dab8076c8e03c006d075299116b05a605f1406f41af"
+    },
+    {
+      "scope": "changes",
+      "requestedModel": "claude-opus-5-5",
+      "requestedEffort": "high",
+      "returnedModel": "claude-opus-5-5",
+      "returnedEffort": null,
+      "session": "d84821df-6c44-4f60-8997-b3362518e6da",
+      "packetSHA256": "43cc5f0b2dc8323735e014490609a53f18438f552b2ae0d4cb16225f5c10a464",
+      "responseSHA256": "5d05eb64540395411954f12959f51f1ecd9eeefab9e41743b7105676f6f114a1"
+    }
+  ],
+  "changesReviewVerdict": "차단 결함 없음",
+  "initialFindingsAddressed": [
+    "제품 동작 실패와 인프라 실패의 분류",
+    "시세 요청 양성 대조 및 쿼리 대응",
+    "실행 파일·의존성·브라우저 지문을 포함한 캐시",
+    "소유자 기록과 진단된 인프라 오류의 한정 재시도",
+    "명시적 매핑·누락 원인 분리와 변형 검증"
+  ],
+  "finalLocalChecks": [
+    "기존 화면 수용 조건과 새 화면의 검출을 구별",
+    "네트워크 이벤트와 fetch 호출 시점의 요청 수 독립 계측",
+    "두 SHA 재생 및 합성 변형·서버 준비 실패·중복·재시도 검사",
+    "타입 검사·Vite 빌드·기능 목록 변형 검사"
+  ],
+  "artifactSHA256": {
+    "inventory.ts": "a9026408e5f52664ee4187dde39eafee24a0085dc49b48788676023f918e74bd",
+    "check-inventory.mjs": "8a01535a375636769fa498ebb327ea182c474390838ec8417e053bb9da246eb5",
+    "replay-entry.sh": "3cad49ca604a9fa7a2c8f66759bacf105c6ff4939ad56dae1645401eee746614",
+    "replay.mjs": "7f186679f01e47ba34156930eb2a30d59ae82da0aa0e419a2a89678dfdf17223",
+    "replay.py": "88ceb72c2eeab14a669a6ca3e6bffd2c2b9f0724cb7061672e8e4f2fa49d5155"
+  },
+  "limits": [
+    "외부 리뷰는 제공 자료 기반",
+    "재생 시 DOM 표 행 선택자 및 Chromium 환경",
+    "별도 실행기의 손상된 PID·프로세스 그룹과 네이티브 PreModelRequest hook 단독 차단 효과 미측정"
+  ]
+}
