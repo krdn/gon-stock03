@@ -1,5 +1,7 @@
 # #123 한정 지정가와 매매 정책 검증
 
+[기준 이슈 #123](https://github.com/krdn/gon-stock03/issues/123) · [검증 PR #125](https://github.com/krdn/gon-stock03/pull/125) · [#25 관측 기록](https://github.com/krdn/gon-stock03/issues/25#issuecomment-6999916587)
+
 **삼성전자 KRX 매수의 하한가 지정가를 새 1회 계약에만 묶어 집행할 수 있었다.** 격리 서버·임시 SQLite·가짜 KIS 전송기로 확인했다. 제품의 승인 JSON, 고정 파일, 설정 초안은 이 후보를 거부한다. 운영 도입과 실제 VTS 접수·체결은 미검증이다. [작업 범위](https://github.com/krdn/gon-stock03/issues/123#issuecomment-6999693621) · [기존 고정 계약](122-trading-settings.md)
 
 ## 136,300원 주문이 갈리는 지점
@@ -37,5 +39,5 @@
 ## 검증과 설계 리뷰
 
 - 기준 main/PR #124는 `725a699`. `node --import tsx --test --test-name-pattern='136300|하한가 후보' tests/paper.test.ts`로 핵심 다섯 회귀를 재현할 수 있다. 전체 `npm test` 261건, 타입 검사·빌드, 별도 4314에서 주문·취소·매매 설정 브라우저 17건을 확인했다. 임시 원장으로 제품 시작 프로세스도 확인했다. 후보를 넣은 승인 JSON과 고정 파일은 모두 포트 개방 전 종료 코드 1, 초안 저장은 거부였다.
-- 설계 리뷰 요청은 `claude-opus-5-5` / high, 실제 CLI 응답은 success, `modelUsage`는 `claude-opus-5-5`였다. 서버 내부 effort는 독립 확인하지 못했다. 리뷰가 짚은 개장 전 전송, 다른 오류로 통과할 수 있는 음성 테스트, 단조시계 미검증을 보완했다. 고정 원장에서 오류 사유별로 검사하고 기존 지정가 20만원 상한도 재검증했다. [리뷰 지적과 보완 범위](https://github.com/krdn/gon-stock03/issues/123#issuecomment-6999870385)
+- 설계 리뷰 요청은 `claude-opus-5-5` / high, 실제 CLI 응답은 success, `modelUsage`는 `claude-opus-5-5`였다. 서버 내부 effort는 독립 확인하지 못했다. 리뷰가 짚은 개장 전 전송, 다른 오류로도 통과하던 거부 테스트, 단조시계 미검증을 보완했다. 고정 원장에서 오류 사유별로 검사하고 기존 지정가 20만원 상한도 재검증했다. 수정분 재검토도 같은 모델/high로 요청했고 실제 응답 success·동일 modelUsage, 격리 범위에서 세 지적 해소·추가 차단 결함 없음 판정을 받았다. [리뷰 지적과 보완 범위](https://github.com/krdn/gon-stock03/issues/123#issuecomment-6999870385)
 - 시험의 고정 주체는 격리 준비 코드다. 공식 당일 세션의 자동 검증, 제품의 발행 기록과 후보 원장 연결, 실제 VTS의 응답 필드 제공 여부는 운영 도입 전에 확인해야 한다. 거래 가능 시간 안에서 사전검사를 시작한 뒤 실패해도 1회 승인을 소진한다. 재시도에는 별도 승인이 필요하다.
