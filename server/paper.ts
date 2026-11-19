@@ -1,5 +1,5 @@
 import { oncePolicy, sessionBounds, validOncePolicy, type OncePolicy } from '../shared/trading-policy.ts';
-import { DEFAULT_PAPER_MAX_QTY, MAX_ORDER_QTY, paperRecoveryInput, type PaperOrderInput, type PaperRecoveryInput } from '../shared/contracts.ts';
+import { DEFAULT_PAPER_MAX_QTY, MAX_ORDER_QTY, paperRecoveryInput, samePaperIntent, type PaperOrderInput, type PaperRecoveryInput } from '../shared/contracts.ts';
 import type { PaperOrder, BrokerOrder, PaperEvidence, ConnectionState, PaperRiskSnapshot, KisQuote } from '../shared/model.ts';
 import { KisClient, KisRejected, KisNotSent, koreaDate } from './kis.ts';
 import { Store } from './store.ts';
@@ -53,7 +53,7 @@ function checkApprovedLimit(price: number, quote: KisQuote, lowerLimitPrice?: nu
     if (quote.liquidation !== false || ![quote.price, quote.lower, quote.upper].every(Number.isSafeInteger) ||
         quote.lower <= 0 || quote.price < quote.lower || quote.price > quote.upper ||
         tick !== tickFor(quote.price) || quote.price % tick !== 0) throw new Error('재조회 시세의 가격 범위·호가단위·정리매매 상태를 확인하세요.');
-    const target = policy.priceMode === 'current' ? quote.price : policy.limitPrice;
+    const target = policy.priceMode === 'current' || policy.priceMode === 'cappedCurrent' ? quote.price : policy.limitPrice;
     if (price !== target || (policy.priceMode === 'lower' && price !== quote.lower)) {
       throw new Error(`승인 지정가 불일치: 주문 ${price}원, 계약 기준 ${target}원, 재조회 하한가 ${quote.lower}원.`);
     }
@@ -273,15 +273,21 @@ export class PaperBroker {
     if (!order || order.status !== 'unknown' || order.brokerId) throw new Error('주문번호 없는 응답 불명 주문만 명시적 복구할 수 있습니다.');
     return order;
   }
-  async submit(input: PaperOrderInput, checkSignal?: (minimumWaitMs?: number) => void, strategy?: PaperOrder['strategy']): Promise<PaperOrder> {
+  async submit(request: PaperOrderInput, checkSignal?: (minimumWaitMs?: number) => void, strategy?: PaperOrder['strategy']): Promise<PaperOrder> {
     return this.enqueue(async () => {
+      let input = request;
+      const policy = this.approval?.policy;
+      const ceiling = 'priceMode' in request ? request.price : undefined;
+      if ((ceiling !== undefined) !== (policy?.priceMode === 'cappedCurrent') ||
+          (ceiling !== undefined && (ceiling !== policy?.limitPrice || request.side !== 'buy')))
+        throw new KisNotSent('재조회 현재가 주문은 계약과 동일한 매수 단가 상한을 명시해야 합니다.');
       const market = 'orderType' in input && input.orderType === 'market';
       if (this.contract && (!strategy || market !== (this.strategyOrderType === 'market'))) throw new KisNotSent('고정한 주문 방식의 전략 계약 주문만 허용됩니다.');
       const existing = this.store.paperOrders().find(o => o.requestId === input.requestId);
       if (existing) {
         if (existing.strategy?.id !== strategy?.id || existing.strategy?.revision !== strategy?.revision
           || existing.strategy?.event !== strategy?.event || existing.strategy?.signal !== strategy?.signal) throw new Error('동일 요청 ID의 전략 출처가 다릅니다.');
-        if (existing.code !== input.code || existing.side !== input.side || existing.qty !== input.qty || existing.price !== input.price || (existing.orderType ?? 'limit') !== (market ? 'market' : 'limit')) throw new Error('동일 요청 ID의 주문 내용이 다릅니다.');
+        if (!samePaperIntent(existing, request)) throw new Error('동일 요청 ID의 주문 내용이 다릅니다.');
         return existing;
       }
       const checkManualQuantity = () => {
@@ -311,7 +317,6 @@ export class PaperBroker {
       const checkRealtime = this.realtimeGuard?.(input.code);
       checkContract();
       if (this.contract && !market) this.store.checkStrategyAmount(this.contract, input.price * input.qty);
-      const policy = this.approval?.policy;
       const quoteMs = (this.timingPolicy?.quoteSeconds ?? 5) * 1000;
       let claimed = false;
       if (this.approval) {
@@ -331,12 +336,16 @@ export class PaperBroker {
         if (!policy?.allowPending && brokerOrders.some(o => o.remaining > 0)) throw new Error('승인 조건에 따라 기존 미체결 주문을 먼저 대조하세요.');
         if (input.side === 'buy' && !this.approval.allowExistingHolding && balance.positions.some(p => p.code === input.code && p.qty > 0))
           throw new Error('현재 승인 조건에서 기존 보유 종목의 추가 매수를 차단했습니다.');
-        if (input.side === 'buy' && balance.cash - input.price < (policy?.cashReserve ?? 1)) throw new Error('승인 조건의 현금 여유가 부족합니다.');
+        if (ceiling === undefined && input.side === 'buy' && balance.cash - input.price < (policy?.cashReserve ?? 1)) throw new Error('승인 조건의 현금 여유가 부족합니다.');
       }
       const quoteStarted = performance.now(), quoteStartedAt = Date.now();
       const quote = await this.kis.quote(input.code, this.approval?.lowerLimitPrice !== undefined || this.timingPolicy ? 'identified' : true);
       checkSignal?.();
       const quoteReceived = performance.now();
+      if (ceiling !== undefined) {
+        if (quote.price > ceiling) throw new KisNotSent(`재조회 현재가 ${quote.price}원이 승인 단가 상한 ${ceiling}원을 초과했습니다.`);
+        input = { code: request.code, qty: request.qty, side: 'buy', price: quote.price, requestId: request.requestId };
+      }
       if (this.approval || this.contract?.policy) {
         if (quoteReceived - quoteStarted > quoteMs || Date.now() - quoteStartedAt > quoteMs) throw new Error(`승인 시세 조회 지연: ${quoteMs / 1000}초를 초과했습니다.`);
         if (!market && this.approval) checkApprovedLimit(input.price, quote, this.approval.lowerLimitPrice, policy, this.approval.assetKind);
@@ -369,7 +378,7 @@ export class PaperBroker {
       }
       const latestRisk = this.store.read().risk;
       if (latestRisk.halted || JSON.stringify(risk) !== JSON.stringify(latestRisk)) throw new Error('검증 중 위험 설정이 바뀌었습니다. 다시 확인하세요.');
-      const local: PaperOrder = { ...input, ...(strategy ? { strategy } : {}), createdAt: new Date().toISOString(), tradeDate: koreaDate(), status: 'sending', filled: 0, remaining: input.qty, message: 'KIS 모의 전송 중' };
+      const local: PaperOrder = { ...input, ...(ceiling !== undefined && {priceCeiling:ceiling}), ...(strategy ? { strategy } : {}), createdAt: new Date().toISOString(), tradeDate: koreaDate(), status: 'sending', filled: 0, remaining: input.qty, message: 'KIS 모의 전송 중' };
       if (!this.contract) checkSignal?.(this.kis.minimumRequestWaitMs());
       if (this.approval && !claimed) {
         this.checkWindow();

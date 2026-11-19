@@ -43,7 +43,7 @@ export const oncePolicy = z
     ...connectionTiming,
     session: sessionWindow,
     side: z.enum(['buy', 'sell']),
-    priceMode: z.enum(['current', 'fixed', 'lower']),
+    priceMode: z.enum(['current', 'fixed', 'lower', 'cappedCurrent']),
     limitPrice: z.int().positive().max(10000000).optional(),
     quoteSeconds: seconds,
     observationSeconds: z.int().min(1).max(86400),
@@ -54,7 +54,7 @@ export const oncePolicy = z
   .strict()
   .refine(
     (p) => (p.priceMode === 'current' ? p.limitPrice === undefined : p.limitPrice !== undefined),
-    '고정 지정가·하한가는 확인한 주문 단가가 필요합니다.',
+    '선택한 지정가 기준에 맞는 고정 단가 또는 매수 단가 상한을 확인하세요.',
   );
 export type OncePolicy = z.infer<typeof oncePolicy>;
 export type StrategyPolicy = z.infer<typeof strategyPolicy>;
@@ -114,6 +114,7 @@ export function validOncePolicy(
   amount: number,
   cancel: boolean,
 ) {
+  if (p.priceMode === 'cappedCurrent' && p.side !== 'buy') return false;
   if (type === 'market' && p.priceMode !== 'current') return false;
   if (p.limitPrice !== undefined && p.limitPrice > amount) return false;
   // Preserve the observed scoped cancel exception. General VTS cancel eligibility cannot be queried.
@@ -121,7 +122,7 @@ export function validOncePolicy(
     !cancel ||
     (p.side === 'buy' &&
       type === 'limit' &&
-      p.priceMode === 'current' &&
+      (p.priceMode === 'current' || p.priceMode === 'cappedCurrent') &&
       ['005930', '069500'].includes(code) &&
       amount <= 200000 &&
       !p.allowPending)

@@ -1498,3 +1498,133 @@ test('확장 종목은 고정 및 전송 시 원본 마스터를 검사하고 �
     f.close();
   }
 });
+
+test('상한을 명시한 현재가 매수는 마지막 시세로 금액·원장·지정가를 고정하고 같은 요청은 다시 보내지 않는다', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-19T14:59:00+09:00') });
+  const f = lowerLimitFixture();
+  try {
+    Object.assign(f.response, {
+      price: '79835',
+      lower: '55580',
+      upper: '103220',
+      tick: '5',
+      quoteFields: { stck_shrn_iscd: '069500', sltr_yn: 'N' },
+    });
+    const pin = pinSettings(f, {
+      kind: 'once',
+      date: f.approval.date,
+      code: '069500',
+      orderType: 'limit',
+      maxQty: 2,
+      maxAmount: 160000,
+      allowExistingHolding: false,
+      cancelProbe: true,
+      policy: {
+        ...defaultOncePolicy(f.approval.date),
+        priceMode: 'cappedCurrent',
+        limitPrice: 80000,
+        consumeAt: 'validated',
+      },
+    });
+    try {
+      const broker = new PaperBroker(pin.store, f.client, pin.config, undefined, pin.check);
+      const request = {
+        code: '069500',
+        qty: 2,
+        side: 'buy' as const,
+        price: 80000,
+        priceMode: 'cappedCurrent' as const,
+        requestId: pin.config.requestId,
+      };
+      assert.equal((await f.client.quote('069500', true)).price, 79835);
+      await assert.rejects(broker.submit({ ...request, price: 79999 }), /상한/);
+      const { priceMode, ...withoutMode } = request;
+      await assert.rejects(broker.submit(withoutMode), /상한/);
+      f.response.price = '80005';
+      await assert.rejects(broker.submit(request), /상한/);
+      assert.equal(pin.store.paperOrders().length, 0);
+      assert.equal(f.count(), 0);
+      f.response.price = '79830';
+      const port = apiPort++;
+      const server = makeServer(pin.store, f.client, [port], pin.config, undefined, undefined, pin.check);
+      server.listen(port, '127.0.0.1');
+      await once(server, 'listening');
+      try {
+        const base = 'http://127.0.0.1:' + port + '/api/kis/';
+        const ledger = paperLedgerSchema.parse(await (await fetch(base + 'ledger')).json());
+        assert.ok(ledger.minimumRun?.active);
+        assert.equal(ledger.minimumRun.policy?.priceMode, 'cappedCurrent');
+        assert.equal(ledger.minimumRun.policy.limitPrice, 80000);
+        const response = await fetch(base + 'order', {
+          method: 'POST', headers: {'Content-Type':'application/json','X-Workbench':'local'}, body: JSON.stringify(request),
+        });
+        assert.equal(response.status, 200);
+        const {order} = await response.json();
+        assert.equal(order.price, 79830);
+        assert.equal(order.priceCeiling, 80000);
+      } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+      const [accepted] = pin.store.paperOrders();
+      assert.equal(accepted.status, 'accepted');
+      assert.equal(accepted.price, 79830);
+      assert.equal(pin.store.paperOrders()[0].price, 79830);
+      assert.equal(
+        f.requests.find((x) => x.url.pathname.endsWith('/inquire-psbl-order'))?.url.searchParams.get('ORD_UNPR'),
+        '79830',
+      );
+      assert.equal(
+        JSON.parse(String(f.requests.find((x) => x.url.pathname.endsWith('/order-cash'))?.init?.body)).ORD_UNPR,
+        '79830',
+      );
+      const reads = f.requests.length;
+      f.response.price = '79000';
+      assert.deepEqual(await broker.submit(request), accepted);
+      assert.equal(f.requests.length, reads);
+      assert.equal(f.count(), 1);
+      f.response.rows = [
+        brokerRow({
+          pdno: '069500',
+          ord_qty: '2',
+          ord_unpr: '79830',
+          tot_ccld_qty: '1',
+          rmn_qty: '1',
+          cncl_cfrm_qty: '0',
+        }),
+      ];
+      assert.equal((await broker.refresh(true)).orders[0].status, 'partial');
+      await broker.cancelProbe(request.requestId, true);
+      f.response.rows = [
+        brokerRow({
+          pdno: '069500',
+          ord_qty: '2',
+          ord_unpr: '79830',
+          tot_ccld_qty: '1',
+          rmn_qty: '0',
+          cncl_cfrm_qty: '1',
+          cncl_yn: 'Y',
+        }),
+      ];
+      const final = await broker.refresh(true);
+      assert.deepEqual(
+        [
+          final.orders[0].status,
+          final.orders[0].filled,
+          final.brokerOrders[0].confirmedCancelQty,
+          final.orders[0].remaining,
+        ],
+        ['cancelled', 1, 1, 0],
+      );
+      assert.equal(f.requests.filter((x) => x.url.pathname.endsWith('/order-rvsecncl')).length, 1);
+      const reopened = new Store(pin.store.path);
+      try {
+        assert.equal((await new PaperBroker(reopened, f.client, pin.config).submit(request)).price, 79830);
+        assert.equal(f.count(), 1);
+      } finally {
+        reopened.close();
+      }
+    } finally {
+      pin.store.close();
+    }
+  } finally {
+    f.close();
+  }
+});

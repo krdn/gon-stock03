@@ -37,7 +37,8 @@ export function NumberField({
   );
 }
 export const priceNames = {
-  current: '재조회 현재가',
+  current: '입력 지정가와 재조회 현재가 일치',
+  cappedCurrent: '재조회 현재가로 매수 · 단가 상한 지정',
   fixed: '계약 고정 지정가',
   lower: '당일 하한가와 고정 단가 일치',
 };
@@ -68,16 +69,18 @@ export function TradingPolicyFields({ terms, edit }: { terms: TradingTerms; edit
                     updateOnce({ priceMode: mode, limitPrice: mode === 'current' ? undefined : p.limitPrice });
                   }}
                 >
-                  {Object.entries(priceNames).map(([value, title]) => (
-                    <option key={value} value={value}>
-                      {title}
-                    </option>
-                  ))}
+                  {Object.entries(priceNames)
+                    .filter(([mode]) => mode !== 'cappedCurrent' || p.side === 'buy')
+                    .map(([value, title]) => (
+                      <option key={value} value={value}>
+                        {title}
+                      </option>
+                    ))}
                 </select>
               </label>
               {p.priceMode !== 'current' && (
                 <NumberField
-                  label="계약 고정 단가 (원)"
+                  label={p.priceMode === 'cappedCurrent' ? '매수 단가 상한 (원)' : '계약 고정 단가 (원)'}
                   max={10000000}
                   value={p.limitPrice ?? 0}
                   onChange={(limitPrice) => updateOnce({ limitPrice })}

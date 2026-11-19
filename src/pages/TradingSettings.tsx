@@ -113,7 +113,10 @@ function description(t: TradingTerms): [string, string][] {
       if (t.kind === 'once' && t.orderType === 'limit')
         rows.push(
           ['지정가 기준', priceNames[p.priceMode]],
-          ['고정 단가', p.limitPrice ? won(p.limitPrice) + '원' : '재조회 현재가'],
+          [
+            p.priceMode === 'cappedCurrent' ? '매수 단가 상한' : '고정 단가',
+            p.limitPrice ? won(p.limitPrice) + '원' : '재조회 현재가',
+          ],
         );
       rows.push(
         ['기존 미체결', p.allowPending ? '예약 반영 후 허용' : '차단'],
@@ -410,6 +413,11 @@ function Editor({
                       policy: {
                         ...(terms.policy ?? defaultOncePolicy(terms.date)),
                         side: e.target.value as 'buy' | 'sell',
+                        ...(e.target.value === 'sell' &&
+                          terms.policy?.priceMode === 'cappedCurrent' && {
+                            priceMode: 'current' as const,
+                            limitPrice: undefined,
+                          }),
                       },
                     })
                   }

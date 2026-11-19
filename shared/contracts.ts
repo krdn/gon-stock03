@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { StateSnapshot } from './model.ts';
+import type { PaperOrder, StateSnapshot } from './model.ts';
 import { masterCodeSchema } from './market-data.ts';
 
 export const storageErrorMessage = '요청과 이벤트 저장에 실패했습니다. 저장소 상태를 확인하세요.';
@@ -11,8 +11,14 @@ export const MAX_ORDER_QTY = 100000;
 export const paperQuantitySetting = z.object({ maxQty: integer(1, MAX_ORDER_QTY) }).strict();
 export const orderInput = z.object({ code: codeSchema, side: z.enum(['buy', 'sell']), qty: integer(1, MAX_ORDER_QTY), price: integer(1, 10000000), requestId: z.uuid() }).strict();
 export const paperOrderInput = z.union([orderInput, orderInput.extend({ code: z.literal('005930'), side: z.literal('buy'), qty: z.literal(1), price: z.literal(0), orderType: z.literal('market') })]);
-export const configuredPaperOrderInput = z.union([orderInput, orderInput.extend({ price: z.literal(0), orderType: z.literal('market') })]);
+export const configuredPaperOrderInput = z.union([orderInput, orderInput.extend({ side: z.literal('buy'), priceMode: z.literal('cappedCurrent') }), orderInput.extend({ price: z.literal(0), orderType: z.literal('market') })]);
 export type PaperOrderInput = z.infer<typeof configuredPaperOrderInput>;
+export function samePaperIntent(order: PaperOrder, request: PaperOrderInput) {
+  const capped = 'priceMode' in request;
+  return order.requestId === request.requestId && order.code === request.code && order.side === request.side && order.qty === request.qty &&
+    (order.orderType ?? 'limit') === ('orderType' in request ? request.orderType : 'limit') &&
+    (capped ? order.priceCeiling === request.price : order.priceCeiling === undefined && order.price === request.price);
+}
 export const strategyInput = z.object({ name: z.string().trim().min(1).max(60), code: codeSchema, fast: integer(2, 60), slow: integer(3, 100), qty: integer(1, 10000), environment: z.enum(['demo', 'kis-paper']).default('demo') }).strict().refine(v => v.fast < v.slow, '단기 기간은 장기 기간보다 작아야 합니다.');
 export const backtestInput = z.object({ code: codeSchema, fast: integer(2, 60), slow: integer(3, 100), capital: integer(100000, 100000000), feeBps: z.number().min(0).max(100), slippageBps: z.number().min(0).max(100) }).strict().refine(v => v.fast < v.slow, '단기 기간은 장기 기간보다 작아야 합니다.');
 export const riskInput = z.object({ maxOrder: integer(10000, 100000000), maxPosition: integer(10000, 100000000), dailyLoss: integer(1000, 100000000) }).strict();
@@ -26,7 +32,7 @@ export type OrderInput = z.infer<typeof orderInput>;
 
 const paperRunViewSchema = z.discriminatedUnion('active', [
   z.object({ active: z.literal(false) }),
-  z.object({ active: z.literal(true), requestId: z.uuid(), maxQty: paperQuantitySetting.shape.maxQty.default(1), orderType: z.literal('market').optional(), code: codeSchema.optional(), policy: z.object({ side: z.enum(['buy','sell']), limitPrice: z.int().positive().optional() }).optional() }),
+  z.object({ active: z.literal(true), requestId: z.uuid(), maxQty: paperQuantitySetting.shape.maxQty.default(1), orderType: z.literal('market').optional(), code: codeSchema.optional(), policy: z.object({ side: z.enum(['buy','sell']), priceMode: z.enum(['current','fixed','lower','cappedCurrent']).optional(), limitPrice: z.int().positive().optional() }).optional() }),
 ]);
 
 export const paperCancellationSchema = z.object({
@@ -37,7 +43,7 @@ export type PaperCancellation = z.infer<typeof paperCancellationSchema>;
 
 export const paperLedgerSchema = z.object({ minimumRun: paperRunViewSchema.optional(), orders: z.array(z.object({
   strategy: z.object({ id: z.string(), revision: z.number().int().positive(), event: z.string(), signal: z.enum(['buy', 'sell']) }).optional(),
-  requestId: z.string().min(1).max(80), code: codeSchema, side: z.enum(['buy', 'sell']),
+  priceCeiling: z.int().positive().optional(), requestId: z.string().min(1).max(80), code: codeSchema, side: z.enum(['buy', 'sell']),
   qty: z.number().int().positive(), price: z.number().nonnegative(), orderType: z.literal('market').optional(),
   createdAt: z.string().refine(value => Number.isFinite(Date.parse(value))), tradeDate: z.string().regex(/^\d{8}$/),
   status: z.enum(['sending', 'accepted', 'unknown', 'rejected', 'partial', 'filled', 'cancelled']),
