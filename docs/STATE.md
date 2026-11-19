@@ -4,6 +4,7 @@
 
 프로젝트를 처음 볼 때는 [한 장 그림](architecture/figures/gon-stock-overview.png)에서 KIS 모의 주문과 DEMO 연습 흐름을 따라간다. [구조도 작업 #110](https://github.com/krdn/gon-stock03/issues/110)
 
+- **자동진화 #129 → #130 → #131:** [오프라인 기준선 및 재생](tasks/129-offline.md) · [설계](plans/agent-evolution.md).
 - **#128 자동진화 설계:** [연구·설계와 인수인계](tasks/128-agent-evolution.md). 첫 구현 후보는 [#129 관심종목 회귀의 오프라인 재생](https://github.com/krdn/gon-stock03/issues/129)이다.
 - **#113 설정 UX:** [4303 실측과 회귀 검증](tasks/113-settings-ux.md). 4303에 계좌 인증과 잔고 갱신 동선을 적용하고, 미주입 복구 및 기본 개발 서버 자동 주입을 검증했다.
 - **#12 실제 시세:** [트레이딩 연동](tasks/12-trading.md#실제-주가-연동). 기본 화면은 KIS 실제 현재가·일봉, DEMO는 명시 탭. [실제 응답·검증](verification/2026-11-17-trade-live.md). 현재 작업 폴더에서 Infisical 주입 후 4303/4304 실행, 동일 원장 보존. 단위216·브라우저150 PASS. PR90 통합. 아래 #25에서 일봉 전환 장면 수용.

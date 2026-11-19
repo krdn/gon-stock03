@@ -1,0 +1,144 @@
+{
+  "/": [
+    ["behavior", "대시보드로 이동", "루트 경로", null, null, "브라우저 재생"]
+  ],
+  "*": [
+    ["behavior", "페이지를 찾을 수 없습니다 표시", "일치하는 경로 없음", null, null, "브라우저 재생"]
+  ],
+  "/dashboard": [
+    ["acceptance", "DEMO 현금과 예약액·주문 가능액 구분", "현금과 예약액이 함께 있음", "tests/browser/dashboard.spec.ts", "dashboard separates account arithmetic, reservations, pending orders and cause links without mutations"],
+    ["failure", "미연결은 0원 대신 미연결·현재가 누락은 평가 불가", "계좌 미연결", "tests/browser/dashboard.spec.ts", "dashboard shows disconnected and failed account without inventing zero balances"],
+    ["failure", "미연결은 0원 대신 미연결·현재가 누락은 평가 불가", "현재가 누락", "tests/browser/dashboard.spec.ts", "dashboard missing price is not zero and broker zero requires a known snapshot"],
+    ["acceptance", "실패 시 이전 전체 성공값과 시각 유지·미연결은 0원 표시 금지", "이전 성공 뒤 부분 실패", "tests/browser/dashboard.spec.ts", "dashboard preserves previous balance on partial failure and marks stale orders and halt"],
+    ["failure", "주문 대조 60초 만료·부재는 미확인, 불명/전송 중 별도 표시", "저장한 주문 근거 만료", "tests/browser/dashboard.spec.ts", "dashboard refreshes loading and recovered balances and expires order evidence without a broker call"],
+    ["failure", "로컬 상태 불명은 준비 완료 표시 금지·긴급정지 공통 표시", "로컬 서버 단절", "tests/browser/dashboard.spec.ts", "dashboard does not call preview ready when the local server is unavailable"],
+    ["behavior", "로컬 연결과 KIS 관측 신선도 구분", "로컬 폴링 성공 중 KIS 관측 만료", "tests/browser/common-state.spec.ts", "KIS success becomes stale with time even while local polling succeeds"]
+  ],
+  "/market": [
+    ["failure", "마스터 갱신 실패·이전 목록 보존", "기존 목록을 읽은 뒤 갱신 실패", "tests/browser/market.spec.ts", "market preserves previous master on refresh failure and provides an empty first-load retry"],
+    ["acceptance", "필터와 검색 함께 적용", "검색과 시장 필터 결합", "tests/browser/market.spec.ts", "market searches actual master with combined filters, limits quote reads, keeps codes and opens matching details"],
+    ["acceptance", "실패 시 이전 수신값·시각 보존, 합성 가격으로 대체하지 않음", "시세 갱신 실패", "tests/browser/market.spec.ts", "market pauses hidden reads and marks a failed refresh as previous data"],
+    ["behavior", "이전 페이지 종목 응답 폐기", "페이지 전환 중 지연 응답", "tests/browser/market.spec.ts", "market discards an in-flight previous page and rejects a mismatched quote without losing its prior value"],
+    ["behavior", "다른 종목의 시세 거부", "응답 코드 불일치", "tests/market.test.ts", "market quote exposes received volume/sector/liquidation and rejects corrupt values and mismatched codes"]
+  ],
+  "/watchlist": [
+    ["failure", "최초 연결 전에는 관심목록 미확인 표시·예시 종목 조회 없음", "최초 연결 실패 시 예시 목록 및 예시 시세 요청 없음", "tests/browser/market.spec.ts", "watchlist never presents preview selections as saved before the first state response"],
+    ["acceptance", "최초 로딩·실패와 확인된 빈 목록 구분, 단절 후 마지막 목록 보존", "최초 조회 대기", "tests/browser/market.spec.ts", "watchlist distinguishes a pending first load from a confirmed empty list"],
+    ["acceptance", "최초 로딩·실패와 확인된 빈 목록 구분, 단절 후 마지막 목록 보존", "확인된 빈 목록", "tests/browser/market.spec.ts", "watchlist distinguishes a pending first load from a confirmed empty list"],
+    ["acceptance", "최초 로딩·실패와 확인된 빈 목록 구분, 단절 후 마지막 목록 보존", "확인된 목록을 읽은 뒤 단절", "tests/browser/market.spec.ts", "watchlist retains confirmed selections when the connection later fails"],
+    ["failure", "저장 실패 시 마지막 확인 목록과 실패 안내", "저장 실패", "tests/browser/market.spec.ts", "watchlist retains the saved list on write failure and offers exploration when empty"],
+    ["acceptance", "시장 탐색·관심종목의 저장 결과 일치", "선택 저장 뒤 양쪽 화면 조회", "tests/browser/market.spec.ts", "watchlist persists shared selections, shows received time and navigates with the exact code without ordering"],
+    ["acceptance", "새로고침·서버 재시작 후 같은 목록, 중복 없음", "서버와 저장소 재시작", "tests/market.test.ts", "watchlist HTTP survives a server/store restart, prevents duplicates and rolls back a failed disk write"],
+    ["behavior", "단절 뒤 다시 연결한 목록 대조", "재접속 직후", null, null, "브라우저 재생"]
+  ],
+  "/trade": [
+    ["acceptance", "기본 /trade에 실제 조회값과 거래일 차트 표시", "기본 탭의 격리 시세 응답", "tests/browser/live-trade.spec.ts", "trade defaults to actual KIS quote and dated bars without demo money or order transmission"],
+    ["failure", "최초 실패 시 합성 가격 대체 없음", "최초 조회 실패와 수동 복구", "tests/browser/live-trade.spec.ts", "initial quote failure has no synthetic fallback and manual retry recovers"],
+    ["failure", "종목 변경 중 늦은 응답 폐기", "이전 코드 응답 도착", "tests/browser/live-trade.spec.ts", "late response from a previous code cannot replace the selected stock"],
+    ["behavior", "DEMO 연습 환경 분리", "DEMO에서 종목 변경", "tests/browser/live-trade.spec.ts", "demo is explicit, keeps its environment on stock changes and never requests KIS"],
+    ["behavior", "폴링 중 지정가와 주문 확인 내용 보존", "주문 확인창이 열린 채 시세 갱신", "tests/browser/workbench.spec.ts", "quote polling preserves the limit price and open order confirmation"],
+    ["acceptance", "DEMO 기존 중복 방지·응답 미확인 복구 유지", "응답 유실 뒤 새로고침 및 요청 ID 대조", "tests/browser/trade.spec.ts", "lost DEMO response blocks new requests across reload and reconciles by request ID"]
+  ],
+  "/orders": [
+    ["behavior", "동일 DEMO 요청 ID의 중복 주문 방지", "동일 ID 재사용", "tests/engine.test.ts", "duplicate request ID returns one order, changed body with same ID is rejected"],
+    ["behavior", "접수와 체결 구분", "DEMO 접수 후 다음 틱", "tests/engine.test.ts", "acceptance does not fill immediately, next tick fills and fee is charged"],
+    ["behavior", "저장 원장의 상태별 표시", "화면 폭별 원장 전이 시나리오", "tests/browser/order-transitions.spec.ts", "${width}px 저장 원장 · ${scenario.name}"],
+    ["behavior", "KIS 부분체결의 체결량과 잔량 표시", "부분체결", null, null, "브라우저 재생"],
+    ["acceptance", "KIS 원장 GET·원인 링크는 업무 API나 주문을 전송하지 않음", "원장 읽기와 원인 화면 이동", "tests/browser/orders.spec.ts", "KIS ledger is read-only, separates status and dates and links without any POST"],
+    ["failure", "원장 읽기 실패·잘못된 응답은 이전값 보존, 빈값과 구분", "이전 행이 있는 상태에서 원장 오류", "tests/browser/orders.spec.ts", "ledger errors and malformed responses keep last rows without claiming empty or live confirmation"],
+    ["failure", "취소보다 체결이 먼저면 서버 거부 후 새 상태 표시", "취소보다 체결이 먼저 도착", "tests/browser/orders.spec.ts", "duplicate DEMO cancel sends once and a fill racing ahead is shown after the server refuses cancellation"],
+    ["behavior", "재시작 뒤 원래 주문일과 불명 상태 복구", "서버 재시작 후 원장 GET", "tests/orders.test.ts", "ledger GET survives restart with original dates and unknown state without broker I/O or mutation"]
+  ],
+  "/portfolio": [
+    ["failure", "페이지 실패·로딩·오래됨은 이전 전체 성공값으로 표시", "부분 실패와 만료 후 복구", "tests/browser/portfolio.spec.ts", "portfolio distinguishes disconnected, loading, partial, stale and recovered snapshots"],
+    ["failure", "현재가 누락/0은 평가 불가, 전체 합계·비중 산출 불가", "시세 누락 또는 0", "tests/portfolio.test.ts", "missing or zero prices do not turn into zero valuation or fabricated loss"],
+    ["failure", "총자산 0은 비중 산출 불가", "총자산 0", "tests/browser/portfolio.spec.ts", "portfolio missing price and zero-asset states never show invented money or NaN percentages"],
+    ["acceptance", "전체 페이지 합계·비중·손익 수식 일치", "보유량에 따른 합계·비중·손익 계산", "tests/portfolio.test.ts", "portfolio totals, weights and PnL share the same quantities and exclude zero holdings"]
+  ],
+  "/strategies": [
+    ["failure", "단기 ≥ 장기·잘못된 환경 거부", "저장 요청 환경·기간 검증", "tests/strategies.test.ts", "전략 HTTP 계약은 환경·기간을 검증하고 KIS 우회 시작을 거부하며 조회/저장은 네트워크를 호출하지 않는다"],
+    ["acceptance", "전략별 동일 이벤트 중복 주문 없음", "같은 이벤트 반복", "tests/realtime.test.ts", "저장 KIS 전략은 각 이벤트의 관망·교차와 주문 연결을 보존하고 중복을 보내지 않는다", "가짜 전송"],
+    ["failure", "중복·지연·대조 미완료·승인 불일치·공통 위험 한도 차단", "REST 큐 대기 중 신호 만료", "tests/realtime.test.ts", "REST 큐에서 오래 대기한 전략 신호는 새 시세가 와도 전송하지 않는다", "가짜 전송"],
+    ["acceptance", "정지 후 대기 주문 차단·이미 접수된 주문은 별도 대조", "정지 직후 재시작한 큐의 기존 신호", "tests/realtime.test.ts", "KIS 전략 정지와 즉시 재시작은 이미 큐에 들어간 신호를 부활시키지 않는다", "가짜 전송"],
+    ["acceptance", "S01 KIS 실행 수·평가 이유와 공통 위험 상태 반영", "전략 신호·차단 이력과 대시보드 집계", "tests/browser/strategies.spec.ts", "KIS 신호·주문·차단 이력과 S01 집계는 DEMO와 분리되고 정지는 명시적 active=false를 보낸다"]
+  ],
+  "/backtest": [
+    ["acceptance", "종가 신호는 다음 봉 시가 체결; DEMO 다음 종가 가정과 분리", "저장 일봉의 다음 시가 체결", "tests/backtest.test.ts", "stored daily experiment uses next open, exact costs/drawdown and no broker or demo mutations"],
+    ["acceptance", "비용 차감·낙폭 수식과 SQLite 재시작 재현 검증", "비용과 낙폭 계산", "tests/backtest.test.ts", "stored daily experiment uses next open, exact costs/drawdown and no broker or demo mutations"],
+    ["acceptance", "미래 봉 변경이 과거 거래·자산에 영향 없음", "선택 범위 이후 데이터 변경", "tests/backtest.test.ts", "selected range excludes future bars and changing future observations cannot rewrite earlier trades"],
+    ["acceptance", "비용 차감·낙폭 수식과 SQLite 재시작 재현 검증", "동일 입력으로 재시작 후 재현", "tests/backtest.test.ts", "same input is idempotent and immutable experiment survives restart and collection changes"],
+    ["failure", "목록 조회·실험 저장·불러오기 실패와 빈 상태 구분", "빈 저장소와 목록 조회 실패", "tests/browser/workbench.spec.ts", "backtest empty storage and list failures never fall back to synthetic data"]
+  ],
+  "/risk": [
+    ["acceptance", "DEMO 수동·전략 공통 한도와 매도 예약 수량", "수동·전략 주문의 공통 한도 집행", "tests/risk.test.ts", "DEMO manual and actual strategy signals share order and position limits, loss halt and sell reservations"],
+    ["acceptance", "긴급정지 저장·재시작 후 유지", "정지 중 서버 재시작", "tests/risk.test.ts", "risk resume rejects unknown and sending, persists halt across restart, and never cancels accepted orders"],
+    ["failure", "클라이언트 우회 재개도 서버에서 불명/전송 중 차단", "불명 또는 전송 중 재개 요청", "tests/risk.test.ts", "risk resume rejects unknown and sending, persists halt across restart, and never cancels accepted orders"],
+    ["acceptance", "저장 중 새 편집 보존", "한도 저장 응답 대기 중 편집", "tests/browser/risk.spec.ts", "risk save response preserves edits made while the request is pending"],
+    ["failure", "KIS 미조회·오래됨·평가 불가를 0으로 표시하지 않음", "KIS 데이터 미확인", "tests/browser/risk.spec.ts", "risk displays DEMO exposure and formulas without treating KIS missing data as zero"]
+  ],
+  "/journal": [
+    ["failure", "저장 실패 안내·작성 메모 보존", "모바일에서 저장 실패 뒤 재시도", "tests/browser/workbench.spec.ts", "journal save failure retains draft and never reports success; retry persists safely on mobile"],
+    ["acceptance", "저장 실패 시 성공 표시 없음", "저장 실패 응답", "tests/browser/workbench.spec.ts", "journal save failure retains draft and never reports success; retry persists safely on mobile"],
+    ["acceptance", "새로고침·서버 재시작 후 저장 기록 보존", "동일 SQLite 파일로 서버 프로세스 재시작", "tests/journal.test.ts", "journal survives a real server process restart with the same SQLite file"],
+    ["acceptance", "저장 응답 대기 중 새로 작성한 메모 보존", "이전 저장 요청 처리 중 입력", "tests/browser/workbench.spec.ts", "journal keeps new typing while an earlier save response is pending"]
+  ],
+  "/alerts": [
+    ["acceptance", "원인 링크는 화면 이동만 수행", "환경별 원인 링크 선택", "tests/browser/alerts.spec.ts", "alerts separate environments and link causes without executing broker requests"],
+    ["failure", "읽음 저장 실패 시 미읽음 보존", "읽음 저장 실패", "tests/browser/alerts.spec.ts", "failed read save retains unread events and successful save survives reload"],
+    ["acceptance", "읽음 상태 SQLite 재시작 보존, 새 감사는 미읽음", "SQLite 재시작", "tests/events.test.ts", "audit events are stable, safe, nonduplicating and remain read after SQLite restart"],
+    ["acceptance", "읽음 상태 SQLite 재시작 보존, 새 감사는 미읽음", "표시한 스냅샷 이후 새 감사 도착", "tests/events.test.ts", "read acknowledgement leaves an audit created after the visible snapshot unread"]
+  ],
+  "/data": [
+    ["failure", "달력 미제공·불일치와 구간 수집 종료 구분", "휴장 미확정·누락 후보·빈 구간", "tests/browser/data-status.spec.ts", "data quality distinguishes missing candidates, calendar mismatch and empty windows from verified history"],
+    ["failure", "부분 수집·수집 실패와 조회 실패 구분", "부분 수집 구간", "tests/browser/data-status.spec.ts", "data inventory separates sources and shows partial ranges, stored trading days and preserved success"],
+    ["failure", "실패 시 이전 자료·성공 시각 보존, 최신 확인으로 표시하지 않음", "저장 상태 조회 실패", "tests/browser/data-status.spec.ts", "data refresh failures preserve previous data and do not become empty or fresh"],
+    ["failure", "실패 시 이전 자료·성공 시각 보존, 최신 확인으로 표시하지 않음", "수집 실패 이후 저장 상태 GET", "tests/data-inventory.test.ts", "inventory GET contracts preserve an earlier successful collection after a later failure without contacting KIS"],
+    ["failure", "빈 저장소·잘못된 응답·선택 전환 중 지연 응답", "다른 수집을 선택한 뒤 늦은 상세 응답 도착", "tests/browser/data-status.spec.ts", "data run selection ignores delayed detail from the previous selection"]
+  ],
+  "/settings": [
+    ["failure", "주입 출처 미확인과 로컬 서버 상태 불명을 성공으로 표시하지 않음", "필수 값 미주입·인증 미확인", "tests/browser/settings.spec.ts", "settings shows missing injection separately from unverified authentication and balance"],
+    ["failure", "미주입·설정 형식·만료·인증 권한·호출제한·네트워크·서비스·응답 계약·기타 거부를 구분하고 복구 안내", "오류 유형별 복구 안내", "tests/browser/settings.spec.ts", "settings explains ${kind} recovery without inventing a zero balance"],
+    ["acceptance", "토큰 실제 응답 전 인증 성공과 잔고 전체 응답 전 조회 성공 표시 없음", "인증과 전체 잔고 응답 시점 분리", "tests/browser/settings.spec.ts", "settings keeps token and complete balance responses separate, suppresses old success while checking, and recovers"],
+    ["failure", "부분실패·오래됨·재조회 중에는 이전 전체 성공값으로 표시", "다중 페이지 잔고 기한 초과", "tests/settings-recovery.test.ts", "multiple slow pages share one deadline and retain the last complete money"]
+  ],
+  "/design": [
+    ["acceptance", "15개 화면과 15개 이슈·단계·API·완료 기준·근거 연결", "화면마다 명세와 근거 탐색", "tests/browser/workbench.spec.ts", "design connects every screen to its issue, stage, contract and implementation evidence"],
+    ["behavior", "화면과 상세 명세 렌더링", "PC와 모바일 화면 폭", "tests/browser/workbench.spec.ts", "all screens and detailed specs render without console errors at desktop and mobile sizes"],
+    ["acceptance", "키보드·모바일 선택과 새로고침 탐색 유지", "키보드와 모바일 주제 선택", "tests/browser/workbench.spec.ts", "design supports keyboard selection and mobile navigation across every topic"],
+    ["failure", "잘못된 주제·단계 URL은 기본 선택으로 복구", "잘못된 주제와 소수 단계 URL", "tests/browser/workbench.spec.ts", "design malformed topic and fractional step links remain navigable"]
+  ],
+  "/paper": [
+    ["acceptance", "격리 브라우저에서 요청 내용·ID 새로고침 보존 및 입력 보존", "응답 유실 후 탭 재개·새로고침", "tests/browser/paper.spec.ts", "paper ambiguous transport preserves request and payload across close and reload"],
+    ["failure", "조회 중 편집 가격·수량 보존, 이전 종목 응답 폐기", "시세 갱신 중 가격·수량 편집", "tests/browser/paper.spec.ts", "paper market refresh preserves edited limit price and quantity"],
+    ["failure", "자동 재전송 없음; 명시적 동일 요청은 서버 멱등 처리", "응답 유실 후 저장 접수 내역 대조", "tests/browser/paper.spec.ts", "paper stored receipt resolves transport ambiguity without another order POST"],
+    ["acceptance", "fake transport/격리DB로 동일 ID 중복 방지·재시작·상태 전이·복구 확인", "동일 ID의 동시 요청", "tests/paper.test.ts", "paper order retries and concurrent duplicate requests send once and persist receipt", "가짜 전송"],
+    ["acceptance", "fake transport/격리DB로 동일 ID 중복 방지·재시작·상태 전이·복구 확인", "부분체결 후 모순되는 취소 스냅샷", "tests/paper.test.ts", "partial fills and contradictory cancellation snapshots cannot regress confirmed fills", "가짜 전송"],
+    ["acceptance", "fake transport/격리DB로 동일 ID 중복 방지·재시작·상태 전이·복구 확인", "취소 응답 유실 중 체결 대조 경합", "tests/paper.test.ts", "fill reconciliation queued during a lost cancel response preserves the fill without a retry", "가짜 전송"],
+    ["failure", "복구 후보 없음·다수·만료·불일치는 불명 유지", "후보 없음·다수·근거 변경", "tests/paper.test.ts", "empty, ambiguous or changed recovery evidence leaves unknown and sends nothing", "가짜 전송"],
+    ["behavior", "일반 모의 계좌의 취소 결과 조회", "전송 권한 없는 일반 계좌 화면", "tests/browser/paper-cancel.spec.ts", "일반 모의 계좌에서는 전송 없이 취소 결과만 조회한다"],
+    ["acceptance", "실제 KIS 대조·체결 증거 및 사용자 수용은 별도 기록", "실제 부분체결 기록", null, null, "실제 KIS 관측", "docs/tasks/25-validation.md#다음-정규장-재개"],
+    ["acceptance", "실제 KIS 대조·체결 증거 및 사용자 수용은 별도 기록", "실제 부분체결 잔량에 대한 취소 시도와 결과 대조", null, null, "실제 KIS 관측"],
+    ["acceptance", "실제 KIS 대조·체결 증거 및 사용자 수용은 별도 기록", "대상 SHA의 사용자 화면 수용", null, null, "사용자 화면 수용"]
+  ],
+  "/settings/trading/*": [
+    ["behavior", "일반 수동 주문 한도 저장", "수량 한도 변경 뒤 재시작", "tests/paper.test.ts", "legacy one-share approval cannot be enlarged by reopening; manual setting survives restart"],
+    ["behavior", "한정 주문 초안 보존", "페이지 전환과 새로고침", "tests/browser/trading-settings.spec.ts", "mobile once workflow keeps edits across pages and reload, reviews before fixing and sends no trade"],
+    ["behavior", "한정 주문 고정 전 재검토", "초안 저장 뒤 공통 한도 변경", "tests/trading-settings.test.ts", "fix requires re-review if the common risk limits changed after draft save"],
+    ["behavior", "전략 초안의 저장 revision 사용", "저장한 전략 다시 편집", "tests/browser/trading-settings.spec.ts", "strategy editor uses the saved revision and the running contract is read only"],
+    ["behavior", "한정 주문과 전략 조건을 각 원장에 고정", "고정 직후", "tests/browser/trading-settings.spec.ts", "실제 매매설정 화면이 하한가 2주와 지연 전략을 각각 새 원장에 고정한다"],
+    ["behavior", "고정한 원장으로 실행기 기동", "원래 계좌와 원장이 일치한 경우 유휴 기동", "tests/trading-settings.test.ts", "named manifests start an idle server only with the matching account and original ledger"],
+    ["behavior", "실행 중 전략 계약 편집 차단", "기동한 계약 다시 열기", "tests/browser/trading-settings.spec.ts", "strategy editor uses the saved revision and the running contract is read only"]
+  ],
+  "공통 서비스": [
+    ["behavior", "KIS REST 오류 분류와 재전송 제한", "429·5xx와 POST 인증 실패", "tests/kis.test.ts", "all KIS endpoints share pacing; reads do not retry 429 or 5xx and POST never retries auth failures", "가짜 전송"],
+    ["behavior", "실시간 단절 후 주문 차단", "REST 전송 대기 중 WebSocket 단절", "tests/realtime.test.ts", "전송 대기 중 실시간 끊김은 실제 REST 주문 POST 전에 거부한다", "가짜 전송"],
+    ["behavior", "재접속 후 구독과 대조 전 전송 차단", "이전 소켓 메시지 도착", "tests/realtime.test.ts", "재연결은 재구독·대조 전 차단하고 이전 소켓 메시지를 무시한다", "가짜 전송"],
+    ["behavior", "실시간 기동 오류 처리", "접속키 발급 실패", "tests/ws-startup.test.ts", "발급 실패(${mode})는 자식을 시작하지 않고 비밀 원문을 숨긴다"],
+    ["behavior", "SQLite 재시작 시 데이터 보존", "트랜잭션 롤백과 저장소 재개", "tests/store.test.ts", "SQLite transaction rolls back and restart preserves data while stopping strategies"],
+    ["behavior", "SQLite 권한 오류 처리", "쓰기 불가능한 DB", "tests/store-permissions.test.ts", "unwritable DB fails without truncation, and memory Store needs no files"],
+    ["behavior", "상태 HTTP 응답의 환경·비밀값 경계", "저장 상태 API 조회", "tests/http.test.ts", "state API shares a validated status contract without broker I/O, secrets or DEMO mixing"],
+    ["behavior", "HTTP 오류 상태와 본문 처리", "정적 파일 없음", "tests/static-http.test.ts", "static HTTP errors and successful routes stay isolated from API and broker I/O"],
+    ["behavior", "전용 실행기 요청 ID 보존", "동일 ID 재사용", "tests/vts-runner.test.ts", "전용 VTS는 횟수·계약금액 제한 없이 지정가와 시장가를 보내고 같은 ID는 보존한다", "가짜 전송"],
+    ["behavior", "전용 실행기 불명 요청의 중복 차단", "불명 뒤 새 주문과 동일 ID 재전송", "tests/vts-runner.test.ts", "전용 VTS에서도 불명은 새 주문과 동일 ID 재전송을 차단한다", "가짜 전송"]
+  ]
+}

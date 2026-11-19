@@ -1,0 +1,151 @@
+{
+  "base": "6e88f877dd992c5f3f13c14fd287aa4b8aefd9d1",
+  "run": "run_2e122eaeec9a",
+  "task": "task_6b89a2262c1b",
+  "dispatch": "ctx_e571877231cf",
+  "evaluator": "Linux network/mount/PID namespaces, read-only allowlisted git archive and tests, in-memory SQLite and loopback-only Chromium",
+  "runs": [
+    {
+      "key": "4c762ce3d2e036bca9d1cff541083456af6a7b9393b1828dffdc11b7617de5ab",
+      "reused": false,
+      "status": "verified",
+      "result": {
+        "key": "4c762ce3d2e036bca9d1cff541083456af6a7b9393b1828dffdc11b7617de5ab",
+        "contract": {
+          "issue": 129,
+          "sha": "71a7a5442d5c07a99c1c806bbd2f8085d8c5c309",
+          "workerVersion": "historical-replay-v1",
+          "trial": 1,
+          "case": "watchlist-503+controls",
+          "checks": {
+            "replay.mjs": "df3d5432c2d2db94ae57b4bc984a73c82fcb654661a7edf6a4e75811b30e7e2d",
+            "replay-entry.sh": "5a939482ddcf420e88e6cb9b74049363124465ef50f340f74f6fa18df3eb4a6d",
+            "replay.py": "4f196d51147edf912ddf7231b4725720defdb815a55117310b31d6150817fcdb"
+          },
+          "lock": "2ab79fca82e617663a2f575b17227821ef0750c93b29606d70215a085935e9d5"
+        },
+        "exit": 1,
+        "stdoutSha": "33178c7599dec7120afcc484aea829cfe497eac577cd1b6cfdfbfcfae12d28e8",
+        "stderrSha": "351b524197fb492920789369e7f1a271420c757633fbb553b280a181ac4c31a4",
+        "observations": [
+          {
+            "name": "first 503 and confirmed empty after retry",
+            "observed": {
+              "previewRows": 4,
+              "quoteRequests": 4,
+              "confirmedEmpty": true
+            },
+            "expected": {
+              "previewRows": 0,
+              "quoteRequests": 0,
+              "confirmedEmpty": true
+            },
+            "pass": false
+          },
+          {
+            "name": "confirmed list survives later 503",
+            "observed": {
+              "savedRows": 1,
+              "toggleDisabled": true
+            },
+            "expected": {
+              "savedRows": 1,
+              "toggleDisabled": true
+            },
+            "pass": true
+          },
+          {
+            "name": "journal draft survives failed save",
+            "observed": {
+              "draft": "오프라인 초안",
+              "savedEntries": 0
+            },
+            "expected": {
+              "draft": "오프라인 초안",
+              "savedEntries": 0
+            },
+            "pass": true
+          }
+        ],
+        "elapsedSeconds": 5.52
+      }
+    },
+    {
+      "key": "ce62829a01d07fc450e60800640e977b1a1f30d12a750b96ef08257ecf3eda08",
+      "reused": false,
+      "status": "verified",
+      "result": {
+        "key": "ce62829a01d07fc450e60800640e977b1a1f30d12a750b96ef08257ecf3eda08",
+        "contract": {
+          "issue": 129,
+          "sha": "7bcea9d29563e37e27370a6b8c4ee8dce86734e3",
+          "workerVersion": "historical-replay-v1",
+          "trial": 1,
+          "case": "watchlist-503+controls",
+          "checks": {
+            "replay.mjs": "df3d5432c2d2db94ae57b4bc984a73c82fcb654661a7edf6a4e75811b30e7e2d",
+            "replay-entry.sh": "5a939482ddcf420e88e6cb9b74049363124465ef50f340f74f6fa18df3eb4a6d",
+            "replay.py": "4f196d51147edf912ddf7231b4725720defdb815a55117310b31d6150817fcdb"
+          },
+          "lock": "2ab79fca82e617663a2f575b17227821ef0750c93b29606d70215a085935e9d5"
+        },
+        "exit": 0,
+        "stdoutSha": "5e8bc02f6674f61ce41307497082d5b704793528ef8d91ea6ab1c371a21c1bd6",
+        "stderrSha": "351b524197fb492920789369e7f1a271420c757633fbb553b280a181ac4c31a4",
+        "observations": [
+          {
+            "name": "first 503 and confirmed empty after retry",
+            "observed": {
+              "previewRows": 0,
+              "quoteRequests": 0,
+              "confirmedEmpty": true
+            },
+            "expected": {
+              "previewRows": 0,
+              "quoteRequests": 0,
+              "confirmedEmpty": true
+            },
+            "pass": true
+          },
+          {
+            "name": "confirmed list survives later 503",
+            "observed": {
+              "savedRows": 1,
+              "toggleDisabled": true
+            },
+            "expected": {
+              "savedRows": 1,
+              "toggleDisabled": true
+            },
+            "pass": true
+          },
+          {
+            "name": "journal draft survives failed save",
+            "observed": {
+              "draft": "오프라인 초안",
+              "savedEntries": 0
+            },
+            "expected": {
+              "draft": "오프라인 초안",
+              "savedEntries": 0
+            },
+            "pass": true
+          }
+        ],
+        "elapsedSeconds": 5.39
+      }
+    }
+  ],
+  "duplicates": [
+    {
+      "key": "4c762ce3d2e036bca9d1cff541083456af6a7b9393b1828dffdc11b7617de5ab",
+      "status": "running",
+      "reused": true
+    },
+    {
+      "key": "4c762ce3d2e036bca9d1cff541083456af6a7b9393b1828dffdc11b7617de5ab",
+      "status": "verified",
+      "reused": true
+    }
+  ]
+}
