@@ -4,7 +4,7 @@
 
 ![실제 시세로 KIS 모의 주문을 보내는 과정과 합성 가격으로 내 PC에서 매매를 연습하는 과정](docs/architecture/figures/gon-stock-overview.png)
 
-[그림 확대](docs/architecture/figures/gon-stock-overview.svg) · [클릭형 구조도 내려받기](docs/architecture/figures/gon-stock.html?raw=1)
+[그림 확대](docs/architecture/figures/gon-stock-overview.svg) · [한 장 그림과 클릭형 구조도 내려받기 (HTML)](docs/architecture/figures/gon-stock03-overview.html?raw=1)
 
 구조도 HTML을 브라우저에서 열고 구성요소를 누르면 해당 동작을 구현한 소스 코드를 확인할 수 있습니다.
 
