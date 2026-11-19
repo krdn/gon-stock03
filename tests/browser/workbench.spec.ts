@@ -149,6 +149,62 @@ test('journal save failure retains draft and never reports success; retry persis
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
 });
 
+for (const edit of ['switch and retype', 'switch back', 'retype'] as const) {
+  test(`journal preserves a pending draft after ${edit}`, async ({ page }) => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const submissions: { code: string; text: string }[] = [];
+    await page.route('**/api/journal', async route => {
+      const { code, text } = route.request().postDataJSON();
+      submissions.push({ code, text });
+      await gate;
+      await route.continue();
+    });
+    await page.goto('/journal');
+    const save = page.getByRole('button', { name: '일지 저장' });
+    const form = page.locator('form').filter({ has: save });
+    const stock = form.getByRole('combobox');
+    const memo = form.getByLabel('매매 메모');
+    await expect(save).toBeEnabled();
+    const original = await stock.inputValue();
+    const other = await stock.locator('option:not(:checked)').first().evaluate(option => (option as HTMLOptionElement).value);
+    const text = `응답 대기 중 초안 · ${edit}`;
+    await memo.fill(text);
+    await save.click();
+    try {
+      await expect.poll(() => submissions).toEqual([{ code: original, text }]);
+      if (edit !== 'retype') await stock.selectOption(other);
+      if (edit === 'switch back') {
+        await stock.selectOption(original);
+      } else {
+        await memo.fill('다시 작성 중');
+        await memo.fill(text);
+      }
+    } finally { release(); }
+    await expect(page.locator('.journal-entry').filter({ hasText: text })).toHaveCount(1);
+    await expect(save).toBeEnabled();
+    await expect(stock).toHaveValue(edit === 'switch and retype' ? other : original);
+    await expect(memo).toHaveValue(text);
+    expect(submissions).toEqual([{ code: original, text }]);
+  });
+}
+
+test('journal keeps an unchanged draft on failure and clears it after a successful retry', async ({ page }) => {
+  await page.goto('/journal');
+  const save = page.getByRole('button', { name: '일지 저장' });
+  const memo = page.getByLabel('매매 메모');
+  await expect(save).toBeEnabled();
+  await page.route('**/api/journal', route => route.fulfill({ status: 503, json: { error: '일지 저장 실패' } }), { times: 1 });
+  const text = '저장 실패 후 다시 보낼 메모';
+  await memo.fill(text);
+  await Promise.all([page.waitForResponse(response => new URL(response.url()).pathname === '/api/journal' && response.status() === 503), save.click()]);
+  await expect(save).toBeEnabled();
+  await expect(memo).toHaveValue(text);
+  await save.click();
+  await expect(page.locator('.journal-entry').filter({ hasText: text })).toHaveCount(1);
+  await expect(memo).toHaveValue('');
+});
+
 test('journal keeps new typing while an earlier save response is pending', async ({ page }) => {
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
