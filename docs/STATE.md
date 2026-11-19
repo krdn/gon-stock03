@@ -4,12 +4,13 @@
 
 프로젝트를 처음 볼 때는 [한 장 그림](architecture/figures/gon-stock-overview.png)에서 KIS 모의 주문과 DEMO 연습 흐름을 따라간다. [구조도 작업 #110](https://github.com/krdn/gon-stock03/issues/110)
 
+- **남은 이슈는 #25와 상위 #3·#2·#1.** #123 정책 검증을 완료했고 #20·#12 화면을 사용자가 수용했다. 세 상위 이슈는 #25 장중 실증까지 열린 상태로 둔다. [처리 순서와 검증](verification/2026-11-19-issue-closeout.md)
 - **자동진화 #129 → #130 → #131:** [오프라인 기준선 및 재생](tasks/129-offline.md) · [설계](plans/agent-evolution.md).
 - **오프라인 파일럿 #130:** [거래일지 초안 오류와 관심종목 코드 복사](tasks/130-product.md) · [선행 기준선 PR #133](https://github.com/krdn/gon-stock03/pull/133).
 - **#128 자동진화 설계:** [연구·설계와 인수인계](tasks/128-agent-evolution.md). 첫 구현 후보는 [#129 관심종목 회귀의 오프라인 재생](https://github.com/krdn/gon-stock03/issues/129)이다.
 - **#113 설정 UX:** [4303 실측과 회귀 검증](tasks/113-settings-ux.md). 4303에 계좌 인증과 잔고 갱신 동선을 적용하고, 미주입 복구 및 기본 개발 서버 자동 주입을 검증했다.
-- **#12 실제 시세:** [트레이딩 연동](tasks/12-trading.md#실제-주가-연동). 기본 화면은 KIS 실제 현재가·일봉, DEMO는 명시 탭. [실제 응답·검증](verification/2026-11-17-trade-live.md). 현재 작업 폴더에서 Infisical 주입 후 4303/4304 실행, 동일 원장 보존. 단위216·브라우저150 PASS. PR90 통합. 아래 #25에서 일봉 전환 장면 수용.
-- **#20 후속:** [관심종목 수정](tasks/20-watchlist.md#2026-11-17-후속-화면-수정). 최초 연결 실패 예시목록·상세 재선택·링크 대비 수정, 4303 로컬 적용. [검증·원본 로컬 변경](verification/2026-11-17-watchlist-fixes.md)과 main 통합은 구분한다.
+- **#12 트레이딩 · 화면 수용 완료.** 실제 시세 종목 전환, 20·60·100일봉과 자동 갱신을 확인했다. [화면과 수용 답변](verification/2026-11-19-issue-closeout.md) · [작업 파일](tasks/12-trading.md)
+- **#20 관심종목 · 화면 수용 완료.** PR89 통합 후 정상 마스터의 삼성전자 시세와 상세 열기·닫기 초점 복귀를 확인했다. [화면과 수용 답변](verification/2026-11-19-issue-closeout.md) · [작업 파일](tasks/20-watchlist.md)
 - **전체 현황:** [완료·잔여 작업과 재개 안내](verification/2026-11-17-consolidated-status.md). 구현·격리검증·실제 관측·사용자 수용을 구분한다.
 - **#75 완료:** [11월 18일 실증](tasks/75-market-paper.md#11월-18일-장중-결과). 삼성전자 모의 시장가 1주 전량 체결, 잔량 0주, 보유 1주에서 2주로 증가. 해당 승인은 소진됐다. 다음 작업은 #25 실시간 수신·복구 검증이다.
 - **#92 실시간 경로:** PR93 통합 SHA에서 두 구독 승인·실제 시세·REST 대조 확인. [재시도 소진 및 복구 관측](tasks/92-ws.md#통합-sha-장중-재검증).
