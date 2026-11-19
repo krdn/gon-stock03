@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="788" viewBox="0 0 1080 788" role="img" aria-labelledby="title desc" lang="ko">
+  <title id="title">GON Stock — 국내 주식·ETF 모의투자</title>
+  <desc id="desc">삼성전자를 예로 든 두 가지 사용 경로. 실제 시세 화면에서는 한국투자증권의 현재가와 일봉을 조회하고, 주문 전 검사를 거친 모의 계좌의 주문 내역에서 체결을 확인한다. DEMO 탭에서는 내 PC가 만든 가격으로 연습하고 가상 현금과 보유 수량 변화를 확인한다. 주문 기록은 SQLite에 구분해 저장하며 과거 가격으로 전략을 백테스트할 수 있다.</desc>
+  <defs>
+    <style>
+      text { font-family: "Noto Sans CJK KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; fill: #192d34; }
+      .brand { font: bold 21px Arial, sans-serif; letter-spacing: -.3px; }
+      .title { font-size: 44px; font-weight: 750; letter-spacing: -2px; }
+      .intro { font-size: 21px; fill: #425a60; letter-spacing: -.5px; }
+      .lane { font-size: 30px; font-weight: 750; letter-spacing: -1.2px; fill: white; }
+      .laneSub { font-size: 17px; fill: white; letter-spacing: -.25px; }
+      .step { font-size: 23px; font-weight: 700; letter-spacing: -.8px; }
+      .detail { font-size: 18px; fill: #40585f; letter-spacing: -.5px; }
+      .noteTitle { font-size: 20px; font-weight: 700; letter-spacing: -.5px; }
+      .note { font-size: 17px; fill: #41565d; letter-spacing: -.4px; }
+      .icon { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+    <g id="quote" class="icon"><path d="M2 23h23M3 3v20M7 16l5-5 4 3 8-9m-5 0h5v5"/></g>
+    <g id="shield" class="icon"><path d="m13 2 9 4v6c0 6-4 10-9 12-5-2-9-6-9-12V6z"/><path d="m8.5 12.5 3.3 3.3 6-7"/></g>
+    <g id="receipt" class="icon"><path d="M5 3h16v21l-3-2-2 2-3-2-3 2-2-2-3 2zM9 8h8m-8 5h8m-8 5h4"/></g>
+    <g id="waves" class="icon"><path d="M1 14h4l4-9 5 16 4-10 3 3h4"/></g>
+    <g id="play" class="icon"><rect x="2" y="4" width="22" height="18" rx="3"/><path d="m11 8 6 5-6 4z"/></g>
+    <g id="wallet" class="icon"><path d="M22 7H4a2 2 0 0 1 0-4h15v4M3 7v14a2 2 0 0 0 2 2h17V7"/><path d="M23 12h-7v6h7zm-5 3h1"/></g>
+    <g id="experiment" class="icon"><path d="M9 2h8m-6 1v7L4 21a2 2 0 0 0 2 3h14a2 2 0 0 0 2-3l-7-11V3M8 17h10"/></g>
+    <g id="database" class="icon"><ellipse cx="13" cy="5" rx="10" ry="3.5"/><path d="M3 5v15c0 4.5 20 4.5 20 0V5M3 12.5c0 4.5 20 4.5 20 0"/></g>
+  </defs>
+  <rect width="1080" height="788" fill="#f4f6f2"/>
+  <g transform="translate(43 27)">
+    <rect width="30" height="30" rx="7" fill="#075b51"/><path d="M5 21l7-9 5 3 7-9" fill="none" stroke="#b9f0c8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="40" y="23" class="brand">GON Stock</text>
+  </g>
+  <text x="40" y="112" class="title">국내 주식·ETF 모의투자</text>
+  <text x="42" y="156" class="intro">삼성전자 한 종목을 골랐을 때, 내 PC에서 할 수 있는 두 가지.</text>
+
+  <g transform="translate(40 190)">
+    <rect width="488" height="416" rx="19" fill="#ffffff" stroke="#c8d9d1"/>
+    <path d="M19 0h450q19 0 19 19v76H0V19Q0 0 19 0Z" fill="#126657"/>
+    <text x="26" y="44" class="lane">실제 시세로 모의 주문</text>
+    <text x="27" y="75" class="laneSub">기본 화면  ·  한국투자증권(KIS) 모의 계좌</text>
+    <path d="M48 161v41m-4-5 4 5 4-5m-4 67v42m-4-5 4 5 4-5" fill="none" stroke="#81b3a3" stroke-width="2"/>
+    <g transform="translate(26 119)"><rect width="44" height="44" rx="12" fill="#e3f1e9"/><use href="#quote" x="9" y="9" color="#126657"/></g>
+    <text x="88" y="142" class="step">현재가와 일봉 보기</text>
+    <text x="88" y="174" class="detail">증권사에서 받은 가격을 차트로 봅니다.</text>
+    <g transform="translate(26 222)"><rect width="44" height="44" rx="12" fill="#e3f1e9"/><use href="#shield" x="9" y="9" color="#126657"/></g>
+    <text x="88" y="245" class="step">모의 주문 보내기</text>
+    <text x="88" y="277" class="detail">잔고·주문 한도·긴급정지를 먼저 확인합니다.</text>
+    <g transform="translate(26 326)"><rect width="44" height="44" rx="12" fill="#e3f1e9"/><use href="#receipt" x="9" y="9" color="#126657"/></g>
+    <text x="88" y="349" class="step">체결 수량 확인하기</text>
+    <text x="88" y="381" class="detail">접수 뒤 증권사 내역과 대조해 잔량을 봅니다.</text>
+  </g>
+  <g transform="translate(552 190)">
+    <rect width="488" height="416" rx="19" fill="#ffffff" stroke="#cbd6de"/>
+    <path d="M19 0h450q19 0 19 19v76H0V19Q0 0 19 0Z" fill="#374e74"/>
+    <text x="26" y="44" class="lane">합성 시세로 매매 연습</text>
+    <text x="27" y="75" class="laneSub">DEMO 연습 탭  ·  내 PC의 가상 계좌</text>
+    <path d="M48 161v41m-4-5 4 5 4-5m-4 67v42m-4-5 4 5 4-5" fill="none" stroke="#98abc4" stroke-width="2"/>
+    <g transform="translate(26 119)"><rect width="44" height="44" rx="12" fill="#e9eef6"/><use href="#waves" x="9" y="9" color="#37547c"/></g>
+    <text x="88" y="142" class="step">연습용 가격 보기</text>
+    <text x="88" y="174" class="detail">내 PC가 만들어 낸 가격을 사용합니다.</text>
+    <g transform="translate(26 222)"><rect width="44" height="44" rx="12" fill="#e9eef6"/><use href="#play" x="9" y="9" color="#37547c"/></g>
+    <text x="88" y="245" class="step">주문이나 전략 시험하기</text>
+    <text x="88" y="277" class="detail">다음 가격을 재생해 체결 조건을 확인합니다.</text>
+    <g transform="translate(26 326)"><rect width="44" height="44" rx="12" fill="#e9eef6"/><use href="#wallet" x="9" y="9" color="#37547c"/></g>
+    <text x="88" y="349" class="step">가상 계좌 변화 보기</text>
+    <text x="88" y="381" class="detail">체결 후 현금과 보유 수량을 확인합니다.</text>
+  </g>
+
+  <g transform="translate(40 629)">
+    <rect width="1000" height="121" rx="16" fill="#e9eeea"/>
+    <path d="M500 23v75" stroke="#c6d3cc"/>
+    <use href="#experiment" x="24" y="23" color="#47695c"/>
+    <text x="61" y="44" class="noteTitle">백테스트</text>
+    <text x="25" y="83" class="note">과거 일봉에 전략을 적용해 결과를 다시 계산합니다.</text>
+    <use href="#database" x="526" y="23" color="#47695c"/>
+    <text x="563" y="44" class="noteTitle">내 PC에 남는 기록</text>
+    <text x="527" y="83" class="note">SQLite에 모의 주문과 DEMO 기록을 구분해 저장합니다.</text>
+  </g>
+</svg>

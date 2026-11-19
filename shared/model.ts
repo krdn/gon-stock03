@@ -7,13 +7,14 @@ export interface Strategy { id: string; name: string; code: string; fast: number
 export interface Risk { maxOrder: number; maxPosition: number; dailyLoss: number; halted: boolean }
 export interface Event { id: string; time: string; level: 'info' | 'warning' | 'error'; title: string; detail: string; read: boolean; environment?: 'demo' | 'kis-paper' | 'shared'; target?: 'orders' | 'paper' | 'settings' | 'risk' | 'strategies'; requestId?: string }
 export interface Journal { id: string; date: string; code: string; text: string }
-export interface State { cash: number; startingEquity: number; instruments: Instrument[]; positions: Position[]; orders: Order[]; watchlist: string[]; strategies: Strategy[]; risk: Risk; events: Event[]; journal: Journal[]; tick: number; playing: boolean; revision: number; updatedAt: string }
+export interface State { paperManualMaxQty?: number; cash: number; startingEquity: number; instruments: Instrument[]; positions: Position[]; orders: Order[]; watchlist: string[]; strategies: Strategy[]; risk: Risk; events: Event[]; journal: Journal[]; tick: number; playing: boolean; revision: number; updatedAt: string }
 export interface BacktestInput { code: string; fast: number; slow: number; capital: number; feeBps: number; slippageBps: number }
 export interface BacktestResult { equity: number[]; trades: { bar: number; date?: string; signalDate?: string; side: 'buy' | 'sell'; price: number; qty: number; fee: number }[]; returnPct: number; maxDrawdown: number; finalEquity: number; fees: number; slippageCost: number; source: string }
 export interface Connection { configured: boolean; mode: 'paper'; connected: boolean; checkedAt?: string; message: string; balance?: { cash: number; totalEquity: number; positions: { code: string; name: string; qty: number; sellable?: number; average: number; price: number | null }[] } }
 export interface DataStatus { environment: 'demo' | 'kis-paper'; source: 'synthetic' | 'kis-rest'; phase: 'disconnected' | 'loading' | 'ready' | 'stale' | 'partial' | 'error'; observedAt: string | null; lastSuccessAt: string | null; staleAfterMs: number; complete: boolean; error: string | null; pages: number }
 export interface ConnectionFailure { kind: 'missing' | 'invalid' | 'expired' | 'permission' | 'rate-limit' | 'network' | 'upstream' | 'contract' | 'rejected'; message: string }
 export interface ConnectionState extends Connection {
+  balanceSeconds?: number;
   checkStartedAt: string | null;
   status: DataStatus;
   injection: { phase: 'unverified' | 'missing' | 'invalid' | 'present'; missing: ('KIS_APP_KEY' | 'KIS_APP_SECRET' | 'KIS_CANO' | 'KIS_ACNT_PRDT_CD')[] };
@@ -24,8 +25,8 @@ export interface PaperRiskSnapshot { day: string; baselineEquity: number | null;
 export interface StateSnapshot extends State { realtime?: import('./realtime.ts').RealtimeStatus; instanceId: string; startedAt: string; status: DataStatus; connection: ConnectionState; paperRisk?: PaperRiskSnapshot }
 export interface KisQuote { code: string; price: number; change: number; upper: number; lower: number; tickSize: number; stopped: boolean; receivedAt: string; volume?: number; sector?: string; liquidation?: boolean }
 export interface KisBar { date: string; close: number }
-export interface BrokerOrder { orderType?: 'market'; brokerId: string; date: string; code: string; name: string; side: 'buy' | 'sell'; qty: number; price: number; filled: number; remaining: number; cancelled: boolean; organization: string }
-export interface PaperOrder { orderType?: 'market'; strategy?: { id: string; revision: number; event: string; signal: 'buy' | 'sell' }; requestId: string; code: string; side: 'buy' | 'sell'; qty: number; price: number; createdAt: string; tradeDate: string; status: 'sending' | 'accepted' | 'unknown' | 'rejected' | 'partial' | 'filled' | 'cancelled'; brokerId?: string; organization?: string; filled: number; remaining: number; message: string }
+export interface BrokerOrder { orderType?: 'market'; brokerId: string; date: string; code: string; name: string; side: 'buy' | 'sell'; qty: number; price: number; filled: number; remaining: number; cancelled: boolean; confirmedCancelQty?: number; organization: string }
+export interface PaperOrder { priceCeiling?: number; orderType?: 'market'; strategy?: { id: string; revision: number; event: string; signal: 'buy' | 'sell' }; requestId: string; code: string; side: 'buy' | 'sell'; qty: number; price: number; createdAt: string; tradeDate: string; status: 'sending' | 'accepted' | 'unknown' | 'rejected' | 'partial' | 'filled' | 'cancelled'; brokerId?: string; organization?: string; filled: number; remaining: number; message: string }
 export interface PaperEvidence { observedAt: string; tradeDate: string; orders: BrokerOrder[]; balance: { cash: number; totalEquity: number; positions: { code: string; qty: number }[] } }
 export interface PaperAudit { id: string; requestId: string; at: string; actor: 'system' | 'local-user'; action: 'cancel-attempt' | 'cancel-response' | 'sending' | 'response' | 'reconcile' | 'restart' | 'recovery-inspect' | 'recovery-confirm'; before: PaperOrder['status'] | null; after: PaperOrder['status']; evidence?: PaperEvidence; recovery?: { evidenceId: string; brokerId: string; organization: string } }
 export const won = (value: number) => Math.round(value).toLocaleString('ko-KR');

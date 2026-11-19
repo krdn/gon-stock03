@@ -1,0 +1,308 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "GON Stock · 시세에서 모의 체결까지",
+    "locale": "ko",
+    "output": "docs/architecture/figures/gon-stock.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/krdn/gon-stock03.git",
+      "revision": "7c3e92e616f0194caa2819696faae5e53aef11e8",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "components": [
+    {
+      "id": "trade",
+      "type": "frontend",
+      "label": "트레이딩 화면",
+      "sublabel": "국내 주식·ETF 종목 선택",
+      "pos": [
+        40,
+        46
+      ],
+      "size": [
+        174,
+        66
+      ],
+      "sources": [
+        {
+          "path": "src/pages/Trading.tsx",
+          "line": 11,
+          "end_line": 16,
+          "label": "기본 탭과 DEMO 탭"
+        }
+      ]
+    },
+    {
+      "id": "quotes",
+      "type": "frontend",
+      "label": "실제 시세 화면",
+      "sublabel": "현재가와 일봉 차트",
+      "pos": [
+        342,
+        46
+      ],
+      "size": [
+        174,
+        66
+      ],
+      "sources": [
+        {
+          "path": "src/pages/LiveTrading.tsx",
+          "line": 40,
+          "end_line": 52,
+          "label": "시세 요청과 응답 검사"
+        },
+        {
+          "path": "src/pages/LiveTrading.tsx",
+          "line": 88,
+          "end_line": 99,
+          "label": "일봉과 모의 주문 화면 이동"
+        },
+        {
+          "path": "server/http.ts",
+          "line": 82,
+          "end_line": 86,
+          "label": "서버를 통한 시세 조회"
+        }
+      ]
+    },
+    {
+      "id": "kis",
+      "type": "external",
+      "label": "한국투자증권(KIS)",
+      "sublabel": "모의투자 서버",
+      "pos": [
+        646,
+        46
+      ],
+      "size": [
+        174,
+        66
+      ],
+      "sources": [
+        {
+          "path": "server/kis.ts",
+          "line": 7,
+          "end_line": 7,
+          "label": "모의 서버 주소"
+        },
+        {
+          "path": "server/kis.ts",
+          "line": 149,
+          "end_line": 163,
+          "label": "현재가와 일봉"
+        },
+        {
+          "path": "server/kis.ts",
+          "line": 221,
+          "end_line": 228,
+          "label": "모의 주문과 접수번호"
+        }
+      ]
+    },
+    {
+      "id": "demo",
+      "type": "backend",
+      "label": "DEMO 연습",
+      "sublabel": "합성 가격으로 주문·전략 연습",
+      "pos": [
+        40,
+        238
+      ],
+      "size": [
+        174,
+        66
+      ],
+      "sources": [
+        {
+          "path": "server/engine.ts",
+          "line": 50,
+          "end_line": 77,
+          "label": "합성 가격과 데모 체결"
+        },
+        {
+          "path": "server/engine.ts",
+          "line": 79,
+          "end_line": 92,
+          "label": "전략 평가"
+        },
+        {
+          "path": "server/http.ts",
+          "line": 109,
+          "end_line": 113,
+          "label": "로컬 상태 저장"
+        }
+      ]
+    },
+    {
+      "id": "paper",
+      "type": "backend",
+      "label": "KIS 모의 주문",
+      "sublabel": "잔고·한도·긴급정지 검사",
+      "pos": [
+        342,
+        238
+      ],
+      "size": [
+        174,
+        66
+      ],
+      "sources": [
+        {
+          "path": "server/paper.ts",
+          "line": 197,
+          "end_line": 230,
+          "label": "잔고와 위험 한도 확인"
+        },
+        {
+          "path": "server/paper.ts",
+          "line": 235,
+          "end_line": 261,
+          "label": "원장 기록 후 주문 전송"
+        },
+        {
+          "path": "server/paper.ts",
+          "line": 80,
+          "end_line": 95,
+          "label": "접수 이후 체결 수량 대조"
+        }
+      ]
+    },
+    {
+      "id": "ledger",
+      "type": "database",
+      "label": "내 PC의 기록",
+      "sublabel": "SQLite에 환경별 주문 저장",
+      "pos": [
+        342,
+        423
+      ],
+      "size": [
+        174,
+        66
+      ],
+      "sources": [
+        {
+          "path": "server/store.ts",
+          "line": 42,
+          "end_line": 54,
+          "label": "연습 상태·모의 주문·실험 테이블"
+        }
+      ]
+    },
+    {
+      "id": "research",
+      "type": "backend",
+      "label": "백테스트",
+      "sublabel": "과거 가격으로 전략 시험",
+      "pos": [
+        646,
+        423
+      ],
+      "size": [
+        174,
+        66
+      ],
+      "sources": [
+        {
+          "path": "server/http.ts",
+          "line": 101,
+          "end_line": 106,
+          "label": "저장 일봉과 합성 데이터 모드"
+        },
+        {
+          "path": "server/backtest.ts",
+          "line": 9,
+          "end_line": 25,
+          "label": "저장 일봉으로 실험"
+        },
+        {
+          "path": "server/backtest.ts",
+          "line": 27,
+          "end_line": 33,
+          "label": "고정 입력으로 재현"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "trade-quotes",
+      "from": "trade",
+      "to": "quotes",
+      "label": "기본 탭"
+    },
+    {
+      "id": "quotes-kis",
+      "from": "quotes",
+      "to": "kis",
+      "label": "시세 조회"
+    },
+    {
+      "id": "trade-demo",
+      "from": "trade",
+      "to": "demo",
+      "label": "연습 탭"
+    },
+    {
+      "id": "quotes-paper",
+      "from": "quotes",
+      "to": "paper",
+      "label": "주문 화면 열기"
+    },
+    {
+      "id": "paper-kis",
+      "from": "paper",
+      "to": "kis",
+      "label": "검사 후 전송·대조"
+    },
+    {
+      "id": "demo-ledger",
+      "from": "demo",
+      "to": "ledger",
+      "label": "연습 결과"
+    },
+    {
+      "id": "paper-ledger",
+      "from": "paper",
+      "to": "ledger",
+      "label": "주문 상태"
+    },
+    {
+      "id": "research-ledger",
+      "from": "research",
+      "to": "ledger",
+      "label": "일봉 읽기·실험 저장"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "기본 화면에서",
+      "items": [
+        "종목의 현재가와 일봉을 살펴봅니다.",
+        "같은 종목의 KIS 모의 주문 화면을 열 수 있습니다."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "접수한 주문은",
+      "items": [
+        "증권사 주문 내역과 대조해 체결 수량과 잔량을 확인합니다.",
+        "응답이 불명확하면 대조할 때까지 새 주문을 막습니다."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "전략을 시험할 때",
+      "items": [
+        "DEMO는 합성 가격을 한 단계씩 재생합니다.",
+        "저장 일봉 백테스트는 같은 입력으로 결과를 다시 계산합니다."
+      ]
+    }
+  ]
+}

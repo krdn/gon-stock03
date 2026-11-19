@@ -1,0 +1,126 @@
+{
+  "environment": "KIS VTS",
+  "productSHA": "34e672e81ba8038e6b06354dd81d32dcba60555e",
+  "samsung": {
+    "code": "005930",
+    "trace": [
+      {
+        "at": "2026-11-19T05:52:36.006Z",
+        "tag": "preflight",
+        "holding": 8,
+        "open": 0,
+        "existing": 2,
+        "price": 193200,
+        "tick": 100,
+        "limit": 193100,
+        "cap": 193100
+      },
+      {
+        "at": "2026-11-19T05:52:44.605Z",
+        "tag": "orderPost",
+        "qty": 2,
+        "price": 193100,
+        "amount": 386200,
+        "quote": 193200,
+        "tick": 100
+      },
+      {
+        "at": "2026-11-19T05:52:46.200Z",
+        "tag": "orderResult",
+        "status": "accepted",
+        "posts": 1
+      },
+      {
+        "at": "2026-11-19T05:52:46.732Z",
+        "tag": "daily",
+        "filled": 0,
+        "cancelConfirmed": 0,
+        "remaining": 2,
+        "cancelled": false
+      },
+      {
+        "at": "2026-11-19T05:52:49.222Z",
+        "tag": "daily",
+        "filled": 1,
+        "cancelConfirmed": 0,
+        "remaining": 1,
+        "cancelled": false
+      },
+      {
+        "at": "2026-11-19T05:52:49.222Z",
+        "tag": "CANCEL_NOW_PARTIAL",
+        "filled": 1,
+        "cancelConfirmed": 0,
+        "remaining": 1,
+        "cancelled": false
+      },
+      {
+        "at": "2026-11-19T05:52:51.881Z",
+        "tag": "daily",
+        "filled": 2,
+        "cancelConfirmed": 0,
+        "remaining": 0,
+        "cancelled": false
+      },
+      {
+        "at": "2026-11-19T05:52:54.383Z",
+        "tag": "final",
+        "filled": 2,
+        "cancelConfirmed": 0,
+        "remaining": 0,
+        "cancelled": false,
+        "matched": true,
+        "status": "filled",
+        "partialObserved": true,
+        "holding": 10,
+        "open": 0,
+        "posts": 1,
+        "cancelPosts": 0
+      }
+    ],
+    "localLedgerCheck": {
+      "integrity": "ok",
+      "localCount": 1,
+      "oneAttempt": 1,
+      "matchingRestRows": 1,
+      "actions": [
+        "sending",
+        "response",
+        "reconcile"
+      ],
+      "position": 10,
+      "final": {
+        "filled": 2,
+        "cancelConfirmed": 0,
+        "remaining": 0
+      },
+      "openOrders": 0,
+      "observedAt": "2026-11-19T05:52:54.376Z"
+    },
+    "chatNotification": "delivered after terminal fill",
+    "mobileCancelEvidence": null
+  },
+  "etf": {
+    "code": "069500",
+    "trace": [
+      {
+        "at": "2026-11-19T05:58:58.963Z",
+        "tag": "preflight",
+        "code": "069500",
+        "price": 79835,
+        "tick": 5,
+        "holdingSamsung": 10,
+        "openOrders": 0
+      },
+      {
+        "at": "2026-11-19T05:59:03.395Z",
+        "tag": "STOP",
+        "reason": "승인 지정가 불일치: 주문 79835원, 계약 기준 79830원, 재조회 하한가 55580원.",
+        "orderPosts": 0,
+        "cancelPosts": 0
+      }
+    ],
+    "orderPosts": 0,
+    "cancelPosts": 0
+  }
+}

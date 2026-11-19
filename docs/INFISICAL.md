@@ -27,10 +27,10 @@ API 키·DB 비밀번호·모델 제공자 키는 Secrets Management에 저장�
 `dev`·`staging`·`prod`를 분리하고 사람·CI·앱·AI 작업마다 필요한 프로젝트·환경·경로만 허용한다.
 기본 환경은 `dev`다. 브랜치 이름으로 운영 비밀값을 자동 선택하지 않는다.
 
-앱 실행 명령 앞에 CLI를 붙여 환경변수를 주입한다. 아래는 Node 앱의 예다.
+이 프로젝트의 개발 서버는 아래 명령으로 dev 환경의 KIS 모의 계좌 설정을 자동 조회한다.
 
 ```bash
-infisical secrets-manager run --env dev --path / -- npm run dev
+npm run dev
 ```
 
 서버·컨테이너·Kubernetes에서는 지원되는 workload identity/OIDC와 Agent·SDK·Operator 중 해당 배포 방식을 사용한다.
@@ -86,10 +86,10 @@ OIDC를 쓸 수 없는 환경의 대체 인증은 별도로 결정하고 자격�
 이 앱은 `dev /kis`의 `KIS_APP_KEY`, `KIS_APP_SECRET`, `KIS_CANO`, `KIS_ACNT_PRDT_CD`를 사용한다. 모의 전용 키, 계좌번호 앞 8자리와 상품코드 2자리를 등록한다. 다음 명령으로 주입하고 `/settings`에서 모의 잔고를 조회한다.
 
 ```bash
-infisical secrets-manager run --env dev --path /kis -- npm run dev
+npm run dev
 ```
 
-화면은 필수 값 존재·계좌 형식, 토큰 발급 응답, 잔고 전체 페이지 응답을 구분한다. 필수 값 존재는 주입 출처나 Infisical 로그인·권한 성공을 증명하지 않는다. 키가 바뀌면 서버를 다시 실행한다. 주입 실패로 새 서버가 시작되지 않아도 기존 서버가 남아 있을 수 있다.
+화면은 필수 값 존재·계좌 형식, 토큰 발급 응답, 잔고 전체 페이지 응답을 구분한다. 필수 값 존재는 주입 출처나 Infisical 로그인·권한 성공을 증명하지 않는다. 키가 바뀌면 서버를 다시 실행한다. 일반 개발 실행에서 주입이 실패하면 터미널에 복구 안내를 표시하고 로컬 데모를 시작한다.
 
 Infisical 로그인 만료는 실제 터미널의 안전한 인증 화면에서 갱신한다. 권한 거부는 프로젝트·`dev`·`/kis`의 읽기 권한을 확인한다. 이 오류들은 서버 시작 전 발생할 수 있어 화면에서 직접 감지하지 못한다. 평문 파일로 대체하지 않는다.
 
@@ -111,6 +111,6 @@ infisical secrets-manager run --env dev --path /kis -- npm run dev:realtime
 
 이 명령은 [공식 인증 경로](https://github.com/koreainvestment/open-trading-api/blob/main/examples_user/kis_auth.py)의 모의 `/oauth2/Approval`에 한 번 요청한다. 기존 앱키와 `secretkey`를 사용하고 15초 제한을 적용한다. 발급 실패나 잘못된 설정에서는 앱을 시작하지 않는다. 응답 원문은 출력하지 않는다.
 
-발급된 키는 서버 자식 프로세스의 `KIS_WS_APPROVAL_KEY`로만 전달한다. 파일·Infisical에 저장하거나 웹 개발 서버에 전달하지 않는다. 기존에 같은 이름의 키를 주입했어도 명시 실행에서는 새 발급값으로 대체한다. 기본 `npm run dev`의 동작은 유지한다.
+발급된 키는 서버 자식 프로세스의 `KIS_WS_APPROVAL_KEY`로만 전달한다. 파일·Infisical에 저장하거나 웹 개발 서버에 전달하지 않는다. 기존에 같은 이름의 키를 주입했어도 명시 실행에서는 새 발급값으로 대체한다. 일반 `npm run dev`에서는 WebSocket 접속키를 발급하지 않는다.
 
 발급 성공은 실제 구독 성공이 아니다. 앱은 자동 구독·거래를 시작하지 않는다. 거래일·시간창·긴급정지 등 기존 시작 조건을 만족해야 한다. 접속키 자동 갱신은 없으며, 만료되면 이 명령 전체를 종료하고 다시 실행한다. 개발 서버의 파일 감지 재시작만으로 새 키가 발급되지는 않는다. 재시작 시 기존 원장과 승인 설정을 보존한다.

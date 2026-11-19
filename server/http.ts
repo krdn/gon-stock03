@@ -1,10 +1,11 @@
+import { fixTradingDraft, saveTradingDraft, tradingSettings } from './trading-plans.ts';
 import type { StrategyContract } from './strategy-contract.ts';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z, ZodError } from 'zod';
-import { backtestInput, codeSchema, eventReadInput, haltInput, idInput, journalInput, orderInput, paperOrderInput, paperRecoveryInput, riskInput, storageErrorMessage, strategyInput } from '../shared/contracts.ts';
+import { backtestInput, codeSchema, eventReadInput, haltInput, idInput, journalInput, orderInput, configuredPaperOrderInput, paperOrderInput, paperQuantitySetting, paperRecoveryInput, riskInput, storageErrorMessage, strategyInput } from '../shared/contracts.ts';
 import { advanceTick, backtest, cancelOrder, halt, placeOrder, record } from './engine.ts';
 import { recordConnection, recordKisEvent } from './events.ts';
 import { KisClient, KisFailure } from './kis.ts';
@@ -25,9 +26,9 @@ async function body(req: IncomingMessage, limit = 16384) {
 function json(res: ServerResponse, status: number, data: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(data));
 }
-export function makeServer(store: Store, kis = KisClient.fromEnvironment(), ports = [4303, 4304], approval?: PaperApproval, realtimeOptions?: { config?: RealtimeConfig; connect?: SocketFactory; now?: () => number }, contract?: StrategyContract) {
-  const paper = new PaperBroker(store, kis, approval, contract);
-  const realtime = new Realtime(store, paper, realtimeOptions?.config ?? Realtime.configuration(), realtimeOptions?.connect, realtimeOptions?.now);
+export function makeServer(store: Store, kis = KisClient.fromEnvironment(), ports = [4303, 4304], approval?: PaperApproval, realtimeOptions?: { config?: RealtimeConfig; connect?: SocketFactory; now?: () => number }, contract?: StrategyContract, checkInstrument?: () => void) {
+  const paper = new PaperBroker(store, kis, approval, contract, checkInstrument);
+  const realtime = new Realtime(store, paper, realtimeOptions?.config ?? Realtime.configuration(paper.timingPolicy?.exchangeNotice), realtimeOptions?.connect, realtimeOptions?.now);
   const market = new MarketData(store, kis);
   const instanceId = randomUUID();
   const startedAt = new Date().toISOString();
@@ -43,7 +44,8 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         const snapshot: StateSnapshot = { ...store.read(), events: store.events(), instanceId, startedAt, status: { ...emptyStatus('demo'), phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now }, connection: kis.connection(), paperRisk: paper.riskSnapshot(), realtime: realtime.status() };
         json(res, 200, snapshot); return;
       }
-      if (path === '/api/kis/ledger' && req.method === 'GET') { json(res, 200, { orders: store.paperOrders(), minimumRun: paper.approvalStatus(), strategyBudget: paper.strategyBudget() }); return; }
+      if (path === '/api/trading-settings' && req.method === 'GET') { json(res,200,tradingSettings(store,approval,contract)); return; }
+      if (path === '/api/kis/ledger' && req.method === 'GET') { const orders = store.paperOrders(); json(res, 200, { orders, cancellation: paper.cancellation(orders), minimumRun: paper.approvalStatus(), strategyBudget: paper.strategyBudget() }); return; }
       if (path === '/api/kis/capabilities' && req.method === 'GET') { json(res, 200, paperCapabilities); return; }
       if (path === '/api/kis/audit' && req.method === 'GET') {
         const id = idInput.parse({ id: new URL(req.url!, 'http://127.0.0.1').searchParams.get('requestId') }).id;
@@ -66,6 +68,15 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         const input = await body(req, path === '/api/events/read' ? 128000 : path === '/api/data/daily' ? 65536 : 16384);
         const eventId = z.uuid().safeParse((input as { requestId?: unknown; id?: unknown } | null)?.requestId ?? (input as { id?: unknown } | null)?.id);
         if (eventId.success) eventRequestId = eventId.data;
+        if ((approval || contract) && (path === '/api/risk' || path === '/api/kis/quantity-setting')) {
+          json(res,409,{error:'전용 실행의 고정 한도입니다. 일반 앱에서 다음 실행을 준비하세요.'}); return;
+        }
+        if (path === '/api/trading-settings/draft' || path === '/api/trading-settings/fix') {
+          if (approval || contract) { json(res,409,{error:'실행 중 계약은 읽기 전용입니다. 일반 앱에서 다음 설정을 준비하세요.'}); return; }
+          const fixing = path.endsWith('/fix');
+          const plan = fixing ? fixTradingDraft(store,kis,input) : saveTradingDraft(store,input);
+          json(res,200,{plan,message:fixing?'전용 원장과 고정 파일을 준비했습니다.':'다음 실행 초안을 저장했습니다.'}); return;
+        }
         if (path === '/api/data/master/refresh') { json(res, 200, await market.refreshMaster()); return; }
         if (path === '/api/data/daily') { json(res, 200, { run: market.start(input) }); return; }
         if (path === '/api/data/daily/step') { json(res, 200, { run: await market.step(idInput.parse(input).id) }); return; }
@@ -84,11 +95,11 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
           const quote = await kis.quote(code); const bars = await kis.bars(code);
           json(res, 200, { quote, bars, message: 'KIS 현재가와 최근 일봉을 조회했습니다. 수신 시각과 거래일을 구분하세요.' }); return;
         }
-        if (path === '/api/kis/orders') { const result = await paper.refresh(); store.update(state => recordKisEvent(state, 'KIS 주문 대조 확인', 'REST 계좌·주문 대조를 확인했습니다.', 'paper', undefined, 'info')); json(res, 200, { ...result, message: 'KIS 모의 계좌와 당일 주문을 조회했습니다.' }); return; }
+        if (path === '/api/kis/orders') { const result = await paper.refresh(); store.update(state => recordKisEvent(state, 'KIS 주문 대조 확인', 'REST 계좌·주문 대조를 확인했습니다.', 'paper', undefined, 'info')); json(res, 200, { ...result, cancellation: paper.cancellation(result.orders), message: 'KIS 모의 계좌와 당일 주문을 조회했습니다.' }); return; }
         if (path === '/api/kis/cancel-probe') {
-          const { id } = idInput.parse(input);
+          const { id, reconcileFirst } = idInput.extend({ reconcileFirst: z.boolean().optional() }).parse(input);
           if (!paper.cancelProbeEnabled()) { store.update(state => recordKisEvent(state, 'KIS 한정 취소 요청 차단', '전량취소 검증 승인이 없습니다.', 'paper', eventRequestId)); json(res, 409, { error: '전량취소 검증 승인이 없습니다.' }); return; }
-          const order = await paper.cancelProbe(id); json(res, 200, { order, warning: true }); return;
+          const order = await paper.cancelProbe(id, reconcileFirst); json(res, 200, { order, warning: true }); return;
         }
         if (path === '/api/kis/cancel' || path === '/api/kis/revise') { idInput.parse(input); store.update(state => recordKisEvent(state, 'KIS 정정·취소 요청 차단', paperCapabilities.changeOrders.reason, 'paper', eventRequestId)); json(res, 409, { error: paperCapabilities.changeOrders.reason, code: 'vts-change-blocked' }); return; }
         if (path === '/api/kis/recovery/inspect') { json(res, 200, await paper.inspectRecovery(idInput.parse(input).id)); return; }
@@ -96,7 +107,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
           const order = await paper.confirmRecovery(paperRecoveryInput.parse(input)); json(res, 200, { order, message: order.message }); return;
         }
         if (path === '/api/kis/order') {
-          const order = await paper.submit(paperOrderInput.parse(input)); json(res, 200, { order, message: order.message, warning: order.status === 'unknown' || order.status === 'rejected' }); return;
+          const order = await paper.submit((approval?.policy ? configuredPaperOrderInput : paperOrderInput).parse(input)); json(res, 200, { order, message: order.message, warning: order.status === 'unknown' || order.status === 'rejected' }); return;
         }
         if (path === '/api/backtest/daily') { json(res, 200, { experiment: createExperiment(store, input), message: '저장 일봉의 입력과 결과를 보존했습니다.' }); return; }
         if (path === '/api/backtest/replay') { const replay = replayExperiment(store, idInput.parse(input).id); json(res, 200, { ...replay, message: replay.matches ? '고정 입력 재현 결과가 일치합니다.' : '재현 불일치: 엔진·저장 결과를 점검하세요.', warning: !replay.matches }); return; }
@@ -122,10 +133,12 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
             }
             case '/api/strategies': {
               const strategy = strategyInput.parse(input);
-              if (!state.instruments.some(s => s.code === strategy.code)) throw new Error('지원하지 않는 종목입니다.');
+              if (!state.instruments.some(s => s.code === strategy.code) &&
+                  !(strategy.environment === 'kis-paper' && store.masterData().instruments.some(s => s.code === strategy.code && s.tradingHalted === false && s.liquidation === false && ['ST','EF'].includes(s.group)))) throw new Error('지원하지 않는 종목입니다.');
               if (state.strategies.length >= 30) throw new Error('전략은 최대 30개까지 저장할 수 있습니다.');
-              state.strategies.push({ ...strategy, id: randomUUID(), active: false, lastSignal: 'hold', lastTick: -1, revision: 1, run: 0, evaluations: [] });
-              record(state, '전략 저장', strategy.name); return {};
+              const id = randomUUID();
+              state.strategies.push({ ...strategy, id, active: false, lastSignal: 'hold', lastTick: -1, revision: 1, run: 0, evaluations: [] });
+              record(state, '전략 저장', strategy.name); return {id, revision:1};
             }
             case '/api/strategies/toggle': {
               const strategy = state.strategies.find(s => s.id === idInput.parse(input).id);
@@ -133,6 +146,11 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
               if (strategy.environment === 'kis-paper') throw new Error('KIS 전략 시작·정지 경로를 사용하세요.');
               if (!strategy.active && state.risk.halted) throw new Error('신규 주문 정지 상태입니다.');
               strategy.active = !strategy.active; record(state, strategy.active ? '전략 시작' : '전략 정지', strategy.name); return {};
+            }
+            case '/api/kis/quantity-setting': {
+              state.paperManualMaxQty = paperQuantitySetting.parse(input).maxQty;
+              record(state, 'KIS 수동 주문 수량 한도 변경', `1회 최대 ${state.paperManualMaxQty}주`);
+              return { maxQty: state.paperManualMaxQty, message: 'KIS 수동 주문 수량 한도를 저장했습니다.' };
             }
             case '/api/risk': Object.assign(state.risk, riskInput.parse(input)); record(state, '위험 한도 변경', '새 주문부터 변경한 한도를 적용합니다.'); return {};
             case '/api/risk/halt': {
@@ -167,6 +185,9 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       const type = ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' } as Record<string, string>)[extname(file)] ?? 'application/octet-stream';
       res.writeHead(200, { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' }); res.end(req.method === 'HEAD' ? undefined : bytes);
     } catch (error) {
+      if (path.startsWith('/api/trading-settings') && error instanceof Error && 'code' in error && !(error instanceof ZodError)) {
+        json(res,500,{error:'매매 설정 원장이나 고정 파일을 처리하지 못했습니다. 저장 상태를 다시 확인하세요.'}); return;
+      }
       if ((path === '/api/watchlist' || path === '/api/journal' || path.startsWith('/api/strategies') || path.startsWith('/api/risk') || path.startsWith('/api/backtest/') || path.startsWith('/api/kis/') || path === '/api/events/read') && error instanceof Error && 'code' in error && error.code === 'ERR_SQLITE_ERROR') { json(res, 500, { error: storageErrorMessage }); return; }
       if (path === '/api/kis/check' || ['/api/kis/order', '/api/kis/orders', '/api/kis/recovery/inspect', '/api/kis/recovery/confirm', '/api/kis/cancel', '/api/kis/revise', '/api/kis/cancel-probe'].includes(path)) {
         try { store.update(state => {

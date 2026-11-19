@@ -1,4 +1,5 @@
 export interface RealtimeStatus {
+  quoteSeconds?: number;
   phase: 'stopped' | 'connecting' | 'reconciling' | 'ready' | 'disconnected' | 'error';
   required: boolean;
   ordersAllowed: boolean;
