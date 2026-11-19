@@ -8,7 +8,6 @@ const market = (code = '005930', price = 190300) => ({
 async function local(page: Page) {
   await page.route('**/api/state', async route => {
     const state = snapshot();
-    state.status.observedAt = state.status.lastSuccessAt = await page.evaluate(() => new Date().toISOString());
     state.status.staleAfterMs = 3_600_000;
     await route.fulfill({ json: state });
   });
