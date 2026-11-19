@@ -104,14 +104,19 @@ export function Settings() {
   const { act, busy, available, connection, refresh, server, serverNow, status } = useWorkbench();
   const [checking, setChecking] = useState(false), [showGuide, setShowGuide] = useState(false);
   const [refreshState, setRefreshState] = useState<'idle' | 'pending' | 'done'>('idle');
+  useEffect(() => {
+    if (refreshState !== 'done') return;
+    const timer = window.setTimeout(() => setRefreshState('idle'), 5000);
+    return () => window.clearTimeout(timer);
+  }, [refreshState]);
   const authentication = authenticationStatus(connection.authentication, serverNow);
   const retrySeconds = authentication.retryAt ? Math.max(0, Math.ceil((Date.parse(authentication.retryAt) - serverNow) / 1000)) : 0;
   const elapsed = connection.checkStartedAt ? Math.max(0, Math.floor((serverNow - Date.parse(connection.checkStartedAt)) / 1000)) : 0;
   const loading = checking || connection.status.phase === 'loading';
   const currentBalance = available && connection.connected && connection.status.complete && Boolean(connection.balance) && !loading;
   const time = (value: string | null) => value ? new Date(value).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '없음';
-  const injectionLabel = { unverified: '미확인', missing: '미주입', invalid: '설정 형식 오류', present: '설정 확인됨' }[connection.injection.phase];
-  const authLabel = { unverified: '미확인', loading: '인증 중', ready: '인증 확인됨', expired: '만료·갱신 필요', error: '인증 실패' }[authentication.phase];
+  const injectionLabel = { unverified: '미확인', missing: '미주입', invalid: '설정 형식 오류', present: '필수 값 있음' }[connection.injection.phase];
+  const authLabel = { unverified: '미확인', loading: '인증 중', ready: '토큰 발급됨', expired: '만료·갱신 필요', error: '인증 실패' }[authentication.phase];
   const balanceLabel = { disconnected: '미조회', loading: '조회 중', ready: '전체 조회 확인', stale: '다시 조회 필요', partial: '일부만 수신', error: '조회 실패' }[connection.status.phase];
   const injectionFailure: ConnectionFailure | null = connection.injection.phase === 'missing' || connection.injection.phase === 'invalid' ? { kind: connection.injection.phase, message: '서버 필수 환경변수와 계좌 형식을 확인하세요.' } : null;
   const setupBlocked = available && injectionFailure !== null;
@@ -124,8 +129,8 @@ export function Settings() {
     if (!available) return { title: '로컬 서버 연결을 확인하세요', detail: '개발 서버를 실행한 뒤 서버 상태를 새로고침하세요.', tone: 'warning' };
     if (loading) return { title: '모의 잔고를 조회하고 있습니다', detail: '한국투자증권에서 전체 잔고를 받아오고 있습니다.', tone: 'neutral' };
     if (injectionFailure) return { title: missingSettings ? '모의 계좌 설정이 필요합니다' : '모의 계좌 설정을 수정하세요', detail: connectionRecovery[injectionFailure.kind].action, tone: 'warning' };
-    if (retrySeconds > 0) return { title: '인증 갱신을 기다리고 있습니다', detail: '대기 시간이 끝나면 모의 잔고를 다시 조회할 수 있습니다.', tone: 'neutral' };
     if (failure) return { title: connectionRecovery[failure.kind].label, detail: connectionRecovery[failure.kind].action, tone: 'warning' };
+    if (retrySeconds > 0) return { title: '인증 갱신을 기다리고 있습니다', detail: '대기 시간이 끝나면 모의 잔고를 다시 조회할 수 있습니다.', tone: 'neutral' };
     if (currentBalance) return { title: '모의 잔고를 확인했습니다', detail: '아래에서 예수금과 보유 종목을 확인할 수 있습니다.', tone: 'success' };
     if (connection.status.phase === 'partial') return { title: '잔고를 일부만 받았습니다', detail: '전체 잔고를 확인하려면 다시 조회하세요.', tone: 'warning' };
     if (connection.status.phase === 'error') return { title: '모의 잔고 조회에 실패했습니다', detail: '잠시 후 다시 조회하세요. 서버 상세 정보에서 오류를 확인할 수 있습니다.', tone: 'warning' };
@@ -154,7 +159,6 @@ export function Settings() {
         </header>
         <div className={`settings-summary ${summary.tone}`} role="status" aria-label={failure ? '연결 복구 안내' : '현재 연결 상태'}>
           <h2>{summary.title}</h2><p>{summary.detail}</p>
-          {available && !loading && !setupBlocked && retrySeconds > 0 && failure && <p>{connectionRecovery[failure.kind].label}</p>}
         </div>
         {available && retrySeconds > 0 && <p id="settings-retry">{retrySeconds}초 후 다시 조회할 수 있습니다.</p>}
         <div className="settings-actions">{setupBlocked ? [guideButton, checkButton] : [checkButton, guideButton]}</div>
@@ -172,8 +176,8 @@ export function Settings() {
         <h3>연결 점검</h3>
         <div className="settings-stages">
           <div role="group" aria-label="서버 필수 설정 상태"><span><Settings2 size={16} />계좌 설정</span>
-            <Badge tone={available && connection.injection.phase === 'present' ? 'teal' : 'neutral'}>{available ? injectionLabel : '서버 상태 확인 필요'}</Badge></div>
-          <div role="group" aria-label="KIS 인증 상태"><span><ShieldCheck size={16} />계좌 인증</span>
+            <Badge>{available ? injectionLabel : '서버 상태 확인 필요'}</Badge></div>
+          <div role="group" aria-label="KIS 인증 상태"><span><ShieldCheck size={16} />KIS 인증</span>
             <Badge tone={available && authentication.phase === 'ready' ? 'teal' : 'neutral'}>{available ? authLabel : '서버 상태 확인 필요'}</Badge></div>
           <div role="group" aria-label="모의 잔고 조회 상태"><span><Wallet size={16} />잔고 조회</span>
             <Badge tone={currentBalance ? 'teal' : 'neutral'}>{!available ? '서버 상태 확인 필요' : loading ? '조회 중' : balanceLabel}</Badge></div>
@@ -202,13 +206,13 @@ export function Settings() {
           <dl className="settings-server" aria-label="실행 서버 식별">
             <dt>모의 API</dt><dd><code>openapivts.koreainvestment.com</code></dd>
             <dt>비밀정보 경로</dt><dd>Infisical · dev /kis</dd>
-            <dt>서버 시작</dt><dd>{server ? time(server.startedAt) : '미확인'}</dd>
+            <dt>서버 시작 (한국시간)</dt><dd>{server ? time(server.startedAt) : '미확인'}</dd>
             <dt>인스턴스</dt><dd>{server?.instanceId.slice(0, 8) ?? '미확인'}</dd>
           </dl>
           <p>필수 값과 계좌 형식만 검사합니다. 주입 출처 미확인. 키를 바꾸면 서버를 다시 실행하세요.</p>
           {available && connection.injection.missing.length > 0 && <p>미주입 항목: {connection.injection.missing.join(', ')}</p>}
         </div>
-        <div><h3>마지막 관측 기록</h3>
+        <div><h3>마지막 관측 기록 (한국시간)</h3>
           <dl className="settings-server">
             <dt>토큰 발급</dt><dd>{time(authentication.lastSuccessAt)}</dd><dt>토큰 재확인</dt><dd>{time(authentication.validUntil)}</dd>
             <dt>잔고 전체 조회</dt><dd>{time(connection.status.lastSuccessAt)}</dd><dt>확인한 페이지</dt><dd>{connection.status.pages}</dd>

@@ -5,6 +5,7 @@ import { Realtime } from '../server/realtime.ts';
 const kisVariables = ['KIS_APP_KEY', 'KIS_APP_SECRET', 'KIS_CANO', 'KIS_ACNT_PRDT_CD'] as const;
 function loadDevCredentials(env: NodeJS.ProcessEnv) {
   if (kisVariables.every(key => env[key]?.trim())) return;
+  console.info('Infisical에서 KIS 모의 계좌 설정을 불러오는 중입니다.');
   const result = spawnSync('infisical', [
     'secrets-manager', 'secrets', 'get', ...kisVariables, '--env', 'dev', '--path', '/kis', '-o', 'json', '--silent',
   ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15_000 });

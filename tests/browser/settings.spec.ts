@@ -31,7 +31,7 @@ test('settings keeps token and complete balance responses separate, suppresses o
   });
   await page.goto('/settings');
   await expect(page.getByRole('heading', { name: '모의 잔고를 조회하세요' })).toBeVisible();
-  await expect(page.getByLabel('서버 필수 설정 상태', { exact: true })).toContainText('설정 확인됨');
+  await expect(page.getByLabel('서버 필수 설정 상태', { exact: true })).toContainText('필수 값 있음');
   await expect(page.getByLabel('KIS 인증 상태', { exact: true })).toContainText('미확인');
   await page.getByRole('button', { name: '모의 잔고 조회' }).click();
   await expect(page.getByRole('button', { name: '모의 잔고 조회' })).toBeDisabled();
@@ -39,7 +39,7 @@ test('settings keeps token and complete balance responses separate, suppresses o
   state.connection.authentication = { phase: 'ready', lastSuccessAt: new Date().toISOString(), validUntil: new Date(Date.now() + 86_340_000).toISOString(), retryAt: null, failure: null };
   state.connection.status = { ...state.connection.status, phase: 'loading', pages: 1 };
   const polled = page.waitForResponse('**/api/state'); await page.clock.fastForward(3500); await polled;
-  await expect(page.getByLabel('KIS 인증 상태', { exact: true })).toContainText('인증 확인됨');
+  await expect(page.getByLabel('KIS 인증 상태', { exact: true })).toContainText('토큰 발급됨');
   await expect(page.getByLabel('모의 잔고 조회 상태', { exact: true })).toContainText('조회 중');
   await expect(page.getByRole('heading', { name: '모의 잔고를 확인했습니다' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: '모의 계좌 잔고' })).toHaveCount(0);
@@ -84,7 +84,7 @@ test('settings expires token evidence locally and hides positive stages when the
   state.connection.configured = true; state.connection.injection = { phase: 'present', missing: [] };
   state.connection.authentication = { phase: 'ready', lastSuccessAt: new Date().toISOString(), validUntil: new Date(Date.now() + 1000).toISOString(), retryAt: null, failure: null };
   await page.route('**/api/state', route => offline ? route.abort() : route.fulfill({ json: state }));
-  await page.goto('/settings'); await expect(page.getByLabel('KIS 인증 상태', { exact: true })).toContainText('인증 확인됨');
+  await page.goto('/settings'); await expect(page.getByLabel('KIS 인증 상태', { exact: true })).toContainText('토큰 발급됨');
   await page.clock.fastForward(2000);
   await expect(page.getByLabel('KIS 인증 상태', { exact: true })).toContainText('만료·갱신 필요');
   offline = true; await page.clock.fastForward(3500);
@@ -128,12 +128,49 @@ test('settings uses server time for cooldown and shows server identity', async (
   await page.goto('/settings');
   await page.getByText('서버·인증 상세 정보', { exact: true }).click();
   await expect(page.getByLabel('실행 서버 식별')).toContainText('fixture-');
+  await expect(page.getByRole('heading', { name: '인증 갱신을 기다리고 있습니다' })).toBeVisible();
   await expect(page.locator('#settings-retry')).toContainText('60초');
   await expect(page.getByRole('button', { name: '모의 잔고 조회' })).toBeDisabled();
   state.status.observedAt = new Date(start + 3600_000 + 60_001).toISOString();
   state.status.lastSuccessAt = state.status.observedAt;
   await page.clock.fastForward(60_001);
   await expect(page.getByRole('button', { name: '모의 잔고 조회' })).toBeEnabled();
+});
+
+test('authentication failure keeps its recovery action visible throughout the retry cooldown', async ({ page }) => {
+  const start = Date.now();
+  await page.clock.install({ time: start });
+  const state = snapshot();
+  let observed = start;
+  state.connection.configured = true;
+  state.connection.injection = { phase: 'present', missing: [] };
+  state.connection.authentication = {
+    phase: 'error', lastSuccessAt: null, validUntil: null, retryAt: new Date(start + 60_000).toISOString(),
+    failure: { kind: 'permission', message: '모의 인증 권한이 없습니다.' },
+  };
+  const posts: string[] = [];
+  page.on('request', req => { if (req.method() === 'POST') posts.push(req.url()); });
+  await page.route('**/api/state', route => {
+    state.status.observedAt = state.status.lastSuccessAt = new Date(observed).toISOString();
+    return route.fulfill({ json: state });
+  });
+  await page.goto('/settings');
+  const recovery = page.getByLabel('연결 복구 안내');
+  const check = page.getByRole('button', { name: '모의 잔고 조회' });
+  await expect(recovery.getByRole('heading', { name: '인증·권한 거부' })).toBeVisible();
+  await expect(recovery).toContainText('서비스 신청');
+  await expect(page.locator('#settings-retry')).toContainText('60초');
+  await expect(check).toBeDisabled();
+  await page.getByRole('button', { name: '서버 상태 새로고침' }).click();
+  await expect(page.getByLabel('새로고침 결과')).toContainText('외부 KIS 호출 없음');
+  await page.clock.fastForward(5001);
+  await expect(page.getByLabel('새로고침 결과')).toBeEmpty();
+  await expect(recovery).toContainText('서비스 신청');
+  observed += 60_001;
+  await page.clock.fastForward(60_001);
+  await expect(check).toBeEnabled();
+  await expect(recovery).toContainText('서비스 신청');
+  expect(posts).toEqual([]);
 });
 
 test('settings identifies a restarted server, shows progress and expires complete money after 60 seconds', async ({ page }) => {
@@ -208,7 +245,7 @@ test('a stale balance keeps authentication and dated holdings legible on a narro
   await page.goto('/settings');
   await expect(page.getByRole('heading', { name: '잔고를 다시 조회하세요' })).toBeVisible();
   await expect(page.getByRole('button', { name: '모의 잔고 조회' })).toBeInViewport({ ratio: 1 });
-  await expect(page.getByLabel('KIS 인증 상태', { exact: true })).toContainText('인증 확인됨');
+  await expect(page.getByLabel('KIS 인증 상태', { exact: true })).toContainText('토큰 발급됨');
   const account = page.locator('.settings-balance');
   await expect(account.locator('time')).toHaveAttribute('datetime', lastSuccessAt);
   await expect(account).toContainText('이전 조회 잔고');
