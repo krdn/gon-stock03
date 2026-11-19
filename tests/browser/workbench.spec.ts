@@ -94,8 +94,8 @@ test('journal treats input as text and saves; missing KIS credentials show recov
   await page.goto('/journal'); const text = '<script>alert("not code")</script> 규칙을 지켰다.';
   await page.getByLabel('매매 메모').fill(text); await page.getByRole('button', { name: '일지 저장' }).click();
   await page.reload(); await expect(page.getByText(text, { exact: true })).toBeVisible();
-  await page.goto('/settings'); await expect(page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' })).toBeDisabled();
-  await expect(page.getByLabel('연결 복구 안내')).toContainText('Infisical'); await expect(page.getByText('조회 확인', { exact: true })).toHaveCount(0);
+  await page.goto('/settings'); await expect(page.getByRole('button', { name: '모의 잔고 조회' })).toBeDisabled();
+  await expect(page.getByLabel('연결 복구 안내')).toContainText('Infisical'); await expect(page.getByRole('heading', { name: '모의 잔고를 확인했습니다' })).toHaveCount(0);
   await page.goto('/paper'); await expect(page.getByRole('button', { name: 'KIS 모의 주문 확인', exact: true })).toBeDisabled();
 });
 test('journal rejects empty and whitespace notes without losing the draft', async ({ page }) => {
