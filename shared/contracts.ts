@@ -20,6 +20,12 @@ export type PaperRecoveryInput = z.infer<typeof paperRecoveryInput>;
 export const haltInput = z.object({ halted: z.boolean() }).strict();
 export type OrderInput = z.infer<typeof orderInput>;
 
+export const paperCancellationSchema = z.object({
+  candidate: z.object({ requestId: z.uuid(), expiresAt: z.iso.datetime() }).nullable(),
+  reason: z.string(),
+});
+export type PaperCancellation = z.infer<typeof paperCancellationSchema>;
+
 export const paperLedgerSchema = z.object({ orders: z.array(z.object({
   strategy: z.object({ id: z.string(), revision: z.number().int().positive(), event: z.string(), signal: z.enum(['buy', 'sell']) }).optional(),
   requestId: z.string().min(1).max(80), code: codeSchema, side: z.enum(['buy', 'sell']),

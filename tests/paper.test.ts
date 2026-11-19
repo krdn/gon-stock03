@@ -979,3 +979,41 @@ test('market reconciliation fails closed on missing order type or changed zero o
     } finally { f.store.close(); }
   }
 });
+
+test('page cancellation rechecks broker state and skips the cancel wire when the trade filled first', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const input = approvedInput();
+  const f = fixture('success', 0, { ...approvalFor(input), cancelProbe: true });
+  try {
+    const order = await f.broker.submit(input);
+    f.response.rows = [brokerRow({ pdno: input.code, tot_ccld_qty: '1', rmn_qty: '0' })];
+    await assert.rejects(f.broker.cancelProbe(order.requestId, true), /미체결 원주문/);
+    assert.equal(f.store.paperOrders()[0].status, 'filled');
+    assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 0);
+  } finally { f.store.close(); }
+});
+
+test('UI cancellation candidate is scoped to the valid unsent probe and cannot reappear after REST refresh', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const input = approvedInput();
+  const f = fixture('success', 0, { ...approvalFor(input), cancelProbe: true });
+  try {
+    assert.equal(f.broker.cancellation([]).candidate, null);
+    const order = await f.broker.submit(input);
+    const read = () => f.broker.cancellation(f.store.paperOrders()).candidate;
+    assert.deepEqual(read(), { requestId: input.requestId, expiresAt: new Date(Date.parse(order.createdAt) + 120000).toISOString() });
+    assert.equal(f.broker.cancellation([{ ...order, requestId: randomUUID() }]).candidate, null);
+    assert.equal(f.broker.cancellation([{ ...order, qty: 2 }]).candidate, null);
+    assert.equal(f.broker.cancellation([{ ...order, createdAt: new Date(Date.now() - 120000).toISOString() }]).candidate, null);
+    await f.broker.cancelProbe(order.requestId);
+    f.response.rows = [brokerRow({ pdno: input.code })];
+    await f.broker.refresh();
+    assert.equal(f.store.paperOrders()[0].status, 'accepted');
+    assert.equal(read(), null);
+    f.response.rows = [brokerRow({ pdno: input.code, rmn_qty: '0', cncl_yn: 'Y', cncl_cfrm_qty: '1' })];
+    const result = await f.broker.refresh();
+    assert.equal(result.brokerOrders[0].confirmedCancelQty, 1);
+    assert.equal(result.orders[0].status, 'cancelled');
+    assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 1);
+  } finally { f.store.close(); }
+});

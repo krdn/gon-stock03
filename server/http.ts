@@ -43,7 +43,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         const snapshot: StateSnapshot = { ...store.read(), events: store.events(), instanceId, startedAt, status: { ...emptyStatus('demo'), phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now }, connection: kis.connection(), paperRisk: paper.riskSnapshot(), realtime: realtime.status() };
         json(res, 200, snapshot); return;
       }
-      if (path === '/api/kis/ledger' && req.method === 'GET') { json(res, 200, { orders: store.paperOrders(), minimumRun: paper.approvalStatus(), strategyBudget: paper.strategyBudget() }); return; }
+      if (path === '/api/kis/ledger' && req.method === 'GET') { const orders = store.paperOrders(); json(res, 200, { orders, cancellation: paper.cancellation(orders), minimumRun: paper.approvalStatus(), strategyBudget: paper.strategyBudget() }); return; }
       if (path === '/api/kis/capabilities' && req.method === 'GET') { json(res, 200, paperCapabilities); return; }
       if (path === '/api/kis/audit' && req.method === 'GET') {
         const id = idInput.parse({ id: new URL(req.url!, 'http://127.0.0.1').searchParams.get('requestId') }).id;
@@ -84,11 +84,11 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
           const quote = await kis.quote(code); const bars = await kis.bars(code);
           json(res, 200, { quote, bars, message: 'KIS 현재가와 최근 일봉을 조회했습니다. 수신 시각과 거래일을 구분하세요.' }); return;
         }
-        if (path === '/api/kis/orders') { const result = await paper.refresh(); store.update(state => recordKisEvent(state, 'KIS 주문 대조 확인', 'REST 계좌·주문 대조를 확인했습니다.', 'paper', undefined, 'info')); json(res, 200, { ...result, message: 'KIS 모의 계좌와 당일 주문을 조회했습니다.' }); return; }
+        if (path === '/api/kis/orders') { const result = await paper.refresh(); store.update(state => recordKisEvent(state, 'KIS 주문 대조 확인', 'REST 계좌·주문 대조를 확인했습니다.', 'paper', undefined, 'info')); json(res, 200, { ...result, cancellation: paper.cancellation(result.orders), message: 'KIS 모의 계좌와 당일 주문을 조회했습니다.' }); return; }
         if (path === '/api/kis/cancel-probe') {
-          const { id } = idInput.parse(input);
+          const { id, reconcileFirst } = idInput.extend({ reconcileFirst: z.boolean().optional() }).parse(input);
           if (!paper.cancelProbeEnabled()) { store.update(state => recordKisEvent(state, 'KIS 한정 취소 요청 차단', '전량취소 검증 승인이 없습니다.', 'paper', eventRequestId)); json(res, 409, { error: '전량취소 검증 승인이 없습니다.' }); return; }
-          const order = await paper.cancelProbe(id); json(res, 200, { order, warning: true }); return;
+          const order = await paper.cancelProbe(id, reconcileFirst); json(res, 200, { order, warning: true }); return;
         }
         if (path === '/api/kis/cancel' || path === '/api/kis/revise') { idInput.parse(input); store.update(state => recordKisEvent(state, 'KIS 정정·취소 요청 차단', paperCapabilities.changeOrders.reason, 'paper', eventRequestId)); json(res, 409, { error: paperCapabilities.changeOrders.reason, code: 'vts-change-blocked' }); return; }
         if (path === '/api/kis/recovery/inspect') { json(res, 200, await paper.inspectRecovery(idInput.parse(input).id)); return; }
