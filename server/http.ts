@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z, ZodError } from 'zod';
-import { backtestInput, codeSchema, eventReadInput, haltInput, idInput, journalInput, orderInput, paperOrderInput, paperRecoveryInput, riskInput, storageErrorMessage, strategyInput } from '../shared/contracts.ts';
+import { backtestInput, codeSchema, eventReadInput, haltInput, idInput, journalInput, orderInput, paperOrderInput, paperQuantitySetting, paperRecoveryInput, riskInput, storageErrorMessage, strategyInput } from '../shared/contracts.ts';
 import { advanceTick, backtest, cancelOrder, halt, placeOrder, record } from './engine.ts';
 import { recordConnection, recordKisEvent } from './events.ts';
 import { KisClient, KisFailure } from './kis.ts';
@@ -133,6 +133,11 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
               if (strategy.environment === 'kis-paper') throw new Error('KIS 전략 시작·정지 경로를 사용하세요.');
               if (!strategy.active && state.risk.halted) throw new Error('신규 주문 정지 상태입니다.');
               strategy.active = !strategy.active; record(state, strategy.active ? '전략 시작' : '전략 정지', strategy.name); return {};
+            }
+            case '/api/kis/quantity-setting': {
+              state.paperManualMaxQty = paperQuantitySetting.parse(input).maxQty;
+              record(state, 'KIS 수동 주문 수량 한도 변경', `1회 최대 ${state.paperManualMaxQty}주`);
+              return { maxQty: state.paperManualMaxQty, message: 'KIS 수동 주문 수량 한도를 저장했습니다.' };
             }
             case '/api/risk': Object.assign(state.risk, riskInput.parse(input)); record(state, '위험 한도 변경', '새 주문부터 변경한 한도를 적용합니다.'); return {};
             case '/api/risk/halt': {

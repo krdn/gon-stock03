@@ -12,9 +12,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only', spacing = 0, approval?: { date: string; requestId: string; cancelProbe?: true; code?: '069500' | '005930'; maxAmount?: number; allowExistingHolding?: true; orderType?: 'market' }) {
+function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only', spacing = 0, approval?: { date: string; requestId: string; cancelProbe?: true; code?: '069500' | '005930'; maxQty?: number; maxAmount?: number; allowExistingHolding?: true; orderType?: 'market' }) {
   let submits = 0;
-  const response = { cancelMode: 'success', cash: '10000000', totalEquity: '10000000', nonCreditCash: '10000000', positions: [] as Record<string, string>[], price: '70000', upper: '91000', tick: '100', rows: [] as Record<string, string>[], before: async (_path: string) => {}, receipt: { rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } } as unknown };
+  const response = { cancelMode: 'success', cash: '10000000', totalEquity: '10000000', nonCreditCash: '10000000', positions: [] as Record<string, string>[], price: '70000', lower: '49000', upper: '91000', tick: '100', rows: [] as Record<string, string>[], before: async (_path: string) => {}, receipt: { rt_cd: '0', output: { ODNO: '001', KRX_FWDG_ORD_ORGNO: '12345' } } as unknown };
   const requests: { url: URL; init: RequestInit | undefined; startedAt: number }[] = [];
   const transport: typeof fetch = async (url, init) => {
     requests.push({ url: new URL(String(url)), init, startedAt: performance.now() });
@@ -22,7 +22,7 @@ function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'erro
     await response.before(path);
     if (path.endsWith('/tokenP')) return Response.json({ access_token: 'test-token', expires_in: 86400 });
     if (path.endsWith('/inquire-balance')) return Response.json({ rt_cd: '0', output1: response.positions, output2: [{ dnca_tot_amt: response.cash, tot_evlu_amt: response.totalEquity }] });
-    if (path.endsWith('/inquire-price')) return Response.json({ rt_cd: '0', output: { stck_prpr: response.price, prdy_ctrt: '1.0', stck_mxpr: response.upper, stck_llam: '49000', aspr_unit: response.tick, temp_stop_yn: 'N' } });
+    if (path.endsWith('/inquire-price')) return Response.json({ rt_cd: '0', output: { stck_prpr: response.price, prdy_ctrt: '1.0', stck_mxpr: response.upper, stck_llam: response.lower, aspr_unit: response.tick, temp_stop_yn: 'N' } });
     if (path.endsWith('/inquire-psbl-order')) return Response.json({ rt_cd: '0', output: { nrcvb_buy_qty: '100', nrcvb_buy_amt: response.nonCreditCash, ord_psbl_cash: '10000000' } });
     if (path.endsWith('/inquire-daily-ccld')) return Response.json({ rt_cd: '0', output1: response.rows.filter(row => row.ord_dt === new URL(String(url)).searchParams.get('INQR_STRT_DT')) });
     if (path.endsWith('/order-rvsecncl')) {
@@ -558,6 +558,7 @@ test('approved HTTP order path exposes the active restriction and persists halt 
   try {
     const ledgerResponse = await fetch(`${base}/api/kis/ledger`, { headers }); assert.equal(ledgerResponse.status, 200);
     const ledger = await ledgerResponse.json();
+    assert.deepEqual(paperLedgerSchema.parse(ledger).minimumRun, { active: true, requestId: order.requestId, maxQty: 1 });
     assert.deepEqual(ledger.minimumRun, { active: true, ...approvalFor(order) }); assert.equal(f.requests.length, 0);
     const response = await fetch(`${base}/api/kis/order`, { method: 'POST', headers, body: JSON.stringify(order) });
     assert.equal(response.status, 200); assert.equal((await response.json()).order.status, 'accepted');
@@ -1016,4 +1017,84 @@ test('UI cancellation candidate is scoped to the valid unsent probe and cannot r
     assert.equal(result.orders[0].status, 'cancelled');
     assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 1);
   } finally { f.store.close(); }
+});
+
+test('manual quantity defaults to five and editable settings can exceed five without a broker call', async () => {
+  await apiFixture(async (f, post) => {
+    const order = { ...input(), qty: 6 };
+    await assert.rejects(f.broker.submit(order), /수량/);
+    for (const maxQty of [0, 1.5, 100001]) assert.equal((await post('quantity-setting', { maxQty })).status, 400);
+    assert.equal((await post('quantity-setting', { maxQty: 7 })).status, 200);
+    assert.equal(f.store.read().paperManualMaxQty, 7);
+    assert.equal(f.requests.length, 0);
+    assert.equal((await f.broker.submit(order)).status, 'unknown');
+    assert.equal(f.count(), 1);
+  });
+});
+
+test('manual quantity change during preflight blocks outbound order', async () => {
+  const f = fixture('success');
+  try {
+    f.response.before = async path => {
+      if (path.endsWith('/inquire-psbl-order')) f.store.update(s => { s.paperManualMaxQty = 1; });
+    };
+    assert.equal((await f.broker.submit({ ...input(), qty: 2 })).status, 'rejected');
+    assert.equal(f.count(), 0);
+  } finally { f.store.close(); }
+});
+
+test('five-share approval enforces both quantity and total and cancels only the remaining shares', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
+  const order = { ...input(), qty: 5, price: 40000 };
+  const approval = { ...approvalFor(order), code: '005930' as const, maxQty: 5, maxAmount: 200000, cancelProbe: true as const };
+  const f = fixture('success', 0, approval);
+  try {
+    f.response.price = '40000'; f.response.lower = '30000';
+    f.store.update(s => { s.paperManualMaxQty = 9; });
+    await assert.rejects(f.broker.submit({ ...order, qty: 6, price: 30000 }), /승인/);
+    await assert.rejects(f.broker.submit({ ...order, price: 40100 }), /승인/);
+    assert.equal(f.requests.length, 0);
+    assert.equal((await f.broker.submit(order)).status, 'accepted');
+    f.response.rows = [brokerRow({ ord_qty: '5', ord_unpr: '40000', tot_ccld_qty: '2', rmn_qty: '3' })];
+    assert.equal((await f.broker.refresh()).orders[0].status, 'partial');
+    assert.equal(f.broker.cancellation(f.store.paperOrders()).candidate?.requestId, order.requestId);
+    await f.broker.cancelProbe(order.requestId, true);
+    f.response.rows = [brokerRow({ ord_qty: '5', ord_unpr: '40000', tot_ccld_qty: '2', rmn_qty: '0', cncl_yn: 'Y', cncl_cfrm_qty: '3' })];
+    const final = await f.broker.refresh();
+    assert.deepEqual([final.orders[0].filled, final.brokerOrders[0].confirmedCancelQty, final.orders[0].remaining], [2,3,0]);
+    assert.equal(f.count(), 1);
+    assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 1);
+    assert.throws(() => new PaperBroker(f.store, f.client, { ...approval, maxQty: 6 }), /저장된 1회 승인/);
+    assert.equal(paperApprovalSchema.safeParse({ ...approval, orderType: 'market', cancelProbe: undefined }).success, false);
+  } finally { f.store.close(); }
+});
+
+test('legacy one-share approval cannot be enlarged by reopening; manual setting survives restart', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'paper-qty-'));
+  const path = join(tmp, 'run.sqlite'), order = approvedInput(), approval = approvalFor(order);
+  const db = new DatabaseSync(path);
+  db.exec('CREATE TABLE paper_run (id INTEGER PRIMARY KEY, day TEXT, request_id TEXT, attempted INTEGER DEFAULT 0)');
+  db.prepare('INSERT INTO paper_run(id,day,request_id) VALUES(1,?,?)').run(approval.date,order.requestId); db.close();
+  let store = new Store(path);
+  try {
+    assert.throws(() => store.configurePaperRun({ ...approval, maxQty: 5 }), /저장된 1회 승인/);
+    assert.equal(store.configurePaperRun(approval), false);
+    store.update(s => { s.paperManualMaxQty = 7; }); store.close();
+    store = new Store(path);
+    assert.equal(store.read().paperManualMaxQty, 7);
+    assert.throws(() => store.configurePaperRun({ ...approval, maxQty: 5 }), /저장된 1회 승인/);
+  } finally { store.close(); rmSync(tmp, { recursive:true,force:true }); }
+});
+
+
+test('actual ledger GET provides the fixed five-share approval to the page', async () => {
+  const input = approvedInput(), f = fixture('success'), port = apiPort++;
+  const server = makeServer(f.store, f.client, [port], { ...approvalFor(input), maxQty: 5 });
+  server.listen(port, '127.0.0.1'); await once(server, 'listening');
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/kis/ledger`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(paperLedgerSchema.parse(await response.json()).minimumRun, { active: true, requestId: input.requestId, maxQty: 5 });
+    assert.equal(f.requests.length, 0);
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); f.store.close(); }
 });
