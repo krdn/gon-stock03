@@ -1,0 +1,24 @@
+{
+  "scope": "격리 Git 참조 복구 시연",
+  "ref": "refs/pilot/active",
+  "parent": "43c8d283538c9128e1e80664ba5455220b2afe24",
+  "candidate": "f4429f334041235dd63d3f474a16affea58c9761",
+  "activeAfterRestore": "43c8d283538c9128e1e80664ba5455220b2afe24",
+  "runningTrialPinAfterRestore": "f4429f334041235dd63d3f474a16affea58c9761",
+  "nextAssignment": "43c8d283538c9128e1e80664ba5455220b2afe24",
+  "restoredFileSha256": "9a5263b4adc4ac99ca8c2f947369841617d241c8fd9648b2ce9fb4ce1bfc5216",
+  "parentIdentical": true,
+  "existingPinnedAssignment": {
+    "id": "old-pinned",
+    "pinnedVersion": "f4429f334041235dd63d3f474a16affea58c9761",
+    "policySha256": "b0121076e47b5313c2ebcb19c0115e238543f02a827230fb53bc431ce8cee865",
+    "preparedPromptSha256": "3bc0efcb655f55061c4b1c0ddda118a142b9cca51b4499e768551a79a6f52e2e"
+  },
+  "nextPreparedAssignment": {
+    "id": "next-default",
+    "pinnedVersion": "43c8d283538c9128e1e80664ba5455220b2afe24",
+    "policySha256": "9a5263b4adc4ac99ca8c2f947369841617d241c8fd9648b2ce9fb4ce1bfc5216",
+    "preparedPromptSha256": "6efe416b92202f8e8679aa0e35920a0672ffd72f4d7394fcdfd8493970fa1211"
+  },
+  "additionalModelCalls": 0
+}
