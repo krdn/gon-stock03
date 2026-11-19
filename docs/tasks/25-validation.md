@@ -10,6 +10,10 @@
 
 **14:52 후속.** 삼성전자 2주 중 실제 1주 체결·1주 잔량을 처음 관측했다. 다음 조회에서 전량 체결됐고 최종 취소확인 0주·잔량 0주였다. 모바일 취소 시도 근거는 없으며, 실제 부분체결 뒤 잔량 취소 시도와 그 결과 대조가 남았다. 14:59 별도 KODEX 200 실행은 첫 시세와 서버 재조회가 한 호가 달라 미전송 종료했다. [두 실행의 타임라인](../verification/2026-11-19-strategy.md#1452-실제-부분체결과-1459-현재가-변동) · [#123 새 한정 계약의 가격·총액 설정](123-trading-policy.md)
 
+**11월 20일 00:19 KST, KIS 모의 API 사후 대조.** 11월 19일 전체 체결구분을 KRX와 전체 거래소로 각각 조회했다. 두 응답 모두 1페이지에서 종료했고 당일 3건 가운데 삼성전자 14:52:46 매수 2주·193,100원 원주문 한 건의 번호와 지점이 일치했다. 최종 체결 2주·취소확인 0주·잔량 0주, 원주문의 거부수량 0주였다. 원주문번호로 연결되는 취소·거절 행은 없었다. 이 결과만으로 앱에서 취소를 눌렀는지, 접수 전 거절됐는지 또는 제출한 시각을 판별할 수 없다. [마스킹 응답 요약](../verification/assets/25-live-transition/2026-11-20-order-history.json) · [KIS 일별주문체결조회](https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_daily_ccld/inquire_daily_ccld.py)
+
+당시 저장한 같은 주문의 실행 자료에는 모바일 제출 근거가 없고, KIS의 모의 `H0STCNI9`는 구독 중 수신하는 실시간 통보다. 별도 KODEX 200 실행 폴더의 부분체결·취소 9개 로그 행은 가짜 전송기를 사용한 오프라인 로그와 모두 일치했다. 잔량 취소 시도 시각과 접수 또는 거절 응답이 원주문에 연결될 때까지 #25와 상위 #3·#2·#1을 열린 상태로 유지한다. 이번 조회의 신규 주문·취소는 각 0건이다. [당시 원주문](../verification/2026-11-19-strategy.md#1452-실제-부분체결과-1459-현재가-변동) · [KIS 체결통보 규격](https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/ccnl_notice/ccnl_notice.py)
+
 프로젝트 루트에서 아래 명령으로 원격 이슈·작업 문서·관련 PR 및 검사 상태를 대조한다.
 
 ```sh
