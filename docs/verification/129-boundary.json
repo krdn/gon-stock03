@@ -1,0 +1,31 @@
+{
+  "evaluator": {
+    "hostHomeMounted": false,
+    "sharedGitMounted": false,
+    "productionLedgerMounted": false,
+    "dockerSocketMounted": false,
+    "credentialEnvNames": 0,
+    "networkInterfaces": [
+      "lo"
+    ],
+    "routes": 0,
+    "reachableHostPorts": [],
+    "testedPorts": [
+      4303,
+      4304
+    ],
+    "externalTestAddressReachable": false
+  },
+  "budgetGuardControlledProcess": {
+    "ninthRequest": {
+      "admitted": 8,
+      "blocked": 1,
+      "trialProcessSignal": 9
+    },
+    "expiredDeadline": {
+      "admitted": 0,
+      "blocked": 1,
+      "trialProcessSignal": 9
+    }
+  }
+}

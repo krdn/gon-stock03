@@ -26,3 +26,7 @@ python3 scripts/pilot/replay.py before --state "$PILOT_STATE" --deps "$PILOT_DEP
 첫 작업자 패치는 고정된 TypeScript 7.0.2의 기본 export에서 구 컴파일러 API를 호출해 실패했다. 기존 소유자 종료 확인 뒤 같은 세션의 수정 Dispatch `ctx_005f0832474b`가 Rolldown 파서로 바꿨다. 통합 검증에서 총괄이 TS/TSX 언어 옵션을 명시하고 중첩된 HTTP 검사 대신 이를 포함하는 실제 최상위 검사 제목을 연결했다. 두 Dispatch의 작업자 합계 397.75초, 모델 요청 2회다. SDK 요청·후처리 모델은 gpt-6.2-astra, 요청 effort는 high, 공급자 내부 effort·청구액은 미측정이다. 로컬 모드의 호스트 스킬 탐색이 중첩 네임스페이스에 막혔으며 패치는 제공한 공개 입력으로만 작성했다.
 
 Fable 5.2/high는 Claude 구독 로그인 상태에서 사용 크레디트 필요 오류를 반환했다. 리뷰 본문·반환 모델은 없으며 독립 리뷰 대기다. 추가 지출은 없다. 그래프를 갱신하고 별도 TypeScript 검사를 통과했다. 다음 행동은 독립 리뷰와 원격 application·configuration 대조다.
+
+[파일럿 PR #133](https://github.com/krdn/gon-stock03/pull/133) · [운영 경로·네트워크·상한 검사](../verification/129-boundary.json). 별도 검사 프로세스에서 4303/4304 연결 모두 실패, 호스트 홈·운영 경로 마운트 없음, 외부 경로 0개였다. 합성 요청으로 8회 통과 후 9회째와 만료 시각의 첫 요청이 전용 시험 프로세스를 종료하는 것도 확인했다. 실제 Astra 세션에는 모델 요청 계측과 파일 읽기 전용 권한을 적용했다.
+
+독립 리뷰 차단 원인은 Fable의 유료 크레디트 요구다. 프로젝트 지정 목록의 Argon/high가 설치된 CLI 모델 목록에 있음을 확인했다. AGENTS.md §8의 자동 모델·제공자 대체 금지에 따라 전환 결정 대기다.
