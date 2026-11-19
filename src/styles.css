@@ -113,3 +113,35 @@
     min-height: 24px;
   }
 }
+
+.settings-page { display: grid; gap: 20px; margin-bottom: 20px; }
+.settings-page > .panel, .settings-diagnostics { margin: 0; }
+.settings-summary { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border-radius: 8px; background: #edf5f2; color: #204d40; }
+.settings-summary.attention { background: #fff5e6; color: #694616; }
+.settings-symbol { display: grid; place-items: center; flex: 0 0 36px; height: 36px; border-radius: 8px; background: #ffffffba; }
+.settings-symbol svg { width: 20px; height: 20px; }
+.settings-summary strong { font-size: 17px; }
+.settings-summary p, .settings-guide p, #settings-retry { margin-top: 5px; font-size: 13px; line-height: 1.6; }
+.settings-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.settings-actions .button { min-height: 44px; font-size: 13px; }
+.settings-actions .button[aria-expanded=true] svg { transform: rotate(180deg); }
+.settings-hint, .settings-feedback, .settings-diagnostics p { font-size: 13px; line-height: 1.65; color: var(--muted); }
+.settings-hint, .settings-feedback:not(:empty) { margin-top: 10px; }
+.settings-guide { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 16px; overflow-wrap: anywhere; }
+.settings-guide h3 { font-size: 15px; }
+.settings-guide .plain-list { font-size: 13px; line-height: 1.7; }
+.settings-guide li { margin: 8px 0; }
+.settings-guide .connection-command { background: #f1f5f4; border-radius: 5px; padding: 10px 12px; }
+.settings-page .connection-steps { margin: 0; padding: 0; list-style: none; }
+.settings-page .connection-steps li + li { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; }
+.settings-step-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 4px; }
+.settings-step-title strong { font-size: 14px; }
+.settings-server { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 12px; font-size: 13px; line-height: 1.6; }
+.settings-server dt { color: var(--muted); }
+.settings-server dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .settings-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .settings-actions .button { padding: 8px; }
+  .settings-summary { padding: 12px; }
+  .settings-page .two-columns { grid-template-columns: 1fr; }
+}

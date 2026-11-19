@@ -90,12 +90,12 @@ test('strategy saves, automatic replay advances, backtest computes, halt stops a
   await page.goto('/risk'); await page.getByRole('button', { name: '신규 주문 허용' }).click();
   await page.goto('/backtest'); await page.getByRole('combobox', { name: '데이터 출처', exact: true }).selectOption('demo'); await page.getByRole('button', { name: '백테스트 실행' }).click(); await expect(page.getByRole('heading', { name: '자산 곡선' })).toBeVisible();
 });
-test('journal treats input as text and saves; missing KIS credentials show failure rather than success', async ({ page }) => {
+test('journal treats input as text and saves; missing KIS credentials show recovery before querying', async ({ page }) => {
   await page.goto('/journal'); const text = '<script>alert("not code")</script> 규칙을 지켰다.';
   await page.getByLabel('매매 메모').fill(text); await page.getByRole('button', { name: '일지 저장' }).click();
   await page.reload(); await expect(page.getByText(text, { exact: true })).toBeVisible();
-  await page.goto('/settings'); await page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' }).click();
-  await expect(page.getByRole('alert')).toContainText('환경변수'); await expect(page.getByText('조회 확인', { exact: true })).toHaveCount(0);
+  await page.goto('/settings'); await expect(page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' })).toBeDisabled();
+  await expect(page.getByLabel('연결 복구 안내')).toContainText('Infisical'); await expect(page.getByText('조회 확인', { exact: true })).toHaveCount(0);
   await page.goto('/paper'); await expect(page.getByRole('button', { name: 'KIS 모의 주문 확인', exact: true })).toBeDisabled();
 });
 test('journal rejects empty and whitespace notes without losing the draft', async ({ page }) => {

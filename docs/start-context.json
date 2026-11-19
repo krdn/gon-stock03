@@ -1,13 +1,17 @@
 {
-  "checked_at": "2026-11-18T01:15:28.354758+00:00",
-  "objective": "전체 브랜치 이력 통합·보존·정리와 새 세션 재개",
+  "checked_at": "2026-11-19T01:23:45.062929+00:00",
+  "objective": "설정 화면의 KIS 연결 상태·복구 동선과 모바일 조작 검증",
   "sources": [
     {
-      "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_user/kis_auth.py",
-      "finding": "auth_ws는 모의 앱키와 secretkey로 /oauth2/Approval에 POST하고 approval_key를 헤더에 사용한다."
+      "url": "https://www.w3.org/WAI/WCAG22/Understanding/reflow.html",
+      "finding": "320 CSS 픽셀 폭에서 본문과 조작에 가로 스크롤이 필요하지 않은지 확인한다."
+    },
+    {
+      "url": "https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html",
+      "finding": "사용자 동작의 대기·완료·오류 메시지는 포커스를 옮기지 않고 보조 기술에 전달할 수 있어야 한다."
     }
   ],
-  "decisions": "명시적 dev:realtime만 인증한다. 접속키는 서버 자식 환경에만 전달하며 파일/로그 저장·자동 구독·거래는 하지 않는다.",
+  "decisions": "주입 누락·형식 오류는 조회 전에 안내한다. 로컬 상태 새로고침과 외부 모의 잔고 확인을 구분한다.",
   "status": "reviewed",
   "task_contexts": [
     {
@@ -453,6 +457,22 @@
         }
       ],
       "decisions": "원 신호를 유지하고 만료·중단된 전략은 남은 조회 전에 차단한다. 모바일 취소·REST 대조를 구분하며 이번에는 거래하지 않는다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/113",
+      "checked_at": "2026-11-19T01:23:45.062929+00:00",
+      "objective": "설정 화면의 KIS 연결 상태·복구 동선과 모바일 조작 검증",
+      "sources": [
+        {
+          "url": "https://www.w3.org/WAI/WCAG22/Understanding/reflow.html",
+          "finding": "320 CSS 픽셀 폭에서 본문과 조작에 가로 스크롤이 필요하지 않은지 확인한다."
+        },
+        {
+          "url": "https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html",
+          "finding": "사용자 동작의 대기·완료·오류 메시지는 포커스를 옮기지 않고 보조 기술에 전달할 수 있어야 한다."
+        }
+      ],
+      "decisions": "주입 누락·형식 오류는 조회 전에 안내한다. 로컬 상태 새로고침과 외부 모의 잔고 확인을 구분한다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."

@@ -2,6 +2,7 @@
 
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매.
 
+- **#113 설정 UX:** [4303 실측과 회귀 검증](tasks/113-settings-ux.md). 미주입 복구 안내·조회 차단을 적용하고 모바일 첫 화면에서 확인했다.
 - **#12 실제 시세:** [트레이딩 연동](tasks/12-trading.md#실제-주가-연동). 기본 화면은 KIS 실제 현재가·일봉, DEMO는 명시 탭. [실제 응답·검증](verification/2026-11-17-trade-live.md). 현재 작업 폴더에서 Infisical 주입 후 4303/4304 실행, 동일 원장 보존. 단위216·브라우저150 PASS. PR90 통합. 아래 #25에서 일봉 전환 장면 수용.
 - **#20 후속:** [관심종목 수정](tasks/20-watchlist.md#2026-11-17-후속-화면-수정). 최초 연결 실패 예시목록·상세 재선택·링크 대비 수정, 4303 로컬 적용. [검증·원본 로컬 변경](verification/2026-11-17-watchlist-fixes.md)과 main 통합은 구분한다.
 - **전체 현황:** [완료·잔여 작업과 재개 안내](verification/2026-11-17-consolidated-status.md). 구현·격리검증·실제 관측·사용자 수용을 구분한다.

@@ -10,7 +10,7 @@ test('settings shows missing injection separately from unverified authentication
   await page.getByRole('button', { name: '안전한 연결 안내', exact: true }).click();
   await expect(page.getByText('KIS_APP_KEY', { exact: false }).first()).toBeVisible();
   await expect(page.locator('input[type=password], input[name*=key]')).toHaveCount(0);
-  await page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' }).click();
+  await expect(page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' })).toBeDisabled();
   await expect(page.getByLabel('연결 복구 안내')).toContainText('Infisical');
   await expect(page.getByText('조회 확인', { exact: true })).toHaveCount(0);
 });
@@ -157,4 +157,36 @@ test('settings identifies a restarted server, shows progress and expires complet
   await expect(page.getByText('이전 전체 성공값 · 최신 아님', { exact: true })).toBeVisible();
   await expect(page.getByText('9,876원', { exact: true })).toBeVisible();
   await expect(page.getByText('조회 확인', { exact: true })).toHaveCount(0);
+});
+
+
+test('settings puts the recovery action in the mobile viewport and supports keyboard disclosure', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  const state = snapshot();
+  state.connection.injection = { phase: 'invalid', missing: [] };
+  const posts: string[] = [];
+  page.on('request', request => { if (request.method() === 'POST') posts.push(request.url()); });
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.goto('/settings');
+  const guide = page.getByRole('button', { name: '안전한 연결 안내' });
+  const check = page.getByRole('button', { name: 'KIS 모의 연결·잔고 확인' });
+  await expect(page.locator('.top-actions')).toContainText('KIS 모의 계좌');
+  await expect(page.getByLabel('연결 복구 안내')).toContainText('8자리');
+  await expect(check).toBeDisabled();
+  await expect(guide).toBeInViewport({ ratio: 1 });
+  await guide.focus();
+  await page.keyboard.press('Enter');
+  await expect(guide).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByRole('heading', { name: '모의 계좌 연결 방법' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  await page.keyboard.press('Space');
+  await expect(guide).toBeFocused();
+  await expect(page.getByRole('heading', { name: '모의 계좌 연결 방법' })).toBeHidden();
+
+  state.connection.injection = { phase: 'present', missing: [] };
+  state.connection.configured = true;
+  await page.getByRole('button', { name: '연결 상태 새로고침' }).click();
+  await expect(page.getByLabel('새로고침 결과')).toContainText('외부 KIS 호출 없음');
+  await expect(check).toBeEnabled();
+  expect(posts).toEqual([]);
 });
