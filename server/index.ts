@@ -1,4 +1,5 @@
-import { mkdirSync, realpathSync } from 'node:fs';
+import { readPreparedRun } from './trading-plans.ts';
+import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { Store } from './store.ts';
 import { makeServer } from './http.ts';
@@ -7,14 +8,25 @@ import { paperApprovalSchema } from './paper.ts';
 import { KisClient } from './kis.ts';
 import { strategyContractSchema } from './strategy-contract.ts';
 
-const contract = process.env.KIS_STRATEGY_CONTRACT === undefined ? undefined : strategyContractSchema.parse(JSON.parse(process.env.KIS_STRATEGY_CONTRACT));
-const approval = process.env.KIS_PAPER_APPROVAL === undefined ? undefined : paperApprovalSchema.parse(JSON.parse(process.env.KIS_PAPER_APPROVAL));
+const sources = [
+  process.env.KIS_STRATEGY_CONTRACT_FILE, process.env.KIS_PAPER_APPROVAL_FILE,
+  process.env.KIS_STRATEGY_CONTRACT, process.env.KIS_PAPER_APPROVAL,
+];
+if (sources.filter(value => value !== undefined).length > 1) throw new Error('고정 파일과 실행 설정은 하나만 지정하세요.');
+const db = process.env.STOCK_DB;
+const file = process.env.KIS_STRATEGY_CONTRACT_FILE ?? process.env.KIS_PAPER_APPROVAL_FILE;
+const prepared = file === undefined ? undefined : readPreparedRun(file, process.env.KIS_STRATEGY_CONTRACT_FILE !== undefined ? 'strategy' : 'once', db);
+const rawContract = prepared && 'contractId' in prepared.config ? prepared.config : undefined;
+const rawApproval = prepared && 'requestId' in prepared.config ? prepared.config : undefined;
+const contract = process.env.KIS_STRATEGY_CONTRACT === undefined ? rawContract : strategyContractSchema.parse(JSON.parse(process.env.KIS_STRATEGY_CONTRACT));
+const approval = process.env.KIS_PAPER_APPROVAL === undefined ? rawApproval : paperApprovalSchema.parse(JSON.parse(process.env.KIS_PAPER_APPROVAL));
 const port = Number(process.env.STOCK_PORT ?? 4304);
-const path = process.env.STOCK_DB === ':memory:' ? ':memory:' : resolve(process.env.STOCK_DB ?? '.local/workspace.sqlite');
-if (contract && (approval || !process.env.STOCK_DB || path !== contract.ledgerPath || path === ':memory:' || basename(path) !== 'strategy-' + contract.contractId + '.sqlite')) throw new Error('별도 전략 계약에는 명시한 전용 영구 원장이 필요합니다.');
-if (approval && (path === ':memory:' || !process.env.STOCK_DB)) throw new Error('1회 실행에는 확인한 영구 STOCK_DB 경로가 필요합니다.');
+const path = prepared?.path ?? (db === ':memory:' ? db : resolve(db ?? '.local/workspace.sqlite'));
+if (contract && (approval || (!prepared && !process.env.STOCK_DB) || path !== contract.ledgerPath || path === ':memory:' || basename(path) !== 'strategy-' + contract.contractId + '.sqlite')) throw new Error('별도 전략 계약에는 명시한 전용 영구 원장이 필요합니다.');
+if (approval && (path === ':memory:' || (!prepared && !process.env.STOCK_DB))) throw new Error('1회 실행에는 확인한 영구 STOCK_DB 경로가 필요합니다.');
 const kis = KisClient.fromEnvironment();
-if (contract && (realpathSync(path) !== contract.ledgerPath || kis.accountFingerprint() !== contract.accountFingerprint)) throw new Error('승인된 전용 원장·계좌가 아닙니다.');
+if (contract && (!existsSync(path) || realpathSync(path) !== contract.ledgerPath || kis.accountFingerprint() !== contract.accountFingerprint)) throw new Error('승인된 전용 원장·계좌가 아닙니다.');
+if (approval?.ledgerPath && (approval.ledgerPath !== path || !existsSync(path) || realpathSync(path)!==path || approval.accountFingerprint !== kis.accountFingerprint())) throw new Error('승인된 전용 원장·계좌가 아닙니다.');
 if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 const store = new Store(path, { contract });
 const server = makeServer(store, kis, [4303, port], approval, undefined, contract);

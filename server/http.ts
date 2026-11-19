@@ -1,3 +1,4 @@
+import { fixTradingDraft, saveTradingDraft, tradingSettings } from './trading-plans.ts';
 import type { StrategyContract } from './strategy-contract.ts';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -43,6 +44,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         const snapshot: StateSnapshot = { ...store.read(), events: store.events(), instanceId, startedAt, status: { ...emptyStatus('demo'), phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now }, connection: kis.connection(), paperRisk: paper.riskSnapshot(), realtime: realtime.status() };
         json(res, 200, snapshot); return;
       }
+      if (path === '/api/trading-settings' && req.method === 'GET') { json(res,200,tradingSettings(store,approval,contract)); return; }
       if (path === '/api/kis/ledger' && req.method === 'GET') { const orders = store.paperOrders(); json(res, 200, { orders, cancellation: paper.cancellation(orders), minimumRun: paper.approvalStatus(), strategyBudget: paper.strategyBudget() }); return; }
       if (path === '/api/kis/capabilities' && req.method === 'GET') { json(res, 200, paperCapabilities); return; }
       if (path === '/api/kis/audit' && req.method === 'GET') {
@@ -66,6 +68,15 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         const input = await body(req, path === '/api/events/read' ? 128000 : path === '/api/data/daily' ? 65536 : 16384);
         const eventId = z.uuid().safeParse((input as { requestId?: unknown; id?: unknown } | null)?.requestId ?? (input as { id?: unknown } | null)?.id);
         if (eventId.success) eventRequestId = eventId.data;
+        if ((approval || contract) && (path === '/api/risk' || path === '/api/kis/quantity-setting')) {
+          json(res,409,{error:'전용 실행의 고정 한도입니다. 일반 앱에서 다음 실행을 준비하세요.'}); return;
+        }
+        if (path === '/api/trading-settings/draft' || path === '/api/trading-settings/fix') {
+          if (approval || contract) { json(res,409,{error:'실행 중 계약은 읽기 전용입니다. 일반 앱에서 다음 설정을 준비하세요.'}); return; }
+          const fixing = path.endsWith('/fix');
+          const plan = fixing ? fixTradingDraft(store,kis,input) : saveTradingDraft(store,input);
+          json(res,200,{plan,message:fixing?'전용 원장과 고정 파일을 준비했습니다.':'다음 실행 초안을 저장했습니다.'}); return;
+        }
         if (path === '/api/data/master/refresh') { json(res, 200, await market.refreshMaster()); return; }
         if (path === '/api/data/daily') { json(res, 200, { run: market.start(input) }); return; }
         if (path === '/api/data/daily/step') { json(res, 200, { run: await market.step(idInput.parse(input).id) }); return; }
@@ -172,6 +183,9 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       const type = ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' } as Record<string, string>)[extname(file)] ?? 'application/octet-stream';
       res.writeHead(200, { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' }); res.end(req.method === 'HEAD' ? undefined : bytes);
     } catch (error) {
+      if (path.startsWith('/api/trading-settings') && error instanceof Error && 'code' in error && !(error instanceof ZodError)) {
+        json(res,500,{error:'매매 설정 원장이나 고정 파일을 처리하지 못했습니다. 저장 상태를 다시 확인하세요.'}); return;
+      }
       if ((path === '/api/watchlist' || path === '/api/journal' || path.startsWith('/api/strategies') || path.startsWith('/api/risk') || path.startsWith('/api/backtest/') || path.startsWith('/api/kis/') || path === '/api/events/read') && error instanceof Error && 'code' in error && error.code === 'ERR_SQLITE_ERROR') { json(res, 500, { error: storageErrorMessage }); return; }
       if (path === '/api/kis/check' || ['/api/kis/order', '/api/kis/orders', '/api/kis/recovery/inspect', '/api/kis/recovery/confirm', '/api/kis/cancel', '/api/kis/revise', '/api/kis/cancel-probe'].includes(path)) {
         try { store.update(state => {

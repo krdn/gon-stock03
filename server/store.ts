@@ -1,3 +1,4 @@
+import type { PlanKind, PlanRecord } from '../shared/trading-plan.ts';
 import { DatabaseSync } from 'node:sqlite';
 import { closeSync, constants, fchmodSync, fstatSync, openSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -44,6 +45,7 @@ export class Store {
     catch (error) { this.db.close(); throw error; }
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1), schema_version INTEGER NOT NULL, body TEXT NOT NULL);');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_orders (request_id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS paper_baseline (day TEXT PRIMARY KEY, equity REAL NOT NULL);');
+    this.db.exec('CREATE TABLE IF NOT EXISTS trading_plans (kind TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS trading_pins (run_id TEXT PRIMARY KEY, draft_id TEXT NOT NULL UNIQUE, kind TEXT NOT NULL);');
     this.db.exec('CREATE TABLE IF NOT EXISTS strategy_contract (id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS strategy_claim (request_id TEXT PRIMARY KEY, event TEXT NOT NULL UNIQUE, amount INTEGER NOT NULL CHECK(amount>0), dispatched INTEGER NOT NULL DEFAULT 0);');
     this.db.exec('CREATE TABLE IF NOT EXISTS realtime_guard (id INTEGER PRIMARY KEY CHECK(id=1));');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_event_read (id TEXT PRIMARY KEY);');
@@ -117,6 +119,22 @@ export class Store {
   }); }
   experiment(id: string): Experiment | undefined { const row = this.db.prepare('SELECT body FROM backtest_experiments WHERE id=?').get(id); return row ? JSON.parse(row.body as string) as Experiment : undefined; }
   saveExperiment(experiment: Experiment) { this.db.prepare('INSERT OR IGNORE INTO backtest_experiments VALUES (?,?)').run(experiment.id, JSON.stringify(experiment)); }
+  tradingPlan(kind: PlanKind): PlanRecord | undefined {
+    const row = this.db.prepare('SELECT body FROM trading_plans WHERE kind=?').get(kind);
+    return row ? JSON.parse(String(row.body)) : undefined;
+  }
+  changeTradingPlan(kind: PlanKind, expectedId: string | null, change: (old?: PlanRecord) => PlanRecord) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const old = this.tradingPlan(kind);
+      if ((old?.draft.id ?? null) !== expectedId) throw new Error('다른 화면에서 설정이 변경됐습니다. 저장본을 다시 확인하세요.');
+      const next = change(old);
+      if (next.draft.fixed && !old?.draft.fixed) this.db.prepare('INSERT INTO trading_pins VALUES(?,?,?)').run(next.draft.runId!,next.draft.id,kind);
+      this.db.prepare('INSERT INTO trading_plans VALUES(?,?) ON CONFLICT(kind) DO UPDATE SET body=excluded.body').run(kind, JSON.stringify(next));
+      this.db.exec('COMMIT');
+      return next;
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
   paperOrders(): PaperOrder[] { return this.db.prepare('SELECT body FROM paper_orders ORDER BY rowid DESC').all().map(row => JSON.parse(row.body as string) as PaperOrder); }
   hasPaperRun() { return Boolean(this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='paper_run'").get()); }
   strategyContract() {
@@ -148,20 +166,22 @@ export class Store {
     if (!Number.isSafeInteger(amount) || amount <= 0 || amount > contract.maxOrderAmount
       || used.attempts >= contract.maxAttempts || amount > contract.maxTotalAmount - used.amount) throw new Error('전략 계약의 횟수 또는 주문대금 한도를 초과했습니다.');
   }
-  configurePaperRun(approval: { date: string; requestId: string; code?: string; maxQty?: number; maxAmount?: number; allowExistingHolding?: true; orderType?: 'market' }) {
+  configurePaperRun(approval: { ledgerPath?: string; accountFingerprint?: string; cancelProbe?: true; date: string; requestId: string; code?: string; maxQty?: number; maxAmount?: number; allowExistingHolding?: true; orderType?: 'market' }) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       if (this.strategyContract()) throw new Error('전략 계약과 1회 승인 원장을 혼용할 수 없습니다.');
       this.db.exec('CREATE TABLE IF NOT EXISTS paper_run (id INTEGER PRIMARY KEY CHECK(id=1), day TEXT NOT NULL, request_id TEXT NOT NULL, attempted INTEGER NOT NULL DEFAULT 0);');
       const columns = this.db.prepare('PRAGMA table_info(paper_run)').all();
+      if (!columns.some(column => column.name === 'binding')) this.db.exec('ALTER TABLE paper_run ADD COLUMN binding TEXT;');
+      const binding = approval.ledgerPath ? JSON.stringify([approval.ledgerPath,approval.accountFingerprint,!!approval.cancelProbe]) : null;
       if (!columns.some(column => column.name === 'code')) this.db.exec("ALTER TABLE paper_run ADD COLUMN code TEXT NOT NULL DEFAULT '069500';");
       if (!columns.some(column => column.name === 'max_qty')) this.db.exec('ALTER TABLE paper_run ADD COLUMN max_qty INTEGER NOT NULL DEFAULT 1;');
       if (!columns.some(column => column.name === 'max_amount')) this.db.exec('ALTER TABLE paper_run ADD COLUMN max_amount INTEGER NOT NULL DEFAULT 100000;');
       if (!columns.some(column => column.name === 'allow_holding')) this.db.exec('ALTER TABLE paper_run ADD COLUMN allow_holding INTEGER NOT NULL DEFAULT 0;');
       if (!columns.some(column => column.name === 'order_type')) this.db.exec("ALTER TABLE paper_run ADD COLUMN order_type TEXT NOT NULL DEFAULT 'limit';");
-      this.db.prepare('INSERT OR IGNORE INTO paper_run (id,day,request_id,code,max_qty,max_amount,allow_holding,order_type) VALUES (1,?,?,?,?,?,?,?)').run(approval.date, approval.requestId, approval.code ?? '069500', approval.maxQty ?? 1, approval.maxAmount ?? 100000, Number(approval.allowExistingHolding === true), approval.orderType ?? 'limit');
-      const row = this.db.prepare('SELECT day,request_id,attempted,code,max_qty,max_amount,allow_holding,order_type FROM paper_run WHERE id=1').get()!;
-      if (row.day !== approval.date || row.request_id !== approval.requestId || row.code !== (approval.code ?? '069500') || row.max_qty !== (approval.maxQty ?? 1) || row.max_amount !== (approval.maxAmount ?? 100000) || row.allow_holding !== Number(approval.allowExistingHolding === true) || row.order_type !== (approval.orderType ?? 'limit')) throw new Error('저장된 1회 승인과 실행 설정이 다릅니다. 원장을 초기화하지 마세요.');
+      this.db.prepare('INSERT OR IGNORE INTO paper_run (id,day,request_id,code,max_qty,max_amount,allow_holding,order_type,binding) VALUES (1,?,?,?,?,?,?,?,?)').run(approval.date, approval.requestId, approval.code ?? '069500', approval.maxQty ?? 1, approval.maxAmount ?? 100000, Number(approval.allowExistingHolding === true), approval.orderType ?? 'limit', binding);
+      const row = this.db.prepare('SELECT day,request_id,attempted,code,max_qty,max_amount,allow_holding,order_type,binding FROM paper_run WHERE id=1').get()!;
+      if (row.binding !== binding || row.day !== approval.date || row.request_id !== approval.requestId || row.code !== (approval.code ?? '069500') || row.max_qty !== (approval.maxQty ?? 1) || row.max_amount !== (approval.maxAmount ?? 100000) || row.allow_holding !== Number(approval.allowExistingHolding === true) || row.order_type !== (approval.orderType ?? 'limit')) throw new Error('저장된 1회 승인과 실행 설정이 다릅니다. 원장을 초기화하지 마세요.');
       this.db.exec('COMMIT');
       return Boolean(row.attempted);
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }

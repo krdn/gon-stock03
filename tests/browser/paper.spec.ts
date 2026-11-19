@@ -130,11 +130,18 @@ test('manual share limit is editable above five, survives reload and respects a 
     return r.fulfill({json:{maxQty,message:'저장했습니다.'}});
   });
   await page.goto('/paper');
+  await page.setViewportSize({width:390,height:844});
+  await page.getByLabel('지정가 (원)').fill('136300');
+  await page.getByLabel('수량 (주)',{exact:true}).fill('4');
+  await page.getByRole('link',{name:'수량 한도 변경'}).click();
   const setting=page.getByLabel('주문당 수량 상한 (주)');
   await expect(setting).toHaveValue('5');
   await setting.fill('8'); await page.getByRole('button',{name:'수량 한도 저장'}).click();
   await expect(page.getByText('저장된 수동 주문 한도 8주')).toBeVisible();
   await page.reload(); await expect(setting).toHaveValue('8');
+  await page.getByRole('link',{name:'주문 입력으로 돌아가기'}).click();
+  await expect(page.getByLabel('지정가 (원)')).toHaveValue('136300');
+  await expect(page.getByLabel('수량 (주)',{exact:true})).toHaveValue('4');
   await expect(page.getByLabel('수량 (주)',{exact:true})).toHaveAttribute('max','8');
   await page.route('**/api/kis/ledger', r => r.fulfill({json:{orders:[],minimumRun:{active:true,requestId:order.requestId,maxQty:3}}}));
   await page.reload();

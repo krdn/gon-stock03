@@ -7,7 +7,7 @@ import { assertStrategyTerms, strategyContractSchema, type StrategyContract } fr
 import type { Strategy } from '../shared/model.ts';
 import { z } from 'zod';
 
-export const paperApprovalSchema = z.object({ date: z.iso.date(), requestId: z.uuid(), cancelProbe: z.literal(true).optional(), code: z.enum(['069500', '005930']).optional(), maxQty: z.int().positive().max(MAX_ORDER_QTY).optional(), maxAmount: z.number().int().positive().max(300000).optional(), orderType: z.literal('market').optional(), allowExistingHolding: z.literal(true).optional() }).strict().refine(value => value.orderType !== 'market' || (value.code === '005930' && !value.cancelProbe && (value.maxQty ?? 1) === 1), '시장가는 삼성전자 매수1회·API 취소 없음 승인만 지원합니다.').refine(value => value.orderType === 'market' || (value.maxAmount ?? 100000) <= 200000, '지정가 승인 상한은 20만원입니다.');
+export const paperApprovalSchema = z.object({ date: z.iso.date(), requestId: z.uuid(), ledgerPath: z.string().min(1).optional(), accountFingerprint: z.string().regex(/^[0-9a-f]{64}$/).optional(), cancelProbe: z.literal(true).optional(), code: z.enum(['069500', '005930']).optional(), maxQty: z.int().positive().max(MAX_ORDER_QTY).optional(), maxAmount: z.number().int().positive().max(300000).optional(), orderType: z.literal('market').optional(), allowExistingHolding: z.literal(true).optional() }).strict().refine(v => Boolean(v.ledgerPath) === Boolean(v.accountFingerprint), '한정 실행의 전용 원장과 계좌 바인딩이 필요합니다.').refine(value => value.orderType !== 'market' || (value.code === '005930' && !value.cancelProbe && (value.maxQty ?? 1) === 1), '시장가는 삼성전자 매수1회·API 취소 없음 승인만 지원합니다.').refine(value => value.orderType === 'market' || (value.maxAmount ?? 100000) <= 200000, '지정가 승인 상한은 20만원입니다.');
 export type PaperApproval = z.infer<typeof paperApprovalSchema>;
 
 function withinApproval(approval: PaperApproval, qty: number, price: number) {
@@ -47,6 +47,7 @@ export class PaperBroker {
       store.bindStrategyContract(this.contract);
     } else if (store.strategyContract()) throw new Error('원장에 고정된 전략 계약이 필요합니다.');
     if (!approval && store.hasPaperRun()) throw new Error('저장된 1회 승인 설정이 필요합니다. 제한 없이 재시작할 수 없습니다.');
+    if (approval?.ledgerPath && (approval.ledgerPath !== store.path || approval.accountFingerprint !== kis.accountFingerprint())) throw new Error('승인된 전용 원장·계좌가 아닙니다.');
     if (approval && store.configurePaperRun(paperApprovalSchema.parse(approval))) {
       this.restoredApproval = true;
       kis.limitRequestsFor(0);
@@ -69,7 +70,11 @@ export class PaperBroker {
     return b !== undefined && (b.attempts >= b.maxAttempts || b.amount >= b.maxTotalAmount);
   }
   contractExpired() { return this.contract !== undefined && Date.now() >= Date.parse(this.contract.endsAt); }
-  approvalStatus() { return this.approval ? { active: true, ...this.approval } : { active: false }; }
+  approvalStatus() {
+    if (!this.approval) return { active: false };
+    const { ledgerPath, accountFingerprint, ...publicTerms } = this.approval;
+    return { active: true, ...publicTerms };
+  }
   riskSnapshot(): PaperRiskSnapshot {
     const day = koreaDate();
     return { day, baselineEquity: this.store.paperBaselineValue(day), unresolvedCount: this.store.paperOrders().filter(o => o.status === 'unknown' || o.status === 'sending').length, orders: this.riskOrders?.day === day ? this.riskOrders : null };
