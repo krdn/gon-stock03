@@ -121,7 +121,8 @@ function PaperForm() {
   }, [available, realtime?.reconciledAt]);
   const confirmation = pending ?? draft;
   const checkedCode = pending?.code ?? (confirmed ? confirmation?.code : null) ?? code;
-  const realtimeBlocked = Boolean(realtime?.required && (!realtime.ordersAllowed || !realtime.fresh || realtime.code !== checkedCode));
+  const realtimeMismatch = Boolean(realtime?.required && realtime.code !== checkedCode);
+  const realtimeBlocked = Boolean(realtime?.required && (!realtime.ordersAllowed || !realtime.fresh || realtimeMismatch));
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { if (confirmed) dialog.current?.showModal(); else dialog.current?.close(); }, [confirmed]);
   async function market(e?: React.FormEvent) {
@@ -273,7 +274,10 @@ function PaperForm() {
         </div>
       )}
       {realtimeActive && <div className="notice compact" role="status">
-        <div><strong>KIS 실시간 · {realtimeBlocked ? '현재 주문 차단' : '수신 상태'}</strong><p>{realtime?.message}</p></div>
+        <div>
+          <strong>KIS 실시간 · {realtimeBlocked ? '현재 주문 차단' : '수신 상태'}</strong>
+          <p>{realtimeMismatch ? `주문 대상 ${checkedCode} · 실시간 수신 종목 ${realtime?.code ?? '없음'}. 주문 대상의 시세와 대조를 확인하세요.` : realtime?.message}</p>
+        </div>
         <button className="button small secondary" onClick={() => realtimeSection.current?.focus()}>실시간 상태 및 조작 보기</button>
       </div>}
       <p className="paper-environment">
@@ -663,7 +667,8 @@ function PaperForm() {
         refreshOrders={refresh}
       />
       <div ref={realtimeSection} role="group" aria-label="실시간 수신 및 대조 조작" tabIndex={-1}>
-        <RealtimeStatus code={code} />
+        {checkedCode !== code && <p>실시간 수신 대상 {checkedCode} · 미확인 요청의 종목</p>}
+        <RealtimeStatus code={checkedCode} />
       </div>
       <Link to="/orders?view=kis">주문 관리에서 KIS 모의 원장 보기</Link>
       <dialog
