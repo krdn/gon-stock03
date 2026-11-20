@@ -284,9 +284,10 @@ export function Backtest() {
   const source = params.get('source') ?? 'stored', runId = params.get('run');
   const valid = params.getAll('source').length <= 1 && params.getAll('run').length <= 1
     && (source === 'stored' || source === 'demo') && (runId === null || (params.get('source') === 'stored' && z.uuid().safeParse(runId).success));
-  function select(source: string, runId?: string, selection?: BacktestSelection) {
-    const next = new URLSearchParams(params); next.set('source', source); next.delete('run');
-    if (runId) next.set('run', runId);
+  function select(nextSource: string, nextRun?: string, selection?: BacktestSelection) {
+    if (valid && nextSource === source && nextRun === undefined && !selection) return;
+    const next = new URLSearchParams(params); next.set('source', nextSource); next.delete('run');
+    if (nextRun) next.set('run', nextRun);
     transfer.current = selection ? { key: crypto.randomUUID(), selection } : null;
     setParams(next, { state: { backtestSelection: transfer.current?.key } });
   }
@@ -345,6 +346,9 @@ function StoredBacktest({ requested, initial, select }: { requested: string | nu
   const policy = run?.adjustment ?? runs?.[0]?.adjustment ?? 'adjusted';
   const eligible = run?.coverageComplete && run.nextDate === null && run.status.complete && !run.status.error && run.quality.state === 'passed' && !!run.calendar;
   const locked = busy || pending || loading;
+  function chooseRun(id: string | undefined, focus: 'policy' | 'run') {
+    if (id && id !== selected) select(id, { values, focus });
+  }
   function clearResult() { setExperiment(null); setReplay(''); setReplayError(''); setError(''); }
   async function execute(event: React.FormEvent) {
     event.preventDefault(); if (!run || !eligible || locked || listError || !available) return;
@@ -387,13 +391,18 @@ function StoredBacktest({ requested, initial, select }: { requested: string | nu
   return <><div className="bt-nav"><span>KIS 저장 일봉 · 종가 신호 → 다음 봉 시가 체결</span><a className="text-link" href="#backtest-history">저장된 실험으로 이동 ↓</a></div>
     {loading && <p role="status">저장 일봉·실험 목록 조회 중</p>}
     {listError && <p className="bt-warning" role="alert">{listError} <button className="text-link" onClick={() => setRevision(v => v + 1)}>다시 조회</button></p>}
-    <div className="bt-grid"><Panel title="저장 일봉 실험 설정"><form onSubmit={execute} onChange={clearResult}>
+    <div className="bt-grid"><Panel title="저장 일봉 실험 설정"><form onSubmit={execute} onChange={event => {
+      const control = event.nativeEvent.target;
+      if (control !== runSelect.current && control !== policySelect.current) clearResult();
+    }}>
       <fieldset className="backtest-fields" disabled={locked || !!listError}>
         {!loading && !listError && selected && !run && <p className="bt-warning" role="alert">요청한 수집 기록을 찾을 수 없습니다. 데이터 상태를 확인하거나 기록을 직접 선택하세요.</p>}
         {!loading && !listError && !runs?.length && <p>저장된 KIS 일봉이 없습니다</p>}
-        <div className="bt-pickers"><label className="field">수정주가 정책<select ref={policySelect} value={policy} onChange={event => { const next = runs?.find(row => row.adjustment === event.target.value); if (next) select(next.id, { values, focus: 'policy' }); }}>
+        <div className="bt-pickers"><label className="field">수정주가 정책<select ref={policySelect} value={policy} onChange={event => {
+            if (run?.adjustment !== event.target.value) chooseRun(runs?.find(row => row.adjustment === event.target.value)?.id, 'policy');
+          }}>
           <option value="adjusted" disabled={!runs?.some(row => row.adjustment === 'adjusted')}>수정주가 · 수집 시점 기준</option><option value="raw" disabled={!runs?.some(row => row.adjustment === 'raw')}>원주가 · 기업행사 미반영</option></select></label>
-          <label className="field">일봉 수집 기록<select ref={runSelect} value={run?.id ?? ''} onChange={event => select(event.target.value, { values, focus: 'run' })}>
+          <label className="field">일봉 수집 기록<select ref={runSelect} value={run?.id ?? ''} onChange={event => chooseRun(event.target.value, 'run')}>
             <option value="" disabled>수집 기록 선택</option>{runs?.filter(row => row.adjustment === policy).map(row => <option key={row.id} value={row.id}>{row.code} · {dateInput(row.from)} ~ {dateInput(row.to)} · {row.id.slice(0, 8)}</option>)}</select></label></div>
         {run && <p className={eligible ? 'bt-note' : 'bt-warning'}>{eligible ? `입력 달력 대조 통과 · 수집 기준일 ${dateInput(run.captureDate)}` : !run.coverageComplete || run.nextDate ? '부분 수집 · 수집 구간이 끝나지 않아 실행할 수 없습니다.' : !run.calendar || run.quality.state === 'unverified' ? '입력 달력 미대조 · 실행할 수 없습니다.' : '수집 상태·품질 확인 필요 · 실행할 수 없습니다.'}</p>}
         <div className="form-grid"><label className="field">시작일<input type="date" required value={dateInput(from)} min={run && dateInput(run.from)} max={run && dateInput(run.to)} onChange={event => setFrom(event.target.value.replaceAll('-', ''))} /></label><label className="field">종료일<input type="date" required value={dateInput(to)} min={run && dateInput(run.from)} max={run && dateInput(run.to)} onChange={event => setTo(event.target.value.replaceAll('-', ''))} /></label></div>

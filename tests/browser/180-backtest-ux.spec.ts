@@ -121,15 +121,31 @@ test('180 고정 실험의 재현 불일치와 잘못된 응답을 각각 경고
     store.saveDaily(fixture.run, fixture.bars);
     saved = createExperiment(store, fixture.input);
   } finally { store.close(); }
-  await inventory(page);
+  const posts = await inventory(page);
   await page.route('**/api/backtest/experiments', route => route.fulfill({ json: { experiments: [{ id: saved.id, createdAt: saved.createdAt, input: fixture.input, bars: fixture.bars.length }] } }));
   const missingTradeDates = { ...saved, result: { ...saved.result, trades: saved.result.trades.map(trade => ({ ...trade, date: undefined, signalDate: undefined })) } };
   await page.route('**/api/backtest/experiments/' + saved.id, route => route.fulfill({ json: { experiment: missingTradeDates } }));
   await page.route('**/api/backtest/replay', route => route.fulfill({ json: { matches: false, result: saved.result, inputHash: saved.inputHash } }));
   await page.goto(stableURL); await page.getByRole('button', { name: '저장 실험 불러오기' }).click();
   const result = page.getByRole('region', { name: '저장 일봉 실험 결과' }), replay = result.getByRole('button', { name: '고정 입력으로 재현 검증' });
+  await source(page).selectOption('stored'); await picker(page).selectOption(run.id);
+  await page.getByRole('combobox', { name: '수정주가 정책' }).selectOption('raw');
   await expect(result.getByRole('cell', { name: '미확인 → 미확인' }).first()).toBeVisible();
+  expect(posts).toEqual([]);
   await replay.click(); await expect(result.getByRole('alert')).toContainText('재현 불일치');
   await page.route('**/api/backtest/replay', route => route.fulfill({ json: { matches: true } }));
   await replay.click(); await expect(result.getByRole('alert')).toHaveText('재현 검증 실패 · 재현 응답 형식이 올바르지 않습니다.');
+});
+
+test('180 같은 출처·정책·수집을 다시 고르면 주소와 입력을 유지하고 뒤로 한 번에 돌아간다', async ({ page }) => {
+  const posts = await inventory(page), origin = '/data#inventory-demo';
+  await page.goto(origin); await page.goto('/backtest?source=demo');
+  await source(page).selectOption('demo'); await page.goBack(); await expect(page).toHaveURL(url => url.pathname + url.hash === origin);
+
+  await page.goto(stableURL); await expect(picker(page)).toHaveValue(run.id);
+  const fee = page.getByRole('spinbutton', { name: /수수료/ }); await fee.fill('7.5');
+  await source(page).selectOption('stored'); await expect(page).toHaveURL(url => url.pathname + url.search === stableURL);
+  await page.getByRole('combobox', { name: '수정주가 정책' }).selectOption('raw'); await picker(page).selectOption(run.id);
+  await expect(fee).toHaveValue('7.5'); await page.goBack(); await expect(page).toHaveURL(url => url.pathname + url.hash === origin);
+  expect(posts).toEqual([]);
 });
