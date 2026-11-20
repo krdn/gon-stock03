@@ -58,9 +58,10 @@ function StrategyStudio({ environment }: { environment: StrategyEnvironment }) {
       navigate({ search, hash: '#strategy-' + savedId }, { replace: true });
     }
   }, [savedId, navigate, search]);
+  const loading = status.phase === 'loading';
   let emptyList = '새 규칙을 저장하면 여기에 표시합니다.';
   if (!available) {
-    if (status.phase === 'loading') emptyList = '저장 전략을 불러오는 중입니다.';
+    if (loading) emptyList = '저장 전략을 불러오는 중입니다.';
     else emptyList = server ? '마지막 조회는 0건입니다. 최신 목록은 미확인입니다.' : '로컬 조회 실패 · 저장 전략 미확인';
   }
   const targetId = hash.slice(1);
@@ -76,7 +77,7 @@ function StrategyStudio({ environment }: { environment: StrategyEnvironment }) {
     <div className="studio-results">
       {kis ? <section className="panel studio-recent" aria-labelledby="strategy-evaluations">
         <h2 id="strategy-evaluations" tabIndex={-1}>최근 KIS 평가</h2>
-        {!available && <p className="studio-warning">{status.phase === 'loading' ? '저장된 평가 불러오는 중' : server ? '최신 평가 미확인 · 마지막 조회 기록' : '로컬 조회 실패 · 평가 미확인'}</p>}
+        {!available && <p className={loading ? 'studio-meta' : 'studio-warning'}>{loading ? '저장된 평가 불러오는 중' : server ? (evaluation ? '최신 평가 미확인 · 마지막 조회 기록' : '최신 평가 미확인 · 마지막 조회에서 평가 기록 없음') : '로컬 조회 실패 · 평가 미확인'}</p>}
         {latest && evaluation ? <>
           <div className="studio-result-line"><span className={'studio-outcome ' + evaluation.status}>{evaluationLabels[evaluation.status]}</span><strong>{evaluation.reason}</strong></div>
           <p className="studio-meta">{latest.name} · revision {evaluation.revision} · {signalLabels[evaluation.signal]}</p>
@@ -84,10 +85,10 @@ function StrategyStudio({ environment }: { environment: StrategyEnvironment }) {
           <Link className="text-link" to={{ search, hash: '#strategy-' + latest.id }}>해당 전략 보기</Link>
         </> : available && <p>{strategies.length ? '평가 기록 없음 · 시작 후 새 체결가 이벤트가 필요합니다.' : '저장된 KIS 전략이 없습니다.'}</p>}
       </section> : <div className="studio-replay">
-        <div><strong>DEMO 봉 재생</strong><p className="studio-meta">{available ? `합성 봉 #${state.tick} · ${state.playing ? '3초마다 자동 평가 중' : state.risk.halted ? '긴급정지로 재생 시작 차단' : '재생 정지'}` : '재생 상태 미확인'}</p></div>
+        <div><strong>DEMO 봉 재생</strong><p className="studio-meta">{available ? `합성 봉 #${state.tick} · ${state.playing ? '3초마다 자동 평가 중' : state.risk.halted ? '긴급정지로 재생 시작 차단' : '재생 정지'}` : loading ? '재생 상태 조회 중' : '재생 상태 미확인'}</p></div>
         <button className="button secondary" disabled={busy || !available || (!state.playing && state.risk.halted)} onClick={() => void act('playback').catch(() => {})}>{state.playing ? '자동 재생 정지' : '자동 재생 시작'}</button>
       </div>}
-      <div className="studio-list-title"><h2>저장 전략</h2><span className="studio-meta">{server ? `${strategies.length}개${available ? '' : ' · 이전 조회'}` : '미확인'}</span></div>
+      <div className="studio-list-title"><h2>저장 전략</h2><span className="studio-meta">{server ? `${strategies.length}개${available ? '' : ' · 이전 조회'}` : loading ? '조회 중' : '미확인'}</span></div>
       {!strategies.length && <p className="studio-meta">{emptyList}</p>}
       {strategies.map(strategy => <StrategyCard key={strategy.id} strategy={strategy} kis={kis} />)}
       <details className="panel studio-rules">
@@ -109,13 +110,15 @@ function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: boolean }
   const quoteAge = realtime?.lastQuoteAt ? serverNow - Date.parse(realtime.lastQuoteAt) : Infinity;
   const freshQuote = quoteAge >= 0 && quoteAge <= (realtime?.quoteSeconds ?? 5) * 1000;
   let blocked = '';
-  if (!available) blocked = '로컬 상태 미확인';
-  else if (state.risk.halted) blocked = '긴급정지 켜짐';
+  if (state.risk.halted) blocked = '긴급정지 켜짐';
   else if (kis) {
     if (!realtime?.fresh || !realtime.ordersAllowed) blocked = realtime?.message || '실시간 상태 미확인';
     else if (!freshQuote) blocked = '현재 시세 유효 시간 확인 필요';
     else if (realtime.code !== s.code) blocked = '실시간 대조 종목이 전략과 다릅니다.';
   }
+  let controlNote = '';
+  if (!available) controlNote = '서버 실행 상태 미확인 · 연결 복구 전 시작·정지 불가';
+  else if (blocked) controlNote = (s.active ? '신규 주문 차단 · ' : '전략 시작 차단 · ') + blocked;
   const evaluations = s.evaluations ?? [];
   const [historyOpen, setHistoryOpen] = useState(false);
   return <Panel className="studio-card">
@@ -134,8 +137,8 @@ function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: boolean }
         {e.requestId && <p>요청 ID: <code>{e.requestId}</code> · 주문번호: {e.brokerId ?? '없음'} · <Link to="/paper">원장 대조</Link></p>}
       </div>) : <p>{available ? '평가 기록 없음 · 시작 이후 새 체결가 이벤트가 필요합니다.' : '평가 기록 미확인'}</p>}
     </details> : <p className="studio-meta">마지막 신호 · {s.lastTick < 0 ? '평가 기록 없음' : signalLabels[s.lastSignal]}{!available && ' · 이전 조회'}</p>}
-    {!kis && blocked && <p className="studio-warning">신규 실행 차단 · {blocked}</p>}
-    {kis && <p className="studio-meta">{blocked ? (s.active ? '신규 주문 차단 · ' : '전략 시작 차단 · ') + blocked : '별도 서버 계약과 주문별 승인·위험 검사 적용'} · <Link to="/paper">실시간 연결·대조 확인</Link></p>}
+    {!kis && controlNote && <p className="studio-warning">{controlNote}</p>}
+    {kis && <p className="studio-meta">{controlNote || '별도 서버 계약과 주문별 승인·위험 검사 적용'} · <Link to="/paper">실시간 연결·대조 확인</Link></p>}
     {kis && <p className="studio-meta">시작 후 브라우저를 닫아도 서버는 계속 평가합니다. 전략 정지 후에도 접수된 주문은 유지됩니다.</p>}
     <div className="button-row">
       <button disabled={!available || busy || (!s.active && Boolean(blocked))} className={'button ' + (s.active ? 'secondary' : 'primary')} onClick={() => void act(kis ? 'kis/strategies/run' : 'strategies/toggle', kis ? { id: s.id, active: !s.active } : { id: s.id }).catch(() => {})}>
@@ -147,12 +150,15 @@ function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: boolean }
 }
 
 function StrategyEditor({ environment, onSaved }: { environment: StrategyEnvironment; onSaved: (id: string) => void }) {
-  const { state, act, busy, available } = useWorkbench();
+  const { state, act, busy, available, server, status } = useWorkbench();
   const [name, setName] = useState('나의 이동평균 전략');
   const [code, setCode] = useState('069500');
   const [fast, setFast] = useState('5'), [slow, setSlow] = useState('20'), [qty, setQty] = useState('1');
   const [attempted, setAttempted] = useState(false);
-  const validCode = state.instruments.some(i => i.code === code);
+  const instruments = server ? state.instruments : [];
+  const noSelection = !available ? (status.phase === 'loading' ? '종목 목록 조회 중' : '종목 목록 미확인') :
+    instruments.length ? '종목을 선택하세요' : '저장 가능한 종목 없음';
+  const validCode = instruments.some(i => i.code === code);
   const invalidPeriods = attempted && fast !== '' && slow !== '' && Number(fast) >= Number(slow);
   const unit = environment === 'kis-paper' ? '이벤트' : '봉';
   async function save(e: React.FormEvent<HTMLFormElement>) {
@@ -172,8 +178,7 @@ function StrategyEditor({ environment, onSaved }: { environment: StrategyEnviron
     <p className="studio-meta">{environment === 'kis-paper' ? 'KIS 모의' : 'DEMO'} · 새 전략은 revision 1, 정지 상태로 저장됩니다.</p>
     <form onSubmit={save}>
       <label className="field">전략 이름<input value={name} onChange={e => setName(e.target.value)} required maxLength={60} /></label>
-      <label className="field">대상 종목<select required value={validCode ? code : ''} onChange={e => setCode(e.target.value)}>{!validCode && <option value="">
-        {state.instruments.length ? '종목을 선택하세요' : '저장 가능한 종목 없음'}</option>}{state.instruments.map(i => <option key={i.code} value={i.code}>{i.name}</option>)}</select></label>
+      <label className="field">대상 종목<select required disabled={!available || busy} value={validCode ? code : ''} onChange={e => setCode(e.target.value)}>{!validCode && <option value="">{noSelection}</option>}{instruments.map(i => <option key={i.code} value={i.code}>{i.name}</option>)}</select></label>
       <div className="form-grid">
         <label className="field">단기 평균 ({unit})<input name="fast" type="number" min="2" max="60" value={fast} onChange={e => setFast(e.target.value)} required aria-invalid={invalidPeriods || undefined} aria-describedby={invalidPeriods ? 'strategy-period-error' : undefined} /></label>
         <label className="field">장기 평균 ({unit})<input type="number" min="3" max="100" value={slow} onChange={e => setSlow(e.target.value)} required aria-invalid={invalidPeriods || undefined} aria-describedby={invalidPeriods ? 'strategy-period-error' : undefined} /></label>

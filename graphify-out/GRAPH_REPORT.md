@@ -1,7 +1,7 @@
 # Graph Report - ux2-175-strategies  (2026-11-20)
 
 ## Corpus Check
-- 301 files · ~290,163 words
+- 301 files · ~290,410 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 10 file(s) not represented in the graph (top: (none) 2, .css 2, .zip 2)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `4444eccb`
+- Built from commit: `f58a1f7e`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -547,13 +547,13 @@ Nodes (4): 10:33 별도 부분체결 관측, 11월 19일 장중 정상 전략 �
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `KisClient` connect `KisClient` to `trading-settings.test.ts`, `engine.ts`, `makeServer`, `#21 저장 일봉 백테스트 검증`, `store.ts`, `snapshot`, `store.ts`, `paper.ts`, `http.ts`, `realtime.test.ts`, `작업: 국내 종목 마스터·일봉 수집`, `trading-plans.ts`, `events.test.ts`, `#8 연결·설정 검증`, `.submit`, `Store`, `연결·설정 동작 점검`?**
-  _High betweenness centrality (0.074) - this node is a cross-community bridge._
+  _High betweenness centrality (0.092) - this node is a cross-community bridge._
 - **Are the 31 inferred relationships involving `makeServer()` (e.g. with `.refreshMaster()` and `.start()`) actually correct?**
   _`makeServer()` has 31 INFERRED edges - model-reasoned connections that need verification._
 - **Should `MarketExplorer.tsx` be split into smaller, more focused modules?**
   _Cohesion score 0.14285714285714285 - nodes in this community are weakly interconnected._
 - **Why does `Store` connect `Store` to `KisClient`, `trading-settings.test.ts`, `Realtime`, `engine.ts`, `makeServer`, `store.ts`, `server/realtime.ts`, `PaperBroker`, `store.ts`, `paper.ts`, `http.ts`, `realtime.test.ts`, `trading-plans.ts`, `events.test.ts`, `trading-plans.ts`, `#9 최소 모의 실행 절차`, `.submit`?**
-  _High betweenness centrality (0.056) - this node is a cross-community bridge._
+  _High betweenness centrality (0.050) - this node is a cross-community bridge._
 - **Are the 3 inferred relationships involving `KisClient` (e.g. with `계약과 저장` and `실제 공개 마스터`) actually correct?**
   _`KisClient` has 3 INFERRED edges - model-reasoned connections that need verification._
 - **Should `2026-11-16-validation-prep.md` be split into smaller, more focused modules?**

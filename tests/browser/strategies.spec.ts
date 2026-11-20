@@ -90,7 +90,11 @@ test('최초 상태 조회 대기 중 환경 선택은 보류하고 조회 뒤 �
   const state = snapshot();
   await page.route('**/api/state', async route => { await gate; await route.fulfill({ json: state }); });
   await page.goto('/strategies');
-  try { await expect(page.getByLabel('전략 환경')).toBeDisabled(); }
+  try {
+    await expect(page.getByLabel('전략 환경')).toBeDisabled();
+    await expect(page.getByText('재생 상태 조회 중')).toBeVisible();
+    await expect(page.getByLabel('대상 종목').locator('option:checked')).toHaveText('종목 목록 조회 중');
+  }
   finally { release(); }
   await page.getByLabel('전략 환경').selectOption('kis-paper');
   await expect(page.getByLabel('단기 평균 (이벤트)')).toBeVisible();
@@ -161,14 +165,20 @@ test('정상 빈 목록과 최초 조회 실패, 이전 조회의 평가 기록�
   fail = false;
   await page.getByRole('button', { name: '다시 확인' }).click();
   await expect(latest).toContainText('저장된 KIS 전략이 없습니다');
-  state.strategies.push({ ...state.strategies[0], id: 'older', name: '예시 신호', environment: 'kis-paper',
+  fail = true;
+  await expect(latest).toContainText('마지막 조회에서 평가 기록 없음', { timeout: 8000 });
+  fail = false;
+  state.strategies.push({ ...state.strategies[0], active: true, id: 'older', name: '예시 신호', environment: 'kis-paper',
     evaluations: [{ event: 'sample', at: '2026-11-20T01:00:00.000Z', revision: 1, signal: 'buy', status: 'accepted', reason: '예시 접수' }] });
+  await page.getByRole('button', { name: '다시 확인' }).click();
   await expect(latest).toContainText('접수 · 체결 미확정');
   fail = true;
   await expect(latest).toContainText('최신 평가 미확인', { timeout: 8000 });
   await expect(latest).toContainText('마지막 조회 기록');
   await expect(latest).toContainText('예시 접수');
-  await expect(page.getByRole('button', { name: '전략 시작' })).toBeDisabled();
+  await expect(page.getByText('서버 실행 상태 미확인 · 연결 복구 전 시작·정지 불가', { exact: false })).toBeVisible();
+  await expect(page.getByText('신규 주문 차단 · 로컬 상태 미확인', { exact: false })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '전략 정지' })).toBeDisabled();
 });
 
 test('DEMO 긴급정지와 종목 미제공 차단 사유를 조작 옆에 표시한다', async ({ page }) => {
@@ -177,7 +187,7 @@ test('DEMO 긴급정지와 종목 미제공 차단 사유를 조작 옆에 표�
   state.risk.halted = true;
   await page.route('**/api/state', r => r.fulfill({ json: state }));
   await page.goto('/strategies?environment=demo');
-  await expect(page.getByText('신규 실행 차단 · 긴급정지 켜짐')).toBeVisible();
+  await expect(page.getByText('전략 시작 차단 · 긴급정지 켜짐')).toBeVisible();
   await expect(page.getByText(/긴급정지로 재생 시작 차단/)).toBeVisible();
   await expect(page.getByRole('button', { name: '전략 시작' })).toBeDisabled();
   await expect(page.getByRole('button', { name: '자동 재생 시작' })).toBeDisabled();
