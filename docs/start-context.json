@@ -745,6 +745,38 @@
         }
       ],
       "decisions": "Graphify로 화면의 담당 코드를 찾아 기준 커밋 원문과 대조하고, Archify에서 현재 동작과 과거 캡처, 질문 대상의 고유 위치를 함께 제공한다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/145",
+      "checked_at": "2026-11-20T07:26:56.623500+00:00",
+      "objective": "현재·지난 실행 원장 읽기와 주문별 증권사 확인 시각",
+      "sources": [
+        {
+          "url": "https://github.com/nodejs/node/blob/v24.x/doc/api/sqlite.md",
+          "finding": "DatabaseSync readOnly로 기존 SQLite 파일을 조회한다."
+        },
+        {
+          "url": "https://react.dev/reference/react/useEffect",
+          "finding": "요청을 시작한 effect의 cleanup에서 지난 응답 반영을 차단한다."
+        }
+      ],
+      "decisions": "현재 원장과 분리한 읽기 전용 지난 실행 조회. 요청 시각·파일 수정 시각을 증권사 확인으로 대체하지 않는다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/147",
+      "checked_at": "2026-11-20T08:02:40.061210+00:00",
+      "objective": "지난 모의 주문 핵심 결과·조회 조건 복원과 주문 상세",
+      "sources": [
+        {
+          "url": "https://reactrouter.com/api/hooks/useSearchParams",
+          "finding": "검색 파라미터 변경은 라우터 탐색이므로 보기와 상태를 브라우저 탐색 기록에 반영할 수 있다."
+        },
+        {
+          "url": "https://design-system.service.gov.uk/components/details/",
+          "finding": "상세 요소는 일부 사용자만 필요로 하는 보조 정보에 사용한다."
+        }
+      ],
+      "decisions": "보기와 상태만 URL에 담고 식별자 검색은 페이지 안에서 처리한다. 핵심 체결·확인 시각은 상세 바깥에 둔다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."

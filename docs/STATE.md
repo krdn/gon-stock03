@@ -5,6 +5,8 @@
 프로젝트를 처음 볼 때는 [한 장 그림](architecture/figures/gon-stock-overview.png)에서 KIS 모의 주문과 DEMO 연습 흐름을 따라간다. [구조도 작업 #110](https://github.com/krdn/gon-stock03/issues/110)
 
 - **2차 설계 시작 · [1차 화면 함께 보기](tasks/143-v1-guide.md).** [검토 #143](https://github.com/krdn/gon-stock03/issues/143)에서 화면별 질문과 수정 의견을 모은다. [프로젝트 보드](https://github.com/users/krdn/projects/25)
+- **지난 주문 UX · [#147 작업](tasks/147-orders-ux.md).** 첫 주문 결과와 KIS 확인 시각, 보기 복원, 식별자 상세·검색. [진행 이슈](https://github.com/krdn/gon-stock03/issues/147)
+- **주문 원장 읽기 · [#145 작업](tasks/145-order-history.md).** 현재 원장과 지난 실행, PC 읽기와 주문별 KIS 확인 시각을 구분한다. [진행 이슈](https://github.com/krdn/gon-stock03/issues/145)
 - **현행 모의 버전 수용 · #25 → #3 → #2 → #1.** 실제 부분체결 직후 잔량 취소는 미관측으로 남기고 이번 인수에서 예외로 수용했다. [최종 판정과 검증](verification/2026-11-20-paper-acceptance.md) · [#25](https://github.com/krdn/gon-stock03/issues/25)
 - **자동진화 #129 → #130 → #131:** [오프라인 기준선 및 재생](tasks/129-offline.md) · [설계](plans/agent-evolution.md).
 - **오프라인 파일럿 #130:** [거래일지 초안 오류와 관심종목 코드 복사](tasks/130-product.md) · [선행 기준선 PR #133](https://github.com/krdn/gon-stock03/pull/133).

@@ -16,6 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
   tradingTerms,
+  planStem,
   planLimits,
   type PlanKind,
   type PlanVersion,
@@ -173,9 +174,7 @@ export function saveTradingDraft(store: Store, raw: unknown) {
     return { draft, previous: old?.draft.fixed ? old.draft : old?.previous };
   });
 }
-export function planStem(kind: PlanKind, id: string) {
-  return (kind === 'once' ? 'approval-' : 'strategy-') + id;
-}
+export { planStem } from '../shared/trading-plan.ts';
 
 export function fixTradingDraft(store: Store, kis: KisClient, raw: unknown) {
   const { kind, expectedId } = fixInput.parse(raw);

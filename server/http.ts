@@ -15,6 +15,7 @@ import type { StateSnapshot } from '../shared/model.ts';
 import { emptyStatus } from '../shared/status.ts';
 import { createExperiment, replayExperiment } from './backtest.ts';
 import { Realtime, type RealtimeConfig, type SocketFactory } from './realtime.ts';
+import { orderHistory } from './order-history.ts';
 import { MarketData } from './market-data.ts';
 import { marketQuoteInput, masterCodeSchema } from '../shared/market-data.ts';
 
@@ -45,7 +46,12 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         json(res, 200, snapshot); return;
       }
       if (path === '/api/trading-settings' && req.method === 'GET') { json(res,200,tradingSettings(store,approval,contract)); return; }
-      if (path === '/api/kis/ledger' && req.method === 'GET') { const orders = store.paperOrders(); json(res, 200, { orders, cancellation: paper.cancellation(orders), minimumRun: paper.approvalStatus(), strategyBudget: paper.strategyBudget() }); return; }
+      if (path === '/api/kis/history' && req.method === 'GET') {
+        try { json(res, 200, orderHistory(store)); }
+        catch { json(res, 500, { error: '지난 실행 목록을 읽지 못했습니다.' }); }
+        return;
+      }
+      if (path === '/api/kis/ledger' && req.method === 'GET') { const orders = store.displayPaperOrders(); json(res, 200, { orders, cancellation: paper.cancellation(orders), minimumRun: paper.approvalStatus(), strategyBudget: paper.strategyBudget() }); return; }
       if (path === '/api/kis/capabilities' && req.method === 'GET') { json(res, 200, paperCapabilities); return; }
       if (path === '/api/kis/audit' && req.method === 'GET') {
         const id = idInput.parse({ id: new URL(req.url!, 'http://127.0.0.1').searchParams.get('requestId') }).id;

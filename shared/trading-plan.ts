@@ -50,6 +50,11 @@ export const strategyTerms = z
 export const tradingTerms = z.discriminatedUnion('kind', [onceTerms, strategyTerms]);
 export type TradingTerms = z.infer<typeof tradingTerms>;
 export type PlanKind = TradingTerms['kind'];
+
+export function planStem(kind: PlanKind, id: string) {
+  return (kind === 'once' ? 'approval-' : 'strategy-') + id;
+}
+
 export function planLimits(state: State) {
   const { maxOrder, maxPosition, dailyLoss, halted } = state.risk;
   return { maxOrder, maxPosition, dailyLoss, halted, manualQty: state.paperManualMaxQty ?? DEFAULT_PAPER_MAX_QTY };
