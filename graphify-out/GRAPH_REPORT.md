@@ -1,7 +1,7 @@
 # Graph Report - ux2-157-app-time  (2026-11-20)
 
 ## Corpus Check
-- 301 files · ~290,885 words
+- 301 files · ~290,995 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 9 file(s) not represented in the graph (top: (none) 2, .zip 2, .toml 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `db6855ab`
+- Built from commit: `9d6310b8`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -607,17 +607,17 @@ Nodes (3): #128 기능 검증과 Astra 에이전트 자기개선 설계, 먼저 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Store` connect `Store` to `ConnectionState`, `paper.ts`, `Realtime`, `engine.ts`, `http.ts`, `realtime.test.ts`, `snapshot`, `order-history.ts`, `store.ts`, `events.ts`, `paper.test.ts`, `realtime.test.ts`, `shared/market-data.ts`, `PaperBroker`, `#9 최소 모의 실행 절차`, `.riskSnapshot`, `.paperOrders`?**
-  _High betweenness centrality (0.051) - this node is a cross-community bridge._
+- **Why does `KisClient` connect `ConnectionState` to `Store`, `paper.ts`, `Realtime`, `engine.ts`, `http.ts`, `#21 저장 일봉 백테스트 검증`, `realtime.test.ts`, `snapshot`, `settings-recovery.test.ts`, `store.ts`, `paper.test.ts`, `realtime.test.ts`, `shared/market-data.ts`, `작업: 국내 종목 마스터·일봉 수집`, `PaperBroker`, `#8 연결·설정 검증`, `.paperOrders`?**
+  _High betweenness centrality (0.067) - this node is a cross-community bridge._
 - **Are the 31 inferred relationships involving `makeServer()` (e.g. with `.refreshMaster()` and `.start()`) actually correct?**
   _`makeServer()` has 31 INFERRED edges - model-reasoned connections that need verification._
 - **Should `MarketExplorer.tsx` be split into smaller, more focused modules?**
   _Cohesion score 0.10227272727272728 - nodes in this community are weakly interconnected._
-- **Why does `KisClient` connect `ConnectionState` to `Store`, `paper.ts`, `Realtime`, `engine.ts`, `http.ts`, `#21 저장 일봉 백테스트 검증`, `realtime.test.ts`, `snapshot`, `settings-recovery.test.ts`, `store.ts`, `paper.test.ts`, `realtime.test.ts`, `shared/market-data.ts`, `작업: 국내 종목 마스터·일봉 수집`, `PaperBroker`, `#8 연결·설정 검증`, `.paperOrders`?**
+- **Why does `Store` connect `Store` to `ConnectionState`, `paper.ts`, `Realtime`, `engine.ts`, `http.ts`, `realtime.test.ts`, `snapshot`, `order-history.ts`, `store.ts`, `events.ts`, `paper.test.ts`, `realtime.test.ts`, `shared/market-data.ts`, `PaperBroker`, `#9 최소 모의 실행 절차`, `.riskSnapshot`, `.paperOrders`?**
   _High betweenness centrality (0.045) - this node is a cross-community bridge._
 - **Are the 3 inferred relationships involving `KisClient` (e.g. with `계약과 저장` and `실제 공개 마스터`) actually correct?**
   _`KisClient` has 3 INFERRED edges - model-reasoned connections that need verification._
 - **Should `작업: #64 SQLite 원장 파일 권한 보호` be split into smaller, more focused modules?**
   _Cohesion score 0.08666666666666667 - nodes in this community are weakly interconnected._
-- **Why does `makeServer()` connect `store.ts` to `Store`, `Realtime`, `engine.ts`, `http.ts`, `realtime.test.ts`, `snapshot`, `events.ts`, `order-history.ts`, `paper.test.ts`, `realtime.test.ts`, `shared/market-data.ts`, `PaperBroker`, `.riskSnapshot`, `App.tsx`, `.paperOrders`?**
-  _High betweenness centrality (0.044) - this node is a cross-community bridge._
+- **Should `paper.ts` be split into smaller, more focused modules?**
+  _Cohesion score 0.05569620253164557 - nodes in this community are weakly interconnected._

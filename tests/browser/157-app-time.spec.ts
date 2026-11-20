@@ -300,3 +300,20 @@ test('a valid new local observation can confirm a still-fresh balance after losi
   await page.clock.fastForward(53_999); await poll; await expect(account(page)).toContainText('정상');
   await page.clock.runFor(1); await expect(account(page)).toContainText('오래됨');
 });
+
+test('a KIS partial failure also invalidates its old success when the local clock is missing', async ({ page }) => {
+  await freezeClock(page);
+  const state = fixture();
+  state.connection.connected = true;
+  const status = state.connection.status;
+  Object.assign(status, { phase:'ready', complete:true, observedAt:iso(), lastSuccessAt:iso() });
+  await page.route('**/api/state', route => route.fulfill({json:state}));
+  await page.goto('/journal'); await expect(account(page)).toContainText('정상');
+  state.status.observedAt = null; status.phase = 'partial'; status.complete = false;
+  await page.clock.fastForward(3000); await expect(account(page)).toContainText('부분실패');
+  state.status.observedAt = state.status.lastSuccessAt = iso(6000); status.phase = 'ready'; status.complete = true;
+  await page.clock.fastForward(3000); await expect(local(page)).toContainText('정상');
+  await expect(account(page)).toContainText('오래됨');
+  state.status.observedAt = state.status.lastSuccessAt = status.observedAt = status.lastSuccessAt = iso(9000);
+  await page.clock.fastForward(3000); await expect(account(page)).toContainText('정상');
+});

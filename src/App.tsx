@@ -25,12 +25,11 @@ function statusDeadline(status: DataStatusContract, serverAt: number, sentAt: nu
   const successAt = Date.parse(status.lastSuccessAt ?? '');
   // A new instance has its own clock, but copying an identical timestamp cannot renew it.
   const previous = restarted && successAt !== prior.successAt ? noSuccess : prior;
-  if (!Number.isFinite(serverAt)) return previous;
+  const failed = ['partial', 'error', 'stale'].includes(status.phase);
+  if (!Number.isFinite(serverAt) && !failed) return previous;
   const observedAt = Date.parse(status.observedAt ?? '');
   if (!(successAt <= observedAt) || successAt < previous.successAt) return { ...previous, until: -Infinity };
-  if (['partial', 'error', 'stale'].includes(status.phase)) {
-    return { successAt, until: -Infinity };
-  }
+  if (failed) return { successAt, until: -Infinity };
   const until = sentAt + status.staleAfterMs - Math.max(0, serverAt - successAt);
   return { successAt, until: previous.successAt === successAt ? Math.min(previous.until, until) : until };
 }
