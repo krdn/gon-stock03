@@ -1,0 +1,158 @@
+{
+  "before": [
+    {
+      "stage": "before",
+      "device": "desktop",
+      "width": 1440,
+      "height": 900,
+      "title": "KIS 전략 정지",
+      "rowY": 703,
+      "titleY": 725,
+      "linkY": 840,
+      "saveY": 408,
+      "overflow": 0,
+      "filtered": 2,
+      "destination": {
+        "url": "/strategies",
+        "env": "demo"
+      },
+      "backRows": 4,
+      "reloadRows": 4,
+      "saved": [
+        [
+          "example-kis",
+          "example-risk",
+          "example-demo"
+        ]
+      ]
+    },
+    {
+      "stage": "before",
+      "device": "mobile",
+      "width": 390,
+      "height": 844,
+      "title": "KIS 전략 정지",
+      "rowY": 826,
+      "titleY": 848,
+      "linkY": 964,
+      "saveY": 466,
+      "overflow": 0,
+      "filtered": 2,
+      "destination": {
+        "url": "/strategies",
+        "env": "demo"
+      },
+      "backRows": 4,
+      "reloadRows": 4,
+      "saved": [
+        [
+          "example-kis",
+          "example-risk",
+          "example-demo"
+        ]
+      ]
+    }
+  ],
+  "warning-after": [
+    {
+      "stage": "warning-after",
+      "device": "desktop",
+      "width": 1440,
+      "height": 900,
+      "title": "KIS 전략 정지",
+      "rowY": 593,
+      "titleY": 632,
+      "linkY": 684,
+      "saveY": 408,
+      "overflow": 0,
+      "filtered": 2,
+      "destination": {
+        "url": "/strategies?environment=kis-paper",
+        "env": "kis-paper"
+      },
+      "backRows": 2,
+      "reloadRows": 2,
+      "saved": [
+        [
+          "example-kis",
+          "example-risk"
+        ]
+      ]
+    },
+    {
+      "stage": "warning-after",
+      "device": "mobile",
+      "width": 390,
+      "height": 844,
+      "title": "KIS 전략 정지",
+      "rowY": 670,
+      "titleY": 709,
+      "linkY": 761,
+      "saveY": 466,
+      "overflow": 0,
+      "filtered": 2,
+      "destination": {
+        "url": "/strategies?environment=kis-paper",
+        "env": "kis-paper"
+      },
+      "backRows": 2,
+      "reloadRows": 2,
+      "saved": [
+        [
+          "example-kis",
+          "example-risk"
+        ]
+      ]
+    }
+  ],
+  "after": [
+    {
+      "stage": "after",
+      "device": "desktop",
+      "width": 1440,
+      "height": 900,
+      "title": "KIS 전략 정지",
+      "rowY": 593,
+      "titleY": 632,
+      "linkY": 684,
+      "saveY": 408,
+      "overflow": 0,
+      "filtered": 1,
+      "destination": {
+        "url": "/strategies?environment=kis-paper",
+        "env": "kis-paper"
+      },
+      "backRows": 1,
+      "reloadRows": 1,
+      "saved": [
+        [
+          "example-kis"
+        ]
+      ]
+    },
+    {
+      "stage": "after",
+      "device": "mobile",
+      "width": 390,
+      "height": 844,
+      "title": "KIS 전략 정지",
+      "rowY": 670,
+      "titleY": 709,
+      "linkY": 761,
+      "saveY": 466,
+      "overflow": 0,
+      "filtered": 1,
+      "destination": {
+        "url": "/strategies?environment=kis-paper",
+        "env": "kis-paper"
+      },
+      "backRows": 1,
+      "reloadRows": 1,
+      "saved": [
+        [
+          "example-kis"
+        ]
+      ]
+    }
+  ]
+}

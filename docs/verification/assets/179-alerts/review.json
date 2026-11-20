@@ -1,0 +1,29 @@
+[
+  {
+    "stage": "design",
+    "requestedModel": "gemini-4-neon-high",
+    "cliInitModel": "gemini-4-neon-high",
+    "providerModelAndEffort": "미확인",
+    "resultStatus": "SUCCESS",
+    "exitCode": 0,
+    "summary": "동일 예시의 실측과 서버 계약을 검토. 읽음 분모·경합, 필터 복원, 최초 실패 및 모바일 첫 결과 위치를 구분하도록 권고."
+  },
+  {
+    "stage": "implementation",
+    "requestedModel": "gemini-4-neon-high",
+    "cliInitModel": "gemini-4-neon-high",
+    "providerModelAndEffort": "미확인",
+    "resultStatus": "SUCCESS",
+    "exitCode": 0,
+    "summary": "조건부 통과. P0/P1 없음. P2로 부분 수신 필터 0건, 실시간 상태 문구, 미확인 환경 원인 라벨, 기존 분류기의 한계를 지적."
+  },
+  {
+    "stage": "fix",
+    "requestedModel": "gemini-4-neon-high",
+    "cliInitModel": "gemini-4-neon-high",
+    "providerModelAndEffort": "미확인",
+    "resultStatus": "SUCCESS",
+    "exitCode": 0,
+    "summary": "PASS. 부분/오래된 필터 빈 상태, 단계와 차단 분리, 미확인 환경 라벨을 확인. 과거 이벤트 분류는 범위 한계로 수용. 재수신 후 loading일 때의 색상은 비차단 지적."
+  }
+]

@@ -1,0 +1,28 @@
+.alerts-page .panel-head { flex-wrap: wrap; gap: 6px 14px; margin-bottom: 12px; }
+.alerts-page .panel-head .button, .alerts-filters select { min-height: 44px; }
+.alerts-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 9rem)); gap: 8px; }
+.alerts-filters > div { display: grid; gap: 4px; color: #41545d; font-size: 12px; }
+.alerts-filters select { width: 100%; padding: 5px 8px; border: 1px solid #bdcbd1; border-radius: 5px; background: white; color: #233943; font-size: 14px; }
+.alerts-scope { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; margin: 9px 0 3px; color: #41545d; font-size: 13px; }
+.alerts-scope small { font-size: 12px; }
+.alerts-page summary { cursor: pointer; }
+.alerts-realtime { font-size: 13px; color: #41545d; }
+.alerts-realtime summary, .alerts-request summary { padding: 7px 0; }
+.alerts-feedback, .alerts-warning { margin: 8px 0; font-size: 14px; line-height: 1.5; }
+.alerts-warning { color: #823817; }
+.alerts-warning a { text-decoration: underline; }
+.alerts-page .event { padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 0; overflow-wrap: anywhere; }
+.alerts-page .event > div { min-width: 0; }
+.alerts-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-bottom: 5px; color: #425761; font-size: 12px; }
+.alerts-meta .alert-level { padding: 2px 6px; border-radius: 4px; background: #edf2f4; font-weight: 650; }
+.alerts-meta .warning { color: #794500; background: #fff0d2; }
+.alerts-meta .error { color: #962d26; background: #ffebe7; }
+.alerts-page .event time { font-size: 12px; }
+.alerts-page .event h3 { margin: 0; font-size: 16px; font-weight: 650; }
+.alerts-page .event p { margin: 3px 0 0; color: #41545d; font-size: 13px; }
+.alerts-page .alerts-cause { font-size: 13px; display: inline-flex; align-items: center; min-height: 44px; text-decoration: underline; }
+.alerts-request { font-size: 13px; }
+@media (max-width: 700px) {
+  .alerts-page { padding: 14px; }
+  .alerts-page .panel-head h2 { font-size: 16px; }
+}
