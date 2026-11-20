@@ -35,6 +35,8 @@ Graphify의 `Backtest`·`createExperiment` 설명을 원문과 대조했다. `Re
 
 구현 리뷰는 PASS와 함께 P2 2건, P3 2건 및 표시 개선 의견을 남겼다. DEMO에 기본 종목이 없을 때 표시한 종목을 사용하고, 빈 목록에서는 실행을 차단했다. 재현 불일치와 응답 형식 오류에 각각 경고를 표시한다. 성공 응답으로 이력을 갱신해 결과 포커스와 실행 후 목록 로딩이 겹치지 않게 했다. 최초·재조회 오류를 구분하고 거래 0건의 원인 단정을 제거했다. 390px에서 날짜·비용은 입력칸이 넘치지 않아 두 열을 유지하고 아래선을 맞췄다. 수집 변경 후 수수료 7.5bp가 1.5bp로 초기화되며 초점을 잃는 문제도 재현해 고쳤다.
 
+같은 모델의 수정분 리뷰도 PASS였다. 리뷰 입력에 생략한 JSX의 오류 알림과 선택 초점은 브라우저 검사로 확인했다. 후속 참고 의견을 반영해 저장 체결일 누락은 미확인으로 표시하고, 재조회 성공 때 선택 초점을 복원한다.
+
 검토 요청과 CLI 초기화 모델은 `gemini-4-neon-high`였다. 서버 내부 모델과 추론 강도는 독립적으로 확인되지 않았다. 로컬 빌드·백테스트 단위/API 6건·페이지 회귀 8건과 PC·모바일 대표 작업을 통과했다. 번들 500kB 초과 경고가 남았다. [참조한 공식 라우터 문서](https://reactrouter.com/7.18.5/api/hooks/useSearchParams) · [중복 검색 인자 처리](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams/getAll).
 
 ## 검토 화면
@@ -42,3 +44,5 @@ Graphify의 `Backtest`·`createExperiment` 설명을 원문과 대조했다. `Re
 [원주가 일봉에서 출발](http://127.0.0.1:4463/data?run=86b3f123-f72e-4d77-9091-72a057ce26e4#inventory-daily) · [저장 백테스트](http://127.0.0.1:4463/backtest?source=stored&run=86b3f123-f72e-4d77-9091-72a057ce26e4) · [DEMO에서 출발](http://127.0.0.1:4463/data#inventory-demo) · [부분 수집](http://127.0.0.1:4463/backtest?source=stored&run=76b3f123-f72e-4d77-9091-72a057ce26e4)
 
 4463은 KIS·Infisical 변수를 제외한 빈 환경에 기존 `server/index.ts`와 작업 전용 예시 DB로 구동한다. 서버 외부 fetch를 차단했고 원장·계좌 자료를 복사하지 않았다. 사용자 직접 수용, 4303 통합 반영, 실제 일봉·공식 달력 검증 및 투자 성과는 별도다.
+
+[초안 PR #183](https://github.com/krdn/gon-stock03/pull/183)에서 현재 head의 앱·구성 검사를 확인한다.

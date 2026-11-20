@@ -194,7 +194,7 @@ function StrategyEditor({ environment, onSaved }: { environment: StrategyEnviron
 type ExperimentInput = Experiment['snapshot']['input'];
 type Assumptions = Pick<ExperimentInput, 'fast' | 'slow' | 'capital' | 'feeBps' | 'slippageBps'>;
 const defaultAssumptions: Assumptions = { fast: 5, slow: 20, capital: 10000000, feeBps: 1.5, slippageBps: 5 };
-const dateInput = (value: string) => value && `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6)}`;
+const dateInput = (value?: string) => value ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6)}` : '';
 const pricePolicy = (value: string) => value === 'raw' ? '원주가' : '수정주가';
 
 function assumptions({ fast, slow, capital, feeBps, slippageBps }: Assumptions): Assumptions {
@@ -221,7 +221,7 @@ function ResultSummary({ result, label }: { result: BacktestResult; label: strin
 function Trades({ result, daily }: { result: BacktestResult; daily?: boolean }) {
   return <Panel title="백테스트 거래 내역">{result.trades.length ? <div className="table-scroll"><table>
     <thead><tr><th>{daily ? '신호일 → 체결일' : '봉 번호'}</th><th>방향</th><th>체결가 (원)</th><th>수량 (주)</th><th>수수료 (원)</th></tr></thead>
-    <tbody>{result.trades.map(t => <tr key={t.bar}><td>{daily ? `${dateInput(t.signalDate!)} → ${dateInput(t.date!)}` : t.bar}</td>
+    <tbody>{result.trades.map(t => <tr key={t.bar}><td>{daily ? `${dateInput(t.signalDate) || '미확인'} → ${dateInput(t.date) || '미확인'}` : t.bar}</td>
       <td>{t.side === 'buy' ? '매수' : '매도'}</td><td>{t.price.toLocaleString('ko-KR', { maximumFractionDigits: 4 })}</td><td>{t.qty}</td><td>{won(t.fee)}</td></tr>)}</tbody>
   </table></div> : <p>이 구간에는 체결된 거래가 없습니다.</p>}</Panel>;
 }
@@ -316,11 +316,11 @@ function StoredBacktest({ requested, initial, select }: { requested: string | nu
   const policySelect = useRef<HTMLSelectElement>(null), runSelect = useRef<HTMLSelectElement>(null);
   const focusAfterSelection = useRef(draft?.focus);
   useEffect(() => {
-    if (!loading && focusAfterSelection.current) {
+    if (!loading && !listError && focusAfterSelection.current) {
       (focusAfterSelection.current === 'policy' ? policySelect : runSelect).current?.focus();
       focusAfterSelection.current = undefined;
     }
-  }, [loading]);
+  }, [loading, listError]);
   useEffect(() => () => loader.current?.abort(), []);
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setListError(''); setLoadError('');

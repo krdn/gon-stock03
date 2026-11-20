@@ -1,7 +1,7 @@
 # Graph Report - ux2-180-backtest  (2026-11-20)
 
 ## Corpus Check
-- 307 files · ~293,100 words
+- 307 files · ~293,176 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 11 file(s) not represented in the graph (top: .css 3, (none) 2, .zip 2)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `2b6aaf6e`
+- Built from commit: `5e98e424`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -621,14 +621,14 @@ Nodes (4): 관측, 남은 순서, 보존·실행 위치, 접속키 실행 경로
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `KisClient` connect `KisClient` to `makeServer`, `shared/market-data.ts`, `http.ts`, `작업: 국내 종목 마스터·일봉 수집`, `server/market-data.ts`, `trading-settings.test.ts`, `PaperBroker`, `realtime.test.ts`, `events.test.ts`, `trading-plans.ts`, `#8 연결·설정 검증`, `Store`, `workbench.spec.ts`, `vts-runner.ts`, `paper.test.ts`, `kis.ts`, `trading-settings.test.ts`, `.send`, `ConnectionState`, `fixture`, `settings-recovery.test.ts`, `연결·설정 동작 점검`?**
-  _High betweenness centrality (0.093) - this node is a cross-community bridge._
+- **Why does `Store` connect `Store` to `Realtime`, `makeServer`, `shared/market-data.ts`, `http.ts`, `server/market-data.ts`, `#9 최소 모의 실행 절차`, `trading-settings.test.ts`, `PaperBroker`, `makeServer`, `realtime.test.ts`, `events.test.ts`, `KisClient`, `.paperOrders`, `trading-plans.ts`, `server/realtime.ts`, `workbench.spec.ts`, `.riskSnapshot`, `vts-runner.ts`, `paper.test.ts`, `trading-settings.test.ts`, `fixture`?**
+  _High betweenness centrality (0.071) - this node is a cross-community bridge._
 - **Are the 31 inferred relationships involving `makeServer()` (e.g. with `.refreshMaster()` and `.start()`) actually correct?**
   _`makeServer()` has 31 INFERRED edges - model-reasoned connections that need verification._
 - **Should `shared/market-data.ts` be split into smaller, more focused modules?**
   _Cohesion score 0.14285714285714285 - nodes in this community are weakly interconnected._
-- **Why does `Store` connect `Store` to `Realtime`, `makeServer`, `shared/market-data.ts`, `http.ts`, `server/market-data.ts`, `#9 최소 모의 실행 절차`, `trading-settings.test.ts`, `PaperBroker`, `makeServer`, `realtime.test.ts`, `events.test.ts`, `KisClient`, `.paperOrders`, `trading-plans.ts`, `server/realtime.ts`, `workbench.spec.ts`, `.riskSnapshot`, `vts-runner.ts`, `paper.test.ts`, `trading-settings.test.ts`, `fixture`?**
-  _High betweenness centrality (0.057) - this node is a cross-community bridge._
+- **Why does `KisClient` connect `KisClient` to `makeServer`, `shared/market-data.ts`, `http.ts`, `작업: 국내 종목 마스터·일봉 수집`, `server/market-data.ts`, `trading-settings.test.ts`, `PaperBroker`, `realtime.test.ts`, `events.test.ts`, `trading-plans.ts`, `#8 연결·설정 검증`, `Store`, `workbench.spec.ts`, `vts-runner.ts`, `paper.test.ts`, `kis.ts`, `trading-settings.test.ts`, `.send`, `ConnectionState`, `fixture`, `settings-recovery.test.ts`, `연결·설정 동작 점검`?**
+  _High betweenness centrality (0.067) - this node is a cross-community bridge._
 - **Are the 3 inferred relationships involving `KisClient` (e.g. with `계약과 저장` and `실제 공개 마스터`) actually correct?**
   _`KisClient` has 3 INFERRED edges - model-reasoned connections that need verification._
 - **Should `2026-11-16-validation-prep.md` be split into smaller, more focused modules?**

@@ -123,10 +123,12 @@ test('180 고정 실험의 재현 불일치와 잘못된 응답을 각각 경고
   } finally { store.close(); }
   await inventory(page);
   await page.route('**/api/backtest/experiments', route => route.fulfill({ json: { experiments: [{ id: saved.id, createdAt: saved.createdAt, input: fixture.input, bars: fixture.bars.length }] } }));
-  await page.route('**/api/backtest/experiments/' + saved.id, route => route.fulfill({ json: { experiment: saved } }));
+  const missingTradeDates = { ...saved, result: { ...saved.result, trades: saved.result.trades.map(trade => ({ ...trade, date: undefined, signalDate: undefined })) } };
+  await page.route('**/api/backtest/experiments/' + saved.id, route => route.fulfill({ json: { experiment: missingTradeDates } }));
   await page.route('**/api/backtest/replay', route => route.fulfill({ json: { matches: false, result: saved.result, inputHash: saved.inputHash } }));
   await page.goto(stableURL); await page.getByRole('button', { name: '저장 실험 불러오기' }).click();
   const result = page.getByRole('region', { name: '저장 일봉 실험 결과' }), replay = result.getByRole('button', { name: '고정 입력으로 재현 검증' });
+  await expect(result.getByRole('cell', { name: '미확인 → 미확인' }).first()).toBeVisible();
   await replay.click(); await expect(result.getByRole('alert')).toContainText('재현 불일치');
   await page.route('**/api/backtest/replay', route => route.fulfill({ json: { matches: true } }));
   await replay.click(); await expect(result.getByRole('alert')).toHaveText('재현 검증 실패 · 재현 응답 형식이 올바르지 않습니다.');
