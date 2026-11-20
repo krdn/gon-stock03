@@ -1,7 +1,7 @@
-# Graph Report - gon-stock03-fixture-joined-gktln3fy  (2026-11-20)
+# Graph Report - gon-stock03-fixture-joined-3unhqwqy  (2026-11-20)
 
 ## Corpus Check
-- 352 files · ~331,597 words
+- 352 files · ~331,911 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 24 file(s) not represented in the graph (top: .css 17, .zip 2, .toml 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `e8f35a5c`
+- Built from commit: `04c912ec`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -681,4 +681,4 @@ _Questions this graph is uniquely positioned to answer:_
 - **Should `vts-runner.ts` be split into smaller, more focused modules?**
   _Cohesion score 0.13333333333333333 - nodes in this community are weakly interconnected._
 - **Why does `Store` connect `Store` to `vts-runner.ts`, `order-history.ts`, `.submit`, `makeServer`, `engine.ts`, `realtime.test.ts`, `store.ts`, `http.ts`, `kis.ts`, `shared/backtest.ts`, `paper.ts`, `180-backtest-ux.spec.ts`, `PaperBroker`, `#9 최소 모의 실행 절차`, `KisClient`, `.paperOrders`?**
-  _High betweenness centrality (0.041) - this node is a cross-community bridge._
+  _High betweenness centrality (0.042) - this node is a cross-community bridge._
