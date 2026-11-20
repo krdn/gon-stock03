@@ -144,13 +144,16 @@ export function Journal() {
   useLayoutEffect(() => {
     setQuery(typeof history.state?.journalSearch === 'string' ? history.state.journalSearch : '');
   }, [visit]);
-  const [feedback, setFeedback] = useState('');
+  const [feedback, setFeedback] = useState<{ message: string; blocked?: boolean }>();
   const recordsTitle = useRef<HTMLHeadingElement>(null);
   const stockInput = useRef<HTMLSelectElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const memoInput = useRef<HTMLTextAreaElement>(null);
   const draftRevision = useRef(0);
   const current = Boolean(server) && available && status.complete;
+  useEffect(() => {
+    if (current) setFeedback(previous => previous?.blocked ? undefined : previous);
+  }, [current]);
   const records = server ? state.journal : [];
   const names = new Map(instruments.map(s => [s.code, s.name]));
   const validStock = names.has(code);
@@ -167,17 +170,21 @@ export function Journal() {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (!current || !validStock || busy) return;
+    if (!validStock || busy) return;
+    if (!current) {
+      setFeedback({ message: '최신 로컬 상태를 확인한 뒤 다시 저장하세요. 초안은 유지됩니다.', blocked: true });
+      return;
+    }
     const submittedRevision = draftRevision.current;
-    setFeedback('');
+    setFeedback(undefined);
     try {
       await act('journal', { code, text });
       if (draftRevision.current === submittedRevision) setText('');
-      setFeedback(`${names.get(code) ?? code} 메모를 저장했습니다.`);
+      setFeedback({ message: `${names.get(code) ?? code} 메모를 저장했습니다.` });
     } catch (error) {
-      setFeedback(error instanceof Error && 'definitive' in error && error.definitive
+      setFeedback({ message: error instanceof Error && 'definitive' in error && error.definitive
         ? '저장하지 못했습니다. 입력한 내용을 확인하세요.'
-        : '저장 결과를 확인하지 못했습니다. 초안은 유지됩니다. 다시 저장하기 전에 목록을 확인하세요.');
+        : '저장 결과를 확인하지 못했습니다. 초안은 유지됩니다. 다시 저장하기 전에 목록을 확인하세요.' });
     }
   }
 
@@ -216,9 +223,11 @@ export function Journal() {
         <label className="field" htmlFor="journal-note">매매 메모</label>
         <textarea ref={memoInput} id="journal-note" rows={3} required maxLength={2000} disabled={!server} value={text} placeholder="관찰한 이유나 다음에 지킬 원칙" onChange={e => { draftRevision.current += 1; setText(e.target.value); }} />
         <div className="journal-submit"><span>{text.length.toLocaleString('ko-KR')} / 2,000</span><button className="button primary" disabled={!current || !validStock || busy}>일지 저장</button></div>
-        {feedback && <div className="journal-feedback"><p>{feedback}</p><button type="button" onClick={() => {
-          search(''); recordsTitle.current?.focus(); void refresh();
-        }}>전체 기록 확인</button></div>}
+        {feedback && <div className="journal-feedback">
+          <p role={feedback.blocked ? 'alert' : undefined}>{feedback.message}</p>
+          {feedback.blocked ? <button type="button" onClick={() => void refresh()}>로컬 상태 확인</button> :
+            <button type="button" onClick={() => { search(''); recordsTitle.current?.focus(); void refresh(); }}>전체 기록 확인</button>}
+        </div>}
       </form>
     </section>
   </div>;
