@@ -169,7 +169,7 @@ function PaperForm() {
             entryKey.current = originalKey;
           } catch { /* Optional input history. */ }
         }
-        setFormKey(formKey);
+        setFormKey(current => current ?? formKey ?? crypto.randomUUID());
       }
     }
     finally { submitting.current = false; }
