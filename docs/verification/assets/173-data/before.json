@@ -1,0 +1,40 @@
+[
+  {
+    "device": "desktop",
+    "width": 1440,
+    "height": 900,
+    "masterSuccessY": 714,
+    "recordPickerY": 1067,
+    "partialResultY": 1154,
+    "demoY": 1820,
+    "refreshY": 548,
+    "marketLinkY": 640,
+    "inlineBacktest": 0,
+    "dataOverflow": 0,
+    "qualityToggleY": 1576,
+    "missingDateY": 1600,
+    "restoredMismatch": false,
+    "backtestLanding": "stored",
+    "nonGET": [],
+    "backtestActions": 2
+  },
+  {
+    "device": "mobile",
+    "width": 390,
+    "height": 844,
+    "masterSuccessY": 852,
+    "recordPickerY": 1288,
+    "partialResultY": 1375,
+    "demoY": 2395,
+    "refreshY": 694,
+    "marketLinkY": 781,
+    "inlineBacktest": 0,
+    "dataOverflow": 0,
+    "qualityToggleY": 2137,
+    "missingDateY": 2161,
+    "restoredMismatch": false,
+    "backtestLanding": "stored",
+    "nonGET": [],
+    "backtestActions": 3
+  }
+]

@@ -1,0 +1,58 @@
+.inventory-tools,
+.inventory-tools nav,
+.inventory-source h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inventory-tools { justify-content: space-between; }
+.inventory-tools nav { gap: 2px; }
+.inventory-tools nav a {
+  padding: 8px 9px;
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 5px;
+}
+.inventory-tools nav a:hover,
+.inventory-tools nav a:focus-visible { background: #e5f3ee; }
+.inventory-caption { margin: 6px 0 12px; font-size: 12px; color: var(--muted); }
+.inventory-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.25fr);
+  align-items: start;
+  gap: 14px;
+}
+#inventory-daily { grid-column: 2; grid-row: 1 / span 2; }
+.inventory-layout > section { min-width: 0; scroll-margin-top: 12px; }
+.inventory-layout .panel-head { margin-bottom: 12px; }
+.inventory-source { padding: 8px 0; border-top: 1px solid var(--line); }
+.inventory-source h3 { font-size: 14px; }
+.inventory-source p { font-size: 12px; margin-top: 4px; }
+.inventory-warning { color: #844c19; }
+.inventory-layout details,
+.inventory-reference {
+  border-top: 1px solid var(--line);
+  padding: 8px 0;
+  font-size: 12px;
+}
+.inventory-layout summary,
+.inventory-reference summary { cursor: pointer; padding: 4px 0; font-weight: 600; }
+.inventory-layout details p,
+.inventory-reference p { margin-top: 6px; }
+.inventory-layout .data-facts { margin: 10px 0; gap: 12px; }
+.inventory-range { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.inventory-quality { margin: 10px 0; font-weight: 600; }
+.inventory-next { padding: 8px 0; font-weight: 600; }
+.inventory-reference { margin: 16px 0; }
+@media (max-width: 850px) {
+  .inventory-layout { display: flex; flex-direction: column; }
+  .inventory-layout > section { width: 100%; }
+  .inventory-tools .button { padding-inline: 8px; }
+  .inventory-tools nav a { padding-inline: 6px; }
+}
+.inventory-links { display: flex; flex-wrap: wrap; gap: 0 14px; }
+.inventory-layout .data-detail .toolbar { flex-direction: row; align-items: center; gap: 5px; }
+.inventory-layout .inventory-range { grid-template-columns: repeat(2, minmax(0, 1fr)); }
