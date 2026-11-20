@@ -202,6 +202,13 @@ test('missing master exchange, empty snapshots and unconfirmed DEMO stay distinc
 
 test('DEMO source links lead to the backtest source picker and official market', async ({ page }) => {
   await setup(page);
+  const masterOnly = { code: '00123K', name: '마스터 전용 예시', isin: 'fixture', exchange: 'KOSPI', kind: 'stock', group: 'ST', removedAt: successAt };
+  const sources = ['KOSPI', 'KOSDAQ'].map(exchange => ({
+    ...master.sources[0], exchange, phase: 'ready', observedAt: successAt, count: 0, error: null,
+  }));
+  await page.route('**/api/data/master', route => route.fulfill({ json: { sources, instruments: [], removed: [masterOnly] } }));
+  const writes: string[] = [];
+  page.on('request', req => { if (req.method() !== 'GET') writes.push(req.url()); });
   await page.goto('/data#inventory-demo');
   const demo = page.getByRole('region', { name: 'DEMO 합성 데이터' });
   await expect(demo).toContainText('추가 재생 0회');
@@ -214,9 +221,21 @@ test('DEMO source links lead to the backtest source picker and official market',
   await page.getByRole('combobox', { name: '데이터 출처' }).selectOption('demo');
   await expect(page.getByText(/현재 저장된 합성 봉/)).toBeVisible();
   await page.goBack();
+  await expect(page).toHaveURL(/\/data#inventory-demo$/);
+  await expect(demo.getByRole('heading')).toBeInViewport();
   await demo.getByRole('link', { name: /시장 탐색/ }).press('Enter');
   await expect(page).toHaveURL(/\/market$/);
-  await expect(page.getByRole('heading', { name: '종목 마스터', exact: true })).toBeVisible();
+  const search = page.getByRole('textbox', { name: '종목명 또는 코드 검색' });
+  const row = page.getByRole('row').filter({ hasText: masterOnly.name });
+  await expect(row).toContainText(masterOnly.code);
+  await search.fill('005930');
+  await expect(page.getByText(/현재 마스터에 없는 코드입니다/)).toBeVisible();
+  await expect(row).toHaveCount(0);
+  await expect(page.getByRole('row').filter({ hasText: '005930' })).toHaveCount(0);
+  await search.fill(masterOnly.code);
+  await expect(row).toBeVisible();
+  await expect(row).toContainText('마스터 제외');
+  expect(writes).toEqual([]);
 });
 
 test('mobile DEMO shortcut keeps its results in view after a delayed daily detail', async ({ page }) => {
