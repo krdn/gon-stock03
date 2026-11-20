@@ -51,8 +51,13 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
 }
 
 test('journal distinguishes loading, unavailable and incomplete records from a confirmed empty list', async ({ page }) => {
-  await page.clock.install();
+  const now = Date.now();
+  await page.clock.install({ time: now });
   const state = snapshot();
+  const previous = new Date(now - state.status.staleAfterMs - 1).toISOString();
+  state.status.observedAt = state.status.lastSuccessAt = previous;
+  const posts: string[] = [];
+  page.on('request', req => { if (req.method() === 'POST') posts.push(new URL(req.url()).pathname); });
   let release!: () => void;
   const loading = new Promise<void>(resolve => { release = resolve; });
   let failed = true;
@@ -72,12 +77,23 @@ test('journal distinguishes loading, unavailable and incomplete records from a c
   await expect(page.getByText('전체 기록을 확인하지 못했습니다. 받은 기록만 표시합니다.')).toBeVisible();
   await expect(page.locator('.journal-source')).not.toContainText('0건');
   await expect(save).toBeDisabled();
+  // Replaying the same observation cannot turn an expired success into a new one.
   state.status.phase = 'ready'; state.status.complete = true;
   await page.getByRole('button', { name: '다시 확인' }).click();
-  await expect(page.getByText('기록이 쌓이면 원칙이 보입니다')).toBeVisible();
-  await expect(save).toBeEnabled();
+  await expect(page.getByRole('group', { name: '로컬 상태', exact: true })).toContainText('오래됨');
+  await expect(save).toBeDisabled();
   const memo = page.getByRole('textbox', { name: '매매 메모' });
   await memo.fill('연결이 일시 중단된 동안의 초안');
+  await save.evaluate((button: HTMLButtonElement) => button.form!.requestSubmit());
+  await expect(page.getByRole('alert')).toContainText('최신 로컬 상태');
+  await expect(memo).toHaveValue('연결이 일시 중단된 동안의 초안'); expect(posts).toEqual([]);
+
+  state.status.observedAt = state.status.lastSuccessAt = new Date(now).toISOString();
+  await page.getByRole('button', { name: '로컬 상태 확인' }).click();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByText('기록이 쌓이면 원칙이 보입니다')).toBeVisible();
+  await expect(save).toBeEnabled();
+  await expect(memo).toHaveValue('연결이 일시 중단된 동안의 초안');
   failed = true;
   const response = page.waitForResponse('**/api/state'); await page.clock.fastForward(3500); await response;
   await expect(page.getByText('마지막으로 받은 기록입니다. 최신 목록을 확인해야 합니다.')).toBeVisible();
@@ -117,8 +133,10 @@ test('journal retains an edited draft on a lost reply and checks the full list w
 });
 
 test('journal scopes incomplete searches and blocks a stock that disappears during editing', async ({ page }) => {
-  await page.clock.install();
+  const now = Date.now();
+  await page.clock.install({ time: now });
   const state = snapshot();
+  state.status.observedAt = state.status.lastSuccessAt = new Date(now - 1_000).toISOString();
   await page.setViewportSize({ width: 390, height: 844 });
   const receivedInstruments = state.instruments.filter(s => s.code === '000660');
   state.instruments = [];
@@ -133,7 +151,11 @@ test('journal scopes incomplete searches and blocks a stock that disappears duri
   await expect(stock).toContainText('종목 목록 미확인');
   await page.getByRole('button', { name: '메모 작성' }).click();
   await expect(page.getByLabel('매매 메모')).toBeFocused();
+  await page.getByLabel('매매 메모').fill('종목을 확인하기 전의 초안');
+  await page.locator('.journal-compose form').evaluate((form: HTMLFormElement) => form.requestSubmit());
+  await expect(page.getByRole('alert')).toHaveCount(0);
   state.instruments = receivedInstruments;
+  state.status.observedAt = state.status.lastSuccessAt = new Date(now).toISOString();
   state.status.phase = 'ready'; state.status.complete = true;
   await page.getByRole('button', { name: '다시 확인' }).click();
   const save = page.getByRole('button', { name: '일지 저장' });
