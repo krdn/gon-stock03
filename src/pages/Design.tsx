@@ -6,7 +6,7 @@ import { Badge, Panel } from '../components/ui';
 import './design-ux.css';
 
 const repository = 'https://github.com/krdn/gon-stock03';
-const guide = repository + '/blob/6532aadaf9c8aa71baf601729c9822f5d469b1be/docs/architecture/figures/v1-guide.html';
+const guideFile = repository + '/blob/fb66f1fbb9343ba8844ec1919e888592b8dd4df0/docs/architecture/figures/v1-guide.html';
 const feedbackIssues: Partial<Record<string, number>> = {
   dashboard: 150, market: 161, watchlist: 169, trade: 158, orders: 151,
   portfolio: 174, strategies: 175, backtest: 180, risk: 168, journal: 182,
@@ -85,8 +85,10 @@ export function Design() {
           <dl className="definition"><dt>화면 구현</dt><dd>입력·탐색·표시를 검사합니다.</dd><dt>로컬 데모</dt><dd>합성 데이터와 SQLite로 동작을 재현합니다.</dd><dt>KIS 모의 검증</dt><dd>실제 응답과 계좌 변화를 확인한 범위는 각 이슈에 기록합니다.</dd></dl>
         </Panel>
         <Panel title="지도에서 질문 준비하기">
-          <p className="prose">16개 카드에서 1차 캡처와 2차 변경을 비교하고 화면별 이슈에 의견을 남길 수 있습니다. GitHub에서 Download raw file(모바일은 파일 메뉴의 Download)로 지도를 저장하세요. 내려받은 파일의 예시 링크는 주소를 복사해 이 PC의 브라우저 주소창에서 여세요. Ask에 쓴 질문은 Copy question으로 화면 이름과 함께 복사할 수 있습니다.</p>
-          <a className="text-link" href={guide} target="_blank" rel="noreferrer">1차 캡처·2차 검토 지도 (새 탭)<ExternalLink size={14} /></a>
+          <p className="prose">이 PC에서 검토 서버가 실행 중이면 16개 카드에서 1차 캡처와 2차 변경을 비교하고 통합 앱의 예시 화면을 열 수 있습니다. 카드에서 의견 이슈를 열거나 Ask에 쓴 질문을 Copy question으로 복사하세요.</p>
+          <a className="text-link" href="http://127.0.0.1:4328/guide.html" target="_blank" rel="noreferrer">이 PC에서 검토 지도 열기 (새 탭)<ExternalLink size={14} /></a>
+          <p className="prose top-gap">지도를 파일로 보관하려면 GitHub 파일 페이지에서 Download raw file을 누르세요. 모바일에서는 파일 메뉴의 Download를 선택하세요. 내려받은 지도의 예시 주소는 복사해 이 PC의 주소창에서 열 수 있습니다.</p>
+          <a className="text-link" href={guideFile} target="_blank" rel="noreferrer">GitHub에서 검토 지도 파일 열기 (새 탭)<ExternalLink size={14} /></a>
           <p className="prose top-gap">프로젝트 단계에 대한 수정 초안은 이 브라우저에 저장합니다.</p>
           <a className="text-link" href="/project-map.html" target="_blank" rel="noreferrer"><Network size={16} />클릭형 프로젝트 지도 (새 탭)</a>
         </Panel>

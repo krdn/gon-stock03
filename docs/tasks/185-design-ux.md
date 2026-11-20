@@ -39,10 +39,12 @@
 
 Gemini 4 Neon High 설계 검토 뒤 구현을 별도로 검토했다. 중요 지적은 0건, 경미한 지적은 4건이었다. 새 탭 안내, 주문 단계 선택 그룹, 잘못된 화면 주소의 알림·재선택, 테스트 예시 응답과 링크 이름 일치를 보완했다. 같은 모델 수정분 검토에서 4건 해소·중요 0건을 받았다. 남은 중복 ‘새 탭’ 발화는 보이는 레이블만 유지하고 브라우저로 재검사했다. 3회 모두 CLI 초기화 모델은 `gemini-4-neon-high`, 응답은 SUCCESS였다. 서버 내부 모델·강도와 실제 보조기기 음성 출력은 미확인이다.
 
-로컬 TypeScript/Vite 빌드, 4466 전용 Chromium 설계·지도 9건, Graphify 재생성을 마쳤다. 전후 캡처는 예시 환경에서 생성했다. [16개 카드 지도 고정본](https://github.com/krdn/gon-stock03/blob/6532aadaf9c8aa71baf601729c9822f5d469b1be/docs/architecture/figures/v1-guide.html)은 PR #144의 `6532aada`다. 4466 설계실에서 GitHub 파일로 이동해 두 크기 모두 HTML을 내려받았다. SHA-256은 양쪽 모두 `ee1f05069ea8b69377e40f258a67c47fa89fb89e7d79936850676e24e089229c`이며 4328 지도와 같다. [원격 검증·사용자 검토 상태](https://github.com/krdn/gon-stock03/issues/185)
+로컬 TypeScript/Vite 빌드, 4466 전용 Chromium 설계·지도 10건, Graphify 재생성을 마쳤다. 전후 캡처는 예시 환경에서 생성했다. [16개 카드 지도 고정본](https://github.com/krdn/gon-stock03/blob/fb66f1fbb9343ba8844ec1919e888592b8dd4df0/docs/architecture/figures/v1-guide.html)은 PR #144의 `fb66f1fb`다. 4466 설계실에서 GitHub 파일로 이동해 두 크기 모두 HTML을 내려받았다. SHA-256은 양쪽 모두 `bd13d59f2df28367bf370e3414fd94e8eb10e8ae3022ffc11c9c8b378af75b97`이며 4328 지도와 같다. [원격 검증·사용자 검토 상태](https://github.com/krdn/gon-stock03/issues/185)
 
 기존 조사 원문과 1차 기록을 보존하고 #185 공식 자료 확인 후 `gon-workflow implementation-ready .`를 통과했다. 신규 구성 확인용 `ready .`의 기본 브랜치 일치 검사는 배정된 검증 브랜치에서 실패했다. #185에 지정한 원격 기준 SHA가 현재 부모와 일치하는 것을 별도로 확인했다.
 
 #185의 조사 문서는 [매매일지 PR #184](https://github.com/krdn/gon-stock03/pull/184)의 44개 기록·확인 시각을 그대로 보존하고 #185를 마지막에 추가했다. #184의 배정 SHA `2383ef1`과 후속 head `6f012f2`의 조사 문서는 같다. [백테스트 PR #183](https://github.com/krdn/gon-stock03/pull/183) `e015cea`는 출처·저장 실험 선택과 같은 선택 재입력을, #184는 종목명 검색, 저장 시점 재확인과 초안 보존을 검증한 별도 초안이다. 해당 화면의 결합 검증과 사용자 수용 상태는 각 PR에서 확인한다.
 
-다운로드한 지도에서 각 크기마다 예시 주소 16개와 의견 이슈 16개를 대조했다. 설계실 카드의 #185 의견 링크와 Ask 질문 복사는 양쪽에서 동작했다. 다운로드 파일에서 4466 예시를 직접 클릭하면 로컬 접근 제한 안내가 나타났다. 같은 주소를 새 탭에 직접 열거나 4328 지도의 카드를 누르면 설계실 제목이 표시됐다. 앱에 다운로드 파일에서 예시 주소를 여는 방법을 안내했다. [PC 안내](../verification/assets/185-design/guide-pc.png) · [모바일 안내](../verification/assets/185-design/guide-mobile.png)
+[4466 설계실](http://127.0.0.1:4466/design)에서 ‘이 PC에서 검토 지도 열기’는 [4328 지도](http://127.0.0.1:4328/guide.html)를, ‘GitHub에서 검토 지도 파일 열기’는 고정된 GitHub 파일 페이지를 새 탭에 연다. 1440×900과 390×844에서 Tab·Enter로 두 목적지와 원래 설계실 탭을 확인했다. 모바일 두 링크는 각각 가로 35~207px, 35~240px에 있었고 문서 너비는 390px였다. [PC 안내](../verification/assets/185-design/guide-pc.png) · [모바일 안내](../verification/assets/185-design/guide-mobile.png)
+
+두 크기에서 4328 지도와 내려받은 파일 모두 예시 주소 16개가 4486 통합 앱의 해당 화면으로, 의견 링크 16개가 각 화면 이슈로 연결됨을 대조했다. 4328의 설계실 카드에서 [통합 앱의 설계실](http://127.0.0.1:4486/design)을 실제로 열고 제목을 확인했다. 내려받은 HTML의 설계실 예시 링크를 직접 누르면 두 크기 모두 403이 표시돼 주소창에서 여는 방법을 함께 안내했다. 전체 결합본의 사용자 직접 수용과 4303 반영은 메인이 관리한다.
