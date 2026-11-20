@@ -3,7 +3,7 @@ import { HistoryOrder, paperStatus, type LedgerOrder } from '../components/Histo
 import { RealtimeStatus } from '../components/RealtimeStatus';
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { ArrowRight, Info, ShieldCheck, X } from 'lucide-react';
+import { ArrowRight, X } from 'lucide-react';
 import { useWorkbench } from '../context';
 import { Badge, Change, Chart, Empty, Panel, Stat } from '../components/ui';
 import { orderInput, paperLedgerSchema, orderHistorySchema, type OrderInput, type PaperLedger } from '../../shared/contracts';
@@ -13,7 +13,7 @@ export function Trade() {
   const [params, setParams] = useSearchParams();
   const code = params.get('code') ?? '005930';
   const demo = params.get('mode') === 'demo';
-  return <><div className="tabs trade-mode" role="group" aria-label="트레이딩 환경"><button className={!demo ? 'active' : ''} aria-pressed={!demo} onClick={() => setParams({ code })}>실제 시세</button><button className={demo ? 'active' : ''} aria-pressed={demo} onClick={() => setParams({ code, mode: 'demo' })}>DEMO 연습</button></div>{demo ? <DemoTrade /> : <LiveTrading key={code} code={code} />}</>;
+  return <><div className="tabs trade-mode" role="group" aria-label="트레이딩 환경"><button className={!demo ? 'active' : ''} aria-pressed={!demo} onClick={() => { if (demo) setParams({ code }); }}>실제 시세</button><button className={demo ? 'active' : ''} aria-pressed={demo} onClick={() => { if (!demo) setParams({ code, mode: 'demo' }); }}>DEMO 연습</button></div>{demo ? <DemoTrade /> : <LiveTrading code={code} />}</>;
 }
 
 function DemoTrade() {
@@ -99,8 +99,67 @@ function TradeForm({ instrument }: { instrument: Instrument }) {
     if (!confirm || quoteChanged || unresolved || inputError) return;
     await send({ code: instrument.code, side, qty: Number(qty), price: Number(price), requestId });
   }
-  return <div className="trade-page">{storageError && <div className="notice warning" role="alert">요청 보존 저장소를 확인할 수 없어 신규 주문을 차단했습니다. 저장소 접근 실패 또는 저장값 손상을 해결하기 전에 <Link className="text-link" to="/orders">DEMO 주문 원장</Link>과 보존 요청을 대조하세요. 접근을 복구한 경우 새로고침하세요. 저장값을 임의로 삭제하거나 새 요청으로 재전송하지 마세요.</div>}{unresolved && <Panel title={storageError ? "DEMO 요청 보존 확인 필요" : "DEMO 주문 응답 미확인"}><p>{storageError ? '저장된 요청을 보존했습니다. DEMO 주문 대조로 원장을 확인하세요. 저장소 문제를 해결하기 전에는 같은 요청 재시도도 차단합니다.' : '새 요청을 차단했습니다. 로컬 원장을 대조하세요. 같은 요청 재시도는 기존 접수를 돌려주거나 미접수 요청을 접수하며 KIS에는 전송하지 않습니다.'}</p><p>{unresolved.code} · {unresolved.side === 'buy' ? '매수' : '매도'} · {unresolved.qty}주 × {won(unresolved.price)}원</p>{!storageError && <p>현재 DEMO 합성 시세: {retryInstrument ? won(retryInstrument.price) + '원' : '미확인'} · 원래 지정가와 현재 시세를 확인한 뒤 같은 요청을 재시도하세요.</p>}<div className="button-row"><button className="button secondary" disabled={busy} onClick={() => void refresh()}>DEMO 주문 대조</button><button className="button secondary" disabled={busy || blocked || !retryInstrument} onClick={() => setRetryQuote(retryInstrument!.price)}>재시도 시세 확인</button><button className="button secondary" disabled={busy || blocked || !retryInstrument || retryQuote !== retryInstrument.price} onClick={() => { if (retryInstrument && retryQuote === retryInstrument.price) void send(unresolved); }}>같은 DEMO 요청 재시도</button></div></Panel>}{orderNotice && <p role="status">{orderNotice}</p>}<div className="notice compact"><Info size={16} />로컬 데모 지정가 주문입니다. KIS 모의 계좌에 전송되지 않습니다. 접수 후 다음 데모 봉에서 체결 조건을 평가합니다.</div><p><Link className="button secondary" to={`/paper?code=${instrument.code}`}>선택 종목 KIS 모의 매매<ArrowRight size={16} /></Link></p><div className="trade-grid"><div><Panel><div className="stock-heading"><label><span className="sr-only">트레이딩 종목</span><select value={instrument.code} onChange={e => setParams({ code: e.target.value, mode: 'demo' })}>{state.instruments.map(s => <option value={s.code} key={s.code}>{s.name} · {s.code}</option>)}</select></label><Badge>{instrument.market}</Badge></div><div className="quote"><strong>{won(instrument.price)}<small>KRW</small></strong><Change value={instrument.change} /><span className="muted">합성 데이터 · 봉 #{state.tick}</span></div><div className="chart-toolbar"><div className="tabs">{[30, 60, 120].map(n => <button key={n} className={range === n ? 'active' : ''} aria-pressed={range === n} onClick={() => setRange(n)}>{n}봉</button>)}</div><span className="muted">종가 선형 차트</span></div><Chart values={instrument.history.slice(-range)} height={290} label={`${instrument.name} 합성 ${range}봉 종가`} /><div className="chart-axis"><span>과거 표본</span><span>단위: 원 · 실제 거래일 미부여</span><span>현재 데모 봉</span></div><div className="trade-facts"><div><span>구분</span><strong>{instrument.sector}</strong></div><div><span>데모 거래량</span><strong>{won(instrument.volume)}</strong></div><div><span>내 보유수량</span><strong>{holding}주</strong></div></div></Panel><Panel title="주문은 이렇게 처리돼요" className="top-gap"><div className="inline-flow"><span>입력</span><ArrowRight size={15} /><span>한도 검증</span><ArrowRight size={15} /><span>접수</span><ArrowRight size={15} /><span>다음 봉 체결 판단</span></div><p className="muted prose">매수는 다음 가격이 지정가 이하일 때, 매도는 이상일 때 데모 체결합니다. 실제 시장의 호가 잔량·부분체결·거래소 규칙은 재현하지 않습니다.</p></Panel></div><Panel title="주문하기" action={<Badge tone="teal">로컬 데모</Badge>}><form onSubmit={review}><div className="side-tabs"><button type="button" className={side === 'buy' ? 'buy active' : ''} aria-pressed={side === 'buy'} onClick={() => setSide('buy')}>매수</button><button type="button" className={side === 'sell' ? 'sell active' : ''} aria-pressed={side === 'sell'} onClick={() => setSide('sell')}>매도</button></div><label className="field">주문 유형<select disabled><option>지정가</option></select></label><label className="field">주문 가격 (원)<input required type="number" min="1" max="10000000" step="1" value={price} onChange={e => { setPriceEdited(true); setPrice(e.target.value); }} /></label><label className="field">주문 수량 (주)<input required type="number" min="1" max="100000" step="1" value={qty} onChange={e => setQty(e.target.value)} /></label><div className="quantity-buttons">{[1, 5, 10].map(n => <button key={n} type="button" onClick={() => setQty(String(n))}>{n}주</button>)}</div><div className="order-total"><span>주문 금액</span><strong>{validNumbers ? won(amount) : '—'}<small>원</small></strong></div><div className="check-row"><span>지정가 기준 예상 수수료</span><strong>{validNumbers ? won(estimatedFee) : '—'}원</strong></div><div className="check-row"><span>예약 제외 현금</span><strong>{won(state.cash - pendingBuy)}원</strong></div><div className="check-row"><span>보유수량</span><strong>{holding}주</strong></div><div className="check-row" role="group" aria-label="매도 가능 수량"><span>예약 제외 매도 가능 수량</span><strong>{sellable}주</strong></div><div className="check-row"><span>1회 주문 한도</span><strong>{won(state.risk.maxOrder)}원</strong></div><p className="muted tiny">데모 비용 가정: 체결 금액의 0.015% (올림). 실제 계좌 수수료·세금과 다릅니다.</p><p id="demo-order-validation" role="status" className="trade-validation">{!available ? '최신 로컬 상태 확인 전 주문을 차단합니다.' : state.risk.halted ? '신규 주문 정지 상태입니다.' : inputError}</p><button aria-describedby="demo-order-validation" className={`button wide ${side === 'buy' ? 'buy-button' : 'sell-button'}`} disabled={blocked || busy || Boolean(unresolved) || Boolean(inputError)} type="submit">{side === 'buy' ? '매수' : '매도'} 주문 확인<ArrowRight size={16} /></button><p className="secure-note"><ShieldCheck size={14} />서버에서 잔고와 위험 한도를 검사합니다</p></form></Panel></div>
-    <dialog ref={dialog} className="order-dialog" aria-labelledby="demo-order-confirm-title" onCancel={() => setConfirm(false)} onClose={() => setConfirm(false)}><div className="panel-head"><h2 id="demo-order-confirm-title">로컬 데모 주문 확인</h2><button className="icon-button" aria-label="주문 확인 닫기" onClick={() => setConfirm(false)}><X size={18} /></button></div><p>환경: DEMO · 합성 시세 {won(instrument.price)}원</p><p>{instrument.name} · {side === 'buy' ? '매수' : '매도'}</p><h3>{qty}주 × {won(Number(price))}원</h3><p>주문 금액 {won(amount)}원. KIS로 전송되지 않습니다.</p>{quoteChanged && <div className="notice warning"><p>시세가 변경되었습니다. 지정가는 유지됩니다. 현재 시세와 주문 가격을 다시 확인하세요.</p><button onClick={() => setReviewedQuote(instrument.price)}>변경된 시세 재확인</button></div>}{inputError && <p role="status">{inputError}</p>}{blocked && <p role="status">{state.risk.halted ? '신규 주문 정지 상태입니다.' : '최신 로컬 상태 확인 전 접수를 차단합니다.'}</p>}<div className="button-row"><button className="button secondary" onClick={() => setConfirm(false)}>돌아가기</button><button className="button primary" disabled={busy || blocked || quoteChanged || Boolean(unresolved) || Boolean(inputError)} onClick={() => void submit()}>데모 주문 접수</button></div></dialog></div>;
+  const history = instrument.history.slice(-range);
+  const blockedReason = !available ? '최신 로컬 상태 확인 전 주문을 차단합니다.'
+    : state.risk.halted ? '신규 주문 정지 상태입니다.'
+    : storageError ? '요청 보존 저장소를 확인한 뒤 주문할 수 있습니다.'
+    : unresolved ? '미확인 DEMO 요청을 원장과 대조하세요.'
+    : busy ? '진행 중인 요청을 처리하고 있습니다.' : inputError;
+  return <div className="trade-page">{storageError && <div className="notice warning" role="alert">요청 보존 저장소를 확인할 수 없어 신규 주문을 차단했습니다. 저장소 접근 실패 또는 저장값 손상을 해결하기 전에 <Link className="text-link" to="/orders?view=demo">원장 확인</Link>에서 보존 요청을 대조하세요. 접근을 복구한 경우 새로고침하세요. 저장값을 임의로 삭제하거나 새 요청으로 재전송하지 마세요.</div>}{unresolved && <Panel title={storageError ? "DEMO 요청 보존 확인 필요" : "DEMO 주문 응답 미확인"}><p>{storageError ? '저장된 요청을 보존했습니다. DEMO 주문 대조로 원장을 확인하세요. 저장소 문제를 해결하기 전에는 같은 요청 재시도도 차단합니다.' : '새 요청을 차단했습니다. 로컬 원장을 대조하세요. 같은 요청 재시도는 기존 접수를 돌려주거나 미접수 요청을 접수하며 KIS에는 전송하지 않습니다.'}</p><p>{unresolved.code} · {unresolved.side === 'buy' ? '매수' : '매도'} · {unresolved.qty}주 × {won(unresolved.price)}원</p>{!storageError && <p>현재 DEMO 합성 시세: {retryInstrument ? won(retryInstrument.price) + '원' : '미확인'} · 원래 지정가와 현재 시세를 확인한 뒤 같은 요청을 재시도하세요.</p>}<div className="button-row"><button className="button secondary" disabled={busy} onClick={() => void refresh()}>DEMO 주문 대조</button><button className="button secondary" disabled={busy || blocked || !retryInstrument} onClick={() => setRetryQuote(retryInstrument!.price)}>재시도 시세 확인</button><button className="button secondary" disabled={busy || blocked || !retryInstrument || retryQuote !== retryInstrument.price} onClick={() => { if (retryInstrument && retryQuote === retryInstrument.price) void send(unresolved); }}>같은 DEMO 요청 재시도</button></div></Panel>}
+    <div className="demo-trade-layout">
+      <section className="panel demo-ticket" aria-label="DEMO 지정가 주문">
+        <div className="stock-heading">
+          <label className="field">트레이딩 종목
+            <select aria-label="트레이딩 종목" value={instrument.code} onChange={e => setParams({ code: e.target.value, mode: 'demo' })}>
+              {state.instruments.map(s => <option value={s.code} key={s.code}>{s.name} · {s.code}</option>)}
+            </select>
+          </label>
+          <Badge>{instrument.market}</Badge>
+        </div>
+        <div className="quote"><strong>{won(instrument.price)}<small>원</small></strong><Change value={instrument.change} /><span className="muted">DEMO 합성 시세 · 봉 #{state.tick}</span></div>
+        <p className="trade-ticket-note">로컬 DEMO 지정가 주문 · 다음 데모 봉에서 체결을 평가합니다.</p>
+        <form onSubmit={review}>
+          <div className="side-tabs" role="group" aria-label="DEMO 매매 방향">{(['buy', 'sell'] as const).map(value =>
+            <button type="button" key={value} className={side === value ? value + ' active' : ''} aria-pressed={side === value} onClick={() => setSide(value)}>{value === 'buy' ? '매수' : '매도'}</button>
+          )}</div>
+          <div className="demo-ticket-inputs">
+            <label className="field">주문 가격 (원)<input required type="number" min="1" max="10000000" step="1" value={price} onChange={e => { setPriceEdited(true); setPrice(e.target.value); }} /></label>
+            <label className="field">주문 수량 (주)<input required type="number" min="1" max="100000" step="1" value={qty} onChange={e => setQty(e.target.value)} /></label>
+          </div>
+          <div className="quantity-buttons">{[1, 5, 10].map(n => <button key={n} type="button" onClick={() => setQty(String(n))}>{n}주</button>)}</div>
+          <div className="order-total"><span>주문 금액</span><strong>{validNumbers ? won(amount) : '—'}<small>원</small></strong></div>
+          <div className="check-row"><span>지정가 기준 예상 수수료</span><strong>{validNumbers ? won(estimatedFee) : '—'}원</strong></div>
+          <div className="check-row"><span>예약 제외 현금</span><strong>{won(state.cash - pendingBuy)}원</strong></div>
+          <div className="check-row" role="group" aria-label="매도 가능 수량"><span>예약 제외 매도 가능 수량</span><strong>{sellable}주</strong></div>
+          <details className="trade-data-details">
+            <summary>보유수량·주문 한도·비용 기준</summary>
+            <div className="check-row"><span>보유수량</span><strong>{holding}주</strong></div>
+            <div className="check-row"><span>1회 주문 한도</span><strong>{won(state.risk.maxOrder)}원</strong></div>
+            <p>서버에서 잔고와 위험 한도를 검사합니다. 데모 수수료는 체결 금액의 0.015%를 올림합니다.</p>
+          </details>
+          <p id="demo-order-validation" role="status" className="trade-validation">{blockedReason}</p>
+          <button aria-describedby="demo-order-validation" className={`button wide ${side === 'buy' ? 'buy-button' : 'sell-button'}`} disabled={blocked || busy || Boolean(unresolved) || Boolean(inputError)} type="submit">{side === 'buy' ? '매수' : '매도'} 주문 확인<ArrowRight size={16} /></button>
+        </form>
+        <div className="demo-ticket-result">
+          {orderNotice && <p role="status">{orderNotice}</p>}
+          <Link className="text-link" to="/orders?view=demo">DEMO 주문 원장<ArrowRight size={15} /></Link>
+        </div>
+      </section>
+      <Panel title="DEMO 합성 차트">
+        <div className="chart-toolbar"><div className="tabs" role="group" aria-label="합성 차트 범위">{[30, 60, 120].map(n => <button key={n} className={range === n ? 'active' : ''} aria-pressed={range === n} onClick={() => setRange(n)}>{n}봉</button>)}</div><span className="muted">합성 종가 · {history.length}개 봉</span></div>
+        {history.length >= 2
+          ? <Chart values={history} height={240} label={`${instrument.name} 합성 ${history.length}봉 종가`} />
+          : <Empty title="합성 종가 표본이 부족합니다">차트를 그리려면 2개 이상의 봉이 필요합니다.</Empty>}
+        <div className="chart-axis"><span>과거 표본</span><span>원 · 실제 거래일 미부여</span><span>현재 데모 봉</span></div>
+        <details className="trade-data-details">
+          <summary>종목 정보와 DEMO 체결 기준</summary>
+          <div className="trade-facts"><div><span>구분</span><strong>{instrument.sector}</strong></div><div><span>데모 거래량</span><strong>{won(instrument.volume)}</strong></div></div>
+          <p>매수는 다음 가격이 지정가 이하일 때, 매도는 이상일 때 체결합니다. 합성 주문은 KIS로 전송되지 않습니다.</p>
+        </details>
+        <Link className="text-link demo-paper-link" to={`/paper?code=${instrument.code}`}>선택 종목 KIS 모의 매매<ArrowRight size={15} /></Link>
+      </Panel>
+    </div>
+    <dialog ref={dialog} className="order-dialog" aria-labelledby="demo-order-confirm-title" onCancel={event => { event.preventDefault(); setConfirm(false); }}><div className="panel-head"><h2 id="demo-order-confirm-title">로컬 데모 주문 확인</h2><button className="icon-button" aria-label="주문 확인 닫기" onClick={() => setConfirm(false)}><X size={18} /></button></div><p>환경: DEMO · 합성 시세 {won(instrument.price)}원</p><p>{instrument.name} · {side === 'buy' ? '매수' : '매도'}</p><h3>{qty}주 × {won(Number(price))}원</h3><p>주문 금액 {won(amount)}원. KIS로 전송되지 않습니다.</p>{quoteChanged && <div className="notice warning"><p>시세가 변경되었습니다. 지정가는 유지됩니다. 현재 시세와 주문 가격을 다시 확인하세요.</p><button onClick={() => setReviewedQuote(instrument.price)}>변경된 시세 재확인</button></div>}{inputError && <p role="status">{inputError}</p>}{blocked && <p role="status">{state.risk.halted ? '신규 주문 정지 상태입니다.' : '최신 로컬 상태 확인 전 접수를 차단합니다.'}</p>}<div className="button-row"><button className="button secondary" onClick={() => setConfirm(false)}>돌아가기</button><button className="button primary" disabled={busy || blocked || quoteChanged || Boolean(unresolved) || Boolean(inputError)} onClick={() => void submit()}>데모 주문 접수</button></div></dialog></div>;
 }
 type OrderView = 'demo' | 'kis' | 'history';
 type LedgerView = {
