@@ -42,3 +42,5 @@ Gemini 4 Neon High 설계 검토 뒤 구현을 별도로 검토했다. 중요 �
 로컬 TypeScript/Vite 빌드, 4466 전용 Chromium 설계·지도 9건, Graphify 재생성을 마쳤다. 전후 캡처는 예시 환경에서 생성했다. 실제 파일 다운로드도 PC와 모바일에서 확인했다. GitHub 모바일 파일 메뉴의 Download로 받은 HTML의 SHA-256은 PC와 같은 `00f935b7f21ff8e434e0a015b36624f6693cf4c3a9a4af28d3f9220f489bcde8`였다. 4328은 메인이 갱신하는 지도이며 제품의 고정본 파일 링크는 PR #144 커밋 `5e2ae41`을 가리킨다. [원격 검증·사용자 검토 상태](https://github.com/krdn/gon-stock03/issues/185)
 
 기존 조사 원문과 1차 기록을 보존하고 #185 공식 자료 확인 후 `gon-workflow implementation-ready .`를 통과했다. 신규 구성 확인용 `ready .`의 기본 브랜치 일치 검사는 배정된 검증 브랜치에서 실패했다. #185에 지정한 원격 기준 SHA가 현재 부모와 일치하는 것을 별도로 확인했다.
+
+#185의 조사 문서는 [매매일지 PR #184](https://github.com/krdn/gon-stock03/pull/184)의 44개 기록·확인 시각을 그대로 보존하고 #185를 마지막에 추가했다. #184의 배정 SHA `2383ef1`과 후속 head `6f012f2`의 조사 문서는 같다. [백테스트 PR #183](https://github.com/krdn/gon-stock03/pull/183) `e015cea`는 출처·저장 실험 선택과 같은 선택 재입력을, #184는 종목명 검색, 저장 시점 재확인과 초안 보존을 검증한 별도 초안이다. 해당 화면의 결합 검증과 사용자 수용 상태는 각 PR에서 확인한다.
