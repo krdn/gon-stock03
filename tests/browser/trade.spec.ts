@@ -87,6 +87,7 @@ test('connection loss blocks confirmation until fresh state and edited price is 
   await expect(page.getByRole('button', { name: '데모 주문 접수', exact: true })).toBeDisabled();
   await expect(page.getByRole('dialog')).toContainText('최신 로컬 상태 확인');
   await page.getByRole('button', { name: '돌아가기', exact: true }).click();
+  state.status.observedAt = state.status.lastSuccessAt = new Date(Date.parse(state.status.observedAt!) + 7000).toISOString();
   fail = false; const fresh = page.waitForResponse('**/api/state'); await page.clock.fastForward(3500); await fresh;
   await page.getByLabel('주문 가격 (원)').fill('65000'); await page.getByLabel('주문 수량 (주)').fill('2');
   await page.getByRole('button', { name: '매수 주문 확인' }).click();
@@ -99,7 +100,10 @@ test('freshness expiry between render and submit is a definitive local refusal w
   await page.route('**/api/state', route => route.fulfill({ json: state }));
   let posts = 0; page.on('request', r => { if (r.method() === 'POST') posts++; });
   await page.goto('/trade?mode=demo'); await page.getByRole('button', { name: '매수 주문 확인' }).click();
-  await page.clock.setSystemTime(new Date(Date.parse(state.status.observedAt!) + state.status.staleAfterMs + 1));
+  await page.evaluate(elapsed => {
+    const tick = performance.now.bind(performance);
+    Object.defineProperty(performance, 'now', { value: () => tick() + elapsed });
+  }, state.status.staleAfterMs);
   await page.getByRole('button', { name: '데모 주문 접수', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('최신 로컬 상태');
   await expect(page.getByText('DEMO 주문 응답 미확인', { exact: true })).toHaveCount(0);
@@ -115,7 +119,10 @@ test('a locally blocked retry retains the original unknown request across reload
   await expect(page.getByText('DEMO 주문 응답 미확인', { exact: true })).toBeVisible();
   const pending = await page.evaluate(() => sessionStorage.getItem('demo-order-pending'));
   await page.getByRole('button', { name: '재시도 시세 확인' }).click();
-  await page.clock.setSystemTime(new Date(Date.parse(state.status.observedAt!) + state.status.staleAfterMs + 1));
+  await page.evaluate(elapsed => {
+    const tick = performance.now.bind(performance);
+    Object.defineProperty(performance, 'now', { value: () => tick() + elapsed });
+  }, state.status.staleAfterMs);
   await page.getByRole('button', { name: '같은 DEMO 요청 재시도' }).click();
   await expect(page.getByRole('alert')).toContainText('최신 로컬 상태');
   await expect(page.getByText('DEMO 주문 응답 미확인', { exact: true })).toBeVisible();
