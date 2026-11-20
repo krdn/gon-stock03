@@ -182,8 +182,16 @@ test('risk hides synthetic initial values and disabled control reports an unavai
 test('a KIS pending buy without a confirmed price never contributes a zero reservation', async ({ page }) => {
   const state = snapshot();
   const observedAt = state.status.observedAt!;
-  state.connection.status = { ...state.connection.status, complete: true, phase: 'ready', observedAt, lastSuccessAt: observedAt };
-  state.connection.balance = { cash: 100000, totalEquity: 100000, positions: [] };
+  state.connection = {
+    ...state.connection,
+    configured: true, connected: true, checkedAt: observedAt,
+    message: '예시 계좌의 전체 잔고를 확인했습니다.',
+    injection: { phase: 'present', missing: [] },
+    authentication: { ...state.connection.authentication, phase: 'ready', lastSuccessAt: observedAt,
+      validUntil: new Date(Date.parse(observedAt) + 3_600_000).toISOString() },
+    status: { ...state.connection.status, phase: 'ready', complete: true, pages: 1, observedAt, lastSuccessAt: observedAt },
+    balance: { cash: 100000, totalEquity: 100000, positions: [] },
+  };
   state.paperRisk = { day: '20261120', baselineEquity: null, unresolvedCount: 0,
     orders: { observedAt, rows: [{ code: '005930', side: 'buy', price: 0, remaining: 1, cancelled: false }] } };
   await page.route('**/api/state', route => route.fulfill({ json: state }));
