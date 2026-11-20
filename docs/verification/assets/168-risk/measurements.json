@@ -1,0 +1,136 @@
+{
+  "unit": "CSS pixels from document top",
+  "fixture": {
+    "demoPositions": 3,
+    "demoPendingBuy": {
+      "quantity": 2,
+      "priceKRW": 70000
+    },
+    "kisConfigured": false,
+    "kisBrokerSnapshot": null
+  },
+  "before": [
+    {
+      "pass": "before",
+      "name": "desktop",
+      "positions": {
+        "demoLoss": 1281,
+        "kisButton": 1166,
+        "edit": 617,
+        "halt": 863,
+        "kisUnknown": 1384
+      },
+      "returnedKis": "false",
+      "reloadedKis": "false",
+      "posts": [
+        "/api/risk",
+        "/api/risk/halt",
+        "/api/risk/halt"
+      ],
+      "prohibited": [],
+      "remainingDemoOrders": 1,
+      "horizontalOverflow": 0
+    },
+    {
+      "pass": "before",
+      "name": "mobile",
+      "positions": {
+        "demoLoss": 1767,
+        "kisButton": 1605,
+        "edit": 921,
+        "halt": 1277,
+        "kisUnknown": 1899
+      },
+      "returnedKis": "false",
+      "reloadedKis": "false",
+      "posts": [
+        "/api/risk",
+        "/api/risk/halt",
+        "/api/risk/halt"
+      ],
+      "prohibited": [],
+      "remainingDemoOrders": 1,
+      "horizontalOverflow": 0
+    }
+  ],
+  "after": [
+    {
+      "pass": "after",
+      "name": "desktop",
+      "positions": {
+        "demoLoss": 502,
+        "kisButton": 445,
+        "edit": 412,
+        "halt": 476,
+        "kisUnknown": 499
+      },
+      "returnedKis": "true",
+      "reloadedKis": "true",
+      "posts": [
+        "/api/risk",
+        "/api/risk/halt",
+        "/api/risk/halt"
+      ],
+      "prohibited": [],
+      "remainingDemoOrders": 1,
+      "horizontalOverflow": 0
+    },
+    {
+      "pass": "after",
+      "name": "mobile",
+      "positions": {
+        "demoLoss": 551,
+        "kisButton": 496,
+        "edit": 718,
+        "halt": 799,
+        "kisUnknown": 548
+      },
+      "returnedKis": "true",
+      "reloadedKis": "true",
+      "posts": [
+        "/api/risk",
+        "/api/risk/halt",
+        "/api/risk/halt"
+      ],
+      "prohibited": [],
+      "remainingDemoOrders": 1,
+      "horizontalOverflow": 0
+    }
+  ],
+  "isolatedServer": [
+    {
+      "width": 1440,
+      "height": 900,
+      "firstHaltTop": 476.078125,
+      "firstHaltBottom": 520.078125,
+      "stoppedOrders": 1,
+      "resumedOrders": 1,
+      "configured": false,
+      "maxOrder": 1000000,
+      "posts": [
+        "/api/risk",
+        "/api/risk",
+        "/api/risk/halt",
+        "/api/risk/halt"
+      ],
+      "prohibited": []
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "firstHaltTop": 799.453125,
+      "firstHaltBottom": 843.453125,
+      "stoppedOrders": 1,
+      "resumedOrders": 1,
+      "configured": false,
+      "maxOrder": 1000000,
+      "posts": [
+        "/api/risk",
+        "/api/risk",
+        "/api/risk/halt",
+        "/api/risk/halt"
+      ],
+      "prohibited": []
+    }
+  ]
+}
