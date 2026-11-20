@@ -1,0 +1,30 @@
+.portfolio-page { display: grid; gap: 10px; }
+.portfolio-toolbar, .portfolio-source, .portfolio-warning {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.portfolio-source, .portfolio-warning, .portfolio-details { font-size: 13px; line-height: 1.5; }
+.portfolio-source { color: #435660; }
+.portfolio-page time, .portfolio-page .stat > strong { font-variant-numeric: tabular-nums; }
+.portfolio-warning { border-left: 3px solid #b6802e; padding: 6px 10px; background: #fff6e9; color: #73491c; }
+.portfolio-warning a { text-decoration: underline; padding: 3px 0; }
+.portfolio-page .stats-grid { margin: 0; padding: 14px 0; }
+.portfolio-page .stat { min-width: 0; padding: 0 16px; }
+.portfolio-page .stat > strong { margin: 3px 0 0; font-size: clamp(18px, 2vw, 26px); white-space: normal; overflow-wrap: anywhere; }
+.portfolio-page .stat-bottom:empty { display: none; }
+.portfolio-page .panel-head { margin-bottom: 8px; }
+.portfolio-page .panel { min-width: 0; margin: 0; }
+.portfolio-details { border: 1px solid var(--line); border-radius: 8px; padding: 0 14px; background: white; }
+.portfolio-details summary { cursor: pointer; padding: 12px 0; font-weight: 600; }
+.portfolio-details p { margin: 0 0 10px; color: #435660; }
+@media (max-width: 700px) {
+  .portfolio-page { gap: 8px; }
+  .portfolio-warning a { display: inline-flex; align-items: center; min-height: 44px; }
+  .portfolio-page .stats-grid { gap: 8px 0; padding: 10px 0; }
+  .portfolio-page .stat { padding: 0 10px; }
+  .portfolio-page .stat > strong { font-size: 18px; }
+  .portfolio-page .panel { padding: 12px; }
+  .portfolio-page .mobile-records td { padding: 4px; }
+}
