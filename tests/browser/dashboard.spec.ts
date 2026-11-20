@@ -115,7 +115,11 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
       await expect(page).toHaveURL(new RegExp('strategies\\?environment=' + environment + '$'));
       await expect(page.getByLabel('전략 환경')).toHaveValue(environment);
       if (environment === 'kis-paper') {
-        await expect(page.locator('.strategy-evaluation')).toContainText('예시 표본 부족');
+        const reason = page.getByText('예시 표본 부족', { exact: true });
+        await expect(reason).toBeVisible();
+        await reason.scrollIntoViewIfNeeded();
+        await expect(reason).toBeInViewport({ ratio: 1 });
+        await expect(page.getByRole('button', { name: '전략 시작', exact: true })).toBeDisabled();
         await expect(page.getByRole('button', { name: '자동 재생 시작' })).toHaveCount(0);
       }
       await page.reload();
