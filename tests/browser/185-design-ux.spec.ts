@@ -89,3 +89,22 @@ test('design missing addresses, partial account and offline local data retain th
   await page.reload();
   await expect(page.locator('.step-detail')).toContainText('장중 미관측');
 });
+
+test('mobile design separates the local guide from its GitHub file in keyboard order', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/api/state', route => route.fulfill({ json: snapshot() }));
+  await page.goto('/design');
+  const guide = page.getByRole('link', { name: '이 PC에서 검토 지도 열기 (새 탭)', exact: true });
+  const file = page.getByRole('link', { name: 'GitHub에서 검토 지도 파일 열기 (새 탭)', exact: true });
+  await expect(guide).toHaveAttribute('href', 'http://127.0.0.1:4328/guide.html');
+  await expect(guide).toHaveAttribute('target', '_blank');
+  await expect(file).toHaveAttribute('href', /^https:\/\/github\.com\/krdn\/gon-stock03\/blob\/[a-f0-9]{40}\/docs\/architecture\/figures\/v1-guide\.html$/);
+  await expect(file).toHaveAttribute('target', '_blank');
+  await expect(page.getByText(/GitHub 파일 페이지에서 Download raw file/)).toBeVisible();
+  await guide.focus();
+  await expect(guide).toBeInViewport({ ratio: 1 });
+  await page.keyboard.press('Tab');
+  await expect(file).toBeFocused();
+  await expect(file).toBeInViewport({ ratio: 1 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+});
