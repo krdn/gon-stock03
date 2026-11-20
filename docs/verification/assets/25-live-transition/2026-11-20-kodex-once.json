@@ -1,0 +1,114 @@
+{
+  "environment": "KIS VTS",
+  "productCommit": "fd1a7316225672007a8710ef37f9158671567321",
+  "approval": "https://github.com/krdn/gon-stock03/issues/25#issuecomment-7027365750",
+  "scope": {
+    "symbol": "069500",
+    "buyQty": 2,
+    "maxUnitKRW": 80000,
+    "maxTotalKRW": 160000,
+    "maxBuyPosts": 1,
+    "maxOriginalRemainderCancelPosts": 1,
+    "observationSeconds": 120
+  },
+  "preflight": {
+    "minute": {
+      "date": "20261120",
+      "time": "101800",
+      "price": 77610
+    },
+    "quote": 77605,
+    "checkedAt": "2026-11-20T01:18:53.486Z",
+    "unfilledOrders": 0,
+    "targetHolding": 0,
+    "twoSharesWithinBuyingPower": true
+  },
+  "timeline": [
+    {
+      "at": "2026-11-20T01:20:46.870Z",
+      "tag": "preflight",
+      "code": "069500",
+      "price": 77735,
+      "tick": 5,
+      "openOrders": 0
+    },
+    {
+      "at": "2026-11-20T01:20:52.356Z",
+      "tag": "orderPost",
+      "code": "069500",
+      "qty": 2,
+      "price": 77755,
+      "amount": 155510
+    },
+    {
+      "at": "2026-11-20T01:20:52.741Z",
+      "tag": "orderResult",
+      "status": "accepted",
+      "orderPosts": 1
+    },
+    {
+      "at": "2026-11-20T01:20:53.725Z",
+      "tag": "daily",
+      "filled": 2,
+      "cancelConfirmed": 0,
+      "remaining": 0
+    },
+    {
+      "at": "2026-11-20T01:20:55.921Z",
+      "tag": "final",
+      "filled": 2,
+      "cancelConfirmed": 0,
+      "remaining": 0,
+      "local": "filled",
+      "matched": true,
+      "orderPosts": 1,
+      "cancelPosts": 0,
+      "partialObserved": false,
+      "trigger": null,
+      "holdingTarget": 2,
+      "openOrders": 0
+    }
+  ],
+  "ledger": {
+    "quickCheck": "ok",
+    "consumed": 1,
+    "cancelAttempts": 0,
+    "originalMatches": 1,
+    "orderActions": [
+      "sending",
+      "response",
+      "reconcile"
+    ],
+    "orderStatuses": [
+      "sending",
+      "accepted",
+      "filled"
+    ],
+    "filled": 2,
+    "remaining": 0,
+    "cancelConfirmed": 0,
+    "orderPrice": 77755,
+    "maxUnitPrice": 80000,
+    "code": "069500",
+    "qty": 2,
+    "day": "20261120"
+  },
+  "independentKisRest": {
+    "checkedAt": "2026-11-20T01:22:00.685Z",
+    "matchedOriginal": true,
+    "day": "20261120",
+    "code": "069500",
+    "reportedOrderTime": "102052",
+    "qty": 2,
+    "limitPrice": 77755,
+    "filled": 2,
+    "remaining": 0,
+    "cancelConfirmed": 0,
+    "avgFillPrice": 77732,
+    "totalFilledAmount": 155465,
+    "relatedRows": 0,
+    "holdingTarget": 2,
+    "todayRows": 1,
+    "openOrders": 0
+  }
+}
