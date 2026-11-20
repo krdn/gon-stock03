@@ -323,5 +323,16 @@ test('current order actions, keyboard details and read time stay separate from t
   await expect(readStatus).not.toHaveText(previous!);
   expect(reads).toBe(beforeReads + 1);
   await expect(time).toHaveAttribute('datetime', matched);
+  await page.setViewportSize({ width: 320, height: 844 });
+  await table.locator('*').evaluateAll(elements => {
+    const sizes = elements.map(el => parseFloat(getComputedStyle(el).fontSize));
+    elements.forEach((el, i) => (el as HTMLElement).style.fontSize = sizes[i] * 2 + 'px');
+  });
+  const recovery = await table.getByRole('link').boundingBox();
+  expect(recovery!.x + recovery!.width).toBeLessThanOrEqual((await toggle.boundingBox())!.x);
+  await toggle.focus(); await page.keyboard.press('Enter');
+  const detail = await table.locator('dl').boundingBox();
+  expect(detail!.x).toBeGreaterThanOrEqual(0);
+  expect(detail!.x + detail!.width).toBeLessThanOrEqual(320);
   expect([...new Set(requests)].sort()).toEqual(['GET /api/kis/ledger','GET /api/state']);
 });

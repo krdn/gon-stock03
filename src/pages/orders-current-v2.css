@@ -18,10 +18,11 @@
 .order-playback { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--line); }
 .order-read-at { margin-top: 10px; }
 @media (max-width: 820px) {
+  .current-order-table { container-type: inline-size; }
   .current-order-table :is(table,tbody) { display: block; width: 100%; min-width: 0; }
   .current-order-table thead { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }
   .current-order-table tbody tr {
-    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; align-items: start;
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 44%); gap: 4px 8px; align-items: start;
     padding: 10px 0; border-top: 1px solid var(--line);
   }
   .current-order-table td { padding: 0; border: 0; min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
@@ -31,8 +32,8 @@
   .current-order-table .order-quantity::before { content: '주문 / 체결 / 잔량'; content: '주문 / 체결 / 잔량' / ''; }
   .demo-orders .order-observation::before { content: '평균 체결가'; content: '평균 체결가' / ''; }
   .kis-orders .order-observation::before { content: 'KIS 확인 (KST)'; content: 'KIS 확인 (KST)' / ''; }
-  .current-order-table .order-management { grid-column: 1; grid-row: 4; justify-self: start; z-index: 1; }
-  .current-order-table .order-detail { grid-column: 1 / -1; grid-row: 4; }
+  .current-order-table .order-management { grid-column: 1; grid-row: 4; justify-self: start; }
+  .current-order-table .order-detail { grid-column: 2; grid-row: 4; }
   .current-order-table .order-detail summary { width: fit-content; margin-left: auto; }
-  .current-order-table .order-detail dl { padding: 8px 12px; border-radius: 6px; background: #f4f7f8; }
+  .current-order-table .order-detail dl { width: 100cqi; margin-left: calc(100% - 100cqi); padding: 8px 12px; border-radius: 6px; background: #f4f7f8; }
 }
