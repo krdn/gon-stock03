@@ -34,7 +34,7 @@ DEMO 취소 버튼을 볼 때 PC는 세로 스크롤 1회에서 0회, 모바일�
 
 Graphify에서 `Orders → OrderList → useWorkbench`, `makeServer → Store.displayPaperOrders → displayOrders`, `orderHistory → displayOrders`를 조회했다. UI에서 DB까지 HTTP 경계를 넘는 방향 경로는 그래프에 없어 원문으로 대조했다. DEMO는 `GET /api/state`의 `workspace`, KIS는 `GET /api/kis/ledger`의 `paper_orders`와 주문별 대조 근거, 지난 기록은 `GET /api/kis/history`의 등록 예시 원장을 읽었다. [UI](../../src/pages/Trading.tsx) · [HTTP](../../server/http.ts) · [저장 원장과 대조 시각](../../server/order-history.ts)
 
-Chromium에서 최초 실패, 0건, 부분체결, 미확인과 불명, 실패 후 이전 행, 응답 경합, 필터 조합, 키보드 상세, URL·새로고침·뒤로가기를 검사했다. KODEX 200 전량 체결·잔량 0주 예시의 10:20:55 KST는 다시 읽은 후에도 같았고 식별자 검색 원문은 URL에 남지 않았다. 두 환경 및 지난 실행의 조회·이동·상세 흐름에서는 로컬 GET 세 경로만 관찰했다. DEMO 취소 경합 테스트의 쓰기는 브라우저 내 예시 응답으로 처리했다. [주문 브라우저 검사](../../tests/browser/orders.spec.ts)
+Chromium에서 최초 실패, 0건, 부분체결, 미확인과 불명, 실패 후 이전 행, 응답 경합, 필터 조합, 키보드 상세, URL·새로고침·뒤로가기를 검사했다. KODEX 200 지정가 77,755원·체결 2주·잔량 0주 예시의 10:20:55 KST는 다시 읽은 후에도 같았고 식별자 검색 원문은 URL에 남지 않았다. 두 환경 및 지난 실행의 조회·이동·상세 흐름에서는 로컬 GET 세 경로만 관찰했다. DEMO 취소 경합 테스트의 쓰기는 브라우저 내 예시 응답으로 처리했다. [주문 브라우저 검사](../../tests/browser/orders.spec.ts)
 
 [DEMO 미리보기](http://127.0.0.1:4452/orders) · [현재 KIS](http://127.0.0.1:4452/orders?view=kis) · [지난 실행](http://127.0.0.1:4452/orders?view=history). 이 호스트의 전용 fixture로 제공한다. 계좌 자격 증명과 실행 승인 없이 기존 서버와 빌드 산출물을 사용했다. 실제 거래와 사용자 직접 화면 수용은 미검증이다.
 

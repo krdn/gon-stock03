@@ -135,12 +135,14 @@ test('history restores navigation, supports private identifier search and shows 
   page.on('request', r => { if (r.method() !== 'GET') writes.push(r.method()); });
   await page.route('**/api/state', r => r.fulfill({ json: snapshot() }));
   await page.route('**/api/kis/history', r => r.fulfill({ json: { sourceCount: 1, unavailable: [],
-    orders: [{ ...paper, code: '069500', qty: 1, filled: 1, remaining: 0, status: 'filled', tradeDate: '20261120',
+    orders: [{ ...paper, code: '069500', qty: 2, price: 77755, filled: 2, remaining: 0, status: 'filled', tradeDate: '20261120',
       createdAt: '2026-11-20T01:20:00Z', sourceLabel: '예시 원장', sourceId: '0', lastMatchedAt: '2026-11-20T01:20:55Z' },
       { ...paper, requestId: 'other-request', sourceId: '0', tradeDate: '20261114', status: 'unknown', brokerId: undefined }] } }));
   await page.goto('/orders?view=history');
   const list = page.getByRole('list', { name: '지난 주문 목록' }), first = list.getByRole('listitem').first();
   await expect(first.locator('time')).toHaveText(/10:20:55/);
+  await expect(first).toContainText('지정가 77,755원');
+  await expect(first).toContainText('체결 2주');
   await expect(first).toContainText('전량 체결');
   await expect(first).toContainText('잔량 0주');
   for (const [width, height] of [[1440, 900], [390, 844]]) {
