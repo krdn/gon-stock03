@@ -1,13 +1,13 @@
 # 1차 화면 함께 보기 {#workbench-guide}
 
-먼저 궁금한 일을 고르세요. 각 화면에서 어떤 값을 읽고, 버튼을 누르면 무엇이 바뀌는지 살펴볼 수 있습니다.
+궁금한 일을 고르면 1차 화면 캡처와 2차 변경을 함께 볼 수 있습니다. 각 카드의 ‘이 PC에서 예시 열기’로 합성 데이터를 확인하고 ‘이 화면에 의견 남기기’에서 바꾸고 싶은 버튼이나 결과를 알려주세요. 예시 주소는 이 프로젝트가 실행 중인 PC에서 열립니다.
 
 - [전체 화면 목차](block:contents)
 - [화면 뒤에서 일하는 곳](block:system)
 - [수량 한도를 바꾸면 어떻게 될까?](block:limits)
 - [이 화면에 의견 남기기](block:feedback)
 
-@answer scope="국내 주식·ETF · 1차 모의 버전 · 2026년 11월 20일 코드 기준"
+@answer scope="국내 주식·ETF · 1차 화면 기준과 2차 검토 예시 · 2026년 11월 20일"
 @meta locale=ko style=editorial repo_url=https://github.com/krdn/gon-stock03 repo_revision=37dca0834381f355cda8caa5abece9992888a3a3
 @source local-save title="종목 메모 저장" path=server/http.ts lines=161:166
 @source watch-save title="관심 종목 저장" path=server/http.ts lines=127:133
@@ -99,7 +99,7 @@ DEMO와 KIS 모의 중 살펴볼 환경을 선택합니다. 자산·주문·연�
 
 **이 화면에서 물어볼 수 있는 것**  연결 경고가 보일 때 어디부터 살펴봐야 할까?
 
-[주문·체결 보기](block:orders) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
+[주문·체결 보기](block:orders) · [전체 목차](block:contents) · [이 PC에서 예시 열기](http://127.0.0.1:4480/dashboard) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/150#issuecomment-new)
 
 ## 시장 탐색 · 시장의 종목 중 무엇을 지켜볼까? {#market}
 
@@ -113,7 +113,7 @@ DEMO와 KIS 모의 중 살펴볼 환경을 선택합니다. 자산·주문·연�
 
 **이 화면에서 물어볼 수 있는 것**  별을 눌렀을 때 어디에 추가됐는지 더 잘 보이면 좋겠어.
 
-[관심종목 보기](block:watchlist) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
+[관심종목 보기](block:watchlist) · [전체 목차](block:contents) · [이 PC에서 예시 열기](http://127.0.0.1:4477/market) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/161#issuecomment-new)
 
 ## 관심종목 · 내가 고른 종목을 다시 보려면? {#watchlist}
 
@@ -127,7 +127,7 @@ DEMO와 KIS 모의 중 살펴볼 환경을 선택합니다. 자산·주문·연�
 
 **이 화면에서 물어볼 수 있는 것**  종목 상세에서 주문 화면으로 무엇이 넘어가?
 
-[KIS 모의 매매 보기](block:paper) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
+[KIS 모의 매매 보기](block:paper) · [전체 목차](block:contents) · [이 PC에서 예시 열기](http://127.0.0.1:4477/watchlist) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/169#issuecomment-new)
 
 ## 트레이딩 · 차트의 가격은 어디에서 왔을까? {#trade}
 
@@ -141,7 +141,7 @@ KIS 모의 주문으로 이동하면 종목 코드가 이어집니다. 시세 �
 
 **이 화면에서 물어볼 수 있는 것**  시세가 오래됐을 때 어느 시간을 보면 돼?
 
-[KIS 모의 매매 보기](block:paper) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
+[KIS 모의 매매 보기](block:paper) · [전체 목차](block:contents) · [이 PC에서 예시 열기](http://127.0.0.1:4480/trade?code=000660&range=100) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/158#issuecomment-new)
 
 ## KIS 모의 매매 · 조회와 주문 전송은 어디서 갈릴까? {#paper}
 
@@ -157,7 +157,7 @@ KIS 모의 주문으로 이동하면 종목 코드가 이어집니다. 시세 �
 
 **이 화면에서 물어볼 수 있는 것**  접수됐다는 표시와 체결됐다는 표시를 어디에서 구별해?
 
-[주문·체결 보기](block:orders) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
+[주문·체결 보기](block:orders) · [전체 목차](block:contents) · [이 PC에서 예시 열기](http://127.0.0.1:4458/paper?code=005930&sample=166) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/166#issuecomment-new)
 
 ## 주문·체결 · 내가 보낸 주문은 어떻게 됐을까? {#orders}
 
@@ -173,7 +173,7 @@ KIS 목록은 PC에 저장된 주문 기록을 읽습니다. 증권사의 최신
 
 **이 화면에서 물어볼 수 있는 것**  목록을 새로 읽은 시각과 증권사에서 확인한 시각을 같이 보고 싶어.
 
-[포트폴리오 보기](block:portfolio) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
+[포트폴리오 보기](block:portfolio) · [전체 목차](block:contents) · [이 PC에서 예시 열기](http://127.0.0.1:4452/orders?view=kis) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/151#issuecomment-new)
 
 ## 포트폴리오 · 체결 뒤 내 보유 종목은 어떻게 보일까? {#portfolio}
 
@@ -187,7 +187,7 @@ DEMO 또는 KIS 모의를 선택해 현금, 보유 수량, 평가손익을 봅�
 
 **이 화면에서 물어볼 수 있는 것**  평가손익 옆에서 기준 가격의 시각도 볼 수 있을까?
 
-[대시보드 보기](block:dashboard) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
+[대시보드 보기](block:dashboard) · [전체 목차](block:contents) · [이 PC에서 예시 열기](http://127.0.0.1:4460/portfolio) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/174#issuecomment-new)
 
 ## 연결·설정 · 계좌 정보가 비어 있으면 어디를 볼까? {#settings}
 
@@ -201,7 +201,7 @@ DEMO 또는 KIS 모의를 선택해 현금, 보유 수량, 평가손익을 봅�
 
 **이 화면에서 물어볼 수 있는 것**  인증은 됐는데 잔고만 비어 있으면 다음에 어디를 누를까?
 
-[매매 설정 보기](block:limits) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
+[매매 설정 보기](block:limits) · [전체 목차](block:contents) · [이 PC에서 예시 열기](http://127.0.0.1:4480/settings?guide=setup) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/162#issuecomment-new)
 
 ## 매매 설정 · 수량을 바꾸면 어느 주문에 적용될까? {#limits}
 
@@ -215,7 +215,7 @@ DEMO 또는 KIS 모의를 선택해 현금, 보유 수량, 평가손익을 봅�
 
 **이 화면에서 물어볼 수 있는 것**  저장 버튼 옆에 이번 주문에 적용되는 수량도 보여줘.
 
-[KIS 모의 매매 보기](block:paper) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
+[KIS 모의 매매 보기](block:paper) · [전체 목차](block:contents) · [이 PC에서 예시 열기](http://127.0.0.1:4453/settings/trading) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/152#issuecomment-new)
 
 ## 위험관리 · 긴급정지를 누르면 무엇이 멈출까? {#risk}
 
@@ -229,7 +229,7 @@ DEMO 또는 KIS 모의를 선택해 현금, 보유 수량, 평가손익을 봅�
 
 **이 화면에서 물어볼 수 있는 것**  정지한 뒤에도 남는 주문을 바로 확인하고 싶어.
 
-[주문·체결 보기](block:orders) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
+[주문·체결 보기](block:orders) · [전체 목차](block:contents) · [이 PC에서 예시 열기](http://127.0.0.1:4459/risk?env=kis) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/168#issuecomment-new)
 
 ## 전략 스튜디오 · 내가 정한 규칙은 언제 평가될까? {#strategies}
 
@@ -243,7 +243,7 @@ DEMO 또는 KIS 모의를 선택해 현금, 보유 수량, 평가손익을 봅�
 
 **이 화면에서 물어볼 수 있는 것**  전략이 이번에는 왜 주문하지 않았는지 보고 싶어.
 
-[알림·이벤트 보기](block:alerts) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
+[알림·이벤트 보기](block:alerts) · [전체 목차](block:contents) · [이 PC에서 예시 열기](http://127.0.0.1:4480/strategies?environment=kis-paper) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/175#issuecomment-new)
 
 ## 백테스트 · 같은 규칙을 과거 봉에 적용하면? {#backtest}
 
@@ -257,7 +257,7 @@ DEMO 또는 KIS 모의를 선택해 현금, 보유 수량, 평가손익을 봅�
 
 **이 화면에서 물어볼 수 있는 것**  이 곡선이 어떤 일봉과 비용으로 계산됐는지 어디서 봐?
 
-[데이터 상태 보기](block:data) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
+[데이터 상태 보기](block:data) · [전체 목차](block:contents) · [이 PC에서 예시 열기](http://127.0.0.1:4484/backtest?source=stored) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/180#issuecomment-new)
 
 ## 데이터 상태 · 어떤 종목과 날짜의 자료가 들어 있나? {#data}
 
@@ -271,7 +271,7 @@ DEMO 또는 KIS 모의를 선택해 현금, 보유 수량, 평가손익을 봅�
 
 **이 화면에서 물어볼 수 있는 것**  결과가 비어 있을 때 어느 날짜가 빠졌는지 알고 싶어.
 
-[백테스트 보기](block:backtest) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
+[백테스트 보기](block:backtest) · [전체 목차](block:contents) · [이 PC에서 예시 열기](http://127.0.0.1:4484/data) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/173#issuecomment-new)
 
 ## 알림·이벤트 · 무엇이 실패했고 원인은 어디에 있을까? {#alerts}
 
@@ -285,7 +285,7 @@ DEMO 또는 KIS 모의를 선택해 현금, 보유 수량, 평가손익을 봅�
 
 **이 화면에서 물어볼 수 있는 것**  이 경고가 어느 주문에서 나온 건지 바로 보고 싶어.
 
-[주문·체결 보기](block:orders) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
+[주문·체결 보기](block:orders) · [전체 목차](block:contents) · [이 PC에서 예시 열기](http://127.0.0.1:4480/alerts) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/179#issuecomment-new)
 
 ## 매매일지 · 내가 그때 생각한 이유를 어디에 남길까? {#journal}
 
@@ -299,7 +299,7 @@ DEMO 또는 KIS 모의를 선택해 현금, 보유 수량, 평가손익을 봅�
 
 **이 화면에서 물어볼 수 있는 것**  지난번에 이 종목을 선택한 이유를 다시 찾고 싶어.
 
-[주문·체결 보기](block:orders) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
+[주문·체결 보기](block:orders) · [전체 목차](block:contents) · [이 PC에서 예시 열기](http://127.0.0.1:4465/journal) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/182#issuecomment-new)
 
 ## 설계실 · 이 화면을 왜 만들었는지 어디서 확인할까? {#design}
 
@@ -309,6 +309,8 @@ DEMO 또는 KIS 모의를 선택해 현금, 보유 수량, 평가손익을 봅�
 
 기존 지도의 초안은 현재 브라우저에 저장됩니다. 대화에 복사하거나 GitHub 댓글을 직접 등록하면 함께 검토할 수 있습니다.
 
+**2차 미리보기**  설계실에서 ‘주문·체결’을 고르면 이 화면의 조작과 근거를 볼 수 있습니다. ‘화면 열기’는 앱으로, ‘주문·체결 의견 남기기’는 해당 화면의 이슈로 연결됩니다. ‘매매 설정’도 별도 의견 대상을 갖습니다. [설계실 #185](https://github.com/krdn/gon-stock03/issues/185) · [화면 선택·피드백 PR #186](https://github.com/krdn/gon-stock03/pull/186)
+
 **이 화면에서 물어볼 수 있는 것**  이 화면의 원래 목적과 지금 동작이 같은지 같이 보자.
 
-[전체 지도 보기](block:contents) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
+[전체 지도 보기](block:contents) · [전체 목차](block:contents) · [이 PC에서 예시 열기](http://127.0.0.1:4466/design) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/185#issuecomment-new)
