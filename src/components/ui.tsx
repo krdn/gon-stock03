@@ -4,10 +4,14 @@ import { Link } from 'react-router-dom';
 import { won, type DataStatus } from '../../shared/model';
 
 export const phaseLabels: Record<DataStatus['phase'], string> = { disconnected: '미연결', loading: '로딩', ready: '정상', stale: '오래됨', partial: '부분실패', error: '오류' };
+// 좁은 상태줄에서도 날짜와 초를 유지하는 YYYY-MM-DD HH:mm:ss 표기.
+const kstDateTime = new Intl.DateTimeFormat('sv-SE', {
+  timeZone: 'Asia/Seoul', dateStyle: 'short', timeStyle: 'medium', hourCycle: 'h23',
+});
 export function confirmedAt(value: string | null | undefined) {
   if (!value) return '없음';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '없음' : <time dateTime={value}>{date.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} KST</time>;
+  return Number.isNaN(date.getTime()) ? '없음' : <time dateTime={value}>{kstDateTime.format(date)} KST</time>;
 }
 
 export function DataStatusLine({ status, label, showPages = false }: { status: DataStatus; label: string; showPages?: boolean }) {
