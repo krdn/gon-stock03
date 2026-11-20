@@ -1,26 +1,26 @@
-# Graph Report - gon-stock03-147  (2026-11-20)
+# Graph Report - ux2-168-risk  (2026-11-20)
 
 ## Corpus Check
-- 299 files · ~288,317 words
+- 301 files · ~290,295 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 9 file(s) not represented in the graph (top: (none) 2, .zip 2, .toml 1)
+- Unclassified: 10 file(s) not represented in the graph (top: (none) 2, .css 2, .zip 2)
 
 ## Summary
-- 1547 nodes · 3601 edges · 111 communities (104 shown, 7 thin omitted)
+- 1553 nodes · 3611 edges · 113 communities (105 shown, 8 thin omitted)
 - Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 184 edges (avg confidence: 0.86)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `5fda20c3`
+- Built from commit: `c2a8f0e1`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - MarketExplorer.tsx
 - 2026-11-16-validation-prep.md
-- trading-plans.ts
-- server/realtime.ts
-- makeServer
+- paper.test.ts
+- Realtime
+- Store
 - 25-validation.md
 - package.json
 - #21 저장 일봉 백테스트 검증
@@ -43,44 +43,44 @@
 - 작업: #9 KIS 주문·복구
 - body
 - #9 최소 모의 실행 절차
-- Research.tsx
+- useWorkbench
 - 작업: Graphify 활용과 자동 인수인계 복구
 - 화면별 개발 세션 계획
 - secrets-management
 - inventory.ts
-- order-history.ts
+- store.ts
 - Infisical 연결과 운영
-- model.ts
+- Paper.tsx
 - #24 설계실 검증
 - 작업: #20 관심종목
 - updates
-- 기술 스택 현황, 채택 근거 및 아키텍처 추천
+- tech-stack-review.md
 - #9 KIS 주문·복구 계약
 - 삼성전자 모의 주문 시도: 가격 변경으로 전송 차단
 - #6 공통 상태 계약
-- .submit
+- paper.ts
 - kis.ts
-- #6 공통 상태 검증
-- useWorkbench
+- engine.ts
+- Research.tsx
 - replay.py
 - 모의 전량취소 검증 후보
-- LiveTrading.tsx
-- TradeForm
+- won
+- model.ts
 - #9 조건부 모의 실행 준비 검증
 - 삼성전자 모의 주문·취소 실증
 - 로컬 실행과 복구
-- events.ts
+- .submit
 - #123 한정 지정가와 매매 정책 검증
-- StateSnapshot
+- 트레이딩 워크스페이스 설계
 - 작업: 삼성전자 시장가 모의 1회
 - pull_request_template.md
 - GitHub 개발 운영
-- won
+- App.tsx
 - 2026-11-16-orders.md
 - gon-stock03 기능 검증과 코딩 에이전트 자기개선 설계
 - KisClient
 - WORKFLOW.md
-- 문서 작성 기준과 STE 검사
+- 71-settings-recovery.md
 - 연결·설정 복구 구현 검증
 - 작업: #25 장중 통합 실증
 - #92 모의 실시간 구독 경로
@@ -88,43 +88,45 @@
 - 작업: 연결·설정 복구
 - 작업: 제목
 - application.yml
-- 작업: #11 위험관리
+- 11-risk-management.md
 - 작업: 연결·설정
 - replay.mjs
-- #15 데이터 상태 검증
+- server/realtime.ts
 - realtime.test.ts
 - 개인 PC용 KIS 모의 버전 최종 수용
-- paper.ts
+- trading-plans.ts
 - KIS 연결·설정 화면
 - #98 KIS 모의 연속전략 계약
 - 2026-11-17-ws-apply.md
 - 연결·설정 복구 구현안
-- trading-plans.ts
+- TradingSettings.tsx
 - 12-trading.md
 - 85-consolidation.md
 - #22 KIS 전략 검증
 - Trading.tsx
 - #8 연결·설정 검증
-- 국내 종목·일봉 수집 API
+- trading-plan.ts
 - #19 실시간 기반 검증
-- Store
-- App.tsx
-- .confirmRecovery
+- .constructor
+- trading-policy.ts
+- .paperOrders
 - Paper
 - #106 원 신호 시각과 모의 주문 사전검사
-- 화면별 세션 계획 검증
-- 작업: #23 매매일지
-- 2026-11-14 검증 기록
+- 168-risk-ux.md
+- 작업: #64 SQLite 원장 파일 권한 보호
+- #6 공통 상태 검증
 - 연결·설정 동작 점검
 - #9 주문·복구 검증
 - replay-entry.sh
 - store.ts
-- 작업: #64 SQLite 원장 파일 권한 보호
-- 매매 제한을 어디서 바꿀 것인가
+- 작업: #65 정적 파일 오류의 내부 경로 보호
+- trading-settings-navigation.md
+- 화면별 세션 계획 검증
 - 11월 19일 장중 정상 전략 실증
 - KIS 트레이딩 웹앱 조사
-- GitHub 기능 적용
+- 2026-11-14 검증 기록
 - #128 기능 검증과 Astra 에이전트 자기개선 설계
+- GitHub 기능 적용
 
 ## God Nodes (most connected - your core abstractions)
 1. `Store` - 81 edges
@@ -145,39 +147,39 @@
   docs/verification/2026-11-15-settings.md → server/kis.ts
 - `실행 당일 원장·서버 준비` --references--> `Store`  [INFERRED]
   docs/operations/kis-minimum-paper-run.md → server/store.ts
+- `공식 계약과 구현 선택` --references--> `PaperBroker`  [INFERRED]
+  docs/verification/2026-11-16-realtime.md → server/paper.ts
 - `공통 상태 계약 (#6)` --references--> `StateSnapshot`  [INFERRED]
   docs/architecture/workbench.md → shared/model.ts
-- `11월 20일 CI 후속` --references--> `snapshot()`  [INFERRED]
-  docs/tasks/12-trading.md → tests/snapshot.ts
 
 ## Import Cycles
 - None detected.
 
-## Communities (111 total, 7 thin omitted)
+## Communities (113 total, 8 thin omitted)
 
 ### Community 0 - "MarketExplorer.tsx"
-Cohesion: 0.15
-Nodes (14): masterDataSchema, MasterDataSnapshot, category(), CopyStockCode(), MarketExplorer(), focusDetail(), openDetail(), quoteLabel() (+6 more)
+Cohesion: 0.14
+Nodes (15): masterDataSchema, MasterDataSnapshot, Market, category(), CopyStockCode(), MarketExplorer(), focusDetail(), openDetail() (+7 more)
 
 ### Community 1 - "2026-11-16-validation-prep.md"
 Cohesion: 0.09
-Nodes (18): 구현·검증 및 다음 행동, 기준선과 인수인계, 먼저 읽을 자료, 목표와 경계, 작업: #65 정적 파일 오류의 내부 경로 보호, #64 SQLite 파일 권한 검증, 격리 결과, 보호와 보존 (+10 more)
+Nodes (17): #64 SQLite 파일 권한 검증, 격리 결과, 보호와 보존, 지정 검토와 문서 검사, #65 정적 파일 오류의 내부 경로 보호, 격리 검증, 근거와 한계, 지정 외부 리뷰 (+9 more)
 
-### Community 2 - "trading-plans.ts"
+### Community 2 - "paper.test.ts"
+Cohesion: 0.29
+Nodes (8): activeTerms(), readPreparedRun(), apiFixture(), approvedInput(), fixture(), input(), lowerLimitFixture(), pinSettings()
+
+### Community 3 - "Realtime"
+Cohesion: 0.11
+Nodes (11): children, kisVariables, realtime, serverEnv, webEnv, KisNotSent, Realtime, OrderInput (+3 more)
+
+### Community 4 - "Store"
 Cohesion: 0.12
-Nodes (25): PaperApproval, assertStrategyIdentity(), activeTerms(), assetKind(), fixInput, fixTradingDraft(), inspectPreparedRun(), kindSchema (+17 more)
-
-### Community 3 - "server/realtime.ts"
-Cohesion: 0.05
-Nodes (43): children, kisVariables, realtime, serverEnv, webEnv, advanceTick(), backtest(), backtestDaily() (+35 more)
-
-### Community 4 - "makeServer"
-Cohesion: 0.16
-Nodes (10): createExperiment(), replayExperiment(), makeServer(), MarketData, Store, tradingSettings(), Experiment, DailyRun (+2 more)
+Nodes (15): createExperiment(), replayExperiment(), backtestDaily(), body(), json(), makeServer(), MarketData, Store (+7 more)
 
 ### Community 5 - "25-validation.md"
-Cohesion: 0.13
-Nodes (12): 작업 인수인계, #107 전용 KIS 모의 주문 테스트, #116 KIS 모의 매매 페이지 잔량 취소, 주문당 수량 설정 · 11월 19일, #129 오프라인 기능 목록과 관심종목 회귀, Opus 5.5 독립 리뷰 후 검증, #130 거래일지 초안과 관심종목 코드 복사, #131 Astra 프로젝트 지침 비교 (+4 more)
+Cohesion: 0.14
+Nodes (11): 작업 인수인계, #107 전용 KIS 모의 주문 테스트, #116 KIS 모의 매매 페이지 잔량 취소, 주문당 수량 설정 · 11월 19일, #129 오프라인 기능 목록과 관심종목 회귀, Opus 5.5 독립 리뷰 후 검증, #130 거래일지 초안과 관심종목 코드 복사, #131 Astra 프로젝트 지침 비교 (+3 more)
 
 ### Community 6 - "package.json"
 Cohesion: 0.05
@@ -224,24 +226,20 @@ Cohesion: 0.14
 Nodes (12): 다음 행동, 먼저 읽을 자료, 새 세션 시작 문구, 작업: #16 포트폴리오, 현재 결과, #16 포트폴리오 검증, 결과와 계산 기준, 독립 리뷰와 수용 경계 (+4 more)
 
 ### Community 17 - "http.ts"
-Cohesion: 0.09
-Nodes (31): zod, body(), json(), backtestResultSchema, dailyBacktestInput, DailyBacktestInput, experimentListSchema, experimentSchema (+23 more)
+Cohesion: 0.10
+Nodes (27): backtestResultSchema, dailyBacktestInput, DailyBacktestInput, experimentListSchema, experimentSchema, ExperimentSnapshot, experimentSnapshotSchema, experimentSummarySchema (+19 more)
 
 ### Community 18 - "interface-sessions-2026-11.md"
 Cohesion: 0.16
 Nodes (7): 주문 원장 출처와 KIS 확인 시각, 2차 로컬 기능과 KIS 모의 연결, 1차 화면·설계 시각화, GON Stock, ScreenSpec, sourceRoot, sources
 
 ### Community 19 - "작업: 국내 종목 마스터·일봉 수집"
-Cohesion: 0.15
-Nodes (11): 구현 결정, 다음 행동, 먼저 읽을 자료, 작업: 국내 종목 마스터·일봉 수집, 통합 결과 — 2026-11-15, 현재 결과, #7 수집·품질 검증, 로컬 검증 (+3 more)
+Cohesion: 0.06
+Nodes (27): 계약과 저장, 국내 종목·일봉 수집 API, 마스터 정책과 한계, 실행, 품질 판정, 다음 행동, 먼저 읽을 자료, 새 세션 시작 문구 (+19 more)
 
 ### Community 20 - "2026-11-17-consolidated-status.md"
-Cohesion: 0.09
-Nodes (18): 다음 작업 체크리스트, 실패와 보존, 실행 결과, 연결 준비와 공식 근거, 장 마감 후 연결 준비와 복구 점검, 남은 작업 순서, 새 세션 시작, 완료·관측 범위 (+10 more)
-
-### Community 21 - "PaperBroker"
-Cohesion: 0.16
-Nodes (6): 먼저 읽을 자료, 공식 계약과 구현 선택, PaperBroker, assertStrategyTerms(), PaperRiskSnapshot, Strategy
+Cohesion: 0.12
+Nodes (14): 다음 작업 체크리스트, 실패와 보존, 실행 결과, 연결 준비와 공식 근거, 장 마감 후 연결 준비와 복구 점검, 남은 작업 순서, 새 세션 시작, 완료·관측 범위 (+6 more)
 
 ### Community 23 - "후속 개발의 기준선 확정"
 Cohesion: 0.20
@@ -259,9 +257,9 @@ Nodes (9): label, body, attributes, id, type, validations, description, name (+1
 Cohesion: 0.22
 Nodes (9): 2026-11-16 실행 지시 갱신, #9 최소 모의 실행 절차, 삼성전자 새 테스트 승인, 수동 시작과 대조, 승인 범위, 승인과 남은 실행 조건, 실행 당일 원장·서버 준비, 실행 전후 절차 (+1 more)
 
-### Community 27 - "Research.tsx"
-Cohesion: 0.23
-Nodes (8): dailyRunsSchema, Chart(), Backtest(), dateInput(), DemoBacktest(), StoredBacktest(), Strategies(), StrategyStudio()
+### Community 27 - "useWorkbench"
+Cohesion: 0.22
+Nodes (11): PaperQuantitySetting(), RiskLimitSettings(), Panel(), useWorkbench(), StrategyStudio(), DemoTrade(), TradeForm(), clearPending() (+3 more)
 
 ### Community 29 - "화면별 개발 세션 계획"
 Cohesion: 0.25
@@ -275,17 +273,17 @@ Nodes (7): general, domain, secrets-management, environment, project-id, secret-
 Cohesion: 0.13
 Nodes (25): AstNode, Check, checks, child(), children(), eachChild(), features, gaps (+17 more)
 
-### Community 32 - "order-history.ts"
-Cohesion: 0.31
-Nodes (7): archiveEntry, displayOrders(), milliseconds(), observedTime, orderHistory(), registeredArchives(), paperLedgerSchema
+### Community 32 - "store.ts"
+Cohesion: 0.12
+Nodes (19): action, paperEvent(), presentEvent(), recordConnection(), recordKisEvent(), status, archiveEntry, displayOrders() (+11 more)
 
 ### Community 33 - "Infisical 연결과 운영"
 Cohesion: 0.25
 Nodes (8): GitHub Actions, Infisical 연결과 운영, WebSocket 접속키 자동 발급, 앱과 AI 실행, 연결 검증, 연결·설정 화면, 인증서와 권한 접근, 프로젝트 연결
 
-### Community 34 - "model.ts"
-Cohesion: 0.09
-Nodes (26): connectionSchema, PaperCancellation, BacktestInput, BacktestResult, BrokerOrder, Connection, Event, Instrument (+18 more)
+### Community 34 - "Paper.tsx"
+Cohesion: 0.22
+Nodes (10): react, PaperCancellation, BrokerOrder, QUOTE_REFRESH_MS, PaperCancellationPanel(), cancel(), reconcile(), Props (+2 more)
 
 ### Community 35 - "#24 설계실 검증"
 Cohesion: 0.14
@@ -299,7 +297,7 @@ Nodes (7): 11월 19일 최종 확인, 2026-11-17 후속 화면 수정, 다음 �
 Cohesion: 0.29
 Nodes (6): interval, updates, directory, package-ecosystem, schedule, version
 
-### Community 38 - "기술 스택 현황, 채택 근거 및 아키텍처 추천"
+### Community 38 - "tech-stack-review.md"
 Cohesion: 0.33
 Nodes (6): 1. 현재 사용 중인 기술 스택, 2. 왜 이 기술들을 선택했는가? (채택 근거와 추론 사슬), 3.1 1단계 추천: 현재 로컬 워크스페이스 범위 유지 시 (현행 스택 유지 + 3가지 보강), 3.2 2단계 추천: 운영 서버(`192.168.0.5`) 상시 배포 및 본격 자동매매 확장 시, 3. 판단 및 추천 사항 (단계별 아키텍처 제안), 기술 스택 현황, 채택 근거 및 아키텍처 추천
 
@@ -315,21 +313,21 @@ Nodes (4): 삼성전자 모의 주문 시도: 가격 변경으로 전송 차단,
 Cohesion: 0.33
 Nodes (6): #6 공통 상태 계약, 구현 당시 원격 전달, 다음 행동, 먼저 읽을 자료, 통합·완료 — 2026-11-15, 현재 결과
 
-### Community 42 - ".submit"
-Cohesion: 0.22
-Nodes (5): testOrder(), KisNotSent, withinApproval(), PaperOrder, sessionBounds()
+### Community 42 - "paper.ts"
+Cohesion: 0.14
+Nodes (16): zod, checkApprovedLimit(), configuredApproval, kospiStockTick(), krxSession, lowerLimitApprovalSchema, paperCapabilities, sessionTime (+8 more)
 
 ### Community 43 - "kis.ts"
-Cohesion: 0.07
-Nodes (38): 실제 공개 마스터, credentials, samples, amount, balanceSchema, BeforeSend, brokerId, Credentials (+30 more)
+Cohesion: 0.09
+Nodes (28): credentials, samples, amount, balanceSchema, BeforeSend, brokerId, Credentials, KisDataError (+20 more)
 
-### Community 44 - "#6 공통 상태 검증"
-Cohesion: 0.33
-Nodes (5): #6 공통 상태 검증, 외부 리뷰, 원격 증거, 재현과 결과, 통합 후 확인 — 2026-11-15
+### Community 44 - "engine.ts"
+Cohesion: 0.15
+Nodes (22): advanceTick(), backtest(), cancelOrder(), fee(), halt(), mean(), placeOrder(), record() (+14 more)
 
-### Community 45 - "useWorkbench"
-Cohesion: 0.18
-Nodes (20): authenticationStatus(), freshness(), PaperQuantitySetting(), RealtimeStatus(), RiskLimitSettings(), Badge(), Empty(), Panel() (+12 more)
+### Community 45 - "Research.tsx"
+Cohesion: 0.22
+Nodes (13): react-router-dom, dailyRunsSchema, RealtimeStatus(), Empty(), Stat(), DailyDetail(), DataStatus(), date() (+5 more)
 
 ### Community 46 - "replay.py"
 Cohesion: 0.22
@@ -339,13 +337,13 @@ Nodes (5): claim(), digest(), file_digest(), main(), tree_digest()
 Cohesion: 0.40
 Nodes (5): 검증, 구현 범위, 근거와 결정, 모의 전량취소 검증 후보, 실행 전 남은 작업
 
-### Community 48 - "LiveTrading.tsx"
-Cohesion: 0.25
-Nodes (7): MARKET_REFRESH_MS, MARKET_STALE_MS, marketQuoteSchema, dateLabel(), LiveTrading(), marketSnapshot, Trade()
+### Community 48 - "won"
+Cohesion: 0.21
+Nodes (16): MARKET_REFRESH_MS, MARKET_STALE_MS, marketQuoteSchema, won(), portfolioValue(), BALANCE_STALE_MS, Change(), Chart() (+8 more)
 
-### Community 49 - "TradeForm"
-Cohesion: 0.60
-Nodes (4): TradeForm(), clearPending(), send(), submit()
+### Community 49 - "model.ts"
+Cohesion: 0.10
+Nodes (18): connectionSchema, BacktestInput, BacktestResult, Connection, DataStatus, Event, Instrument, Journal (+10 more)
 
 ### Community 50 - "#9 조건부 모의 실행 준비 검증"
 Cohesion: 0.40
@@ -359,15 +357,15 @@ Nodes (5): 검증과 한계, 삼성전자 모의 주문·취소 실증, 승인�
 Cohesion: 0.40
 Nodes (5): 검사, 로컬 실행과 복구, 사용 순서, 저장·중지·복구, 지난 KIS 실행 원장
 
-### Community 53 - "events.ts"
-Cohesion: 0.31
-Nodes (7): action, paperEvent(), presentEvent(), recordConnection(), recordKisEvent(), status, headers
+### Community 53 - ".submit"
+Cohesion: 0.16
+Nodes (3): withinApproval(), PaperOrderInput, KisQuote
 
 ### Community 54 - "#123 한정 지정가와 매매 정책 검증"
 Cohesion: 0.25
 Nodes (8): 11월 19일 최종 확인, #123 한정 지정가와 매매 정책 검증, 136,300원 주문이 갈리는 지점, #25와의 연결, 검증과 설계 리뷰, 나머지 정책의 집행 조건, 매매설정에서 새 테스트 계약 구성, 첫 격리 검증 당시의 범위
 
-### Community 55 - "StateSnapshot"
+### Community 55 - "트레이딩 워크스페이스 설계"
 Cohesion: 0.25
 Nodes (8): 공통 상태 계약 (#6), 구현 경계, 기술 결정, 전략과 백테스트, 주문과 복구, 책임과 데이터 흐름, 트레이딩 워크스페이스 설계, StateSnapshot
 
@@ -383,20 +381,24 @@ Nodes (3): 검증 근거, 문제와 변경, 인수인계
 Cohesion: 0.25
 Nodes (8): GitHub 개발 운영, Graphify 코드 구조 조회와 기록, 비밀정보와 인프라 접근, 세션별 작업과 재개, 시작, 업데이트와 복구, 작업, 협업과 GitHub 기능
 
-### Community 59 - "won"
-Cohesion: 0.42
-Nodes (10): won(), portfolioValue(), Change(), DataStatusLine(), Money(), PageLink(), Stat(), Dashboard() (+2 more)
+### Community 59 - "App.tsx"
+Cohesion: 0.12
+Nodes (26): authenticationStatus(), disconnectedConnection(), emptyStatus(), freshness(), LOCAL_STALE_MS, App(), act(), icons (+18 more)
 
 ### Community 63 - "gon-stock03 기능 검증과 코딩 에이전트 자기개선 설계"
 Cohesion: 0.22
 Nodes (9): gon-stock03 기능 검증과 코딩 에이전트 자기개선 설계, 기능별 검증표, 실행 권한과 실패 처리, 에이전트가 다음 세대로 넘어가는 조건, 연구에서 선택한 방법, 제품 변경 한 건의 흐름, 첫 실험과 도입 순서, 출발점 (+1 more)
 
 ### Community 64 - "KisClient"
-Cohesion: 0.16
+Cohesion: 0.21
 Nodes (7): KisAuthExpired, KisFailure, KisRejected, safeFailure(), within(), ConnectionFailure, ConnectionState
 
-### Community 66 - "문서 작성 기준과 STE 검사"
-Cohesion: 0.40
+### Community 65 - "WORKFLOW.md"
+Cohesion: 0.20
+Nodes (7): 프로젝트 작업 규칙, 다음 행동, 먼저 읽을 자료, 새 세션 시작 문구, 작업: #23 매매일지, 현재 결과, #23 매매일지 검증
+
+### Community 66 - "71-settings-recovery.md"
+Cohesion: 0.24
 Nodes (5): House list of words to replace, 문서 작성 기준과 STE 검사, 실행과 판정, 작성 규칙, 적용 범위
 
 ### Community 67 - "연결·설정 복구 구현 검증"
@@ -427,7 +429,7 @@ Nodes (5): 다음 행동, 먼저 읽을 자료, 새 세션 시작 문구, 작업
 Cohesion: 0.29
 Nodes (6): name, on, pull_request, push, permissions, contents
 
-### Community 74 - "작업: #11 위험관리"
+### Community 74 - "11-risk-management.md"
 Cohesion: 0.29
 Nodes (5): 결과와 검증, 다음 행동, 작업: #11 위험관리, 전달 대상, 위험관리 검증
 
@@ -439,21 +441,21 @@ Nodes (6): 2026-11-17 세부 동작 재점검, 다음 행동, 먼저 읽을 자�
 Cohesion: 0.15
 Nodes (5): result, codes, instruments, results, runtime
 
-### Community 77 - "#15 데이터 상태 검증"
-Cohesion: 0.15
-Nodes (11): 다음 행동, 먼저 읽을 자료, 새 세션 시작 문구, 작업: #15 데이터 상태, 현재 결과, #15 데이터 상태 검증, 경계 리뷰, 계속 진행에 따른 통합 (+3 more)
+### Community 77 - "server/realtime.ts"
+Cohesion: 0.17
+Nodes (10): initial(), RealtimeConfig, sessionSchema, Socket, configuredPaperOrderInput, paperOrderInput, StrategyEvaluation, RealtimeStatus (+2 more)
 
 ### Community 78 - "realtime.test.ts"
-Cohesion: 0.15
-Nodes (6): checkSession(), koreaDate(), SocketFactory, brokerRow(), base, row()
+Cohesion: 0.12
+Nodes (10): checkSession(), koreaDate(), PaperApproval, SocketFactory, KisBar, brokerRow(), base, crossing() (+2 more)
 
 ### Community 79 - "개인 PC용 KIS 모의 버전 최종 수용"
 Cohesion: 0.40
 Nodes (5): 개인 PC용 KIS 모의 버전 최종 수용, 검증 결과, 격리 검증, 실제 KIS에서 확인한 범위, 적용 경계
 
-### Community 80 - "paper.ts"
-Cohesion: 0.16
-Nodes (12): checkApprovedLimit(), kospiStockTick(), krxSession, lowerLimitApprovalSchema, normalizeId(), paperCapabilities, preparedApprovalSchema, sameId() (+4 more)
+### Community 80 - "trading-plans.ts"
+Cohesion: 0.21
+Nodes (16): preparedApprovalSchema, assetKind(), fixInput, fixTradingDraft(), inspectPreparedRun(), kindSchema, saveInput, saveTradingDraft() (+8 more)
 
 ### Community 81 - "KIS 연결·설정 화면"
 Cohesion: 0.29
@@ -471,9 +473,9 @@ Nodes (7): 구현·검증, 작업: #80 WebSocket 접속키 메모리 발급, 통
 Cohesion: 0.29
 Nodes (7): 1. 실행 환경 진단, 3. 재시도·진행 표시, 검증과 인수, 구현 순서와 완료 조건, 방향, 연결·설정 복구 구현안, 출처와 제한
 
-### Community 85 - "trading-plans.ts"
-Cohesion: 0.08
-Nodes (48): configuredApproval, instant, positive, strategyContractSchema, DEFAULT_PAPER_MAX_QTY, MAX_ORDER_QTY, amount, instant (+40 more)
+### Community 85 - "TradingSettings.tsx"
+Cohesion: 0.23
+Nodes (19): defaultOncePolicy(), defaultStrategyPolicy(), krxHours(), NumberField(), TradingPolicyFields(), Comparison(), defaults(), description() (+11 more)
 
 ### Community 86 - "12-trading.md"
 Cohesion: 0.11
@@ -488,52 +490,48 @@ Cohesion: 0.17
 Nodes (9): 작업: #19 실시간 수신·재연결·장중 실행 기반, 구현과 검증, 작업: #22 KIS 모의 전략 스튜디오, 후속 진행 수용 (2026-11-16), #22 KIS 전략 검증, 구현 결정, 리뷰와 전달, 실패와 수정 (+1 more)
 
 ### Community 89 - "Trading.tsx"
-Cohesion: 0.14
-Nodes (14): PaperLedger, formatKst, HistoryOrder(), LedgerOrder, paperStatus, demoFilters, emptyLedger, kisFilters (+6 more)
+Cohesion: 0.15
+Nodes (14): lucide-react, PaperLedger, formatKst, HistoryOrder(), LedgerOrder, paperStatus, demoFilters, emptyLedger (+6 more)
 
 ### Community 90 - "#8 연결·설정 검증"
 Cohesion: 0.33
 Nodes (5): #8 연결·설정 검증, 경계, 구현과 검사, 실제 연결, 위임된 수용과 통합
 
-### Community 91 - "국내 종목·일봉 수집 API"
-Cohesion: 0.40
-Nodes (5): 계약과 저장, 국내 종목·일봉 수집 API, 마스터 정책과 한계, 실행, 품질 판정
+### Community 91 - "trading-plan.ts"
+Cohesion: 0.23
+Nodes (9): MAX_ORDER_QTY, amount, instant, onceTerms, PlanKind, PlanRecord, strategyTerms, TradingSettingsData (+1 more)
 
 ### Community 92 - "#19 실시간 기반 검증"
-Cohesion: 0.33
-Nodes (5): #19 실시간 기반 검증, 검증, 기술 수용·통합, 설정과 실행 경계, 최초 독립 리뷰 시도 (후속 결과는 아래)
+Cohesion: 0.29
+Nodes (6): #19 실시간 기반 검증, 검증, 공식 계약과 구현 선택, 기술 수용·통합, 설정과 실행 경계, 최초 독립 리뷰 시도 (후속 결과는 아래)
 
-### Community 93 - "Store"
+### Community 94 - "trading-policy.ts"
+Cohesion: 0.21
+Nodes (10): tradingTerms, TradingTerms, clock, connectionTiming, oncePolicy, OncePolicy, seconds, sessionWindow (+2 more)
+
+### Community 95 - ".paperOrders"
 Cohesion: 0.13
-Nodes (4): 2. 조회 시간 제한과 복구, PaperKrxSession, StrategyContract, PaperAudit
-
-### Community 94 - "App.tsx"
-Cohesion: 0.20
-Nodes (13): lucide-react, react, react-router-dom, DataStatus, icons, phaseLabels, Workbench, WorkbenchContext (+5 more)
-
-### Community 95 - ".confirmRecovery"
-Cohesion: 0.23
-Nodes (6): main(), summary(), evidence(), matches(), reconciled(), recoveryCandidates()
+Nodes (12): 먼저 읽을 자료, main(), summary(), testOrder(), evidence(), matches(), normalizeId(), reconciled() (+4 more)
 
 ### Community 96 - "Paper"
-Cohesion: 0.19
-Nodes (9): 리뷰 재개와 수정, samePaperIntent(), App(), act(), WatchlistPage(), Paper(), loadLedger(), submit() (+1 more)
+Cohesion: 0.24
+Nodes (5): 리뷰 재개와 수정, samePaperIntent(), Paper(), loadLedger(), submit()
 
 ### Community 97 - "#106 원 신호 시각과 모의 주문 사전검사"
 Cohesion: 0.67
 Nodes (3): #106 원 신호 시각과 모의 주문 사전검사, 부분체결과 잔량 취소, 적용한 개선과 실증 경계
 
-### Community 98 - "화면별 세션 계획 검증"
-Cohesion: 0.40
-Nodes (4): 계획 리뷰, 실패와 한계, 화면별 세션 계획 검증, 확인 결과
+### Community 98 - "168-risk-ux.md"
+Cohesion: 0.29
+Nodes (5): 지난 KIS 주문 조회 화면, 검증과 수용, 결정과 근거, 대표 작업과 실측, 위험관리에서 사용량 확인과 신규 주문 제어
 
-### Community 99 - "작업: #23 매매일지"
-Cohesion: 0.40
-Nodes (5): 다음 행동, 먼저 읽을 자료, 새 세션 시작 문구, 작업: #23 매매일지, 현재 결과
+### Community 99 - "작업: #64 SQLite 원장 파일 권한 보호"
+Cohesion: 0.29
+Nodes (7): 구현·전달 상태, 다음 행동, 먼저 읽을 자료, 목표와 경계, 인수인계, 작업: #64 SQLite 원장 파일 권한 보호, 통합 후 상태
 
-### Community 100 - "2026-11-14 검증 기록"
-Cohesion: 0.50
-Nodes (4): 2026-11-14 검증 기록, 독립 리뷰와 회귀 수정, 보조 검사와 도구 한계, 원격 전달과 보조 도구 상태
+### Community 100 - "#6 공통 상태 검증"
+Cohesion: 0.33
+Nodes (5): #6 공통 상태 검증, 외부 리뷰, 원격 증거, 재현과 결과, 통합 후 확인 — 2026-11-15
 
 ### Community 101 - "연결·설정 동작 점검"
 Cohesion: 0.40
@@ -544,16 +542,20 @@ Cohesion: 0.50
 Nodes (4): #9 주문·복구 검증, 수용 범위, 실행 결과, 재현과 수정
 
 ### Community 104 - "store.ts"
-Cohesion: 0.15
-Nodes (9): fixture, original, instruction, initialState(), instrumentSeeds, series(), headers, credentials (+1 more)
+Cohesion: 0.13
+Nodes (14): 실제 공개 마스터, fixture, original, instruction, KisClient, stateSnapshotSchema, headers, credentials (+6 more)
 
-### Community 105 - "작업: #64 SQLite 원장 파일 권한 보호"
-Cohesion: 0.29
-Nodes (7): 구현·전달 상태, 다음 행동, 먼저 읽을 자료, 목표와 경계, 인수인계, 작업: #64 SQLite 원장 파일 권한 보호, 통합 후 상태
+### Community 105 - "작업: #65 정적 파일 오류의 내부 경로 보호"
+Cohesion: 0.40
+Nodes (5): 구현·검증 및 다음 행동, 기준선과 인수인계, 먼저 읽을 자료, 목표와 경계, 작업: #65 정적 파일 오류의 내부 경로 보호
 
-### Community 106 - "매매 제한을 어디서 바꿀 것인가"
+### Community 106 - "trading-settings-navigation.md"
 Cohesion: 0.22
 Nodes (7): 구현 결정 후 검증할 것, 매매 제한을 어디서 바꿀 것인가, 세 가지 구조 비교, 세 가지 대표 동선, 제안하는 화면 지도, 현재 화면에서 확인한 문제, 매매 설정과 다음 실행 고정
+
+### Community 107 - "화면별 세션 계획 검증"
+Cohesion: 0.40
+Nodes (4): 계획 리뷰, 실패와 한계, 화면별 세션 계획 검증, 확인 결과
 
 ### Community 108 - "11월 19일 장중 정상 전략 실증"
 Cohesion: 0.50
@@ -563,31 +565,35 @@ Nodes (4): 10:33 별도 부분체결 관측, 11월 19일 장중 정상 전략 �
 Cohesion: 0.50
 Nodes (4): KIS 트레이딩 웹앱 조사, 공식 자료에서 확인한 제약, 필요한 화면, 확인 범위와 다음 조사
 
-### Community 110 - "GitHub 기능 적용"
+### Community 110 - "2026-11-14 검증 기록"
 Cohesion: 0.50
-Nodes (3): 2026-11-15 세션별 실행 관리, GitHub 기능 적용, 이번 구현의 적용
+Nodes (4): 2026-11-14 검증 기록, 독립 리뷰와 회귀 수정, 보조 검사와 도구 한계, 원격 전달과 보조 도구 상태
 
 ### Community 111 - "#128 기능 검증과 Astra 에이전트 자기개선 설계"
 Cohesion: 0.67
 Nodes (3): #128 기능 검증과 Astra 에이전트 자기개선 설계, 먼저 읽을 자료, 확인과 다음 행동
 
+### Community 112 - "GitHub 기능 적용"
+Cohesion: 0.50
+Nodes (3): 2026-11-15 세션별 실행 관리, GitHub 기능 적용, 이번 구현의 적용
+
 ## Knowledge Gaps
-- **7 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **8 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `KisClient` connect `kis.ts` to `KisClient`, `trading-plans.ts`, `server/realtime.ts`, `makeServer`, `연결·설정 동작 점검`, `store.ts`, `snapshot`, `.submit`, `realtime.test.ts`, `paper.ts`, `http.ts`, `events.ts`, `#8 연결·설정 검증`, `국내 종목·일봉 수집 API`, `Store`, `.confirmRecovery`?**
-  _High betweenness centrality (0.072) - this node is a cross-community bridge._
+- **Why does `KisClient` connect `store.ts` to `paper.test.ts`, `Realtime`, `Store`, `snapshot`, `http.ts`, `작업: 국내 종목 마스터·일봉 수집`, `store.ts`, `paper.ts`, `kis.ts`, `engine.ts`, `model.ts`, `.submit`, `KisClient`, `realtime.test.ts`, `trading-plans.ts`, `#8 연결·설정 검증`, `.constructor`, `.paperOrders`, `연결·설정 동작 점검`?**
+  _High betweenness centrality (0.065) - this node is a cross-community bridge._
 - **Are the 31 inferred relationships involving `makeServer()` (e.g. with `.refreshMaster()` and `.start()`) actually correct?**
   _`makeServer()` has 31 INFERRED edges - model-reasoned connections that need verification._
-- **Should `2026-11-16-validation-prep.md` be split into smaller, more focused modules?**
-  _Cohesion score 0.09486166007905138 - nodes in this community are weakly interconnected._
-- **Why does `Store` connect `makeServer` to `order-history.ts`, `trading-plans.ts`, `server/realtime.ts`, `store.ts`, `.submit`, `kis.ts`, `realtime.test.ts`, `paper.ts`, `http.ts`, `PaperBroker`, `trading-plans.ts`, `events.ts`, `#9 최소 모의 실행 절차`, `Store`, `.confirmRecovery`?**
-  _High betweenness centrality (0.049) - this node is a cross-community bridge._
+- **Should `MarketExplorer.tsx` be split into smaller, more focused modules?**
+  _Cohesion score 0.14285714285714285 - nodes in this community are weakly interconnected._
+- **Why does `Store` connect `Store` to `store.ts`, `paper.test.ts`, `Realtime`, `store.ts`, `paper.ts`, `kis.ts`, `engine.ts`, `server/realtime.ts`, `realtime.test.ts`, `trading-plans.ts`, `http.ts`, `PaperBroker`, `.submit`, `#9 최소 모의 실행 절차`, `trading-plan.ts`, `.constructor`, `.paperOrders`?**
+  _High betweenness centrality (0.046) - this node is a cross-community bridge._
 - **Are the 3 inferred relationships involving `KisClient` (e.g. with `계약과 저장` and `실제 공개 마스터`) actually correct?**
   _`KisClient` has 3 INFERRED edges - model-reasoned connections that need verification._
-- **Should `trading-plans.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.125 - nodes in this community are weakly interconnected._
-- **Should `server/realtime.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.05359831376091539 - nodes in this community are weakly interconnected._
+- **Should `2026-11-16-validation-prep.md` be split into smaller, more focused modules?**
+  _Cohesion score 0.09486166007905138 - nodes in this community are weakly interconnected._
+- **Why does `PaperBroker` connect `PaperBroker` to `paper.test.ts`, `Realtime`, `Store`, `store.ts`, `paper.ts`, `server/realtime.ts`, `realtime.test.ts`, `http.ts`, `model.ts`, `.submit`, `#19 실시간 기반 검증`, `.constructor`, `.paperOrders`?**
+  _High betweenness centrality (0.045) - this node is a cross-community bridge._

@@ -785,6 +785,7 @@ export function TradingSettings() {
   const { state, available, server } = useWorkbench();
   const loc = useLocation(),
     [params] = useSearchParams();
+  const riskReturn = params.get('env') === 'kis' ? '/risk?env=kis' : '/risk';
   const [, , , section, stage, ...extra] = loc.pathname.split('/');
   const [data, setData] = useState<TradingSettingsData | null>(null),
     [failed, setFailed] = useState(false);
@@ -851,7 +852,7 @@ export function TradingSettings() {
           </Link>
         )}
         {params.get('from') === 'risk' && (
-          <Link className="text-link" to="/risk">
+          <Link className="text-link" to={riskReturn}>
             위험관리로 돌아가기
           </Link>
         )}
@@ -941,7 +942,7 @@ export function TradingSettings() {
             </Link>
           )}
           {from === 'risk' && (
-            <Link className="button secondary" to="/risk">
+            <Link className="button secondary" to={riskReturn}>
               위험관리로 돌아가기
             </Link>
           )}
