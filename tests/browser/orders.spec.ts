@@ -97,7 +97,7 @@ test('switching environments discards an older ledger response and first-read fa
   await expect(page.getByRole('table')).toContainText('00005678');
 });
 
-test('past runs show a separate read-only table and stored check time, including partial archive failure', async ({ page }) => {
+test('past runs show a separate read-only list and stored check time, including partial archive failure', async ({ page }) => {
   const posts: string[] = [];
   page.on('request', r => { if (r.method() === 'POST') posts.push(r.url()); });
   await page.route('**/api/state', route => route.fulfill({ json: snapshot() }));
@@ -106,12 +106,116 @@ test('past runs show a separate read-only table and stored check time, including
     orders: [{ ...paper, sourceLabel: '테스트 실행', sourceId: '0', lastMatchedAt: '2026-11-15T01:05:20.000Z' }] } }));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/orders'); await page.getByRole('button', { name: 'KIS 모의 원장', exact: true }).click();
-  await page.getByRole('button', { name: '지난 실행 기록 보기' }).click();
-  const table = page.getByRole('table');
-  await expect(table).toContainText('테스트 실행'); await expect(table).toContainText('10:05:20');
+  const historyLink = page.getByRole('button', { name: '지난 실행 기록 보기' });
+  await expect(historyLink).toBeVisible();
+  expect(await historyLink.evaluate(el => el.getBoundingClientRect().bottom + window.scrollY)).toBeLessThanOrEqual(844);
+  await historyLink.click();
+  const list = page.getByRole('list', { name: '지난 주문 목록' });
+  await expect(list.getByText('테스트 실행')).toBeHidden();
+  await expect(list.locator('time')).toContainText('10:05:20');
   await expect(page.getByRole('alert')).toContainText('옛 실행');
-  await expect(table.getByRole('link')).toHaveCount(0); await expect(table.getByRole('button')).toHaveCount(0);
+  await list.locator('summary').click();
+  await expect(list.getByText('테스트 실행')).toBeVisible();
+  await expect(list.getByRole('link')).toHaveCount(0);
+  await expect(list.getByRole('button', { name: /취소|전송|복구/ })).toHaveCount(0);
   await page.getByRole('button', { name: 'KIS 모의 원장', exact: true }).click();
   await expect(page.getByText('저장된 KIS 주문이 없습니다')).toBeVisible();
   await expect(page.getByText('테스트 실행')).toHaveCount(0); expect(posts).toEqual([]);
+});
+
+test('history restores navigation, supports private identifier search and shows the first order without scrolling', async ({ page, context }) => {
+  const writes: string[] = [];
+  page.on('request', r => { if (r.method() !== 'GET') writes.push(r.method()); });
+  await page.route('**/api/state', r => r.fulfill({ json: snapshot() }));
+  await page.route('**/api/kis/history', r => r.fulfill({ json: { sourceCount: 1, unavailable: [],
+    orders: [{ ...paper, sourceLabel: '예시 원장', sourceId: '0', lastMatchedAt: '2026-11-15T01:05:20Z' },
+      { ...paper, requestId: 'other-request', sourceId: '0', tradeDate: '20261114', status: 'unknown', brokerId: undefined }] } }));
+  await page.goto('/orders?view=history');
+  const list = page.getByRole('list', { name: '지난 주문 목록' }), first = list.getByRole('listitem').first();
+  await expect(first.locator('time')).toHaveText(/10:05:20/);
+  for (const [width, height] of [[1440, 900], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    expect(await first.evaluate(el => el.getBoundingClientRect().bottom)).toBeLessThanOrEqual(height);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  }
+  await expect(first.getByText(paper.requestId)).toBeHidden();
+  const detailsToggle = first.locator('summary');
+  await detailsToggle.focus(); await page.keyboard.press('Enter');
+  await expect(first.getByText(paper.requestId)).toBeVisible();
+  await page.keyboard.press('Space'); await expect(first.getByText(paper.requestId)).toBeHidden();
+  const search = page.getByRole('searchbox');
+  for (const q of ['삼성전자','005930','2026-11-15',paper.brokerId,paper.requestId]) {
+    await search.fill(q);
+    await expect(first.locator('time')).toHaveText(/10:05:20/);
+    expect(page.url()).not.toContain(q);
+  }
+  await expect(first.getByText(paper.requestId)).toBeVisible();
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await first.getByRole('button', { name: '앱 요청 ID 복사' }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(paper.requestId);
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('denied'); } } }));
+  await first.getByRole('button', { name: '앱 요청 ID 복사' }).click();
+  await expect(first.getByRole('status')).toContainText('복사 실패');
+  await search.fill(''); await expect(first.getByText(paper.requestId)).toBeHidden();
+  await page.getByLabel('상태 필터').selectOption('unknown');
+  await expect(list.getByText('미확인', { exact: true }).first()).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel('상태 필터')).toHaveValue('unknown');
+  await expect(list.getByRole('listitem')).toHaveCount(1);
+  await page.getByRole('button', { name: 'DEMO 주문', exact: true }).click();
+  await page.goBack(); await expect(page.getByLabel('상태 필터')).toHaveValue('unknown');
+  await search.fill('없는주문'); await page.getByRole('button', { name: '조건 지우기' }).click();
+  await expect(list.getByRole('listitem')).toHaveCount(2);
+  await expect(search).toHaveValue(''); expect(page.url()).not.toContain('status=');
+  await page.goto('/orders?view=bad&status=bad');
+  await expect(page.getByRole('button', { name:'DEMO 주문', exact:true })).toHaveAttribute('aria-pressed','true');
+  expect(writes).toEqual([]);
+});
+
+test('history keeps health failures, active halt and stale rows visible outside the order details', async ({ page }) => {
+  const s = snapshot();
+  s.risk.halted = true;
+  s.connection.status = { ...s.connection.status, phase: 'error', error: '모의 조회 실패' };
+  await page.route('**/api/state', route => route.fulfill({ json: s }));
+  let fail = false;
+  await page.route('**/api/kis/history', route => fail ? route.fulfill({ status: 503, json: {} })
+    : route.fulfill({ json: { sourceCount: 1, unavailable: [], orders: [paper] } }));
+  await page.goto('/orders?view=history');
+  await expect(page.getByLabel('긴급정지 상태', { exact: true })).toBeVisible();
+  await expect(page.getByText('모의 조회 실패', { exact: true })).toBeVisible();
+  const row=page.getByRole('listitem').filter({hasText:'005930'});
+  await expect(row.locator('.history-unknown')).toHaveText('미확인');
+  fail = true; await page.getByRole('button',{name:'원장 다시 읽기'}).click();
+  await expect(page.getByText('이전에 읽은 원장')).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('원장을 읽지 못했습니다');
+  await expect(row).toBeVisible();
+  await expect(page.getByText('등록된 지난 실행에 저장된 주문이 없습니다')).toHaveCount(0);
+  await page.getByRole('searchbox').fill('없는종목');
+  await expect(page.getByText('이전에 읽은 원장')).toBeVisible();
+  await page.getByRole('button', {name: '조건 지우기'}).click();
+  await expect(row).toBeVisible(); await expect(page.getByRole('searchbox')).toBeFocused();
+});
+
+test('a current-session reconciliation refreshes current orders but leaves the archive snapshot alone', async ({ page }) => {
+  const s = snapshot();
+  s.realtime = { phase: 'ready', required: false, ordersAllowed: false, message: '', code: null,
+    lastQuoteAt: null, lastNoticeAt: null, reconciledAt: null, price: null, fresh: false };
+  let historyReads = 0, currentReads = 0;
+  await page.clock.install();
+  await page.route('**/api/state', r => r.fulfill({ json: s }));
+  await page.route('**/api/kis/history', r => { historyReads++; return r.fulfill({ json: { orders: [paper], sourceCount: 1, unavailable: [] } }); });
+  await page.route('**/api/kis/ledger', r => { currentReads++; return r.fulfill({ json: { orders: [paper] } }); });
+  await page.goto('/orders');
+  await expect(page.locator('.connection-link')).toHaveText('로컬 서버 연결');
+  await page.getByRole('button', {name:'지난 KIS 실행 기록',exact:true}).click();
+  await expect(page.getByRole('list', {name: '지난 주문 목록'})).toBeVisible();
+  const loaded = historyReads;
+  s.risk.halted = true; s.realtime.reconciledAt = '2026-11-15T01:00:00Z';
+  await page.clock.fastForward(3100);
+  await expect(page.getByLabel('긴급정지 상태', {exact:true})).toContainText('긴급정지 켜짐');
+  expect(historyReads).toBe(loaded);
+  await page.getByRole('button',{name:'KIS 모의 원장',exact:true}).click(); await expect(page.getByRole('table')).toBeVisible();
+  const initial = currentReads; s.realtime.reconciledAt = '2026-11-15T01:00:03Z';
+  await page.clock.fastForward(3100);
+  await expect.poll(() => currentReads).toBeGreaterThan(initial);
 });
