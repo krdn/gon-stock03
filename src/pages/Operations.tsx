@@ -1,8 +1,9 @@
 import { RealtimeStatus } from '../components/RealtimeStatus';
-import { useEffect, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import './Risk.css';
 import './Alerts.css';
+import './Journal.css';
 import { Check, ChevronDown, Landmark, RefreshCw, Server, Settings2, ShieldCheck, Square, Wallet } from 'lucide-react';
 import { useWorkbench } from '../context';
 import { Badge, Empty, Panel } from '../components/ui';
@@ -132,18 +133,95 @@ export function Risk() {
 }
 
 export function Journal() {
-  const { state, act, busy, available } = useWorkbench(); const [code, setCode] = useState('005930'), [text, setText] = useState(''), [query, setQuery] = useState('');
+  const { state, server, status, act, refresh, available, busy } = useWorkbench();
+  const { key: visit } = useLocation();
+  const instruments = server ? state.instruments : [];
+  const firstCode = instruments[0]?.code ?? '';
+  const [code, setCode] = useState(firstCode);
+  useEffect(() => { if (!code && firstCode) setCode(firstCode); }, [code, firstCode]);
+  const [text, setText] = useState('');
+  const [query, setQuery] = useState('');
+  useLayoutEffect(() => {
+    setQuery(typeof history.state?.journalSearch === 'string' ? history.state.journalSearch : '');
+  }, [visit]);
+  const [feedback, setFeedback] = useState('');
+  const recordsTitle = useRef<HTMLHeadingElement>(null);
+  const stockInput = useRef<HTMLSelectElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const memoInput = useRef<HTMLTextAreaElement>(null);
   const draftRevision = useRef(0);
+  const current = Boolean(server) && available && status.complete;
+  const records = server ? state.journal : [];
+  const names = new Map(instruments.map(s => [s.code, s.name]));
+  const validStock = names.has(code);
+  const stockPlaceholder = instruments.length ? '종목을 다시 선택하세요' : current ? '선택할 종목 없음' : '종목 목록 미확인';
+  const term = query.trim().toLowerCase();
+  const entries = records.filter(j => [j.text, j.code, names.get(j.code) ?? ''].some(value => value.toLowerCase().includes(term)));
+
+  function search(value: string) {
+    setQuery(value);
+    // Keep free text out of the URL and keep the router's own history fields.
+    try { history.replaceState({ ...history.state, journalSearch: value }, ''); }
+    catch { /* Filtering still works when browser history writes are restricted. */ }
+  }
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    if (!current || !validStock || busy) return;
     const submittedRevision = draftRevision.current;
+    setFeedback('');
     try {
       await act('journal', { code, text });
       if (draftRevision.current === submittedRevision) setText('');
-    } catch { /* Workspace displays the failure. */ }
+      setFeedback(`${names.get(code) ?? code} 메모를 저장했습니다.`);
+    } catch (error) {
+      setFeedback(error instanceof Error && 'definitive' in error && error.definitive
+        ? '저장하지 못했습니다. 입력한 내용을 확인하세요.'
+        : '저장 결과를 확인하지 못했습니다. 초안은 유지됩니다. 다시 저장하기 전에 목록을 확인하세요.');
+    }
   }
-  const entries = state.journal.filter(j => j.text.includes(query) || j.code.includes(query));
-  return <div className="grid-main"><Panel title="나의 기록" action={<input className="compact-input" aria-label="일지 검색" placeholder="일지 검색" value={query} onChange={e => setQuery(e.target.value)} />}>{entries.length ? entries.map(j => <article className="journal-entry" key={j.id}><div><Badge>{state.instruments.find(s => s.code === j.code)?.name}</Badge><time>{new Date(j.date).toLocaleString('ko-KR')}</time></div><p>{j.text}</p></article>) : query ? <Empty title="검색 결과가 없습니다">다른 본문이나 종목코드로 검색하거나 검색어를 지워보세요.</Empty> : <Empty title="기록이 쌓이면 원칙이 보입니다">진입 이유, 지킨 규칙, 다음에 바꿀 행동을 남겨보세요.</Empty>}</Panel><Panel title="기록 작성"><form onSubmit={save}><label className="field">종목<select value={code} onChange={e => { draftRevision.current += 1; setCode(e.target.value); }}>{state.instruments.map(s => <option value={s.code} key={s.code}>{s.name}</option>)}</select></label><label className="field">매매 메모<textarea rows={8} value={text} required maxLength={2000} onChange={e => { draftRevision.current += 1; setText(e.target.value); }} placeholder="왜 이 종목을 관찰했나요? 어떤 조건에서 진입하고 청산할까요?" /></label><span className="muted tiny">{text.length} / 2,000</span><button className="button primary wide" disabled={!available || busy}>일지 저장</button></form></Panel></div>;
+
+  const scope = current ? '전체' : '수신';
+  const showSearch = Boolean(server && (records.length || query));
+  return <div className="grid-main journal-page">
+    <section className="panel journal-records" aria-labelledby="journal-records-title">
+      <header className="journal-heading">
+        <div><h2 id="journal-records-title" tabIndex={-1} ref={recordsTitle}>나의 기록</h2><span className="journal-source">로컬 저장{records.length > 0 && ` · ${term ? `검색 ${entries.length}건 / ` : ''}${scope} ${records.length}건`}</span></div>
+        {records.length > 0 && <button type="button" className="button secondary journal-jump" onClick={() => (stockInput.current?.disabled ? memoInput.current : stockInput.current)?.focus()}>메모 작성</button>}
+        {showSearch && <div className="journal-search">
+          <input ref={searchInput} aria-label="일지 검색" placeholder="종목명·코드·본문 검색" value={query} onChange={e => search(e.target.value)} />
+          {query && <button type="button" onClick={() => { search(''); (records.length ? searchInput.current : recordsTitle.current)?.focus(); }}>검색 지우기</button>}
+        </div>}
+      </header>
+      {!current && <p className="journal-status" role="status">{!server
+        ? status.phase === 'loading' ? '저장한 기록을 불러오는 중입니다.' : '저장한 기록을 확인하지 못했습니다.'
+        : status.phase === 'partial' || (available && !status.complete) ? '전체 기록을 확인하지 못했습니다. 받은 기록만 표시합니다.' : '마지막으로 받은 기록입니다. 최신 목록을 확인해야 합니다.'}</p>}
+      {entries.map(j => <article className="journal-entry" key={j.id}>
+        <div><strong>{names.get(j.code) ?? '종목명 미확인'} <small>{j.code}</small></strong><time dateTime={j.date}>{new Date(j.date).toLocaleString('ko-KR')}</time></div>
+        <p>{j.text}</p>
+      </article>)}
+      {(current || records.length > 0) && !entries.length && <div className="journal-empty">
+        <h3>{records.length ? (current ? '검색 결과가 없습니다' : '받은 기록에서 검색 결과가 없습니다') : '기록이 쌓이면 원칙이 보입니다'}</h3>
+        <p>{records.length ? '다른 종목명·코드·본문으로 검색해 보세요.' : '종목을 고르고 첫 매매 메모를 남겨보세요.'}</p>
+      </div>}
+    </section>
+    <section className="panel journal-compose" aria-labelledby="journal-compose-title">
+      <form onSubmit={save}>
+        <header className="journal-heading"><h2 id="journal-compose-title">기록 작성</h2>
+          <label className="journal-stock">종목<select ref={stockInput} disabled={!instruments.length} value={validStock ? code : ''} onChange={e => { draftRevision.current += 1; setCode(e.target.value); }}>
+            {!validStock && <option value="" disabled>{stockPlaceholder}</option>}
+            {instruments.map(s => <option value={s.code} key={s.code}>{s.name}</option>)}
+          </select></label>
+        </header>
+        <label className="field" htmlFor="journal-note">매매 메모</label>
+        <textarea ref={memoInput} id="journal-note" rows={3} required maxLength={2000} disabled={!server} value={text} placeholder="관찰한 이유나 다음에 지킬 원칙" onChange={e => { draftRevision.current += 1; setText(e.target.value); }} />
+        <div className="journal-submit"><span>{text.length.toLocaleString('ko-KR')} / 2,000</span><button className="button primary" disabled={!current || !validStock || busy}>일지 저장</button></div>
+        {feedback && <div className="journal-feedback"><p>{feedback}</p><button type="button" onClick={() => {
+          search(''); recordsTitle.current?.focus(); void refresh();
+        }}>전체 기록 확인</button></div>}
+      </form>
+    </section>
+  </div>;
 }
 const alertFilters = [
   { key: 'level', label: '중요도', options: [['info', '안내'], ['warning', '주의'], ['error', '오류']] },

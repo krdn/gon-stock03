@@ -1,0 +1,44 @@
+{
+  "requested": "Gemini 4 Neon High",
+  "providerExecutionModelAndEffort": "별도 미확인",
+  "input": "격리 디렉터리에서 페이지 코드·합성 실측과 계약만 전달. 모델은 캡처를 직접 열지 않았다.",
+  "calls": [
+    {
+      "phase": "design",
+      "cliInitModel": "gemini-4-neon-high",
+      "resultEventStatus": "SUCCESS",
+      "finishedReason": null,
+      "outcome": "완결",
+      "findings": [
+        "기록 조회와 검색의 상태 분리",
+        "검색과 행의 종목명·코드 일치",
+        "모바일 작성 위치, 오류 안내와 재전송 전 확인"
+      ]
+    },
+    {
+      "phase": "implementation",
+      "cliInitModel": "gemini-4-neon-high",
+      "resultEventStatus": "SUCCESS",
+      "finishedReason": "print_timeout",
+      "outcome": "5분 제한 · 부분 응답",
+      "findings": [
+        "부분 수신 중 검색 0건 안내",
+        "선택 종목이 목록에서 사라진 때의 POST",
+        "같은 경로의 방문 사이에서 검색 복원"
+      ]
+    },
+    {
+      "phase": "revised",
+      "cliInitModel": "gemini-4-neon-high",
+      "resultEventStatus": "SUCCESS",
+      "finishedReason": null,
+      "outcome": "완결 PASS · P0/P1 없음, P2 2건",
+      "findings": [
+        "앞선 P2 세 건 보완 확인",
+        "미확인 종목 표시와 처음 수신한 종목 선택 보완",
+        "종목 미수신 시 작성 바로가기 초점 보완"
+      ]
+    }
+  ],
+  "finalVerification": "완결 응답의 추가 P2 두 건은 브라우저 회귀로 검증했다."
+}
