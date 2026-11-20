@@ -15,7 +15,7 @@ test('paper market refresh preserves edited limit price and quantity', async ({ 
   await page.getByRole('button', { name: '시세·일봉 조회' }).click();
   await expect(page.getByRole('button', { name: 'KIS 모의 주문 확인', exact: true })).toBeEnabled();
   await expect(page.getByLabel('지정가 (원)')).toHaveValue('70000'); await expect(page.getByLabel('수량 (주)')).toHaveValue('2');
-  await page.screenshot({ path: 'docs/verification/assets/paper/desktop-input.png', fullPage: true });
+  await page.screenshot({ path: test.info().outputPath('desktop-input.png'), fullPage: true });
 });
 test('paper ambiguous transport preserves request and payload across close and reload', async ({ page }) => {
   await setup(page); const sent: unknown[] = [];
@@ -29,7 +29,7 @@ test('paper ambiguous transport preserves request and payload across close and r
   await expect(page.getByRole('button', { name: 'KIS 모의 주문 확인', exact: true })).toBeDisabled();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: '동일 요청 확인', exact: true }).click();
-  await page.screenshot({ path: 'docs/verification/assets/paper/mobile-confirmation.png', fullPage: true });
+  await page.screenshot({ path: test.info().outputPath('mobile-confirmation.png'), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole('button', { name: 'KIS 모의 주문 전송', exact: true }).click();
   await expect.poll(() => sent.length).toBe(2); expect(sent[1]).toEqual(sent[0]);
@@ -43,16 +43,29 @@ test('paper ledger identifies statuses and explicit recovery at mobile width', a
   await page.route('**/api/kis/recovery/inspect', route => { inspections++; return route.fulfill({ json: { order, evidenceId: 'evidence-1', evidence: { observedAt: new Date().toISOString(), tradeDate: order.tradeDate }, candidates: [candidate] } }); });
   await page.route('**/api/kis/recovery/confirm', route => { confirmations++; expect(route.request().postDataJSON()).toEqual({ id: order.requestId, evidenceId: 'evidence-1', brokerId: '1234', organization: '999', confirmed: true }); return route.fulfill({ json: { order: { ...order, status: 'partial', brokerId: '1234', filled: 1, remaining: 1 } } }); });
   await page.goto('/paper?code=005930');
+  const row = page.getByRole('row').filter({ hasText: order.requestId });
+  const identifiers = row.locator('summary');
+  await identifiers.focus();
+  await page.keyboard.press('Space');
   await expect(page.getByText(order.requestId, { exact: true })).toBeVisible();
+  const jump = page.getByRole('button', { name: '불명 주문 보기' });
+  await jump.focus();
+  await page.keyboard.press('Enter');
+  const lookup = row.getByRole('button', { name: '불명 복구 조회' });
+  await expect(lookup).toBeFocused();
+  await expect(lookup).toBeInViewport({ ratio: 1 });
+  await expect(page).toHaveURL(/paper\?code=005930$/);
   expect(inspections).toBe(0); expect(confirmations).toBe(0);
   await page.getByRole('button', { name: '불명 복구 조회', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '불명 주문 연결 확인' })).toBeFocused();
   await expect(page.getByText('1234', { exact: false }).last()).toBeVisible();
   await expect(page.getByRole('button', { name: '선택 주문 연결', exact: true })).toBeDisabled();
   await page.locator('.table-scroll').evaluateAll(elements => elements.forEach(element => { element.scrollLeft = 0; }));
-  await page.screenshot({ path: 'docs/verification/assets/paper/mobile-recovery.png', fullPage: true });
+  await page.screenshot({ path: test.info().outputPath('mobile-recovery.png'), fullPage: true });
   await page.getByLabel('KIS 앱의 주문번호·거래일·종목·방향·수량·가격을 확인했습니다').check();
   await page.getByRole('button', { name: '선택 주문 연결', exact: true }).click();
   await expect.poll(() => confirmations).toBe(1);
+  await expect(page.getByRole('heading', { name: '이 앱에서 전송한 KIS 모의 주문' })).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 test('paper late market response cannot overwrite another symbol or edited input', async ({ page }) => {
@@ -80,7 +93,8 @@ test('paper stored receipt resolves transport ambiguity without another order PO
   await page.addInitScript(input => sessionStorage.setItem('kis-paper-pending', JSON.stringify(input)), { requestId: order.requestId, code: order.code, side: order.side, price: order.price, qty: order.qty });
   await page.route('**/api/kis/order', route => { posts++; return route.abort(); });
   await page.route('**/api/kis/ledger', route => route.fulfill({ json: { orders: [{ ...order, status: 'accepted', brokerId: '1234' }] } }));
-  await page.goto('/paper'); await expect(page.getByText(order.requestId, { exact: true })).toBeVisible();
+  await page.goto('/paper'); await page.getByText('주문 식별 정보', { exact: true }).click();
+  await expect(page.getByText(order.requestId, { exact: true })).toBeVisible();
   await expect(page.getByText('전송 결과 미확인', { exact: true })).toHaveCount(0); expect(posts).toBe(0);
   expect(await page.evaluate(() => sessionStorage.getItem('kis-paper-pending'))).toBeNull();
 });
@@ -249,4 +263,102 @@ test('상한 지정 현재가 주문은 확인창에 최대 단가를 표시하�
   await expect(page.getByText('전송 결과 미확인', { exact: true })).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem('kis-paper-pending'))).toBeNull();
   await expect(page.getByRole('row').filter({ hasText: input.requestId })).toContainText('79,830');
+});
+
+test('시세 조회 실패 후 재조회는 빈 일봉과 수신한 현재가를 구분한다', async ({ page }) => {
+  await setup(page);
+  let attempts = 0;
+  let release!: () => void;
+  const delayed = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/kis/market', async route => {
+    if (++attempts === 1) {
+      await delayed;
+      return route.fulfill({ status: 503, json: { error: '예시 시세 지연' } });
+    }
+    return route.fallback();
+  });
+  await page.goto('/paper');
+  const market = page.getByRole('button', { name: '시세·일봉 조회' });
+  await market.click();
+  await expect(page.getByText('현재가와 수정 일봉을 조회하고 있습니다.')).toBeVisible();
+  release();
+  await expect(page.getByText(/시세 조회 실패 · 종목과 연결/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'KIS 모의 주문 확인' })).toBeDisabled();
+  await market.click();
+  await expect(page.getByText('조회된 일봉 없음')).toBeVisible();
+  await expect(page.getByLabel('지정가 (원)')).toHaveValue('75000');
+  await expect(page.getByRole('img', { name: /수정 일봉 종가/ })).toHaveCount(0);
+});
+
+test('대조가 필요한 주문은 전송 없이 대조 버튼으로 이동하고 주문 관리는 KIS 환경을 연다', async ({ page }) => {
+  await setup(page);
+  const posts: string[] = [];
+  page.on('request', request => { if (request.method() === 'POST') posts.push(request.url()); });
+  await page.route('**/api/kis/ledger', route => route.fulfill({ json: { orders: [{ ...order, brokerId: '166' }] } }));
+  await page.goto('/paper?code=005930');
+  await page.getByRole('button', { name: '당일 주문 대조로 이동' }).press('Enter');
+  await expect(page.getByRole('button', { name: '계좌·주문 조회' })).toBeFocused();
+  await page.getByRole('link', { name: '주문 관리에서 KIS 모의 원장 보기' }).click();
+  await expect(page).toHaveURL(/orders\?view=kis$/);
+  await expect(page.getByRole('button', { name: 'KIS 모의 원장', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.goBack();
+  await expect(page.getByLabel('KIS 종목코드')).toHaveValue('005930');
+  expect(posts).toEqual([]);
+});
+
+test('전송 미확인 재시도는 현재 입력과 다른 원래 종목의 실시간 상태를 확인한다', async ({ page }) => {
+  await setup(page);
+  const state = snapshot();
+  const originalCode = '005930', editedCode = '000660';
+  state.realtime = { phase: 'ready', required: true, ordersAllowed: true, code: editedCode, fresh: true,
+    lastQuoteAt: new Date().toISOString(), lastNoticeAt: null, reconciledAt: null, price: 75000, message: '합성 실시간 상태' };
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  const pending = { code: originalCode, qty: 2, price: 70000, side: 'buy', requestId: order.requestId };
+  await page.addInitScript(input => sessionStorage.setItem('kis-paper-pending', JSON.stringify(input)), pending);
+  const sent: unknown[] = [];
+  await page.route('**/api/kis/order', route => { sent.push(route.request().postDataJSON()); return route.abort(); });
+  await page.goto('/paper?code=' + editedCode);
+  const retry = page.getByRole('button', { name: '동일 요청 확인' });
+  await expect(page.getByText(/주문 대상 005930 · 실시간 수신 종목 000660/)).toBeVisible();
+  await retry.click();
+  const send = page.getByRole('button', { name: 'KIS 모의 주문 전송', exact: true });
+  await expect(send).toBeDisabled();
+  await expect(page.getByRole('dialog')).toContainText('요청 종목 005930의 실시간');
+  expect(sent).toEqual([]);
+  await page.keyboard.press('Escape');
+  state.realtime.phase = 'stopped';
+  state.realtime.ordersAllowed = false;
+  state.realtime.fresh = false;
+  await page.reload();
+  await page.route('**/api/kis/realtime/start', route => {
+    expect(route.request().postDataJSON()).toEqual({ code: originalCode });
+    state.realtime = { ...state.realtime!, phase: 'ready', code: originalCode, fresh: true, ordersAllowed: true };
+    return route.fulfill({ json: { message: '합성 수신' } });
+  });
+  await page.getByRole('button', { name: '실시간 수신 시작' }).click();
+  await retry.click();
+  await expect(send).toBeEnabled();
+  await send.click();
+  await expect.poll(() => sent).toEqual([pending]);
+});
+
+test('원장 로딩 중에는 기다리며 복구 후보 조회 실패 시 불명과 입력을 보존한다', async ({ page }) => {
+  await setup(page);
+  let release!: () => void;
+  const delayed = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/kis/ledger', async route => {
+    await delayed;
+    return route.fulfill({ json: { orders: [order] } });
+  });
+  await page.route('**/api/kis/recovery/inspect', route => route.fulfill({ status: 503, json: { error: '예시 지연' } }));
+  await page.goto('/paper');
+  await expect(page.getByText('저장된 주문 원장 조회 중')).toBeVisible();
+  await expect(page.getByText('원장 확인 후 주문 가능 여부를 표시합니다.')).toBeVisible();
+  release();
+  await page.getByLabel('지정가 (원)').fill('71000');
+  await page.getByRole('button', { name: '불명 복구 조회' }).click();
+  await expect(page.getByText('복구 후보 조회 실패 · 불명 상태를 유지합니다. 다시 조회하세요.')).toBeVisible();
+  await expect(page.getByRole('button', { name: '불명 주문 보기' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '선택 주문 연결' })).toHaveCount(0);
+  await expect(page.getByLabel('지정가 (원)')).toHaveValue('71000');
 });

@@ -51,3 +51,36 @@ test('일반 모의 계좌에서는 전송 없이 취소 결과만 조회한다'
   await expect(page.getByRole('columnheader', { name: '취소확인' })).toBeVisible();
   expect(calls.posts()).toBe(0); expect(calls.reads()).toBe(1);
 });
+
+test('모바일 부분체결 주문의 확인창·취소 대조 결과가 화면 폭 안에 남는다', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const partial = { ...order, status: 'partial', qty: 3, filled: 1, remaining: 2 };
+  const final = { ...partial, status: 'cancelled', remaining: 0 };
+  let cancels = 0, reads = 0;
+  await page.route('**/api/state', route => route.fulfill({ json: snapshot() }));
+  await page.route('**/api/kis/ledger', route => route.fulfill({ json: { orders: [partial], cancellation: available } }));
+  await page.route('**/api/kis/cancel-probe', route => {
+    cancels++;
+    return route.fulfill({ json: { order: { ...partial, status: 'unknown' }, warning: true } });
+  });
+  await page.route('**/api/kis/orders', route => {
+    reads++;
+    return route.fulfill({ json: { orders: [final], cancellation: blocked, brokerOrders: [
+      { ...final, date: final.tradeDate, name: '격리 예시', confirmedCancelQty: 2, cancelled: true }
+    ] } });
+  });
+  await page.goto('/paper');
+  const open = page.getByRole('button', { name: '잔량 전부 취소' });
+  await open.press('Enter');
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('주문 3주 · 체결 1주 · 취소 요청 잔량 2주');
+  await page.keyboard.press('Escape');
+  await expect(open).toBeFocused();
+  expect(cancels).toBe(0);
+  await open.press('Enter');
+  await dialog.getByRole('button', { name: '잔량 취소 요청' }).press('Enter');
+  await expect(page.getByText('KIS 대조 · 체결 1주 · 취소확인 2주 · 잔량 0주')).toBeVisible();
+  await expect(open).toBeDisabled();
+  expect([cancels, reads]).toEqual([1, 1]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+});
