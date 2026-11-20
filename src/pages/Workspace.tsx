@@ -1,7 +1,7 @@
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight, RefreshCw, ShieldCheck, Star, Zap } from 'lucide-react';
 import { useWorkbench } from '../context';
-import { Badge, Change, Chart, DataStatusLine, Empty, PageLink, Panel, Stat, phaseLabels } from '../components/ui';
+import { Badge, Change, Chart, DataStatusLine, Empty, PageLink, Panel, Stat, confirmedAt, phaseLabels } from '../components/ui';
 import { won, type Instrument } from '../../shared/model';
 import { portfolioValue } from '../../shared/portfolio';
 import { BALANCE_STALE_MS } from '../../shared/status';
@@ -13,12 +13,6 @@ export function InstrumentTable({ instruments }: { instruments: Instrument[] }) 
   const { state, act, busy, available } = useWorkbench();
   return <div className="table-scroll"><table><thead><tr><th>관심</th><th>종목명 / 코드</th><th>현재가</th><th>등락률</th><th className="spark-header">가격 흐름 <span className="muted">· 합성</span></th><th>거래량</th><th><span className="sr-only">종목 열기</span></th></tr></thead><tbody>{instruments.map(s => <tr key={s.code}><td><button className={`star-button ${state.watchlist.includes(s.code) ? 'selected' : ''}`} aria-label={`${s.name} 관심 ${state.watchlist.includes(s.code) ? '해제' : '등록'}`} disabled={busy || !available} onClick={() => void act('watchlist', { code: s.code }).catch(() => {})}><Star size={17} /></button></td><td><Link className="stock-name" to={`/trade?code=${s.code}`}>{s.name}<small>{s.code}<span>{s.market}</span></small></Link></td><td className="number">{won(s.price)}</td><td><Change value={s.change} /></td><td className="spark-cell"><Chart values={s.history.slice(-30)} height={35} color={s.change >= 0 ? 'var(--red)' : 'var(--blue)'} area={false} label={`${s.name} 합성 가격 추이`} /></td><td className="number muted">{(s.volume / 10000).toFixed(1)}만</td><td><Link className="table-action" to={`/trade?code=${s.code}`} aria-label={`${s.name} 트레이딩`}><ArrowUpRight size={17} /></Link></td></tr>)}</tbody></table></div>;
 }
-function confirmedAt(value: string | null | undefined) {
-  if (!value) return '없음';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '없음' : <time dateTime={value}>{date.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} KST</time>;
-}
-
 export function Dashboard() {
   const { state, status, connection, paperRisk, available, realtime, serverNow } = useWorkbench();
   const quoteAge = realtime?.lastQuoteAt ? serverNow - Date.parse(realtime.lastQuoteAt) : Infinity;

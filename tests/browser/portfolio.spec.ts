@@ -42,6 +42,9 @@ test('portfolio distinguishes disconnected, loading, partial, stale and recovere
   await page.route('**/api/kis/check', async route => { checks++; await gate; state.connection = portfolioState().connection; await route.fulfill({ json: { connection: state.connection, message: '잔고 전체 조회' } }); });
   await page.goto('/portfolio');
   await expect(page.getByRole('heading', { name: 'KIS 잔고를 조회해 주세요' })).toBeVisible();
+  const common = page.getByLabel('KIS 계좌 상태', { exact: true });
+  await expect(common).toContainText('관측 없음');
+  await expect(common).toContainText('최종 전체 성공 없음');
   await expect(page.locator('.portfolio-warning')).toHaveCount(0);
   await expect(page.getByRole('link', { name: '연결·설정 확인' })).toBeVisible();
   await expect(page.getByRole('region', { name: '포트폴리오 요약' })).toHaveCount(0);
@@ -179,6 +182,13 @@ for (const timezoneId of ['UTC', 'Asia/Seoul']) {
       state.connection.status.complete = false;
       await page.route('**/api/state', route => route.fulfill({ json: state }));
       await page.goto('/portfolio');
+      const common = page.getByLabel('KIS 계좌 상태', { exact: true });
+      for (const width of [390, 1440]) {
+        await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+        await expect(common.getByText(/^관측 /)).toContainText('오전 10:01:00 KST');
+        await expect(common.getByText(/^최종 전체 성공 /)).toContainText('오전 10:00:00 KST');
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+      }
       const selected = page.getByLabel('포트폴리오 조회 상태', { exact: true });
       await expect(selected).toContainText('오전 10:00:00 KST');
       await expect(page.getByText('이전 전체 성공값 · 최신 아님', { exact: false })).toBeVisible();
@@ -189,6 +199,10 @@ for (const timezoneId of ['UTC', 'Asia/Seoul']) {
       await expect(selected).toContainText('부분실패');
       await page.getByRole('button', { name: '로컬 DEMO', exact: true }).click();
       await expect(selected).toContainText('오전 10:00:00 KST');
+      await page.goto('/orders?view=history');
+      await expect(common.getByText(/^관측 /)).toBeVisible();
+      await expect(common.getByText(/^관측 /)).toContainText('오전 10:01:00 KST');
+      await expect(common.getByText(/^최종 전체 성공 /)).toContainText('오전 10:00:00 KST');
       await page.goto('/dashboard');
       await expect(page.getByLabel('KIS 계좌 요약').getByText(/잔고 최종 전체 성공/)).toContainText('오전 10:00:00 KST');
     });
