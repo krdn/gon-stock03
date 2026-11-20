@@ -20,46 +20,95 @@ async function fixture(page: Page, saved: string[], partial = false) {
   return state;
 }
 
-for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
-  test('관심종목 상세에서 전달하고 뒤로·새로고침·Escape로 복귀 ' + viewport.width, async ({ page, context }) => {
-    await page.setViewportSize(viewport);
-    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-    await fixture(page, ['069500', '888888']);
-    await page.goto('/watchlist');
-    const first = page.locator('tbody tr').first();
-    await expect(first).toContainText('미수신 · 조회 실패');
-    await expect(first).toBeInViewport({ ratio: 0.95 });
-    expect(await page.locator('.table-scroll').evaluate(el => el.scrollWidth - el.clientWidth)).toBe(0);
-    const search = page.getByRole('textbox', { name: '종목명 또는 코드 검색' });
-    await search.pressSequentially('0695');
-    await page.getByRole('button', { name: 'ETF', exact: true }).press('Space');
-    const trigger = page.getByRole('button', { name: '예시 지수 ETF 상세' });
-    await trigger.press('Enter');
-    const detail = page.getByRole('region', { name: '종목 상세' });
-    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    await expect(detail).toBeFocused();
-    await detail.getByRole('button', { name: '종목코드 복사' }).press('Enter');
-    await expect(detail.getByRole('status')).toContainText('069500');
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('069500');
-    await detail.getByRole('link', { name: '트레이딩에서 시세 보기' }).press('Enter');
-    await expect(page.getByLabel('실제 시세 종목코드')).toHaveValue('069500');
-    await page.goBack();
-    await expect(detail).toBeFocused();
-    await page.reload();
-    await expect(detail).toBeFocused();
-    await expect(search).toHaveValue('0695');
-    await expect(page.getByRole('button', { name: 'ETF', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await detail.press('Escape');
-    await expect(trigger).toBeFocused();
-    await expect(detail).toHaveCount(0);
-    await expect(page).not.toHaveURL(/detail=/);
-    await trigger.press('Enter');
-    await expect(page).toHaveURL(/detail=069500/);
-    await expect(detail).toBeFocused();
-    await page.goBack();
-    await expect(trigger).toBeFocused();
-  });
+for (const route of ['/watchlist', '/market']) {
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    test(`${route} 상세와 트레이딩의 Back/Forward 및 키보드 복귀 ${viewport.width}`, async ({ page, context }) => {
+      await page.setViewportSize(viewport);
+      await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+      await fixture(page, ['069500', '888888']);
+      await page.goto(route);
+      const first = page.locator('tbody tr').first();
+      await expect(first).toContainText('미수신 · 조회 실패');
+      await expect(first).toBeInViewport({ ratio: 0.95 });
+      expect(await page.locator('.table-scroll').evaluate(el => el.scrollWidth - el.clientWidth)).toBe(0);
+      const search = page.getByRole('textbox', { name: '종목명 또는 코드 검색' });
+      const etf = page.getByRole('button', { name: 'ETF', exact: true });
+      const trigger = page.getByRole('button', { name: '예시 지수 ETF 상세' });
+      const detail = page.getByRole('region', { name: '종목 상세' });
+      await search.pressSequentially('0695');
+      await etf.press('Space');
+      const listURL = route + '?q=0695&market=ETF';
+      const detailURL = listURL + '&detail=069500';
+      async function expectList() {
+        await expect(page).toHaveURL(listURL);
+        await expect(detail).toHaveCount(0);
+        await expect(trigger).toBeFocused();
+        await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+        await expect(search).toHaveValue('0695');
+        await expect(etf).toHaveAttribute('aria-pressed', 'true');
+      }
+      async function expectDetail() {
+        await expect(page).toHaveURL(detailURL);
+        await expect(detail).toBeFocused();
+        await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+        await expect(detail).toContainText('예시 지수 ETF · 069500');
+        await expect(search).toHaveValue('0695');
+        await expect(etf).toHaveAttribute('aria-pressed', 'true');
+      }
+      await trigger.press('Enter');
+      await expectDetail();
+      if (route === '/watchlist') {
+        await detail.getByRole('button', { name: '종목코드 복사' }).press('Enter');
+        await expect(detail.getByRole('status')).toContainText('069500');
+        expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('069500');
+      }
+      await detail.getByRole('link', { name: '트레이딩에서 시세 보기' }).press('Enter');
+      await expect(page).toHaveURL('/trade?code=069500');
+      await expect(page.getByLabel('실제 시세 종목코드')).toHaveValue('069500');
+      await page.goBack();
+      await expectDetail();
+      await page.goForward();
+      await expect(page).toHaveURL('/trade?code=069500');
+      await expect(page.getByLabel('실제 시세 종목코드')).toHaveValue('069500');
+      await page.goBack();
+      await expectDetail();
+      await page.reload();
+      await expectDetail();
+      await detail.press('Escape');
+      await expectList();
+      await trigger.press('Enter');
+      await expect(detail).toBeFocused();
+      await page.goBack();
+      await expectList();
+      await page.goForward();
+      await expectDetail();
+    });
+  }
 }
+
+test('페이지를 떠날 때 시장·관심종목 이력 리스너를 해제한다', async ({ page, context, browserName }) => {
+  test.skip(browserName !== 'chromium', 'Chromium DevTools의 활성 리스너 목록을 측정한다.');
+  await fixture(page, ['069500']);
+  await page.goto('/trade?code=069500');
+  await expect(page.getByLabel('실제 시세 종목코드')).toHaveValue('069500');
+  const cdp = await context.newCDPSession(page);
+  async function listenerCount() {
+    const { result } = await cdp.send('Runtime.evaluate', {
+      expression: '(getEventListeners(window).popstate || []).length', includeCommandLineAPI: true, returnByValue: true,
+    });
+    return result.value as number;
+  }
+  const routerListeners = await listenerCount();
+  for (const route of ['/watchlist', '/market']) {
+    await page.locator(`nav a[href="${route}"]`).click();
+    await expect(page.getByRole('button', { name: '예시 지수 ETF 상세' })).toBeVisible();
+    await expect.poll(listenerCount).toBe(routerListeners + 1);
+    await page.goBack();
+    await expect(page.getByLabel('실제 시세 종목코드')).toHaveValue('069500');
+    await expect.poll(listenerCount).toBe(routerListeners);
+  }
+  await cdp.detach();
+});
 
 test('관심에서 제외·미확인 종목의 검색과 직접 링크를 구분한다', async ({ page }) => {
   await fixture(page, ['888888'], true);

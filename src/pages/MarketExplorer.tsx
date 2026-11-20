@@ -53,11 +53,9 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
     }
     syncLocation();
     // A fast Back can return to the same router snapshot while the detail is still open locally.
-    if (watchOnly) {
-      window.addEventListener('popstate', syncLocation);
-      return () => window.removeEventListener('popstate', syncLocation);
-    }
-  }, [urlView, watchOnly]);
+    window.addEventListener('popstate', syncLocation);
+    return () => window.removeEventListener('popstate', syncLocation);
+  }, [urlView]);
   const search = view.get('q') ?? '', selected = view.get('detail');
   const market = markets.find(value => value === view.get('market')) ?? '전체';
   const requestedPage = Number(view.get('page'));
