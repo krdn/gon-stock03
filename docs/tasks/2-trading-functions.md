@@ -1,5 +1,7 @@
 # 2차 로컬 기능과 KIS 모의 연결
 
+11월 20일 최종 인수 범위는 [모의 버전 수용 판정](../verification/2026-11-20-paper-acceptance.md)을 따른다. 아래는 단계별 이력이다.
+
 이슈: https://github.com/krdn/gon-stock03/issues/2 · 선행: [화면 #3](https://github.com/krdn/gon-stock03/issues/3) · 브랜치 `feat/trading-workbench`
 
 2026-11-15부터 [화면별 세션 계획](../plans/interface-sessions-2026-11.md)의 공통 기능 묶음으로 관리한다. 위 선행은 초기 개발 순서의 기록이다. 다음 실행은 #5 기준선 확정 뒤 개별 하위 이슈의 native 의존성을 따른다. 이 파일은 기존 구현·검증 근거를 보존한다.

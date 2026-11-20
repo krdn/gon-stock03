@@ -4,7 +4,7 @@
 
 프로젝트를 처음 볼 때는 [한 장 그림](architecture/figures/gon-stock-overview.png)에서 KIS 모의 주문과 DEMO 연습 흐름을 따라간다. [구조도 작업 #110](https://github.com/krdn/gon-stock03/issues/110)
 
-- **남은 이슈는 #25와 상위 #3·#2·#1.** #123 정책 검증을 완료했고 #20·#12 화면을 사용자가 수용했다. 11월 20일 10:20 KODEX 200 모의 매수 2주는 첫 REST 조회에서 전량 체결됐고 취소 0회로 1회 승인이 소진됐다. [#25 취소 시각·결과 대조 대기](tasks/25-validation.md#다음-정규장-재개). [처리 순서와 검증](verification/2026-11-19-issue-closeout.md)
+- **현행 모의 버전 수용 · #25 → #3 → #2 → #1.** 실제 부분체결 직후 잔량 취소는 미관측으로 남기고 이번 인수에서 예외로 수용했다. [최종 판정과 검증](verification/2026-11-20-paper-acceptance.md) · [#25](https://github.com/krdn/gon-stock03/issues/25)
 - **자동진화 #129 → #130 → #131:** [오프라인 기준선 및 재생](tasks/129-offline.md) · [설계](plans/agent-evolution.md).
 - **오프라인 파일럿 #130:** [거래일지 초안 오류와 관심종목 코드 복사](tasks/130-product.md) · [선행 기준선 PR #133](https://github.com/krdn/gon-stock03/pull/133).
 - **#128 자동진화 설계:** [연구·설계와 인수인계](tasks/128-agent-evolution.md). 첫 구현 후보는 [#129 관심종목 회귀의 오프라인 재생](https://github.com/krdn/gon-stock03/issues/129)이다.
@@ -12,12 +12,12 @@
 - **#12 트레이딩 · 화면 수용 완료.** 실제 시세 종목 전환, 20·60·100일봉과 자동 갱신을 확인했다. [화면과 수용 답변](verification/2026-11-19-issue-closeout.md) · [작업 파일](tasks/12-trading.md)
 - **#20 관심종목 · 화면 수용 완료.** PR89 통합 후 정상 마스터의 삼성전자 시세와 상세 열기·닫기 초점 복귀를 확인했다. [화면과 수용 답변](verification/2026-11-19-issue-closeout.md) · [작업 파일](tasks/20-watchlist.md)
 - **전체 현황:** [완료·잔여 작업과 재개 안내](verification/2026-11-17-consolidated-status.md). 구현·격리검증·실제 관측·사용자 수용을 구분한다.
-- **#75 완료:** [11월 18일 실증](tasks/75-market-paper.md#11월-18일-장중-결과). 삼성전자 모의 시장가 1주 전량 체결, 잔량 0주, 보유 1주에서 2주로 증가. 해당 승인은 소진됐다. 다음 작업은 #25 실시간 수신·복구 검증이다.
+- **#75 완료:** [11월 18일 실증](tasks/75-market-paper.md#11월-18일-장중-결과). 삼성전자 모의 시장가 1주 전량 체결, 잔량 0주, 보유 1주에서 2주로 증가. 해당 승인은 소진됐다.
 - **#92 실시간 경로:** PR93 통합 SHA에서 두 구독 승인·실제 시세·REST 대조 확인. [재시도 소진 및 복구 관측](tasks/92-ws.md#통합-sha-장중-재검증).
 - **#120·#122 매매 설정:** [Opus 설계 판정·편집 동선 및 실행 방법](tasks/122-trading-settings.md). 일반 한도 저장과 다음 한정 실행/전략 계약의 고정·명시적 기동을 구분한다. [#123 매매 테스트 설정·이전 차단 사유별 조치](tasks/123-trading-policy.md). 새 계약에서 가격·금액·시세/신호·세션·잔량 대응을 고정한다. 운영 4303 적용과 실제 부분체결은 별도.
 - **#116 모의 잔량 취소:** [화면 조작·일반 모의 제약·검증](tasks/116-paper-cancel.md).
 - **#106·#107:** [정상 경로의 지연·취소 경합 연구](tasks/106-strategy-preflight.md) · [분리된 모의 테스트 실행기](tasks/107-vts-runner.md).
-- **#25 장중 실증 · Blocked:** [11월 19일 정상 전략 2주 접수·체결](verification/2026-11-19-strategy.md). [14:52 삼성전자 부분체결 1주·잔량 1주 후 전량 체결](verification/2026-11-19-strategy.md#1452-실제-부분체결과-1459-현재가-변동). 실제 잔량 취소 시도 대조가 남았다. [다음 정규장 재개 문구·완료 기준](tasks/25-validation.md#다음-정규장-재개). [장중 주문·응답 유실 복구·전략 신호](verification/2026-11-18-live-transitions.md). 실제 PC·모바일 주문 행의 전송 중→접수→체결, 별도 실제 주문의 통제된 응답 유실→모바일 대조→복구를 확인했다. [기존 화면 4개 수용·14:02 주문 없는 복구](verification/2026-11-18-dynamic-ui.md)와 [격리 재생·미관측 조건](tasks/25-validation.md)을 함께 본다.
+- **#25 장중 실증 기록.** [실제 주문과 응답 유실 복구](verification/2026-11-18-live-transitions.md) · [전략 신호·부분체결](verification/2026-11-19-strategy.md) · [KODEX 200 실제 전량 체결](verification/assets/25-live-transition/2026-11-20-kodex-once.json) · [작업 기록](tasks/25-validation.md)
 - **완료:** #71 연결·설정, #64/#65 안전성, #80 접속키 발급·앱 적용, #83 Graphify 추적·자동 전달은 통합했다. 15개 화면 수용은 초기/DEMO 표시·배치에 한정한다.
 - **실행 환경:** 17일19:17 현재 `/home/gon/llm-projects/gon-stock03`에서 4303/4304를 복구했다. 기존 `.local/workspace.sqlite`를 백업 후 사용한다. 주문 승인·WS 접속키 미주입, 구독·전략 정지. [재개 점검](tasks/75-market-paper.md#장외-재개-점검)을 확인한다.
 - **통합·정리:** [#85](tasks/85-consolidation.md), [브랜치 manifest](verification/2026-11-17-branch-consolidation.json). PR86으로 모든 기존 브랜치 이력을 main에 연결하고 초기 작업 브랜치29개를 정리했다. 원본18개 변경·fixture8개·작업 폴더를 보존했다. 구 worktree Graphify 재생성110개와 최종 검증은 #85 기록을 확인한다.
