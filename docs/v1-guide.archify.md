@@ -95,6 +95,8 @@ DEMO와 KIS 모의 중 살펴볼 환경을 선택합니다. 자산·주문·연�
 
 미체결이나 연결 경고를 누르면 자세한 원인을 볼 화면으로 이동합니다. KIS 잔고를 확인하지 못한 경우에는 금액을 미확인으로 표시합니다.
 
+**2차 미리보기**  ‘KIS 전략 평가 확인’을 누르면 전략 스튜디오의 KIS 환경이 열립니다. ‘위험 경고 · 원인 화면’은 경고를 일으킨 화면으로 이동합니다. 브라우저 시계가 서버보다 빠를 때 나타나는 ‘오래됨’ 표시는 공통 상태에서 수정 중입니다. [대시보드 검토 #150](https://github.com/krdn/gon-stock03/issues/150) · [미리보기와 전후 화면 PR #156](https://github.com/krdn/gon-stock03/pull/156) · [시각 판정 #157](https://github.com/krdn/gon-stock03/issues/157)
+
 **이 화면에서 물어볼 수 있는 것**  연결 경고가 보일 때 어디부터 살펴봐야 할까?
 
 [주문·체결 보기](block:orders) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
@@ -154,6 +156,10 @@ KIS 모의 주문으로 이동하면 종목 코드가 이어집니다. 시세 �
 @image path="verification/assets/ui-acceptance-2026-11-17/core/orders-desktop-settled.png" alt="주문·체결 화면 캡처" caption="11월 17일 · 주문·체결 검증 화면"
 
 KIS 목록은 PC에 저장된 주문 기록을 읽습니다. 증권사의 최신 상태를 확인할 때는 해당 종목의 KIS 모의 매매 화면에서 주문을 대조합니다.
+
+**현재 앱**  ‘지난 KIS 실행 기록’을 열면 주문별 체결·잔량과 마지막 KIS 확인 시각이 함께 보입니다. ‘주문 상세’에서 주문일과 출처를 확인합니다. [지난 기록 #147](https://github.com/krdn/gon-stock03/issues/147)
+
+**2차 미리보기**  ‘DEMO 주문’은 미체결 행에 취소 가능 여부를 표시합니다. ‘KIS 모의 원장’은 주문별 확인 시각을 첫 행에 표시하고 식별자와 출처를 상세에 둡니다. [주문·체결 검토 #151](https://github.com/krdn/gon-stock03/issues/151) · [예시 미리보기와 전후 화면 PR #155](https://github.com/krdn/gon-stock03/pull/155)
 
 **이 화면에서 물어볼 수 있는 것**  목록을 새로 읽은 시각과 증권사에서 확인한 시각을 같이 보고 싶어.
 
