@@ -96,8 +96,9 @@ test('settings expires token evidence locally and hides positive stages when the
 test('settings keeps GET recovery open during a hung check and bounds browser waiting without resending', async ({ page }) => {
   await page.clock.install();
   const state = snapshot(); let posts = 0, offline = false;
+  let serverTime = Date.now() + 180_000;
   await page.route('**/api/state', route => {
-    const now = new Date(Date.now() + 180_000).toISOString();
+    const now = new Date(++serverTime).toISOString();
     state.status.observedAt = now; state.status.lastSuccessAt = now;
     return offline ? route.abort() : route.fulfill({ json: state });
   });
@@ -108,6 +109,7 @@ test('settings keeps GET recovery open during a hung check and bounds browser wa
   await expect(page.getByRole('button', { name: '서버 상태 새로고침' })).toBeEnabled();
   await page.getByRole('button', { name: '서버 상태 새로고침' }).click();
   await expect(page.getByText('외부 KIS 호출 없음', { exact: false })).toBeVisible();
+  serverTime += 125_001;
   await page.clock.fastForward(125_001);
   await expect(page.getByRole('alert')).toContainText('응답 확인 지연');
   await expect(page.getByRole('button', { name: '모의 잔고 조회' })).toBeEnabled();
