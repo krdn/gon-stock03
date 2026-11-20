@@ -7,6 +7,7 @@ import { won, type KisQuote, type Market } from '../../shared/model';
 import { MARKET_PAGE_SIZE, MARKET_REFRESH_MS, MARKET_STALE_MS, masterDataSchema, marketQuoteSchema, type MasterDataSnapshot, type MasterInstrument, type RemovedInstrument } from '../../shared/market-data';
 
 import './market-explorer.css';
+import './watchlist.css';
 
 const markets = ['전체', 'KOSPI', 'KOSDAQ', 'ETF'];
 
@@ -44,30 +45,36 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
   const masterRequest = useRef<AbortController | null>(null);
   const [urlView, setUrlView] = useSearchParams();
   const location = useLocation(), navigate = useNavigate();
-  const [view, setView] = useState(() => new URLSearchParams(watchOnly ? '' : urlView));
+  const [view, setView] = useState(() => new URLSearchParams(urlView));
   useLayoutEffect(() => {
-    if (watchOnly) return;
-    // A second input can arrive before BrowserRouter finishes its previous transition.
-    const latest = new URLSearchParams(window.location.search);
-    setView(current => current.toString() === latest.toString() ? current : latest);
-  }, [urlView, watchOnly]);
+    function syncLocation() {
+      const latest = new URLSearchParams(window.location.search);
+      setView(current => current.toString() === latest.toString() ? current : latest);
+    }
+    syncLocation();
+    // A fast Back can return to the same router snapshot while the detail is still open locally.
+    window.addEventListener('popstate', syncLocation);
+    return () => window.removeEventListener('popstate', syncLocation);
+  }, [urlView]);
   const search = view.get('q') ?? '', selected = view.get('detail');
   const market = markets.find(value => value === view.get('market')) ?? '전체';
   const requestedPage = Number(view.get('page'));
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage - 1 : 0;
   const searchInput = useRef<HTMLInputElement>(null);
   const [quotes, setQuotes] = useState<Record<string, QuoteState>>({});
-  const detailSection = useRef<HTMLElement | null>(null), detailTrigger = useRef<HTMLButtonElement | null>(null);
+  const detailSection = useRef<HTMLElement | null>(null);
   const [now, setNow] = useState(Date.now()), [visible, setVisible] = useState(document.visibilityState === 'visible');
   const [refresh, setRefresh] = useState(0), [reading, setReading] = useState(false);
   const query = search.trim().toLocaleUpperCase('ko-KR');
+  const waitingForWatchMaster = watchOnly && loadingMaster && !data.sources.length && !data.instruments.length && !data.removed.length;
   const filtered = useMemo(() => {
+    if (waitingForWatchMaster) return [];
     const masterRows: Row[] = [...data.instruments, ...data.removed];
     const saved = new Set(watchlist);
     const knownCodes = new Set(masterRows.map(row => row.code));
     const list: Row[] = watchOnly ? [...masterRows.filter(row => saved.has(row.code)), ...[...saved].filter(code => !knownCodes.has(code)).map(code => ({ code, name: state.instruments.find(row => row.code === code)?.name ?? code, unverified: true as const }))] : masterRows;
     return list.filter(row => (market === '전체' || category(row) === market) && (row.code.includes(query) || row.name.toLocaleUpperCase('ko-KR').includes(query)));
-  }, [data, market, query, watchOnly, watchlist, state.instruments]);
+  }, [data, market, query, watchOnly, watchlist, state.instruments, waitingForWatchMaster]);
   const lastPage = Math.max(0, Math.ceil(filtered.length / MARKET_PAGE_SIZE) - 1);
   const selectedIndex = selected ? filtered.findIndex(row => row.code === selected) : -1;
   const currentPage = selectedIndex < 0 ? Math.min(page, lastPage) : Math.floor(selectedIndex / MARKET_PAGE_SIZE);
@@ -78,11 +85,12 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
   const masterComplete = data.sources.length === 2 && data.sources.every(source => source.phase === 'ready' && source.lastSuccessAt);
   const emptyMessage = loadingMaster ? '마스터 확인 후 검색 결과를 판단할 수 있습니다.'
     : masterError ? '마스터 확인 후 검색 결과를 판단할 수 있습니다. 다시 갱신하세요.'
+    : watchOnly && exactCode && removed(exactCode) && !watchlist.includes(exactCode.code) ? '현재 마스터에서 제외된 종목은 관심종목으로 추가할 수 없습니다.'
     : watchOnly && exactCode && !watchlist.includes(exactCode.code) ? '관심목록에 없는 종목입니다. 시장 탐색에서 추가하세요.'
     : !watchOnly && exactCode && removed(exactCode) ? '현재 마스터에서 제외된 종목입니다. 전체 필터에서 이전 종목 상세를 확인하세요.'
     : exactCode ? `다른 시장 필터에 있는 종목입니다. 전체 또는 ${category(exactCode)}를 선택하세요.`
     : masterComplete && /^\d[0-9A-Z]{5}$/.test(query) ? '현재 마스터에 없는 코드입니다. 미등록·상장폐지 여부를 확인하세요. 상장폐지로 단정할 수 없습니다.'
-    : !watchOnly && !masterComplete ? '전체 마스터를 확인하지 못했습니다. 마스터 갱신 후 다시 확인하세요.'
+    : !masterComplete ? '전체 마스터를 확인하지 못했습니다. 마스터 갱신 후 다시 확인하세요.'
     : data.instruments.length ? '검색 조건과 시장 필터를 바꿔보세요.' : '마스터 갱신으로 공식 종목 목록을 수집하세요. 예시 가격으로 대체하지 않습니다.';
 
   function updateView(changes: Record<string, string | null>, replace = true) {
@@ -93,14 +101,14 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
     }
     if (next.toString() === view.toString()) return;
     setView(next);
-    if (!watchOnly) setUrlView(next, {
+    setUrlView(next, {
       replace, preventScrollReset: true,
       state: changes.detail ? { marketDetailFromList: !selected || location.state?.marketDetailFromList === true } : null,
     });
   }
   function closeDetail() {
-    const trigger = detailTrigger.current?.isConnected ? detailTrigger.current : document.getElementById('market-open-' + selected);
-    if (!watchOnly && location.state?.marketDetailFromList === true) navigate(-1);
+    const trigger = document.getElementById('market-open-' + selected);
+    if (location.state?.marketDetailFromList === true) navigate(-1);
     else updateView({ detail: null, page: currentPage ? String(currentPage + 1) : null });
     (trigger ?? searchInput.current)?.focus();
   }
@@ -108,8 +116,7 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
     detailSection.current?.focus();
     detailSection.current?.scrollIntoView({ block: 'nearest' });
   }
-  function openDetail(code: string, trigger: HTMLButtonElement) {
-    detailTrigger.current = trigger;
+  function openDetail(code: string) {
     if (selected === code) focusDetail();
     else updateView({ detail: code }, Boolean(selected));
   }
@@ -132,11 +139,6 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
       const next = masterDataSchema.parse(await response.json());
       if (controller.signal.aborted) return;
       setData(next);
-      if (watchOnly) setView(previous => {
-        const nextView = new URLSearchParams(previous);
-        nextView.delete('page'); nextView.delete('detail');
-        return nextView;
-      });
       if (next.sources.some(source => source.phase === 'error')) setMasterError('마스터 갱신 실패 · 이전 목록을 표시합니다. 연결을 확인하고 다시 갱신하세요.');
     } catch { if (!controller.signal.aborted) setMasterError('종목 마스터를 불러오지 못했습니다. 이전 목록이 있으면 보존합니다. 다시 갱신하세요.'); }
     finally { if (!controller.signal.aborted) setLoadingMaster(false); }
@@ -195,10 +197,24 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
     return '거래 가능 여부 별도 확인';
   }
   async function toggleWatch(code: string) {
+    if (watchOnly) removalFocus.current = { code, index: rows.findIndex(row => row.code === code) };
     setSaveError('');
     try { await act('watchlist', { code }); }
     catch { setSaveError('관심목록 저장 실패 · 마지막 확인 목록을 표시합니다. 연결과 저장 상태를 확인한 뒤 다시 시도하세요.'); }
   }
+  const removalFocus = useRef<{ code: string; index: number } | null>(null);
+  useLayoutEffect(() => {
+    const pending = removalFocus.current;
+    if (busy || !pending) return;
+    removalFocus.current = null;
+    if (selected === pending.code && !watchlist.includes(pending.code)) {
+      if (location.state?.marketDetailFromList === true) navigate(-1);
+      else updateView({ detail: null, page: currentPage ? String(currentPage + 1) : null });
+    }
+    if (document.activeElement !== document.body) return;
+    const target = rows.find(row => row.code === pending.code) ?? rows[Math.min(pending.index, rows.length - 1)];
+    ((target && document.getElementById('market-open-' + target.code)) ?? searchInput.current)?.focus();
+  }, [busy, rows]);
   function changeFilter(value: string) {
     updateView({ market: value === '전체' ? null : value, page: null, detail: null });
   }
@@ -221,73 +237,72 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
     : masterError && data.sources.some(source => source.lastSuccessAt) ? `갱신 실패 · 이전 목록 ${filtered.length}개`
     : masterComplete && !masterError ? `검색 결과 ${filtered.length}개`
     : `현재 목록 ${filtered.length}개 · 전체 미확인`;
-  const showReset = !watchOnly && !loadingMaster && !masterError && Boolean(search || market !== '전체');
+  const hasFilters = Boolean(search || market !== '전체');
+  const emptyWatchlist = watchOnly && !watchlist.length;
+  const showReset = hasFilters && (watchOnly || (!loadingMaster && !masterError));
   const marketTabs = <div className="tabs" role="group" aria-label="시장 필터">{markets.map(m =>
       <button aria-pressed={market === m} className={market === m ? 'active' : ''} onClick={() => changeFilter(m)} key={m}>{m}</button>)}</div>;
   const searchBox = <label className="search-field"><Search size={17} /><input ref={searchInput} aria-label="종목명 또는 코드 검색" placeholder="종목명 또는 코드 검색" value={search}
       onChange={event => updateView({ q: event.target.value, page: null, detail: null })} /></label>;
 
   return <>
-    {watchOnly && <div className="notice compact"><div><strong>국내 주식·ETF · KIS 모의 서버 시세</strong><br />현재 페이지 최대 {MARKET_PAGE_SIZE}종목을 순차 조회하고 완료 {MARKET_REFRESH_MS / 1000}초 후 갱신합니다. 수신 시각은 체결 시각이 아닙니다. 실시간 시세·거래 가능 확정을 뜻하지 않습니다.</div></div>}
-    {watchOnly && <div className="button-row"><Link className="button secondary" to="/market">시장 탐색에서 추가</Link><span className="muted">{server ? `저장된 관심종목 ${watchlist.length}개 · 시장 탐색과 같은 목록` : '저장된 관심종목 수 미확인'}</span></div>}
-    <Panel className={watchOnly ? '' : 'market-explorer'} title={watchOnly ? '나의 관심종목' : '종목 검색'} action={watchOnly ? masterRefresh : <span className="market-source-tag">KIS 모의 · REST 시세</span>}>
+    <Panel className={watchOnly ? 'market-explorer watchlist-explorer' : 'market-explorer'} title={watchOnly ? '나의 관심종목' : '종목 검색'} action={watchOnly
+      ? <Link className="button secondary" to={exactCode && !removed(exactCode) && !watchlist.includes(exactCode.code) ? `/market?q=${exactCode.code}` : '/market'}>시장 탐색에서 추가</Link>
+      : <span className="market-source-tag">KIS 모의 · REST 시세</span>}>
       {saveError && <div role="alert" className="notice warning">{saveError}</div>}
       {masterError && <div role="alert" className="notice warning">{masterError}</div>}
       {masterOld && <div className="notice warning">마스터 수집 후 24시간이 지났습니다. 최신 목록과 거래 상태를 확인하세요.</div>}
-      {!watchOnly && missingMaster && <p className="notice warning">종목 마스터 전체 확인 전 · 두 시장의 수집 상태를 확인하세요.</p>}
-      {!watchOnly && (masterError || missingMaster) && masterRefresh}
-      {watchOnly && sources}
-      <div className="toolbar">{watchOnly ? <>{marketTabs}{searchBox}</> : <>{searchBox}{marketTabs}</>}</div>
-      {watchOnly && <div className="button-row market-refresh">{quoteRefresh}{refreshStatus}</div>}
-      {!watchOnly && <div className="market-list-meta"><span role="status">{listStatus}</span>{quoteRefresh}</div>}
-      {!watchOnly && selected && !loadingMaster && !detail && <p role="status">이 목록에서 선택한 상세 종목을 확인하지 못했습니다. <button className="text-link" onClick={closeDetail}>목록으로</button></p>}
+      {missingMaster && <p className="notice warning">종목 마스터 전체 확인 전 · 두 시장의 수집 상태를 확인하세요.</p>}
+      {(masterError || missingMaster) && masterRefresh}
+      <div className="toolbar">{searchBox}{marketTabs}</div>
+      <div className="market-list-meta"><span role="status">{watchOnly
+        ? server ? `저장된 관심종목 ${watchlist.length}개${waitingForWatchMaster ? ' · 마스터 확인 중' : hasFilters ? ' · 표시 ' + filtered.length + '개' : ''}` : '저장된 관심종목 수 미확인'
+        : listStatus}</span>{quoteRefresh}</div>
+      {selected && (!watchOnly || server) && !loadingMaster && !detail && <p role="status">이 목록에서 선택한 상세 종목을 확인하지 못했습니다. <button className="text-link" onClick={closeDetail}>목록으로</button></p>}
       {watchOnly && !server ? <Empty title={status.phase === 'loading' ? '관심목록을 확인하고 있습니다' : '관심목록을 확인하지 못했습니다'}>로컬 서버 연결 후 저장된 목록을 표시합니다.</Empty> : rows.length ? <div className="table-scroll"><table className="market-table"><thead><tr>
-        {watchOnly && <th scope="col">관심</th>}<th scope="col">종목명 / 코드</th><th scope="col">현재가</th>
+        <th scope="col">종목명 / 코드</th><th scope="col">현재가</th>
         <th scope="col" className="market-change">등락률</th><th scope="col" className="market-volume">거래량</th>
-        {!watchOnly && <th scope="col">관심</th>}<th scope="col">수신 상태 / 거래 상태</th>{watchOnly && <th scope="col">상세 / 주문</th>}
+        <th scope="col">관심</th><th scope="col">수신 상태 / 거래 상태</th>{watchOnly && <th scope="col">주문 화면</th>}
       </tr></thead><tbody>{rows.map(row => {
         const value = removed(row) || unverified(row) ? undefined : quotes[row.code], quote = value?.quote;
-        const star = <td className="market-star"><button className={`star-button ${watchlist.includes(row.code) ? 'selected' : ''}`} aria-label={`${row.name} 관심 ${watchlist.includes(row.code) ? '해제' : '등록'}`} disabled={busy || !available || ((removed(row) || unverified(row)) && !watchlist.includes(row.code))} onClick={() => void toggleWatch(row.code)}><Star size={17} /></button></td>;
         return <tr key={row.code}>
-          {watchOnly && star}
-          <td className="market-identity"><button id={'market-open-' + row.code} className="market-name" aria-label={watchOnly ? undefined : `${row.name} 상세`} aria-controls={detail?.code === row.code ? 'market-detail' : undefined} aria-expanded={detail?.code === row.code} onClick={event => openDetail(row.code, event.currentTarget)}>
-            {row.name}{!watchOnly && <ChevronRight size={14} aria-hidden="true" />}<small>{row.code} · {row.exchange ?? '마스터 미확인'}{row.kind === 'etf' ? ' · ETF' : ''}</small></button></td>
-          <td className="number market-price">{!watchOnly && <small aria-hidden="true">현재가 </small>}{quote ? won(quote.price) : '—'}</td>
+          <td className="market-identity"><button id={'market-open-' + row.code} className="market-name" aria-label={`${row.name} 상세`} aria-controls={detail?.code === row.code ? 'market-detail' : undefined} aria-expanded={detail?.code === row.code} onClick={() => openDetail(row.code)}>
+            {row.name}<ChevronRight size={14} aria-hidden="true" /><small>{row.code} · {row.exchange ?? '마스터 미확인'}{row.kind === 'etf' ? ' · ETF' : ''}</small></button></td>
+          <td className="number market-price"><small aria-hidden="true">현재가 </small>{quote ? won(quote.price) : '—'}</td>
           <td className="market-change">{quote ? <Change value={quote.change} /> : '—'}</td>
           <td className="number market-volume">{quote?.volume === undefined ? '—' : won(quote.volume)}</td>
-          {!watchOnly && star}
-          <td className="market-row-status"><strong>{quoteLabel(row)}</strong><span>{tradingLabel(row)}</span><small>{quote ? `수신 ${time(quote.receivedAt)}` : '수신 시각 없음'}</small>{value?.error && <small className="down">{value.error}</small>}</td>
-          {watchOnly && <td><button className="button quiet" aria-label={`${row.name} 상세`} aria-controls="market-detail" onClick={event => openDetail(row.code, event.currentTarget)}>보기</button>{!removed(row) && !unverified(row) && <Link className="table-action" aria-label={`${row.name} KIS 주문 화면`} to={`/paper?code=${encodeURIComponent(row.code)}`}>주문 화면 ↗</Link>}</td>}
+          <td className="market-star"><button className={`star-button ${watchlist.includes(row.code) ? 'selected' : ''}`} aria-label={`${row.name} 관심 ${watchlist.includes(row.code) ? '해제' : '등록'}`} disabled={busy || !available || ((removed(row) || unverified(row)) && !watchlist.includes(row.code))} onClick={() => void toggleWatch(row.code)}><Star size={17} /></button></td>
+          <td className="market-row-status"><strong>{quoteLabel(row)}</strong><span>{tradingLabel(row)}</span><small>{quote ? `수신 ${time(quote.receivedAt)}` : '수신 시각 없음'}</small>{!watchOnly && value?.error && <small className="down">{value.error}</small>}</td>
+          {watchOnly && <td className="watchlist-order">{!removed(row) && !unverified(row) && <Link className="table-action" aria-label={`${row.name} KIS 주문 화면`} to={`/paper?code=${encodeURIComponent(row.code)}`}>주문 화면 ↗</Link>}</td>}
         </tr>;
-      })}</tbody></table></div> : <Empty title={watchOnly && !watchlist.length ? '관심종목이 없습니다' : loadingMaster ? '종목 마스터를 확인하고 있습니다' : !watchOnly && (masterError || missingMaster) ? '검색 결과 확인 전' : '표시할 종목이 없습니다'}>
-        {watchOnly && !watchlist.length ? '시장 탐색에서 관심종목을 추가하세요.' : emptyMessage}
+      })}</tbody></table></div> : <Empty title={emptyWatchlist ? '관심종목이 없습니다' : loadingMaster ? '종목 마스터를 확인하고 있습니다' : (masterError || missingMaster) ? '검색 결과 확인 전' : '표시할 종목이 없습니다'}>
+        {emptyWatchlist && !exactCode ? '시장 탐색에서 관심종목을 추가하세요.' : emptyMessage}
         {showReset && <button className="button secondary market-reset" onClick={() => { updateView({ q: null, market: null, page: null, detail: null }); searchInput.current?.focus(); }}>검색 조건 지우기</button>}
       </Empty>}
-      {(!watchOnly || server) && <div className="table-foot"><span>{watchOnly && <>총 {filtered.length}개 종목 · </>}{currentPage + 1} / {lastPage + 1}페이지</span><div className="button-row"><button className="button quiet" disabled={currentPage === 0} onClick={() => updateView({ page: currentPage === 1 ? null : String(currentPage), detail: null })}>이전 페이지</button><button className="button quiet" disabled={currentPage === lastPage} onClick={() => updateView({ page: String(currentPage + 2), detail: null })}>다음 페이지</button></div></div>}
-      {!watchOnly && <details className="market-provenance"><summary>마스터 출처와 시세 갱신 기준</summary>
+      {(!watchOnly || (server && lastPage > 0)) && <div className="table-foot"><span>{currentPage + 1} / {lastPage + 1}페이지</span><div className="button-row"><button className="button quiet" disabled={currentPage === 0} onClick={() => updateView({ page: currentPage === 1 ? null : String(currentPage), detail: null })}>이전 페이지</button><button className="button quiet" disabled={currentPage === lastPage} onClick={() => updateView({ page: String(currentPage + 2), detail: null })}>다음 페이지</button></div></div>}
+      <details className="market-provenance"><summary>마스터 출처와 시세 갱신 기준</summary>
         <p>KIS 공개 종목 마스터 · KOSPI·KOSDAQ 주식과 ETF를 분류합니다.</p>
         {sources}
         <p>{data.sources.length ? ['KOSPI', 'KOSDAQ', 'ETF'].map(m => `${m} ${data.instruments.filter(row => category(row) === m).length}개`).join(' · ') : '수집 기록 없음'}</p>
         {!masterError && !missingMaster && masterRefresh}
         <p>표시된 최대 {MARKET_PAGE_SIZE}종목을 순차 조회하고 완료 {MARKET_REFRESH_MS / 1000}초 후 갱신합니다. 수신 시각과 거래소 체결 시각은 다릅니다.</p>{refreshStatus}
-      </details>}
+      </details>
     </Panel>
     {detail && <section id="market-detail" ref={detailSection} tabIndex={-1} aria-label="종목 상세" onKeyDown={event => {
-      if (!watchOnly && event.key === 'Escape') { event.preventDefault(); closeDetail(); }
+      if (event.key === 'Escape') { event.preventDefault(); closeDetail(); }
     }}><Panel title={`${detail.name} · ${detail.code}`} action={<button className="button quiet" onClick={closeDetail}>상세 닫기</button>}>
-      {watchOnly ? <CopyStockCode key={detail.code} code={detail.code} /> : <div className="market-detail-action">
-        {!removed(detail) && /^\d{6}$/.test(detail.code) ? <Link className="button primary" to={`/trade?code=${detail.code}`}>트레이딩에서 시세 보기 <ArrowRight size={15} /></Link>
-          : <p>{removed(detail) ? '마스터에서 제외된 종목입니다.' : '트레이딩 시세 조회는 숫자 6자리 종목을 지원합니다.'}</p>}
-      </div>}
+      <div className={watchOnly ? "market-detail-action watchlist-actions" : "market-detail-action"}>
+        {watchOnly && <CopyStockCode key={detail.code} code={detail.code} />}
+        {!removed(detail) && !unverified(detail) && /^\d{6}$/.test(detail.code) ? <Link className="button primary" to={`/trade?code=${detail.code}`}>트레이딩에서 시세 보기 <ArrowRight size={15} /></Link>
+          : <p>{unverified(detail) ? '마스터 확인 후 트레이딩에서 시세를 볼 수 있습니다.' : removed(detail) ? '마스터에서 제외된 종목입니다.' : '트레이딩 시세 조회는 숫자 6자리 종목을 지원합니다.'}</p>}
+      </div>
       <div className="check-row"><span>시장 / 종류</span><strong>{detail.exchange ?? '마스터 미확인'} / {unverified(detail) ? '확인 필요' : detail.kind === 'etf' ? 'ETF' : '주식'}</strong></div>
       <div className="check-row"><span>업종</span><strong>{removed(detail) ? '확인 필요' : detailQuote?.sector || '미수신'}</strong></div>
       <div className="check-row"><span>거래 상태</span><Badge>{tradingLabel(detail)}</Badge></div>
       <div className="check-row"><span>시세 상태</span><strong>{quoteLabel(detail)}</strong></div>
-      {!watchOnly && <>
-        <div className="check-row"><span>KIS 모의 REST 수신 시각</span><strong>{detailQuote ? time(detailQuote.receivedAt) : '수신 시각 없음'}</strong></div>
-        <div className="check-row"><span>현재가 / 등락률 / 거래량</span><strong>{detailQuote ? won(detailQuote.price) + '원' : '—'} / {detailQuote ? <Change value={detailQuote.change} /> : '—'} / {detailQuote?.volume === undefined ? '—' : won(detailQuote.volume) + '주'}</strong></div>
-        {detailValue?.error && <p className="notice warning">{detailValue.error}</p>}
-      </>}
+      <div className="check-row"><span>KIS 모의 REST 수신 시각</span><strong>{detailQuote ? time(detailQuote.receivedAt) : '수신 시각 없음'}</strong></div>
+      <div className="check-row"><span>현재가 / 등락률 / 거래량</span><strong>{detailQuote ? won(detailQuote.price) + '원' : '—'} / {detailQuote ? <Change value={detailQuote.change} /> : '—'} / {detailQuote?.volume === undefined ? '—' : won(detailQuote.volume) + '주'}</strong></div>
+      {detailValue?.error && <p className="notice warning">{detailValue.error}</p>}
       <p className="muted prose">{unverified(detail) ? '저장된 코드의 마스터 정보를 확인하지 못했습니다. 마스터 갱신 후 다시 확인하세요.' : removed(detail) ? `마스터 제외 확인: ${time(detail.removedAt)}. 제외 사유와 상장폐지 여부는 별도 확인이 필요합니다.` : '가격·업종·거래량은 KIS REST 응답 기준입니다. 거래정지 해제·주문 가능 여부는 주문 전 별도 검사가 필요합니다.'}</p>
       <Link className="subtle-link" to="/settings">KIS 연결 상태 확인 ↗</Link></Panel></section>}
   </>;
