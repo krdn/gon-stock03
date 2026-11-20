@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Play, Plus, Square } from 'lucide-react';
 import { useWorkbench } from '../context';
-import { Badge, Chart, Empty, Panel, Stat } from '../components/ui';
+import { Badge, Chart, Panel, Stat } from '../components/ui';
 import { won, type BacktestResult, type Strategy } from '../../shared/model';
 import { dailyRunsSchema } from '../../shared/data-inventory';
 import type { DailyRun } from '../../shared/market-data';
@@ -10,6 +10,7 @@ import { experimentListSchema, experimentSchema, backtestResultSchema, type Expe
 import { z } from 'zod';
 
 import './Strategies.css';
+import './Backtest.css';
 
 type StrategyEnvironment = 'demo' | 'kis-paper';
 const evaluationLabels = { hold: '관망', blocked: '차단', sending: '검사·전송 중', accepted: '접수 · 체결 미확정', unknown: '응답 불명', rejected: '거부 · 미전송' };
@@ -190,29 +191,139 @@ function StrategyEditor({ environment, onSaved }: { environment: StrategyEnviron
   </Panel>;
 }
 
-function DemoBacktest() {
-  const { state, act, available, busy } = useWorkbench(); const [code, setCode] = useState('069500'), [fast, setFast] = useState(5), [slow, setSlow] = useState(20), [capital, setCapital] = useState(10000000), [fee, setFee] = useState(1.5), [slip, setSlip] = useState(5), [result, setResult] = useState<BacktestResult | null>(null);
-  async function run(e: React.FormEvent) { e.preventDefault(); try { const r = await act<{ result: BacktestResult }>('backtest', { code, fast, slow, capital, feeBps: fee, slippageBps: slip }); setResult(r.result); } catch { setResult(null); } }
-  return <><div className="notice warning">현재 저장된 합성 봉으로 계산하는 기능 검증입니다. 실제 표본 수는 결과에 표시합니다. 실제 과거 수익률이나 미래 성과를 의미하지 않습니다.</div><div className="trade-grid"><div>{result ? <><div className="stats-grid three"><Stat label="합성 구간 수익률" value={`${result.returnPct.toFixed(2)}%`} /><Stat label="최대 낙폭" value={`${result.maxDrawdown.toFixed(2)}%`} /><Stat label="체결 횟수" value={`${result.trades.length}회`} /></div><Panel title="자산 곡선" action={<Badge>비용 반영</Badge>}><Chart values={result.equity} height={250} label="합성 데이터 백테스트 평가자산 곡선" /><div className="check-row"><span>최종 평가자산</span><strong>{won(result.finalEquity)}원</strong></div><div className="check-row"><span>누적 수수료</span><strong>{won(result.fees)}원</strong></div><p className="muted tiny">{result.source} · 마지막 보유분은 평가하며 강제 청산하지 않습니다.</p></Panel><Panel title="백테스트 거래 내역" className="top-gap">{result.trades.length ? <div className="table-scroll"><table><thead><tr><th>봉 번호</th><th>방향</th><th>체결가</th><th>수량</th><th>수수료</th></tr></thead><tbody>{result.trades.map((t, i) => <tr key={i}><td>{t.bar}</td><td className={t.side === 'buy' ? 'up' : 'down'}>{t.side === 'buy' ? '매수' : '매도'}</td><td>{won(t.price)}</td><td>{t.qty}</td><td>{won(t.fee)}</td></tr>)}</tbody></table></div> : <Empty title="교차 신호가 없습니다">이 구간에는 진입 조건을 만족한 거래가 없습니다.</Empty>}</Panel></> : <Panel><Empty title="첫 실험을 시작해 보세요">오른쪽에서 규칙과 비용을 정하면 합성 구간의 자산 곡선·낙폭·거래 내역을 계산합니다.</Empty><div className="backtest-principles"><div><span>01</span><strong>시간 순서를 지킵니다</strong><p>종가 신호는 다음 봉 가격으로 실행</p></div><div><span>02</span><strong>비용을 드러냅니다</strong><p>수수료·슬리피지 입력값 적용</p></div><div><span>03</span><strong>데이터를 구분합니다</strong><p>합성 표본과 실제 과거 데이터 분리</p></div></div></Panel>}</div><Panel title="실험 설정"><form onSubmit={run}><label className="field">대상<select value={code} onChange={e => setCode(e.target.value)}>{state.instruments.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}</select></label><div className="form-grid"><label className="field">단기 (봉)<input type="number" min="2" max="60" value={fast} onChange={e => setFast(Number(e.target.value))} required /></label><label className="field">장기 (봉)<input type="number" min="3" max="100" value={slow} onChange={e => setSlow(Number(e.target.value))} required /></label></div><label className="field">초기 자금 (원)<input type="number" min="100000" max="100000000" value={capital} onChange={e => setCapital(Number(e.target.value))} required /></label><label className="field">수수료 (bp, 1bp = 0.01%)<input type="number" step="0.1" min="0" max="100" value={fee} onChange={e => setFee(Number(e.target.value))} required /></label><label className="field">슬리피지 (bp)<input type="number" step="0.1" min="0" max="100" value={slip} onChange={e => setSlip(Number(e.target.value))} required /></label><p className="muted tiny">기본값은 검증용 가정입니다. 세금은 포함하지 않으며 실제 수수료 정책을 대체하지 않습니다.</p><button className="button primary wide" disabled={busy || !available}><Play size={15} />백테스트 실행</button></form></Panel></div></>;
+type ExperimentInput = Experiment['snapshot']['input'];
+type Assumptions = Pick<ExperimentInput, 'fast' | 'slow' | 'capital' | 'feeBps' | 'slippageBps'>;
+const defaultAssumptions: Assumptions = { fast: 5, slow: 20, capital: 10000000, feeBps: 1.5, slippageBps: 5 };
+const dateInput = (value: string) => value && `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6)}`;
+const pricePolicy = (value: string) => value === 'raw' ? '원주가' : '수정주가';
+
+function assumptions({ fast, slow, capital, feeBps, slippageBps }: Assumptions): Assumptions {
+  return { fast, slow, capital, feeBps, slippageBps };
 }
+
+function ExperimentFields({ values, change }: { values: Assumptions; change: (values: Assumptions) => void }) {
+  function field(key: keyof Assumptions, label: string, min: number, max: number, step = 1) {
+    return <label className="field">{label}<input type="number" min={min} max={max} step={step} required
+      value={Number.isNaN(values[key]) ? '' : values[key]} onChange={event => change({ ...values, [key]: event.target.valueAsNumber })} /></label>;
+  }
+  return <>
+    <div className="form-grid">{field('fast', '단기 (봉)', 2, 60)}{field('slow', '장기 (봉)', 3, 100)}</div>
+    {field('capital', '초기 자금 (원)', 100000, 100000000)}
+    <div className="form-grid">{field('feeBps', '수수료 (bp, 1bp = 0.01%)', 0, 100, 0.1)}{field('slippageBps', '슬리피지 (bp)', 0, 100, 0.1)}</div>
+  </>;
+}
+
+function ResultSummary({ result, label }: { result: BacktestResult; label: string }) {
+  return <><div className="stats-grid three"><Stat label={label} value={`${result.returnPct.toFixed(2)}%`} /><Stat label="최대 낙폭" value={`${result.maxDrawdown.toFixed(2)}%`} /><Stat label="체결 횟수" value={`${result.trades.length}회`} /></div>
+    <p>최종 평가자산 <strong>{won(result.finalEquity)}원</strong> · 누적 수수료 {won(result.fees)}원 · 체결가에 포함된 슬리피지 {won(result.slippageCost)}원</p></>;
+}
+
+function Trades({ result, daily }: { result: BacktestResult; daily?: boolean }) {
+  return <Panel title="백테스트 거래 내역">{result.trades.length ? <div className="table-scroll"><table>
+    <thead><tr><th>{daily ? '신호일 → 체결일' : '봉 번호'}</th><th>방향</th><th>체결가 (원)</th><th>수량 (주)</th><th>수수료 (원)</th></tr></thead>
+    <tbody>{result.trades.map(t => <tr key={t.bar}><td>{daily ? `${dateInput(t.signalDate!)} → ${dateInput(t.date!)}` : t.bar}</td>
+      <td>{t.side === 'buy' ? '매수' : '매도'}</td><td>{t.price.toLocaleString('ko-KR', { maximumFractionDigits: 4 })}</td><td>{t.qty}</td><td>{won(t.fee)}</td></tr>)}</tbody>
+  </table></div> : <p>이 구간에는 체결된 거래가 없습니다.</p>}</Panel>;
+}
+
+function useResultFocus(result: unknown) {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (result && ref.current) {
+      ref.current.focus({ preventScroll: true });
+      ref.current.scrollIntoView({ block: 'start' });
+    }
+  }, [result]);
+  return ref;
+}
+
+function DemoBacktest() {
+  const { state, act, available, busy } = useWorkbench();
+  const [selection, setSelection] = useState<string | null>(null), [values, setValues] = useState(defaultAssumptions);
+  const [calculation, setCalculation] = useState<{ code: string; result: BacktestResult } | null>(null), [error, setError] = useState('');
+  const instrument = selection === null
+    ? state.instruments.find(row => row.code === '069500') ?? state.instruments[0]
+    : state.instruments.find(row => row.code === selection);
+  const code = instrument?.code ?? '';
+  const result = calculation?.code === code ? calculation.result : null;
+  const resultRef = useResultFocus(result);
+  async function run(event: React.FormEvent) {
+    event.preventDefault(); setCalculation(null); setError('');
+    if (!code || busy || !available) return;
+    if (values.fast >= values.slow) { setError('단기 기간은 장기 기간보다 작아야 합니다.'); return; }
+    try {
+      const response = await act<{ result: unknown }>('backtest', { code, ...values });
+      setCalculation({ code, result: backtestResultSchema.parse(response.result) });
+    } catch (err) { setError(err instanceof z.ZodError ? '실험 응답 형식이 올바르지 않습니다.' : err instanceof Error ? err.message : '합성 실험 계산 실패'); }
+  }
+  return <div className="bt-grid"><Panel title="합성 실험 설정"><p className="bt-note">현재 저장된 합성 봉으로 계산하는 기능 검증입니다. 다음 봉 종가에 체결한다고 가정합니다. 실제 과거 성과는 미측정입니다.</p>
+    <form onSubmit={run} onChange={() => { setCalculation(null); setError(''); }}><fieldset className="backtest-fields" disabled={busy}>
+      <label className="field">대상<select value={code} onChange={event => setSelection(event.target.value)}>{!code && <option value="" disabled>{state.instruments.length ? '종목을 다시 선택하세요' : '합성 종목 없음'}</option>}{state.instruments.map(item => <option value={item.code} key={item.code}>{item.name}</option>)}</select></label>
+      {!code && <p role="status">{state.instruments.length ? '선택한 합성 종목을 찾을 수 없습니다. 대상을 다시 선택하세요.' : '계산할 합성 종목이 없습니다.'}</p>}
+      <ExperimentFields values={values} change={setValues} />
+      <p className="bt-note">비용은 검증용 가정이며 세금은 포함하지 않습니다. 결과는 이 화면에서 확인합니다.</p>
+      {error && <p role="alert" className="bt-warning">합성 실험 입력·계산 확인 · {error}</p>}
+      <button className="button primary wide" disabled={!available || !code}><Play size={15} />백테스트 실행</button>
+    </fieldset></form></Panel>
+    {result && <section aria-label="합성 실험 결과" ref={resultRef} tabIndex={-1} className="bt-result">
+      <Panel title="합성 실험 결과"><strong>{code} · {result.source}</strong>
+        <p>단기 {values.fast} / 장기 {values.slow} · 초기 {won(values.capital)}원 · 수수료 {values.feeBps}bp · 슬리피지 {values.slippageBps}bp</p>
+        <ResultSummary result={result} label="합성 구간 수익률" /></Panel>
+      <Panel title="자산 곡선"><Chart values={result.equity} height={230} label="합성 데이터 백테스트 평가자산 곡선" /><p className="bt-note">마지막 보유분은 평가하며 강제 청산하지 않습니다.</p></Panel>
+      <Trades result={result} />
+    </section>}
+  </div>;
+}
+
+type BacktestSelection = { values: Assumptions; focus: 'policy' | 'run' } | { saved: Experiment };
 
 export function Backtest() {
-  const [source, setSource] = useState('stored'); const { busy } = useWorkbench();
-  return <><label className="field">데이터 출처<select disabled={busy} value={source} onChange={e => setSource(e.target.value)}><option value="stored">KIS 저장 일봉 · 과거 구간 실험</option><option value="demo">DEMO 합성 · 기능 검증</option></select></label>{source === 'stored' ? <StoredBacktest /> : <DemoBacktest />}</>;
+  const [params, setParams] = useSearchParams(), location = useLocation();
+  const transfer = useRef<{ key: string; selection: BacktestSelection } | null>(null);
+  const { busy } = useWorkbench();
+  const source = params.get('source') ?? 'stored', runId = params.get('run');
+  const valid = params.getAll('source').length <= 1 && params.getAll('run').length <= 1
+    && (source === 'stored' || source === 'demo') && (runId === null || (params.get('source') === 'stored' && z.uuid().safeParse(runId).success));
+  function select(source: string, runId?: string, selection?: BacktestSelection) {
+    const next = new URLSearchParams(params); next.set('source', source); next.delete('run');
+    if (runId) next.set('run', runId);
+    transfer.current = selection ? { key: crypto.randomUUID(), selection } : null;
+    setParams(next, { state: { backtestSelection: transfer.current?.key } });
+  }
+  const initial = transfer.current && transfer.current.key === location.state?.backtestSelection ? transfer.current.selection : null;
+  return <div className="bt-page"><label className="field bt-source">데이터 출처<select disabled={busy} value={valid ? source : ''} onChange={event => select(event.target.value)}>
+    {!valid && <option value="" disabled>출처를 다시 선택하세요</option>}
+    <option value="stored">KIS 저장 일봉 · 과거 구간 실험</option><option value="demo">DEMO 합성 · 기능 검증</option>
+  </select></label>
+    {!valid ? <p className="bt-warning" role="alert">백테스트 주소의 출처 또는 수집 ID가 올바르지 않습니다. 데이터 출처를 직접 선택하세요.</p>
+      : source === 'demo' ? <DemoBacktest /> : <StoredBacktest key={runId ?? 'default'} requested={runId} initial={initial} select={(id, selection) => select('stored', id, selection)} />}
+  </div>;
 }
-const dateInput = (value: string) => `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6)}`;
 
-function StoredBacktest() {
+function StoredBacktest({ requested, initial, select }: { requested: string | null; initial: BacktestSelection | null; select: (id: string, selection: BacktestSelection) => void }) {
   const { act, available, busy } = useWorkbench();
+  const saved = initial && 'saved' in initial ? initial.saved : null;
+  const draft = initial && 'values' in initial ? initial : null;
+  const input = saved?.snapshot.input;
   const [runs, setRuns] = useState<DailyRun[] | null>(null), [experiments, setExperiments] = useState<z.infer<typeof experimentListSchema>['experiments']>([]);
-  const [selected, setSelected] = useState(''), [policy, setPolicy] = useState('adjusted'), [savedId, setSavedId] = useState('');
-  const [from, setFrom] = useState(''), [to, setTo] = useState(''), [fast, setFast] = useState(5), [slow, setSlow] = useState(20);
-  const [capital, setCapital] = useState(10000000), [fee, setFee] = useState(1.5), [slip, setSlip] = useState(5);
-  const [experiment, setExperiment] = useState<Experiment | null>(null), [replay, setReplay] = useState('');
-  const [loading, setLoading] = useState(true), [pending, setPending] = useState(false), [error, setError] = useState(''), [listError, setListError] = useState(''), [revision, setRevision] = useState(0);
-  function choose(run: DailyRun | undefined) { setSelected(run?.id ?? ''); setFrom(run?.from ?? ''); setTo(run?.to ?? ''); setExperiment(null); setReplay(''); setError(''); }
+  const [selected, setSelected] = useState<string | null>(requested), [savedId, setSavedId] = useState(saved?.id ?? '');
+  const [from, setFrom] = useState(input?.from ?? ''), [to, setTo] = useState(input?.to ?? ''), [values, setValues] = useState<Assumptions>(() => assumptions(input ?? draft?.values ?? defaultAssumptions));
+  const [experiment, setExperiment] = useState<Experiment | null>(saved), [replay, setReplay] = useState('');
+  const [loading, setLoading] = useState(true), [pending, setPending] = useState(false), [error, setError] = useState(''), [loadError, setLoadError] = useState(''), [listError, setListError] = useState(''), [revision, setRevision] = useState(0);
+  const [replayError, setReplayError] = useState('');
+  const loader = useRef<AbortController | null>(null);
+  const resultRef = useResultFocus(experiment);
+  const policySelect = useRef<HTMLSelectElement>(null), runSelect = useRef<HTMLSelectElement>(null);
+  const focusAfterSelection = useRef(draft?.focus);
   useEffect(() => {
-    const controller = new AbortController(); setLoading(true); setListError('');
+    if (!loading && focusAfterSelection.current) {
+      (focusAfterSelection.current === 'policy' ? policySelect : runSelect).current?.focus();
+      focusAfterSelection.current = undefined;
+    }
+  }, [loading]);
+  useEffect(() => () => loader.current?.abort(), []);
+  useEffect(() => {
+    const controller = new AbortController(); setLoading(true); setListError(''); setLoadError('');
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]);
     void (async () => {
       try {
@@ -220,87 +331,102 @@ function StoredBacktest() {
         if (!dailyResponse.ok || !savedResponse.ok) throw new Error();
         const daily = dailyRunsSchema.parse(await dailyResponse.json()), saved = experimentListSchema.parse(await savedResponse.json());
         if (controller.signal.aborted) return;
-        setRuns(daily.runs); setExperiments(saved.experiments); setSavedId(previous => saved.experiments.some(row => row.id === previous) ? previous : saved.experiments[0]?.id ?? '');
-        if (!daily.runs.some(run => run.id === selected)) {
-          const first = daily.runs[0]; setSelected(first?.id ?? ''); setPolicy(first?.adjustment ?? 'adjusted'); setFrom(first?.from ?? ''); setTo(first?.to ?? '');
-        }
-      } catch { if (!controller.signal.aborted) setListError('실험 목록 조회 실패 · 이전 목록은 최신 확인값이 아닙니다. 다시 조회하세요.'); }
+        const id = selected ?? daily.runs[0]?.id;
+        const match = daily.runs.find(row => row.id === id);
+        setRuns(daily.runs); setExperiments(saved.experiments);
+        setSavedId(previous => saved.experiments.some(row => row.id === previous) ? previous : (saved.experiments.find(row => row.input.runId === id) ?? (requested === null ? saved.experiments[0] : undefined))?.id ?? '');
+        if (match && (!runs || selected === null)) { setSelected(match.id); setFrom(input?.from ?? match.from); setTo(input?.to ?? match.to); }
+      } catch { if (!controller.signal.aborted) setListError(runs === null ? '실험 목록 조회 실패 · 저장 일봉과 실험 목록을 확인하지 못했습니다.' : '실험 목록 조회 실패 · 이전 목록은 최신 확인값이 아닙니다.'); }
       finally { if (!controller.signal.aborted) setLoading(false); }
     })();
     return () => controller.abort();
   }, [revision]);
   const run = runs?.find(row => row.id === selected);
-  const eligible = run?.coverageComplete && run.status.complete && !run.status.error && run.quality.state === 'passed' && !!run.calendar;
+  const policy = run?.adjustment ?? runs?.[0]?.adjustment ?? 'adjusted';
+  const eligible = run?.coverageComplete && run.nextDate === null && run.status.complete && !run.status.error && run.quality.state === 'passed' && !!run.calendar;
   const locked = busy || pending || loading;
-  async function execute(e: React.FormEvent) {
-    e.preventDefault(); if (!run) return; setError(''); setExperiment(null); setReplay('');
+  function clearResult() { setExperiment(null); setReplay(''); setReplayError(''); setError(''); }
+  async function execute(event: React.FormEvent) {
+    event.preventDefault(); if (!run || !eligible || locked || listError || !available) return;
+    clearResult();
+    if (values.fast >= values.slow) { setError('단기 기간은 장기 기간보다 작아야 합니다.'); return; }
+    if (from > to) { setError('시작일은 종료일보다 늦을 수 없습니다.'); return; }
     try {
-      const response = await act<{ experiment: unknown }>('backtest/daily', { runId: run.id, source: 'kis-rest', code: run.code, from, to, adjustment: policy, fast, slow, capital, feeBps: fee, slippageBps: slip });
-      const saved = experimentSchema.parse(response.experiment); setExperiment(saved); setSavedId(saved.id); setRevision(v => v + 1);
-    } catch (error) { setError(error instanceof z.ZodError ? '실험 응답 형식이 올바르지 않습니다.' : error instanceof Error ? error.message : '실험 실행 실패'); }
+      const response = await act<{ experiment: unknown }>('backtest/daily', { ...values, runId: run.id, source: run.source, code: run.code, from, to, adjustment: policy });
+      const saved = experimentSchema.parse(response.experiment);
+      setExperiment(saved); setSavedId(saved.id);
+      setExperiments(items => items.some(item => item.id === saved.id) ? items : [
+        { id: saved.id, createdAt: saved.createdAt, input: saved.snapshot.input, bars: saved.snapshot.bars.length }, ...items,
+      ]);
+    } catch (err) { setError(err instanceof z.ZodError ? '실험 응답 형식이 올바르지 않습니다.' : err instanceof Error ? err.message : '실험 실행 실패'); }
   }
   async function load() {
-    setPending(true); setError(''); setExperiment(null); setReplay('');
+    setPending(true); setLoadError(''); clearResult();
+    const controller = new AbortController(); loader.current = controller;
     try {
-      const response = await fetch(`/api/backtest/experiments/${savedId}`, { signal: AbortSignal.timeout(8000) }); if (!response.ok) throw new Error();
-      const saved = experimentSchema.parse((await response.json()).experiment); if (saved.id !== savedId) throw new Error();
-      const input = saved.snapshot.input;
-      setSelected(input.runId); setPolicy(input.adjustment); setFrom(input.from); setTo(input.to); setFast(input.fast); setSlow(input.slow); setCapital(input.capital); setFee(input.feeBps); setSlip(input.slippageBps); setExperiment(saved);
-    } catch { setError('저장 실험 조회 실패 · 다시 불러오세요.'); }
-    finally { setPending(false); }
+      const response = await fetch(`/api/backtest/experiments/${savedId}`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]) });
+      if (!response.ok) throw new Error();
+      const saved = experimentSchema.parse((await response.json()).experiment);
+      if (controller.signal.aborted) return;
+      if (saved.id !== savedId) throw new Error();
+      const fixed = saved.snapshot.input;
+      if (fixed.runId !== selected) { select(fixed.runId, { saved }); return; }
+      setFrom(fixed.from); setTo(fixed.to); setValues(assumptions(fixed)); setExperiment(saved);
+    } catch { if (!controller.signal.aborted) setLoadError('저장 실험 조회 실패 · 다시 불러오세요.'); }
+    finally { if (!controller.signal.aborted) setPending(false); }
   }
   async function verify() {
-    if (!experiment) return; setReplay(''); setError('');
+    if (!experiment) return; setReplay(''); setReplayError('');
     try {
       const response = z.object({ result: backtestResultSchema, matches: z.boolean(), inputHash: z.string() }).parse(await act('backtest/replay', { id: experiment.id }));
       if (response.inputHash !== experiment.inputHash) throw new Error('실험 입력이 일치하지 않습니다.');
-      setReplay(response.matches ? '재현 일치 · 고정 입력과 저장 결과가 같습니다.' : '재현 불일치 · 엔진·저장 결과를 점검하세요.');
-    } catch (error) { setError(error instanceof Error ? error.message : '재현 검증 실패'); }
+      if (response.matches) setReplay('재현 일치 · 고정 입력과 저장 결과가 같습니다.');
+      else setReplayError('재현 불일치 · 엔진·저장 결과를 점검하세요.');
+    } catch (err) { setReplayError(err instanceof z.ZodError ? '재현 응답 형식이 올바르지 않습니다.' : err instanceof Error ? err.message : '재현 결과를 확인하지 못했습니다.'); }
   }
-  return <div className="data-inventory">
-    <div className="notice warning">저장 시점의 KIS 일봉으로 구현 동작을 검토합니다. 입력 달력 대조는 공식 달력·가격 정확성·과거 시점 정보(PIT) 인증이 아닙니다. 실제 KIS 일봉·공식 달력의 실측 검증과 수익성 검증은 별도입니다.</div>
-    <Panel title="저장된 실험" action={<button className="button secondary" disabled={locked} onClick={() => setRevision(v => v + 1)}>실험 목록 새로고침</button>}>
-      {loading && <p role="status">저장 일봉·실험 목록 조회 중</p>}
-      {listError && <p role="alert">{listError}</p>}
-      <label className="field">저장 실험<select value={savedId} disabled={locked || !!listError} onChange={e => setSavedId(e.target.value)}><option value="">실험 선택</option>{experiments.map(item => <option key={item.id} value={item.id}>{item.input.code} · {dateInput(item.input.from)} ~ {dateInput(item.input.to)} · {item.input.adjustment === 'raw' ? '원주가' : '수정주가'} · {item.bars}봉 · {item.id.slice(0, 10)}</option>)}</select></label>
-      <button className="button secondary" disabled={!savedId || locked || !!listError} onClick={() => void load()}>저장 실험 불러오기</button>
-      {!loading && !listError && experiments.length === 0 && <p className="muted">저장된 실험이 없습니다. 실행에 성공하면 입력과 결과가 함께 보존됩니다.</p>}
-    </Panel>
-    {error && <p role="alert" className="soft-note">{error}</p>}
-    <div className="trade-grid top-gap"><div>{experiment ? <section aria-label="저장 일봉 실험 결과">
-      <div className="stats-grid three"><Stat label="저장 구간 수익률" value={`${experiment.result.returnPct.toFixed(2)}%`} /><Stat label="최대 낙폭" value={`${experiment.result.maxDrawdown.toFixed(2)}%`} /><Stat label="체결 횟수" value={`${experiment.result.trades.length}회`} /></div>
-      <Panel title="자산 곡선" action={<Badge>KIS 저장 일봉</Badge>}>
-        <Chart values={experiment.result.equity} height={250} label="저장 일봉 백테스트 평가자산 곡선" />
-        <div className="check-row"><span>최종 평가자산</span><strong>{won(experiment.result.finalEquity)}원</strong></div>
-        <div className="check-row"><span>누적 수수료</span><strong>{won(experiment.result.fees)}원</strong></div>
-        <div className="check-row"><span>누적 슬리피지 비용 (체결가에 포함)</span><strong>{won(experiment.result.slippageCost)}원</strong></div>
-        <p>{experiment.result.source}</p>
-        <dl className="data-facts">
-          <div><dt>고정 입력</dt><dd>{experiment.snapshot.input.code} · {dateInput(experiment.snapshot.input.from)} ~ {dateInput(experiment.snapshot.input.to)} · {experiment.snapshot.bars.length}봉</dd></div>
-          <div><dt>가격 정책·수집 기준일</dt><dd>{experiment.snapshot.input.adjustment === 'raw' ? '원주가' : '수정주가'} · {dateInput(experiment.snapshot.collection.captureDate)}</dd></div>
-          <div><dt>규칙·자금</dt><dd>단기 {experiment.snapshot.input.fast} / 장기 {experiment.snapshot.input.slow} · {won(experiment.snapshot.input.capital)}원</dd></div>
-          <div><dt>비용 가정</dt><dd>수수료 {experiment.snapshot.input.feeBps}bp · 슬리피지 {experiment.snapshot.input.slippageBps}bp</dd></div>
-        </dl>
-        <details><summary>재현 입력·출처 확인</summary><p>실험 입력 SHA256: <code data-testid="experiment-hash">{experiment.inputHash}</code></p><p>엔진: {experiment.snapshot.engineVersion} · 저장: {experiment.createdAt}</p><p>수집 ID: {experiment.snapshot.collection.id} · 출처: {experiment.snapshot.collection.endpoint}</p><p>입력 달력: {experiment.snapshot.collection.calendar?.source} · 공식 출처 진위 미검증</p><a className="text-link" href={`/api/backtest/experiments/${experiment.id}`} target="_blank" rel="noreferrer">고정 입력·결과 JSON 보기 ↗</a></details>
-        <button className="button secondary top-gap" disabled={locked || !available} onClick={() => void verify()}>고정 입력으로 재현 검증</button>
-        {replay && <p role="status">{replay}</p>}
-      </Panel>
-      <Panel title="백테스트 거래 내역" className="top-gap">{experiment.result.trades.length ? <div className="table-scroll"><table><thead><tr><th>신호일 → 체결일</th><th>방향</th><th>체결가</th><th>수량</th><th>수수료</th></tr></thead><tbody>{experiment.result.trades.map(t => <tr key={t.bar}><td>{dateInput(t.signalDate!)} → {dateInput(t.date!)}</td><td>{t.side === 'buy' ? '매수' : '매도'}</td><td>{t.price.toLocaleString('ko-KR', { maximumFractionDigits: 4 })}</td><td>{t.qty}</td><td>{won(t.fee)}</td></tr>)}</tbody></table></div> : <Empty title="교차 신호가 없습니다">이 구간에는 체결된 거래가 없습니다. 거래 0건도 재현할 수 있습니다.</Empty>}</Panel>
-    </section> : <Panel><Empty title="저장 일봉으로 실험하세요">기간 안의 종가 신호를 다음 봉 시가에 실행합니다. 최소 장기 기간 + 2봉이 필요하며 기간 이전 봉은 준비 구간에 사용하지 않습니다.</Empty></Panel>}
-    <Panel title="계산 가정과 한계" className="top-gap"><p className="prose">종가 이동평균 교차 후 다음 봉 시가에 전액 매수·전량 매도를 가정합니다. 수수료는 매 체결금액 × bp / 10,000을 원 단위 올림합니다. 슬리피지는 매수 시 더하고 매도 시 뺍니다. 자산은 현금 + 보유수량 × 당일 종가, 낙폭은 초기자금을 포함한 최고 자산 대비 하락률입니다.</p><p className="prose">세금·배당·기업행사를 반영하지 않습니다. 원주가의 분할·병합과 수집 시점 수정주가의 사후 조정은 성과 해석을 왜곡할 수 있습니다. 호가단위·유동성·가격제한·미체결은 모델링하지 않으며 0 가격·0 거래량 봉은 거부합니다. 마지막 보유분은 강제 청산하지 않습니다.</p></Panel>
-    </div><Panel title="실험 설정"><form onSubmit={execute} onChange={() => { setExperiment(null); setReplay(''); }}>
-      <fieldset className="backtest-fields" disabled={locked}><label className="field">수정주가 정책<select value={policy} onChange={e => { setPolicy(e.target.value); choose(runs?.find(row => row.adjustment === e.target.value)); }}><option value="adjusted">수정주가 · 수집 시점 기준</option><option value="raw">원주가 · 기업행사 미반영</option></select></label>
-      <label className="field">일봉 수집 기록<select value={selected} onChange={e => choose(runs?.find(row => row.id === e.target.value))}><option value="">수집 기록 선택</option>{runs?.filter(row => row.adjustment === policy).map(row => <option key={row.id} value={row.id}>{row.code} · {dateInput(row.from)} ~ {dateInput(row.to)} · {row.id.slice(0, 8)}</option>)}</select></label>
-      {!loading && !listError && runs?.length === 0 && <p>저장된 KIS 일봉이 없습니다</p>}
-      {run && <p className="soft-note">{eligible ? '입력 달력 대조 통과 · 실행 시 저장 봉을 다시 검사합니다.' : '부분 수집·품질 실패·달력 미대조 기록은 실행할 수 없습니다.'}</p>}
-      <a className="text-link" href="/data">데이터 상태 확인 →</a>
-      <div className="form-grid top-gap"><label className="field">시작일<input type="date" required value={from ? dateInput(from) : ''} onChange={e => setFrom(e.target.value.replaceAll('-', ''))} /></label><label className="field">종료일<input type="date" required value={to ? dateInput(to) : ''} onChange={e => setTo(e.target.value.replaceAll('-', ''))} /></label></div>
-      <div className="form-grid"><label className="field">단기 (봉)<input type="number" min="2" max="60" value={fast} onChange={e => setFast(Number(e.target.value))} required /></label><label className="field">장기 (봉)<input type="number" min="3" max="100" value={slow} onChange={e => setSlow(Number(e.target.value))} required /></label></div>
-      <label className="field">초기 자금 (원)<input type="number" min="100000" max="100000000" value={capital} onChange={e => setCapital(Number(e.target.value))} required /></label>
-      <label className="field">수수료 (bp, 1bp = 0.01%)<input type="number" step="0.1" min="0" max="100" value={fee} onChange={e => setFee(Number(e.target.value))} required /></label>
-      <label className="field">슬리피지 (bp)<input type="number" step="0.1" min="0" max="100" value={slip} onChange={e => setSlip(Number(e.target.value))} required /></label>
-      <p className="muted tiny">기본 비용은 검증용 가정입니다. 선택 기간의 봉·설정·출처·달력·엔진 버전을 고정 저장합니다. 동일 입력은 같은 실험으로 반환합니다.</p>
-      <button className="button primary wide" disabled={!available || !eligible || !!listError}><Play size={15} />저장 일봉 실험 실행</button></fieldset>
-    </form></Panel></div>
-  </div>;
+  return <><div className="bt-nav"><span>KIS 저장 일봉 · 종가 신호 → 다음 봉 시가 체결</span><a className="text-link" href="#backtest-history">저장된 실험으로 이동 ↓</a></div>
+    {loading && <p role="status">저장 일봉·실험 목록 조회 중</p>}
+    {listError && <p className="bt-warning" role="alert">{listError} <button className="text-link" onClick={() => setRevision(v => v + 1)}>다시 조회</button></p>}
+    <div className="bt-grid"><Panel title="저장 일봉 실험 설정"><form onSubmit={execute} onChange={clearResult}>
+      <fieldset className="backtest-fields" disabled={locked || !!listError}>
+        {!loading && !listError && selected && !run && <p className="bt-warning" role="alert">요청한 수집 기록을 찾을 수 없습니다. 데이터 상태를 확인하거나 기록을 직접 선택하세요.</p>}
+        {!loading && !listError && !runs?.length && <p>저장된 KIS 일봉이 없습니다</p>}
+        <div className="bt-pickers"><label className="field">수정주가 정책<select ref={policySelect} value={policy} onChange={event => { const next = runs?.find(row => row.adjustment === event.target.value); if (next) select(next.id, { values, focus: 'policy' }); }}>
+          <option value="adjusted" disabled={!runs?.some(row => row.adjustment === 'adjusted')}>수정주가 · 수집 시점 기준</option><option value="raw" disabled={!runs?.some(row => row.adjustment === 'raw')}>원주가 · 기업행사 미반영</option></select></label>
+          <label className="field">일봉 수집 기록<select ref={runSelect} value={run?.id ?? ''} onChange={event => select(event.target.value, { values, focus: 'run' })}>
+            <option value="" disabled>수집 기록 선택</option>{runs?.filter(row => row.adjustment === policy).map(row => <option key={row.id} value={row.id}>{row.code} · {dateInput(row.from)} ~ {dateInput(row.to)} · {row.id.slice(0, 8)}</option>)}</select></label></div>
+        {run && <p className={eligible ? 'bt-note' : 'bt-warning'}>{eligible ? `입력 달력 대조 통과 · 수집 기준일 ${dateInput(run.captureDate)}` : !run.coverageComplete || run.nextDate ? '부분 수집 · 수집 구간이 끝나지 않아 실행할 수 없습니다.' : !run.calendar || run.quality.state === 'unverified' ? '입력 달력 미대조 · 실행할 수 없습니다.' : '수집 상태·품질 확인 필요 · 실행할 수 없습니다.'}</p>}
+        <div className="form-grid"><label className="field">시작일<input type="date" required value={dateInput(from)} min={run && dateInput(run.from)} max={run && dateInput(run.to)} onChange={event => setFrom(event.target.value.replaceAll('-', ''))} /></label><label className="field">종료일<input type="date" required value={dateInput(to)} min={run && dateInput(run.from)} max={run && dateInput(run.to)} onChange={event => setTo(event.target.value.replaceAll('-', ''))} /></label></div>
+        <ExperimentFields values={values} change={setValues} />
+        <p className="bt-note">선택 기간에 장기 기간 + 2봉 이상이 필요합니다. 실행하면 입력·비용 가정과 결과를 함께 저장합니다.</p>
+        {error && <p className="bt-warning" role="alert">저장 일봉 실험 실패 · {error}</p>}
+        <button className="button primary wide" disabled={!available || !eligible}><Play size={15} />저장 일봉 실험 실행</button>
+      </fieldset></form><Link className="text-link" to={run ? `/data?run=${run.id}#inventory-daily` : '/data#inventory-daily'}>데이터 상태 확인 →</Link></Panel>
+      <div className="bt-output">
+        {experiment && <section ref={resultRef} tabIndex={-1} className="bt-result" aria-label="저장 일봉 실험 결과">
+          <Panel title="저장 일봉 실험 결과"><strong>{experiment.snapshot.input.code} · {pricePolicy(experiment.snapshot.input.adjustment)} · {experiment.snapshot.bars.length}봉</strong>
+            <p>{dateInput(experiment.snapshot.input.from)} ~ {dateInput(experiment.snapshot.input.to)} · 수집 기준일 {dateInput(experiment.snapshot.collection.captureDate)}</p>
+            <p>단기 {experiment.snapshot.input.fast} / 장기 {experiment.snapshot.input.slow} · 초기 {won(experiment.snapshot.input.capital)}원 · 수수료 {experiment.snapshot.input.feeBps}bp · 슬리피지 {experiment.snapshot.input.slippageBps}bp</p>
+            <ResultSummary result={experiment.result} label="저장 구간 수익률" />
+            <button className="button secondary" disabled={locked || !available} onClick={() => void verify()}>고정 입력으로 재현 검증</button>
+            {replay && <p role="status">{replay}</p>}{replayError && <p role="alert" className="bt-warning">재현 검증 실패 · {replayError}</p>}
+            <details><summary>재현 입력·출처 확인</summary><p>실험 입력 SHA256 <code data-testid="experiment-hash">{experiment.inputHash}</code></p>
+              <p>엔진 {experiment.snapshot.engineVersion} · 저장 {experiment.createdAt}</p><p>수집 ID {experiment.snapshot.collection.id} · 출처 {experiment.snapshot.collection.endpoint}</p>
+              <p>입력 달력 {experiment.snapshot.collection.calendar?.source ?? '미기록'} · 공식 출처 진위 미검증</p>
+              <a className="text-link" href={`/api/backtest/experiments/${experiment.id}`} target="_blank" rel="noreferrer">고정 입력·결과 JSON 보기 ↗</a></details>
+          </Panel><Panel title="자산 곡선"><Chart values={experiment.result.equity} height={230} label="저장 일봉 백테스트 평가자산 곡선" /><p>{experiment.result.source}</p></Panel>
+          <Trades result={experiment.result} daily />
+        </section>}
+        <section id="backtest-history" tabIndex={-1}><Panel title="저장된 실험" action={<button className="button secondary" disabled={locked} onClick={() => setRevision(v => v + 1)}>실험 목록 새로고침</button>}>
+          {!loading && !listError && experiments.length === 0 ? <p>저장된 실험이 없습니다. 실행에 성공하면 입력과 결과가 함께 보존됩니다.</p> : <>
+            <label className="field">저장 실험<select value={savedId} disabled={locked || !!listError} onChange={event => { setSavedId(event.target.value); setLoadError(''); }}><option value="">실험 선택</option>{experiments.map(item => <option key={item.id} value={item.id}>{item.input.code} · {dateInput(item.input.from)} ~ {dateInput(item.input.to)} · {pricePolicy(item.input.adjustment)} · {item.bars}봉 · {item.id.slice(0, 10)}</option>)}</select></label>
+            <button className="button secondary" disabled={!savedId || locked || !!listError} onClick={() => void load()}>저장 실험 불러오기</button></>}
+          {loadError && <p role="alert" className="bt-warning">{loadError}</p>}
+        </Panel></section>
+        <Panel title="계산 가정과 한계"><p>세금·배당·기업행사를 반영하지 않습니다. 입력 달력의 공식성·가격 정확성·과거 시점 정보(PIT)와 실제 수익성은 미검증입니다.</p>
+          <details><summary>체결·비용·평가 방식</summary><p>종가 교차 후 다음 봉 시가에 전액 매수·전량 매도합니다. 수수료는 체결금액 × bp / 10,000을 원 단위 올림합니다. 슬리피지는 매수 시 더하고 매도 시 뺍니다.</p>
+            <p>낙폭은 초기자금을 포함한 최고 평가자산 대비 하락률입니다. 마지막 보유분은 종가로 평가합니다. 원주가 분할·병합과 수정주가 사후 조정에 유의하세요. 호가단위·유동성·가격제한·미체결은 모델링하지 않습니다.</p></details>
+        </Panel>
+      </div>
+    </div></>;
 }
