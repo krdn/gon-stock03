@@ -1,0 +1,78 @@
+{
+  "pc": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "positions": {
+      "demoTitle": 453,
+      "demoResult": 481,
+      "demoAction": 532,
+      "kisTitle": 453,
+      "kisResult": 481,
+      "kisAction": 532,
+      "warning": 391
+    },
+    "arrivals": {
+      "kis": {
+        "url": "/strategies?environment=kis-paper",
+        "selected": "kis-paper",
+        "reload": "kis-paper",
+        "actionsToRequestedEnvironment": 1,
+        "evaluationY": 1060,
+        "back": "/dashboard"
+      },
+      "demo": {
+        "url": "/strategies?environment=demo",
+        "selected": "demo",
+        "reload": "demo",
+        "actionsToRequestedEnvironment": 1,
+        "back": "/dashboard"
+      },
+      "warning": {
+        "url": "/risk",
+        "back": "/dashboard"
+      }
+    },
+    "posts": [],
+    "overflow": 0
+  },
+  "mobile": {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "positions": {
+      "demoTitle": 554,
+      "demoResult": 578,
+      "demoAction": 626,
+      "kisTitle": 725,
+      "kisResult": 749,
+      "kisAction": 797,
+      "warning": 480
+    },
+    "arrivals": {
+      "kis": {
+        "url": "/strategies?environment=kis-paper",
+        "selected": "kis-paper",
+        "reload": "kis-paper",
+        "actionsToRequestedEnvironment": 1,
+        "evaluationY": 1174,
+        "back": "/dashboard"
+      },
+      "demo": {
+        "url": "/strategies?environment=demo",
+        "selected": "demo",
+        "reload": "demo",
+        "actionsToRequestedEnvironment": 1,
+        "back": "/dashboard"
+      },
+      "warning": {
+        "url": "/risk",
+        "back": "/dashboard"
+      }
+    },
+    "posts": [],
+    "overflow": 0
+  }
+}
