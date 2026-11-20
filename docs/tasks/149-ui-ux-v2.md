@@ -10,7 +10,7 @@
 
 실제 지난 기록 화면에는 두 뷰포트 모두 3건과 주문별 확인 시각 3개가 표시됐다. 첫 결과/확인 시각의 상단은 모바일 365/459px, PC 402/423px였다. 직접 수용은 별도이며, 사용자 체감 소요 시간은 미측정이다. [대시보드](http://127.0.0.1:4303/dashboard) · [현재 KIS 원장](http://127.0.0.1:4303/orders?view=kis) · [지난 실행 기록](http://127.0.0.1:4303/orders?view=history) · [매매 설정](http://127.0.0.1:4303/settings/trading)
 
-Orca Run `run_083cd1245215`. 네 작업자의 착수 메시지·실제 worktree·브랜치와 기준 SHA를 확인했다. 작업 루트는 `/home/gon/orca/workspaces/gon-stock03/`이며 Orca 브랜치는 `krdn/<worktree>`다. 포트는 작업자에게 배정한 예시 앱 주소이며 실제 연결 확인 후 검토 링크로 게시한다.
+Orca Run `run_083cd1245215`. 작업자의 착수 메시지·실제 worktree·브랜치와 기준 SHA를 확인했다. 작업 루트는 `/home/gon/orca/workspaces/gon-stock03/`이며 Orca 브랜치는 `krdn/<worktree>`다. 포트는 작업자에게 배정한 예시 앱 주소이며 실제 연결 확인 후 검토 링크로 게시한다.
 
 |페이지·착수 기록|Codex 세션|worktree|예시 포트|검토할 동작|
 |---|---|---|---:|---|
@@ -18,8 +18,13 @@ Orca Run `run_083cd1245215`. 네 작업자의 착수 메시지·실제 worktree�
 |[주문·체결 #151](https://github.com/krdn/gon-stock03/issues/151#issuecomment-7036979759)|`01a1f874-ee20-7ac2-a5d9-2499faed498b`|`ux2-151-orders`|4452|DEMO와 현재 KIS 목록·복구, 지난 기록 회귀|
 |[매매 설정 #152](https://github.com/krdn/gon-stock03/issues/152#issuecomment-7036981305)|`01a1f874-ef23-79b0-bd38-41c23071a172`|`ux2-152-trading-settings`|4453|일반 한도 저장·복귀. 한정 실행과 전략 계약 각각 대상 → 한도 → 검토, 초안·고정·적용|
 |[설정 왕복 시 주문 입력 복원 #154](https://github.com/krdn/gon-stock03/issues/154#issuecomment-7037090642)|`01a1f87a-0d83-7e92-83f3-66917882dd22`|`ux2-154-paper-return`|4470|일반 설정 저장 → 새로고침 → 뒤로·앞으로 → 주문 입력 복귀|
+|[공통 상태 시각 #157](https://github.com/krdn/gon-stock03/issues/157#issuecomment-7037344427)|`01a1f885-d6bc-7d32-b944-7e94423ecaed`|`ux2-157-app-time`|4471|서버 시각 기준 표시·행동 직전 신선도·실제 만료|
 
 #152의 예시 주문은 설정 왕복 뒤 4주·72,500원이 1주·빈 가격으로 바뀌었다. [#154](https://github.com/krdn/gon-stock03/issues/154)에서 Paper.tsx 복원 수명을 전담한다. #152는 TradingSettings.tsx와 기존 복귀 계약을 담당하며 메인이 두 후보를 함께 검증한다. 이후 /paper 전체 화면 검토는 이 결과를 재사용한다.
+
+[대시보드 예시](http://127.0.0.1:4451/dashboard)에서 메인이 PC·모바일 모두 한 번에 KIS 전략 환경으로 이동하는 것을 확인했다. 브라우저 시계가 120초 빠르면 두 크기 모두 정상 응답 직후 공통 상태가 ‘오래됨’으로 표시됐다. 지정 Gemini의 [PR #156](https://github.com/krdn/gon-stock03/pull/156) 재검토 판정은 FAIL이다. 메인이 #157에 App.tsx의 표시·act 직전 판정과 기존 DEMO 만료/재시도 회귀 두 건의 시계 주입을 배정했다. #156과 #157의 결합 후보에서 편차·실제 만료·오류 경계를 재검증한다.
+
+[현재 KIS 예시](http://127.0.0.1:4452/orders?view=kis)의 주문 상세는 두 크기에서 키보드 Enter로 열렸고 쓰기 요청은 0건이었다. [주문 PR #155](https://github.com/krdn/gon-stock03/pull/155) · [대시보드 지도](http://127.0.0.1:4328/guide.html#dashboard) · [주문 지도](http://127.0.0.1:4328/guide.html#orders).
 
 ## 다음 배정
 
@@ -28,7 +33,7 @@ src/specs.ts의 15개 화면, App.tsx의 매매 설정 추가 경로와 4303 주
 |화면|사용자 행동과 확인 결과|기존 기록|대기 작업|
 |---|---|---|---|
 |[시장 탐색](http://127.0.0.1:4303/market)|공개 마스터·합성 목록 검색 → 종목 상세 → 트레이딩. 검색·거래소 필터와 빈 결과, 시세 출처, 선택 코드 전달|[#10](https://github.com/krdn/gon-stock03/issues/10)|`task_05d1c5081709`|
-|[트레이딩](http://127.0.0.1:4303/trade)|종목과 20/60/100 일봉의 출처·기준 시각·조회 실패, DEMO 입력과 확인 후 원장 이동, 모의 매매로 종목 전달|[#12](https://github.com/krdn/gon-stock03/issues/12)|`task_368706006902`|
+|[트레이딩](http://127.0.0.1:4303/trade)|종목과 20/60/100 일봉의 출처·기준 시각·조회 실패와 브라우저 시계 편차, DEMO 입력과 확인 후 원장 이동, 모의 매매로 종목 전달|[#12](https://github.com/krdn/gon-stock03/issues/12)|`task_368706006902`|
 |[연결·설정](http://127.0.0.1:4303/settings)|키 주입·인증·잔고를 구별하고 오류 후 다음 행동 찾기, 저장 상태/새로고침 효과와 매매 설정 복귀|[#8](https://github.com/krdn/gon-stock03/issues/8), [#113](https://github.com/krdn/gon-stock03/issues/113)|`task_1eff32bf0737`|
 |[관심종목](http://127.0.0.1:4303/watchlist)|관심 등록·해제·재접속, 시세 미확인, 종목 상세·코드 복사·키보드 초점 복귀 및 트레이딩 전달|[#20](https://github.com/krdn/gon-stock03/issues/20)|`task_d7787e831cb7`|
 |[KIS 모의 매매](http://127.0.0.1:4303/paper)|종목·매매 입력→일반 설정 왕복, 시세/대조·접수/불명·복구/잔량취소, 식별자는 합성 fixture, 실제 API 차단|[#14](https://github.com/krdn/gon-stock03/issues/14), [#116](https://github.com/krdn/gon-stock03/issues/116)|`task_e08af9e521b1`|
