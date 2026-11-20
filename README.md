@@ -2,6 +2,8 @@
 
 개인 PC용 국내 주식·ETF 트레이딩 워크스페이스. 전체 화면과 설계 시각화에서 출발해 로컬 모의 기능과 KIS 모의 API를 단계적으로 연결합니다.
 
+[1차 화면 함께 보기](docs/tasks/143-v1-guide.md)에서 화면을 고르면 버튼의 동작과 결과를 살펴보고 2차 수정 의견을 남길 수 있습니다.
+
 ![실제 시세로 KIS 모의 주문을 보내는 과정과 합성 가격으로 내 PC에서 매매를 연습하는 과정](docs/architecture/figures/gon-stock-overview.png)
 
 [그림 확대](docs/architecture/figures/gon-stock-overview.svg) · [한 장 그림과 클릭형 구조도 내려받기 (HTML)](docs/architecture/figures/gon-stock03-overview.html?raw=1)
