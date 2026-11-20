@@ -2,10 +2,11 @@ import { RealtimeStatus } from '../components/RealtimeStatus';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import './Risk.css';
-import { AlertTriangle, Check, ChevronDown, Landmark, RefreshCw, Server, Settings2, ShieldCheck, Square, Wallet } from 'lucide-react';
+import './Alerts.css';
+import { Check, ChevronDown, Landmark, RefreshCw, Server, Settings2, ShieldCheck, Square, Wallet } from 'lucide-react';
 import { useWorkbench } from '../context';
 import { Badge, Empty, Panel } from '../components/ui';
-import { equity, won, type ConnectionFailure } from '../../shared/model';
+import { equity, won, type ConnectionFailure, type Event as WorkspaceEvent } from '../../shared/model';
 import { authenticationStatus } from '../../shared/status';
 
 export function Risk() {
@@ -144,20 +145,106 @@ export function Journal() {
   const entries = state.journal.filter(j => j.text.includes(query) || j.code.includes(query));
   return <div className="grid-main"><Panel title="나의 기록" action={<input className="compact-input" aria-label="일지 검색" placeholder="일지 검색" value={query} onChange={e => setQuery(e.target.value)} />}>{entries.length ? entries.map(j => <article className="journal-entry" key={j.id}><div><Badge>{state.instruments.find(s => s.code === j.code)?.name}</Badge><time>{new Date(j.date).toLocaleString('ko-KR')}</time></div><p>{j.text}</p></article>) : query ? <Empty title="검색 결과가 없습니다">다른 본문이나 종목코드로 검색하거나 검색어를 지워보세요.</Empty> : <Empty title="기록이 쌓이면 원칙이 보입니다">진입 이유, 지킨 규칙, 다음에 바꿀 행동을 남겨보세요.</Empty>}</Panel><Panel title="기록 작성"><form onSubmit={save}><label className="field">종목<select value={code} onChange={e => { draftRevision.current += 1; setCode(e.target.value); }}>{state.instruments.map(s => <option value={s.code} key={s.code}>{s.name}</option>)}</select></label><label className="field">매매 메모<textarea rows={8} value={text} required maxLength={2000} onChange={e => { draftRevision.current += 1; setText(e.target.value); }} placeholder="왜 이 종목을 관찰했나요? 어떤 조건에서 진입하고 청산할까요?" /></label><span className="muted tiny">{text.length} / 2,000</span><button className="button primary wide" disabled={!available || busy}>일지 저장</button></form></Panel></div>;
 }
+const alertFilters = [
+  { key: 'level', label: '중요도', options: [['info', '안내'], ['warning', '주의'], ['error', '오류']] },
+  { key: 'env', label: '환경', options: [['demo', 'DEMO'], ['kis-paper', 'KIS 모의'], ['shared', '공통 위험'], ['unknown', '미확인']] },
+  { key: 'read', label: '읽음 상태', options: [['unread', '미읽음'], ['read', '읽음']] },
+] as const;
+
+function alertCause(event: WorkspaceEvent) {
+  if (!event.target) return null;
+  const kis = event.environment === 'kis-paper';
+  const prefix = kis ? 'KIS 모의 ' : event.environment === 'demo' ? 'DEMO ' : '';
+  switch (event.target) {
+    case 'strategies': return { to: kis ? '/strategies?environment=kis-paper' : '/strategies', label: prefix + '전략' };
+    case 'orders': return { to: kis ? '/orders?view=kis' : '/orders', label: prefix + '주문·체결' };
+    case 'risk': return { to: kis ? '/risk?env=kis' : '/risk', label: '위험관리' };
+    case 'paper': return { to: '/paper', label: 'KIS 모의 매매' };
+    case 'settings': return { to: '/settings', label: '연결·설정' };
+  }
+}
+
 export function Alerts() {
-  const { state, act, available, busy } = useWorkbench(); const [filter, setFilter] = useState('all');
-  const rows = state.events.filter(e => filter === 'all' || e.level === filter);
-  const unread = state.events.filter(e => !e.read).length;
-  return <Panel title="워크스페이스 이벤트" action={<button className="button secondary" disabled={!available || busy || unread === 0} onClick={() => void act('events/read', { ids: state.events.filter(e => !e.read).map(e => e.id) }).catch(() => {})}><Check size={16} />모두 읽음</button>}>
-    <div className="toolbar"><div className="tabs">{[['all', '전체'], ['info', '안내'], ['warning', '주의'], ['error', '오류']].map(([id, label]) => <button key={id} aria-pressed={filter === id} className={filter === id ? 'active' : ''} onClick={() => setFilter(id)}>{label}</button>)}</div><span className="muted">미읽음 {unread}건 · 최근 최대 1,000건 · 외부 발송 없음</span></div>
-    <RealtimeStatus /><p className="muted tiny">KIS REST 이력과 실시간 연결·수신 중단·대조 이벤트를 표시합니다. 실제 장중 복구 검증은 별도입니다.</p>
-    {rows.length ? rows.map(e => <article className={`event ${e.read ? 'read' : ''}`} key={e.id}>
-      <span className={`event-icon ${e.level}`}><AlertTriangle size={18} /></span><div>
-        <h3>{e.title}{!e.read && <span className="unread-dot" aria-hidden="true" />}</h3>
-        <p>{e.detail}</p><p className="tiny muted">{e.environment === 'kis-paper' ? 'KIS 모의' : e.environment === 'shared' ? '공통 위험' : 'DEMO'} · {e.read ? '읽음' : '미읽음'}{e.requestId && <> · 요청 {e.requestId}</>}</p>
-        <time dateTime={e.time}>{new Date(e.time).toLocaleString('ko-KR')}</time>{e.target && <p><Link to={`/${e.target}`} className="text-link">원인 화면</Link></p>}
-      </div><Badge>{e.level === 'info' ? '안내' : e.level === 'warning' ? '주의' : '오류'}</Badge>
-    </article>) : <Empty title={state.events.length ? '해당 중요도의 이벤트가 없습니다' : '아직 이벤트가 없습니다'}>주문·전략·위험관리 동작이 이곳에 기록됩니다.</Empty>}
+  const { state, act, status, server, realtime, available, busy } = useWorkbench();
+  const [params, setParams] = useSearchParams();
+  const [feedback, setFeedback] = useState('');
+  const selection = alertFilters.map(group => group.options.find(([id]) => id === params.get(group.key))?.[0] ?? 'all');
+  const [level, environment, read] = selection;
+  const received = Boolean(server);
+  const initialLoading = !received && status.phase === 'loading';
+  const current = received && available && status.complete;
+  const partial = received && (status.phase === 'partial' || (available && !status.complete));
+  const events = received ? state.events : [];
+  const rows = events.filter(e => (level === 'all' || e.level === level)
+    && (environment === 'all' || (e.environment ?? 'unknown') === environment)
+    && (read === 'all' || e.read === (read === 'read')));
+  const unreadIds = rows.filter(e => !e.read).map(e => e.id);
+  const filtered = level !== 'all' || environment !== 'all' || read !== 'all';
+  const realtimePhase = received && realtime ? { stopped: '미연결', connecting: '연결 중', reconciling: '대조 필요', ready: '대조 완료', disconnected: '수신 중단', error: '오류' }[realtime.phase] : '상태 미확인';
+  const urgent = realtime?.phase === 'error' || realtime?.phase === 'disconnected' || realtime?.phase === 'reconciling'
+    || Boolean(realtime?.required && !realtime.ordersAllowed);
+
+  function updateFilter(key?: string, value?: string) {
+    const next = new URLSearchParams(params);
+    if (!key) alertFilters.forEach(group => next.delete(group.key));
+    else if (value && value !== 'all') next.set(key, value);
+    else next.delete(key);
+    setFeedback('');
+    setParams(next, { replace: true });
+  }
+
+  async function markVisibleRead() {
+    setFeedback('');
+    try {
+      await act('events/read', { ids: unreadIds });
+      setFeedback(`선택 당시 미읽음 ${unreadIds.length}건의 저장 요청을 처리했습니다.`);
+    } catch {
+      setFeedback('읽음 저장 결과를 확인하지 못했습니다. 목록의 읽음 상태를 확인한 뒤 다시 시도하세요.');
+    }
+  }
+
+  return <Panel className="alerts-page" title="워크스페이스 이벤트" action={
+    <button className="button secondary" disabled={!current || busy || !unreadIds.length} onClick={() => void markVisibleRead()}>
+      <Check size={16} aria-hidden="true" />{current ? `이 목록 ${unreadIds.length}건 읽음 처리` : '이 목록 읽음 처리'}
+    </button>
+  }>
+    <div className="alerts-filters">{alertFilters.map((group, index) => <div key={group.key}>
+      <label htmlFor={`alerts-${group.key}`}>{group.label}</label>
+      <select id={`alerts-${group.key}`} value={selection[index]} onChange={e => updateFilter(group.key, e.target.value)}>
+        <option value="all">전체</option>{group.options.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+      </select>
+    </div>)}</div>
+    <div className="alerts-scope"><span role="status">{received && <>수신 {events.length}건 중 표시 {rows.length}건 · 이 목록 미읽음 {unreadIds.length}건</>}</span>
+      <small>최근 최대 1,000건 · 읽음만 로컬에 저장 · 외부 발송 없음</small>
+    </div>
+    {feedback && <p className="alerts-feedback" role="status">{feedback}</p>}
+    {!current && <p className={initialLoading ? 'alerts-feedback' : 'alerts-warning'} role="status">{!received
+      ? initialLoading ? '이벤트를 불러오는 중입니다.' : '이벤트 수신 여부 미확인 · 로컬 서버 연결을 다시 확인하세요.'
+      : `${partial ? '이벤트 일부 수신' : '최신 이벤트 미확인'} · 받은 기록만 표시합니다. 추가 이벤트가 누락될 수 있어 읽음 저장을 중단합니다.`}
+      {received && status.lastSuccessAt && <> 마지막 전체 확인 <time dateTime={status.lastSuccessAt}>{new Date(status.lastSuccessAt).toLocaleString('ko-KR')}</time></>}
+    </p>}
+    {received && urgent && <p className="alerts-warning" role="alert">{!current && '마지막 수신 기준 · '}KIS 실시간 {realtimePhase}
+      {realtime?.required && !realtime.ordersAllowed && ' · 실시간 기준 신규 주문 차단'} · <Link to="/paper">KIS 대조 화면</Link>
+    </p>}
+    <details className="alerts-realtime"><summary>{received && realtime && !current && '마지막 수신 기준 · '}KIS 실시간 {realtimePhase} 상세</summary><RealtimeStatus /></details>
+    {rows.map(e => {
+      const cause = alertCause(e);
+      return <article className={`event ${e.read ? 'read' : ''}`} key={e.id}>
+        <div>
+          <div className="alerts-meta"><span className={`alert-level ${e.level}`}>{{ info: '안내', warning: '주의', error: '오류' }[e.level]}</span>
+            <span>{e.environment ? { 'kis-paper': 'KIS 모의', shared: '공통 위험', demo: 'DEMO' }[e.environment] : '환경 미확인'}</span>
+            <span>{e.read ? '읽음' : '미읽음'}</span><time dateTime={e.time}>{new Date(e.time).toLocaleString('ko-KR')}</time>
+          </div>
+          <h3>{!e.read && <span className="unread-dot" aria-hidden="true" />}{e.title}</h3>
+          <p>{e.detail}</p>
+          {cause && <Link to={cause.to} className="text-link alerts-cause">{cause.label} 원인 화면</Link>}
+          {e.requestId && <details className="alerts-request"><summary>요청 ID</summary><code>{e.requestId}</code></details>}
+        </div>
+      </article>;
+    })}
+    {!rows.length && (current || events.length > 0) && <Empty title={events.length ? '조건에 맞는 이벤트가 없습니다' : '아직 이벤트가 없습니다'}>
+      {events.length && filtered ? <button className="text-link" onClick={() => updateFilter()}>필터 초기화</button> : '주문·전략·위험관리 동작이 이곳에 기록됩니다.'}
+    </Empty>}
   </Panel>;
 }
 export { DataStatus } from './DataInventory';
