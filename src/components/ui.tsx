@@ -3,7 +3,7 @@ import { ArrowUpRight, ArrowDownRight, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { won, type DataStatus } from '../../shared/model';
 
-const phaseLabels: Record<DataStatus['phase'], string> = { disconnected: '미연결', loading: '로딩', ready: '정상', stale: '오래됨', partial: '부분실패', error: '오류' };
+export const phaseLabels: Record<DataStatus['phase'], string> = { disconnected: '미연결', loading: '로딩', ready: '정상', stale: '오래됨', partial: '부분실패', error: '오류' };
 export function DataStatusLine({ status, label, showPages = false }: { status: DataStatus; label: string; showPages?: boolean }) {
   const time = (value: string | null) => value ? new Date(value).toLocaleString('ko-KR') : '없음';
   return <div className="data-status" role="group" aria-label={label}><strong>{label}</strong><Badge tone={status.phase === 'ready' ? 'teal' : 'neutral'}>{phaseLabels[status.phase]}</Badge><span>{status.environment === 'demo' ? 'DEMO · 합성 데이터' : 'KIS 모의 · REST'}</span><span>관측 {time(status.observedAt)}</span><span>최종 전체 성공 {time(status.lastSuccessAt)}</span>{showPages && <span>{status.pages}페이지 · {status.complete ? '전체 확인' : '전체 확인 전'}</span>}{status.error && <p>{status.error}</p>}</div>;
