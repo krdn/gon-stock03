@@ -42,6 +42,8 @@ test('portfolio distinguishes disconnected, loading, partial, stale and recovere
   await page.route('**/api/kis/check', async route => { checks++; await gate; state.connection = portfolioState().connection; await route.fulfill({ json: { connection: state.connection, message: '잔고 전체 조회' } }); });
   await page.goto('/portfolio');
   await expect(page.getByRole('heading', { name: 'KIS 잔고를 조회해 주세요' })).toBeVisible();
+  await expect(page.locator('.portfolio-warning')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: '연결·설정 확인' })).toBeVisible();
   await expect(page.getByRole('region', { name: '포트폴리오 요약' })).toHaveCount(0);
   await page.getByRole('button', { name: 'KIS 잔고 새로고침' }).click();
   await expect(page.getByLabel('포트폴리오 조회 상태', { exact: true })).toContainText('로딩');
@@ -151,6 +153,7 @@ test('DEMO first read failure withholds fixture money, later failure retains the
   await expect(page.getByLabel('포트폴리오 조회 상태', { exact: true })).toContainText('로컬 확인 없음');
   await page.getByRole('button', { name: 'KIS 모의', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'KIS 계좌 미확인' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '연결 원인 확인' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'KIS 잔고 새로고침' })).toBeDisabled();
   await page.getByRole('button', { name: '로컬 DEMO', exact: true }).click();
   fail = false;
@@ -199,17 +202,34 @@ test('partial first read has a cause and no money, and sub-won losses display ne
   state.connection.status = { ...state.connection.status, phase: 'partial', complete: false, lastSuccessAt: null };
   await page.route('**/api/state', route => route.fulfill({ json: state }));
   await page.goto('/portfolio');
+  await expect(page.locator('.portfolio-warning')).toContainText('전체 조회 미완료 · 확인된 금액 없음');
   await expect(page.getByRole('heading', { name: 'KIS 잔고 전체 조회 미완료' })).toBeVisible();
   await expect(page.getByRole('link', { name: '연결 원인 확인' })).toBeVisible();
   await expect(page.getByRole('region', { name: '포트폴리오 요약' })).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  balance.cash = 123456789012345;
   balance.positions = [{ code: '005930', name: '삼성전자', qty: 1200, price: 100, average: 100.0001 }];
   state.connection.balance = balance;
   state.connection.status = portfolioState().connection.status;
   await page.reload();
   const row = page.getByRole('row').filter({ hasText: '삼성전자' });
   await expect(row).toContainText('1,200주');
+  await expect(page.getByText('123,456,789,012,345원', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const pnl = row.getByRole('cell', { name: '0원', exact: true });
   await expect(pnl).toBeVisible();
   await expect(pnl).not.toHaveClass(/up|down/);
   await expect(page.getByRole('region', { name: '포트폴리오 요약' }).getByText('0원', { exact: true })).toBeVisible();
+});
+
+test('initial KIS view names the local server read while the response is pending', async ({ page }) => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/state', async route => { await gate; await route.fulfill({ json: snapshot() }); });
+  await page.goto('/portfolio');
+  await expect(page.locator('.portfolio-warning')).toContainText('로컬 서버에서 계좌 상태 확인 중');
+  await expect(page.getByRole('link', { name: '연결 원인 확인' })).toHaveCount(0);
+  release();
+  await expect(page.getByRole('heading', { name: 'KIS 잔고를 조회해 주세요' })).toBeVisible();
+  await expect(page.locator('.portfolio-warning')).toHaveCount(0);
 });

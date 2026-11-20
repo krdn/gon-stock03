@@ -193,16 +193,18 @@ export function Portfolio() {
       <Badge tone={current ? 'teal' : 'neutral'}>{phaseLabels[dataStatus.phase]}</Badge>
       <span>{kis ? '잔고 최종 전체 성공' : '로컬 확인'} {confirmedAt(dataStatus.lastSuccessAt)}</span>
     </div>
-    {!current && <div className="portfolio-warning" role="status">
-      {loading && <strong>{kis && available ? 'KIS 잔고 새로고침 중' : '로컬 계좌 조회 중'}</strong>}
+    {!current && (loading || portfolio || incomplete || dataStatus.error) && <div className="portfolio-warning" role="status">
+      {loading && <strong>{status.phase === 'loading' ? '로컬 서버에서 계좌 상태 확인 중' : 'KIS 잔고 새로고침 중'}</strong>}
       {portfolio && <strong>{kis ? '이전 전체 성공값 · 최신 아님' : '이전 DEMO 확인값 · 최신 아님'}</strong>}
+      {incomplete && !portfolio && <strong>전체 조회 미완료 · 확인된 금액 없음</strong>}
       {dataStatus.phase === 'partial' && <span>{dataStatus.pages}페이지 확인 · 부분 잔고 합산 제외</span>}
       {dataStatus.error && <span>{dataStatus.error}</span>}
       {dataStatus.observedAt && dataStatus.observedAt !== dataStatus.lastSuccessAt && <span>최근 관측 {confirmedAt(dataStatus.observedAt)}</span>}
-      {kis && !loading && <Link to="/settings">연결 원인 확인</Link>}
+      {kis && available && !loading && (incomplete || dataStatus.error || dataStatus.phase === 'stale') && <Link to="/settings">연결 원인 확인</Link>}
     </div>}
     {!portfolio ? <Empty title={emptyTitle}>
       {kis ? '잔고 전체 조회가 끝나면 예수금과 보유종목을 표시합니다.' : '로컬 서버에서 확인한 뒤 보유 현금과 종목을 표시합니다.'}
+      {kis && available && !loading && !incomplete && !dataStatus.error && <> <Link to="/settings">연결·설정 확인</Link></>}
     </Empty> : <>
       {portfolio.unpriced > 0 && <div className="notice warning" role="status">현재가 누락 {portfolio.unpriced}종목 · 해당 평가액·손익과 전체 평가 합계·비중은 평가 불가입니다.</div>}
       {portfolio.total === 0 && <p className="notice" role="status">총자산 0원 · 비중을 산출하지 않습니다.</p>}

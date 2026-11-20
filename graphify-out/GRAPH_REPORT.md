@@ -1,7 +1,7 @@
 # Graph Report - ux2-174-portfolio  (2026-11-20)
 
 ## Corpus Check
-- 304 files · ~293,385 words
+- 304 files · ~293,621 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 11 file(s) not represented in the graph (top: .css 3, (none) 2, .zip 2)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `cea691e8`
+- Built from commit: `aba7fee6`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -137,8 +137,8 @@
 6. `files` - 37 edges
 7. `Panel()` - 36 edges
 8. `Badge()` - 32 edges
-9. `snapshot()` - 31 edges
-10. `won()` - 31 edges
+9. `won()` - 31 edges
+10. `snapshot()` - 31 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `계약과 저장` --references--> `KisClient`  [INFERRED]
@@ -576,13 +576,13 @@ Nodes (4): 관측, 남은 순서, 보존·실행 위치, 접속키 실행 경로
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `KisClient` connect `kis.ts` to `.request`, `71-settings-recovery.md`, `model.ts`, `vts-runner.ts`, `engine.ts`, `trading-settings.test.ts`, `snapshot`, `shared/market-data.ts`, `useWorkbench`, `PaperBroker`, `http.ts`, `작업: 국내 종목 마스터·일봉 수집`, `paper.ts`, `paper.test.ts`, `#8 연결·설정 검증`, `Store`, `.paperOrders`?**
-  _High betweenness centrality (0.074) - this node is a cross-community bridge._
+  _High betweenness centrality (0.067) - this node is a cross-community bridge._
 - **Are the 31 inferred relationships involving `makeServer()` (e.g. with `.refreshMaster()` and `.start()`) actually correct?**
   _`makeServer()` has 31 INFERRED edges - model-reasoned connections that need verification._
 - **Should `MarketExplorer.tsx` be split into smaller, more focused modules?**
   _Cohesion score 0.12698412698412698 - nodes in this community are weakly interconnected._
 - **Why does `Store` connect `Store` to `kis.ts`, `engine.ts`, `vts-runner.ts`, `trading-settings.test.ts`, `shared/market-data.ts`, `.riskSnapshot`, `PaperBroker`, `order-history.ts`, `http.ts`, `paper.ts`, `paper.test.ts`, `#9 최소 모의 실행 절차`, `Realtime`, `.paperOrders`?**
-  _High betweenness centrality (0.038) - this node is a cross-community bridge._
+  _High betweenness centrality (0.041) - this node is a cross-community bridge._
 - **Are the 3 inferred relationships involving `KisClient` (e.g. with `계약과 저장` and `실제 공개 마스터`) actually correct?**
   _`KisClient` has 3 INFERRED edges - model-reasoned connections that need verification._
 - **Should `작업: #64 SQLite 원장 파일 권한 보호` be split into smaller, more focused modules?**

@@ -11,8 +11,8 @@
 .portfolio-warning { border-left: 3px solid #b6802e; padding: 6px 10px; background: #fff6e9; color: #73491c; }
 .portfolio-warning a { text-decoration: underline; padding: 3px 0; }
 .portfolio-page .stats-grid { margin: 0; padding: 14px 0; }
-.portfolio-page .stat { padding: 0 16px; }
-.portfolio-page .stat > strong { margin: 3px 0 0; font-size: clamp(18px, 2vw, 26px); overflow-wrap: anywhere; }
+.portfolio-page .stat { min-width: 0; padding: 0 16px; }
+.portfolio-page .stat > strong { margin: 3px 0 0; font-size: clamp(18px, 2vw, 26px); white-space: normal; overflow-wrap: anywhere; }
 .portfolio-page .stat-bottom:empty { display: none; }
 .portfolio-page .panel-head { margin-bottom: 8px; }
 .portfolio-page .panel { min-width: 0; margin: 0; }
