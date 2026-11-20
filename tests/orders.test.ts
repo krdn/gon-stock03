@@ -2,10 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Store } from '../server/store.ts';
+import { orderHistory } from '../server/order-history.ts';
 import { makeServer } from '../server/http.ts';
 import { KisClient } from '../server/kis.ts';
 import { placeOrder, cancelOrder, advanceTick } from '../server/engine.ts';
@@ -52,4 +53,36 @@ test('ledger display contract rejects invalid quantities and strips broker messa
   const result = paperLedgerSchema.parse({ orders: [order] });
   assert.ok(!JSON.stringify(result).includes('private-'));
   for (const patch of [{ remaining: -1 }, { filled: 2 }, { status: 'anything' }, { createdAt: 'bad-date' }]) assert.equal(paperLedgerSchema.safeParse({ orders: [{ ...order, ...patch }] }).success, false);
+});
+
+test('archived runs show only saved broker evidence; missing files and backup aliases never become empty successes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'order-history-'));
+  const main = new Store(join(dir, 'workspace.sqlite'));
+  const file = join(dir, 'previous.sqlite');
+  const previous = new Store(file);
+  const at = '2026-11-13T02:00:00.000Z';
+  const order = { ...input(), brokerId: '123', createdAt: '2026-11-13T01:00:00Z', tradeDate: '20261113',
+    status: 'filled' as const, filled: 1, remaining: 0, message: 'archive-private' };
+  const evidence = { tradeDate: order.tradeDate, observedAt: '2026-11-13T11:00:00+09:00',
+    orders: [{ ...order, brokerId: '123', date: order.tradeDate, name: 'fixture', cancelled: false, organization: '11' }],
+    balance: { cash: 333333, totalEquity: 444444, positions: [] } };
+  previous.savePaper(order, { before: 'accepted', actor: 'system', action: 'reconcile', evidence });
+  const unknown = { ...order, requestId: randomUUID(), status: 'unknown' as const, filled: 0, remaining: 1 };
+  previous.savePaper(unknown, { before: 'accepted', actor: 'system', action: 'reconcile', evidence: { ...evidence, orders: [] } });
+  previous.close();
+  const before = readFileSync(file);
+  writeFileSync(main.path + '.history.json', JSON.stringify([
+    { label: '과거 실행', file: 'previous.sqlite' }, { label: '중복', file: 'previous.sqlite' },
+    { label: '찾을 수 없는 실행', file: 'missing.sqlite' }, { label: '현재 원장', file: 'workspace.sqlite' },
+  ]));
+  try {
+    const result = orderHistory(main);
+    assert.equal(result.sourceCount, 1); assert.equal(result.orders.length, 2);
+    assert.deepEqual(result.unavailable, ['찾을 수 없는 실행']);
+    assert.equal(result.orders.find(o => o.requestId === order.requestId)?.lastMatchedAt, at);
+    assert.equal(result.orders.find(o => o.requestId === unknown.requestId)?.lastMatchedAt, undefined);
+    assert.equal(result.orders[0].sourceLabel, '과거 실행');
+    assert.doesNotMatch(JSON.stringify(result), /333333|444444|archive-private|previous\.sqlite/);
+    assert.deepEqual(main.paperOrders(), []); assert.deepEqual(readFileSync(file), before);
+  } finally { main.close(); rmSync(dir, { recursive: true, force: true }); }
 });

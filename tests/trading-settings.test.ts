@@ -9,6 +9,7 @@ import { Store } from '../server/store.ts';
 import { KisClient } from '../server/kis.ts';
 import { PaperBroker, type PaperApproval } from '../server/paper.ts';
 import { makeServer } from '../server/http.ts';
+import { orderHistory } from '../server/order-history.ts';
 import { activeTerms, fixTradingDraft, readPreparedRun, saveTradingDraft } from '../server/trading-plans.ts';
 import type { StrategyContract } from '../server/strategy-contract.ts';
 import type { TradingTerms } from '../shared/trading-plan.ts';
@@ -90,6 +91,8 @@ for (const terms of [onceDraft, strategyDraft])
       );
       assert.equal(statSync(file).mode & 0o777, 0o600);
       const old = readFileSync(file);
+      const history = orderHistory(f.store);
+      assert.equal(history.sourceCount, 1); assert.deepEqual(history.unavailable, []);
       const prepared = readPreparedRun(file, terms.kind);
       assert.throws(() => readPreparedRun(file, terms.kind, join(f.dir, 'other.sqlite')), /원장/);
       const st = new Store(prepared.path, {

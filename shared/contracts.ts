@@ -43,6 +43,7 @@ export type PaperCancellation = z.infer<typeof paperCancellationSchema>;
 
 export const paperLedgerSchema = z.object({ minimumRun: paperRunViewSchema.optional(), orders: z.array(z.object({
   strategy: z.object({ id: z.string(), revision: z.number().int().positive(), event: z.string(), signal: z.enum(['buy', 'sell']) }).optional(),
+  lastMatchedAt: z.iso.datetime().optional(), sourceLabel: z.string().optional(), sourceId: z.string().optional(),
   priceCeiling: z.int().positive().optional(), requestId: z.string().min(1).max(80), code: codeSchema, side: z.enum(['buy', 'sell']),
   qty: z.number().int().positive(), price: z.number().nonnegative(), orderType: z.literal('market').optional(),
   createdAt: z.string().refine(value => Number.isFinite(Date.parse(value))), tradeDate: z.string().regex(/^\d{8}$/),
@@ -50,6 +51,9 @@ export const paperLedgerSchema = z.object({ minimumRun: paperRunViewSchema.optio
   brokerId: z.string().regex(/^\d{1,10}$/).optional(), filled: z.number().int().nonnegative(), remaining: z.number().int().nonnegative(),
 }).refine(order => order.filled + order.remaining <= order.qty && (order.orderType === 'market' ? order.price === 0 : order.price > 0))) });
 export type PaperLedger = z.infer<typeof paperLedgerSchema>;
+export const orderHistorySchema = paperLedgerSchema.extend({
+  sourceCount: z.int().nonnegative(), unavailable: z.array(z.string()),
+});
 
 export const dataStatusSchema = z.object({
   environment: z.enum(['demo', 'kis-paper']), source: z.enum(['synthetic', 'kis-rest']),

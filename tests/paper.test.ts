@@ -105,6 +105,9 @@ test('paced unknown recovery preserves request spacing and never resends the ord
     assert.deepEqual(recovered.map(row => row.status), ['filled', 'filled']);
     assert.equal(f.count(), 1);
     assert.equal(f.store.paperAudit(order.requestId).filter(row => row.action === 'recovery-confirm').length, 1);
+    const matchedAt = f.store.displayPaperOrders()[0].lastMatchedAt;
+    assert.ok(matchedAt);
+    assert.equal(matchedAt, f.store.paperAudit(order.requestId).at(-1)?.evidence?.observedAt);
     for (let i = 1; i < f.requests.length; i++) assert.ok(f.requests[i].startedAt - f.requests[i - 1].startedAt >= 20, 'recovery transport spacing');
   } finally { f.store.close(); }
 });
@@ -1712,3 +1715,26 @@ for (const outcome of ['cancelled', 'filled-before-send', 'rejected-then-filled'
     }
   });
 }
+
+test('a matched but unchanged order gets a durable check time; a missing row cannot advance it', async () => {
+  const f = fixture('success');
+  try {
+    const order = await f.broker.submit(input());
+    assert.equal(f.store.displayPaperOrders()[0].lastMatchedAt, undefined);
+    f.response.rows = [brokerRow()];
+    await f.broker.refresh();
+    const first = f.store.displayPaperOrders()[0].lastMatchedAt;
+    assert.ok(first);
+    assert.equal(f.store.paperAudit(order.requestId).filter(a => a.action === 'reconcile').length, 0);
+    f.response.rows = [];
+    await f.broker.refresh();
+    assert.equal(f.store.displayPaperOrders()[0].lastMatchedAt, first);
+    assert.equal(f.store.paperOrders()[0].status, 'unknown');
+    f.response.rows = [brokerRow({ tot_ccld_qty: '1', rmn_qty: '0' })];
+    await f.broker.refresh();
+    const filled = f.store.displayPaperOrders()[0]; assert.equal(filled.status, 'filled');
+    f.response.rows = [brokerRow({ ord_qty: '2' })];
+    await f.broker.refresh();
+    assert.deepEqual(f.store.displayPaperOrders()[0], filled);
+  } finally { f.store.close(); }
+});
