@@ -32,6 +32,13 @@ async function readOrder(page: Page) {
   };
 }
 
+async function mockQuote(page: Page) {
+  await page.route('**/api/kis/market', route => route.fulfill({ json: {
+    quote: { code: route.request().postDataJSON().code, price: 75000, change: 0, tickSize: 100,
+      stopped: false, upper: 90000, lower: 50000, receivedAt: new Date().toISOString() }, bars: [],
+  } }));
+}
+
 async function expectOrder(page: Page, input: typeof sample) {
   await expect.poll(() => readOrder(page)).toEqual(input);
 }
@@ -143,16 +150,36 @@ for (const viewport of views) {
       await expectOrder(page, { ...defaults, code: '069500' });
     });
 
+    test('확정 거부한 주문은 복귀 입력을 보존해 새로고침 후 수정할 수 있다', async ({ page }) => {
+      await mockQuote(page);
+      let attempts = 0;
+      await page.route('**/api/kis/order', route => {
+        attempts++;
+        return route.fulfill({ status: 400, json: { error: '승인 지정가 불일치' } });
+      });
+      const defaultStockInput = { ...sample, code: defaults.code };
+      await openPaper(page, '/paper');
+      await enterOrder(page, defaultStockInput);
+      await page.getByRole('link', { name: settings }).click();
+      await expect(page.getByRole('link', { name: backToOrder })).toHaveAttribute('href', '/paper?code=005930');
+      await page.getByRole('link', { name: backToOrder }).click();
+      await page.getByRole('button', { name: '시세·일봉 조회' }).click();
+      await page.getByRole('button', { name: 'KIS 모의 주문 확인', exact: true }).click();
+      await page.getByRole('button', { name: 'KIS 모의 주문 전송', exact: true }).click();
+      await expect(page.getByRole('link', { name: '지정가 적용 조건 확인' })).toBeVisible();
+      await page.reload();
+      await expectOrder(page, defaultStockInput);
+      await expect(page.getByText('전송 결과 미확인', { exact: true })).toHaveCount(0);
+      expect(attempts).toBe(1);
+    });
+
     test('전송 응답 유실 후 설정 왕복이 전송된 초안을 되살리거나 동일 요청을 바꾸지 않는다', async ({ page }) => {
       const sent: unknown[] = [];
       await page.route('**/api/kis/order', route => {
         sent.push(route.request().postDataJSON());
         return route.abort();
       });
-      await page.route('**/api/kis/market', route => route.fulfill({ json: {
-        quote: { code: route.request().postDataJSON().code, price: 75000, change: 0, tickSize: 100,
-          stopped: false, upper: 90000, lower: 50000, receivedAt: new Date().toISOString() }, bars: [],
-      } }));
+      await mockQuote(page);
       await openPaper(page);
       await enterOrder(page);
       await page.getByRole('link', { name: settings }).click();
@@ -162,7 +189,16 @@ for (const viewport of views) {
       await page.getByRole('button', { name: 'KIS 모의 주문 전송', exact: true }).click();
       await expect(page.getByText('전송 결과 미확인', { exact: true })).toBeVisible();
       expect(sent).toEqual([{ code: sample.code, side: 'sell', qty: 4, price: 72500, requestId: expect.any(String) }]);
+      // The same mounted form still shows the failed send, but this is no longer an editable draft.
+      await page.getByRole('button', { name: '돌아가기', exact: true }).click();
+      await page.getByRole('link', { name: settings }).click();
+      await page.getByRole('link', { name: backToOrder }).click();
+      await expectOrder(page, { ...defaults, code: sample.code });
       await page.reload();
+      await expectOrder(page, { ...defaults, code: sample.code });
+      await page.goBack();
+      await expect(page.getByRole('link', { name: backToOrder })).toBeVisible();
+      await page.goBack();
       await expectOrder(page, { ...defaults, code: sample.code });
       await page.goBack();
       await page.getByRole('link', { name: backToOrder }).click();
@@ -182,6 +218,17 @@ for (const viewport of views) {
       await expect(dialog).toContainText('4주 × 72,500원');
       expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('kis-paper-pending')!))).toEqual(sent[0]);
       expect(sent).toHaveLength(1);
+      await page.route('**/api/kis/order', route => {
+        const input = route.request().postDataJSON();
+        sent.push(input);
+        return route.fulfill({ json: { order: { ...input, status: 'accepted', createdAt: '2026-11-20T01:00:00Z',
+          tradeDate: '20261120', filled: 0, remaining: input.qty, message: '격리 예시 접수' } } });
+      });
+      await dialog.getByRole('button', { name: 'KIS 모의 주문 전송' }).click();
+      await expect(page.getByText('전송 결과 미확인', { exact: true })).toHaveCount(0);
+      expect(sent).toEqual([sent[0], sent[0]]);
+      await page.reload();
+      await expectOrder(page, other);
     });
   });
 }

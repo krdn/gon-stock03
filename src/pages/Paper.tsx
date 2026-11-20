@@ -46,9 +46,10 @@ function PaperForm() {
   const location = useLocation();
   const [savedInput] = useState(() => readSettingsInput(location.state?.paperReturn, params.get('code')));
   const restored = savedInput?.input;
-  const [formKey, setFormKey] = useState(() => crypto.randomUUID());
+  const [formKey, setFormKey] = useState<string | null>(() => crypto.randomUUID());
   const entryKey = useRef(savedInput?.key);
   function rememberInput() {
+    if (!formKey) return;
     try {
       const input = { code, side, qty, price };
       sessionStorage.setItem(inputPrefix + formKey, JSON.stringify(input));
@@ -60,6 +61,8 @@ function PaperForm() {
   const [ordersCheckedAt, setOrdersCheckedAt] = useState<string | null>(null), [orders, setOrders] = useState<PaperOrder[]>([]), [brokerOrders, setBrokerOrders] = useState<BrokerOrder[]>([]);
   const [side, setSide] = useState<'buy' | 'sell'>(restored?.side ?? 'buy'), [price, setPrice] = useState(restored?.price ?? ''), [qty, setQty] = useState(restored?.qty ?? '1'), [confirmed, setConfirmed] = useState(false), [draft, setDraft] = useState<PaperOrderInput | null>(null);
   useEffect(() => {
+    // A field change starts a new editable input after submission.
+    setFormKey(current => current ?? crypto.randomUUID());
     // Edits after returning belong to this entry. Other settings links keep their snapshot.
     if (entryKey.current) {
       try { rememberEntry(location.key, entryKey.current, { code, side, qty, price }); } catch { /* Optional navigation memory. */ }
@@ -135,14 +138,19 @@ function PaperForm() {
     const input = pending ?? draft;
     if (!input || submitting.current || !available || busy || storageError || realtimeBlocked) return;
     submitting.current = true;
+    const originalKey = entryKey.current;
+    let originalSnapshot: string | null = null;
     try {
       try { sessionStorage.setItem(pendingKey, JSON.stringify(input)); } catch { setStorageError(true); return; }
       if (!pending) {
         try {
-          if (entryKey.current) sessionStorage.removeItem(inputPrefix + entryKey.current);
+          if (originalKey) {
+            originalSnapshot = sessionStorage.getItem(inputPrefix + originalKey);
+            sessionStorage.removeItem(inputPrefix + originalKey);
+          }
         } catch { /* Optional input history. */ }
         entryKey.current = undefined;
-        setFormKey(crypto.randomUUID());
+        setFormKey(null);
       }
       setPending(input); setPriceBlocked(false);
       const result = await act<{ order: PaperOrder }>('kis/order', input);
@@ -155,6 +163,13 @@ function PaperForm() {
       setPriceBlocked(error instanceof Error && error.message.includes('승인 지정가 불일치'));
       if (!pending && error instanceof Error && 'definitive' in error && error.definitive) {
         try { sessionStorage.removeItem(pendingKey); setPending(null); } catch { setStorageError(true); }
+        if (originalKey && originalSnapshot) {
+          try {
+            sessionStorage.setItem(inputPrefix + originalKey, originalSnapshot);
+            entryKey.current = originalKey;
+          } catch { /* Optional input history. */ }
+        }
+        setFormKey(formKey);
       }
     }
     finally { submitting.current = false; }
