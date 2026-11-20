@@ -106,7 +106,10 @@ test('past runs show a separate read-only list and stored check time, including 
     orders: [{ ...paper, sourceLabel: '테스트 실행', sourceId: '0', lastMatchedAt: '2026-11-15T01:05:20.000Z' }] } }));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/orders'); await page.getByRole('button', { name: 'KIS 모의 원장', exact: true }).click();
-  await page.getByRole('button', { name: '지난 실행 기록 보기' }).click();
+  const historyLink = page.getByRole('button', { name: '지난 실행 기록 보기' });
+  await expect(historyLink).toBeVisible();
+  expect(await historyLink.evaluate(el => el.getBoundingClientRect().bottom + window.scrollY)).toBeLessThanOrEqual(844);
+  await historyLink.click();
   const list = page.getByRole('list', { name: '지난 주문 목록' });
   await expect(list.getByText('테스트 실행')).toBeHidden();
   await expect(list.locator('time')).toContainText('10:05:20');
@@ -202,7 +205,9 @@ test('a current-session reconciliation refreshes current orders but leaves the a
   await page.route('**/api/state', r => r.fulfill({ json: s }));
   await page.route('**/api/kis/history', r => { historyReads++; return r.fulfill({ json: { orders: [paper], sourceCount: 1, unavailable: [] } }); });
   await page.route('**/api/kis/ledger', r => { currentReads++; return r.fulfill({ json: { orders: [paper] } }); });
-  await page.goto('/orders?view=history');
+  await page.goto('/orders');
+  await expect(page.locator('.connection-link')).toHaveText('로컬 서버 연결');
+  await page.getByRole('button', {name:'지난 KIS 실행 기록',exact:true}).click();
   await expect(page.getByRole('list', {name: '지난 주문 목록'})).toBeVisible();
   const loaded = historyReads;
   s.risk.halted = true; s.realtime.reconciledAt = '2026-11-15T01:00:00Z';

@@ -182,19 +182,20 @@ function OrderList({ environment, filter, filters, setFilter, showHistory }: {
     Boolean(realtime?.required && !realtime.ordersAllowed);
   const filtered = Boolean(needle || filter !== 'all');
   const clearButton = <button type="button" className="text-link" onClick={clearConditions}>조건 지우기</button>;
+  const emptyCurrent = environment === 'kis' && ledger.phase === 'ready' && ledger.orders?.length === 0;
   const noMatch = <Empty title="검색 조건에 맞는 주문이 없습니다">{clearButton}</Empty>;
   return <>
     {!history && <p className="notice compact">{environment === 'demo' ? '합성 데이터 · 로컬 DEMO 주문입니다. 취소는 예약을 해제하며 실제 KIS 주문에 영향을 주지 않습니다.' : '현재 실행의 KIS 모의 원장입니다. 조회·대조·복구는 KIS 모의 매매에서 진행하세요.'}</p>}
     {environment === 'kis' && urgentRealtime && <RealtimeStatus />}
     {environment === 'demo' && <div className="stats-grid three"><Stat label="전체 주문" value={`${state.orders.length}건`} sub="저장된 DEMO 누적" /><Stat label="미체결" value={`${state.orders.filter(o => o.status === 'pending').length}건`} sub="다음 봉에서 조건 평가" /><Stat label="체결 완료" value={`${state.orders.filter(o => o.status === 'filled').length}건`} sub="현금·보유수량 반영" /></div>}
     <Panel className={history ? 'history-panel' : ''} title={environment === 'demo' ? '주문 내역' : history ? '지난 주문' : 'KIS 저장 원장'} action={environment === 'demo' ? <button disabled={busy || !available} className="button secondary" onClick={() => void act('tick').catch(() => {})}>다음 데모 봉 재생</button> : <button className="button secondary" disabled={ledger.phase === 'loading'} onClick={() => setReload(value => value + 1)}>원장 다시 읽기</button>}>
-      <div className={history ? 'history-controls' : undefined}>
+      {!emptyCurrent && <div className={history ? 'history-controls' : undefined}>
         <label className="field">{history ? '지난 주문 검색' : '주문 종목 검색'}<input ref={searchField} type="search" value={query} onChange={e => setQuery(e.target.value)}
           placeholder={history ? '종목·코드·주문일·번호' : '종목명 또는 코드'} /></label>
         {history ? <label className="field">상태 필터<select value={filter} onChange={e => setFilter(e.target.value)}>
           {filters.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
           : <div className="toolbar"><div className="tabs">{filters.map(([id, label]) => <button key={id} onClick={() => setFilter(id)} className={filter === id ? 'active' : ''} aria-pressed={filter === id}>{label}</button>)}</div></div>}
-      </div>
+      </div>}
       {environment === 'demo' ? rows.length ? <div className="table-scroll"><table><thead><tr><th>시각 / ID</th><th>종목</th><th>구분</th><th>주문 / 체결 / 잔량</th><th>지정가 / 평균 체결가</th><th>상태</th><th>수수료</th><th>출처</th><th>관리</th></tr></thead><tbody>{rows.map(o => <tr key={o.id}><td><span>{new Date(o.createdAt).toLocaleString('ko-KR')}</span><small className="cell-small">{o.id}</small>{o.filledAt && <small className="cell-small">체결 {new Date(o.filledAt).toLocaleString('ko-KR')}</small>}</td><td><Link className="stock-name" to={`/trade?mode=demo&code=${o.code}`}>{state.instruments.find(s => s.code === o.code)?.name ?? o.code}</Link><small className="cell-small">{o.code}</small></td><td className={o.side === 'buy' ? 'up' : 'down'}>{o.side === 'buy' ? '매수' : '매도'}</td><td>{o.qty} / {o.status === 'filled' ? o.qty : 0} / {o.status === 'pending' ? o.qty : 0}주</td><td className="number">{won(o.price)} / {o.filledPrice === undefined ? '—' : won(o.filledPrice)}</td><td><Badge tone={o.status === 'filled' ? 'teal' : 'neutral'}>{orderStatus[o.status]}</Badge></td><td>{won(o.fee)}원</td><td>{o.source === 'manual' ? '수동 주문' : state.strategies.find(s => s.id === o.source)?.name ?? '전략'}</td><td>{o.status === 'pending' ? <button className="button small secondary" disabled={busy || !available} onClick={() => void cancel(o.id)}>취소</button> : '—'}</td></tr>)}</tbody></table></div> : state.orders.length && filtered ? noMatch : <Empty title="아직 주문이 없습니다"><Link to="/trade?mode=demo">DEMO 연습</Link>에서 DEMO 주문을 확인하세요.</Empty> : <>
         {!history && <><p className="muted tiny">평균 체결가·수수료는 현재 원장에 미제공</p>
         <p className="muted">주문별 KIS 확인 시각은 증권사 조회 결과와 원주문이 일치한 마지막 저장 시각입니다. 로컬 읽기 성공은 최신 KIS 상태 확인이 아닙니다. 근거가 없으면 미확인으로 표시합니다.</p></>}

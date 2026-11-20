@@ -1,7 +1,7 @@
 # Graph Report - gon-stock03-147  (2026-11-20)
 
 ## Corpus Check
-- 299 files · ~288,166 words
+- 299 files · ~288,317 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 9 file(s) not represented in the graph (top: (none) 2, .zip 2, .toml 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `a081cb82`
+- Built from commit: `5fda20c3`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -578,16 +578,16 @@ Nodes (3): #128 기능 검증과 Astra 에이전트 자기개선 설계, 먼저 
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `KisClient` connect `kis.ts` to `KisClient`, `trading-plans.ts`, `server/realtime.ts`, `makeServer`, `연결·설정 동작 점검`, `store.ts`, `snapshot`, `.submit`, `realtime.test.ts`, `paper.ts`, `http.ts`, `events.ts`, `#8 연결·설정 검증`, `국내 종목·일봉 수집 API`, `Store`, `.confirmRecovery`?**
-  _High betweenness centrality (0.071) - this node is a cross-community bridge._
+  _High betweenness centrality (0.072) - this node is a cross-community bridge._
 - **Are the 31 inferred relationships involving `makeServer()` (e.g. with `.refreshMaster()` and `.start()`) actually correct?**
   _`makeServer()` has 31 INFERRED edges - model-reasoned connections that need verification._
 - **Should `2026-11-16-validation-prep.md` be split into smaller, more focused modules?**
   _Cohesion score 0.09486166007905138 - nodes in this community are weakly interconnected._
 - **Why does `Store` connect `makeServer` to `order-history.ts`, `trading-plans.ts`, `server/realtime.ts`, `store.ts`, `.submit`, `kis.ts`, `realtime.test.ts`, `paper.ts`, `http.ts`, `PaperBroker`, `trading-plans.ts`, `events.ts`, `#9 최소 모의 실행 절차`, `Store`, `.confirmRecovery`?**
-  _High betweenness centrality (0.050) - this node is a cross-community bridge._
+  _High betweenness centrality (0.049) - this node is a cross-community bridge._
 - **Are the 3 inferred relationships involving `KisClient` (e.g. with `계약과 저장` and `실제 공개 마스터`) actually correct?**
   _`KisClient` has 3 INFERRED edges - model-reasoned connections that need verification._
 - **Should `trading-plans.ts` be split into smaller, more focused modules?**
   _Cohesion score 0.125 - nodes in this community are weakly interconnected._
-- **Why does `PaperBroker` connect `PaperBroker` to `trading-plans.ts`, `server/realtime.ts`, `makeServer`, `store.ts`, `.submit`, `realtime.test.ts`, `paper.ts`, `http.ts`, `Store`, `.confirmRecovery`?**
-  _High betweenness centrality (0.032) - this node is a cross-community bridge._
+- **Should `server/realtime.ts` be split into smaller, more focused modules?**
+  _Cohesion score 0.05359831376091539 - nodes in this community are weakly interconnected._
