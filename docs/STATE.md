@@ -4,7 +4,7 @@
 
 프로젝트를 처음 볼 때는 [한 장 그림](architecture/figures/gon-stock-overview.png)에서 KIS 모의 주문과 DEMO 연습 흐름을 따라간다. [구조도 작업 #110](https://github.com/krdn/gon-stock03/issues/110)
 
-- **2차 UI/UX · [전체 범위·배정](tasks/149-ui-ux-v2.md).** 주문·대시보드·공통 시각·트레이딩·연결 설정 결합 122건 통과. 시장 탐색과 설정·주문 복귀 검토 대기. 모의 매매·위험관리·관심종목 착수. [전체 진행 #149](https://github.com/krdn/gon-stock03/issues/149) · [보드](https://github.com/users/krdn/projects/25)
+- **2차 UI/UX · [전체 범위·배정](tasks/149-ui-ux-v2.md).** 9개 화면을 포함하는 11개 PR 결합 검증. 포트폴리오·전략 스튜디오·데이터 상태가 각각 전용 세션에서 진행 중. [전체 진행 #149](https://github.com/krdn/gon-stock03/issues/149) · [보드](https://github.com/users/krdn/projects/25)
 - **지난 주문 UX · [#147 작업](tasks/147-orders-ux.md).** 첫 주문 결과와 KIS 확인 시각, 보기 복원, 식별자 상세·검색. [진행 이슈](https://github.com/krdn/gon-stock03/issues/147)
 - **주문 원장 읽기 · [#145 작업](tasks/145-order-history.md).** 현재 원장과 지난 실행, PC 읽기와 주문별 KIS 확인 시각을 구분한다. [진행 이슈](https://github.com/krdn/gon-stock03/issues/145)
 - **현행 모의 버전 수용 · #25 → #3 → #2 → #1.** 실제 부분체결 직후 잔량 취소는 미관측으로 남기고 이번 인수에서 예외로 수용했다. [최종 판정과 검증](verification/2026-11-20-paper-acceptance.md) · [#25](https://github.com/krdn/gon-stock03/issues/25)
