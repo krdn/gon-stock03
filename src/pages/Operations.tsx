@@ -1,6 +1,7 @@
 import { RealtimeStatus } from '../components/RealtimeStatus';
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import './Settings.css';
 import { AlertTriangle, Check, ChevronDown, Landmark, RefreshCw, Server, Settings2, ShieldCheck, Square, Wallet } from 'lucide-react';
 import { useWorkbench } from '../context';
 import { Badge, Empty, Panel, Stat } from '../components/ui';
@@ -91,23 +92,36 @@ const connectionRecovery: Record<ConnectionFailure['kind'], { label: string; act
   'rate-limit': { label: '호출 제한', action: '연속 클릭을 멈추고 잠시 기다린 뒤 다시 조회하세요. 인증 발급은 1분 간격으로 제한합니다.' },
   network: { label: '네트워크 오류', action: '네트워크와 KIS 모의 서버 연결을 확인한 뒤 다시 조회하세요. 실전 서버로 전환하지 않습니다.' },
   upstream: { label: 'KIS 서비스 오류', action: 'KIS 서비스 상태와 점검 공지를 확인하고 잠시 후 다시 조회하세요.' },
-  contract: { label: '응답 확인 불가', action: '전체 잔고를 확정하지 못했습니다. 다시 조회해도 반복되면 응답 계약을 점검하세요. 이전 값은 최신 잔고가 아닙니다.' },
+  contract: { label: '응답 확인 불가', action: '전체 잔고를 확정하지 못했습니다. 다시 조회해도 반복되면 응답 계약을 점검하세요.' },
   rejected: { label: '요청 거부', action: '모의 계좌·키·서비스 이용 가능 시간을 확인한 뒤 다시 조회하세요.' },
 };
 export function Settings() {
   const { act, busy, available, connection, refresh, server, serverNow, status } = useWorkbench();
-  const [checking, setChecking] = useState(false), [showGuide, setShowGuide] = useState(false);
-  const [refreshState, setRefreshState] = useState<'idle' | 'pending' | 'done'>('idle');
+  const [checking, setChecking] = useState(false);
+  const previousCheckStart = useRef<string | null>(null);
+  const [params, setParams] = useSearchParams();
+  const showGuide = params.get('guide') === 'setup';
+  const [refreshState, setRefreshState] = useState<'idle' | 'pending' | 'settled' | 'confirmed' | 'unavailable'>('idle');
   useEffect(() => {
-    if (refreshState !== 'done') return;
+    if (refreshState === 'settled') {
+      setRefreshState(available ? 'confirmed' : 'unavailable');
+      return;
+    }
+    if (refreshState !== 'confirmed' && refreshState !== 'unavailable') return;
+    if ((refreshState === 'confirmed') !== available) {
+      setRefreshState('idle');
+      return;
+    }
     const timer = window.setTimeout(() => setRefreshState('idle'), 5000);
     return () => window.clearTimeout(timer);
-  }, [refreshState]);
+  }, [available, refreshState]);
   const authentication = authenticationStatus(connection.authentication, serverNow);
   const retrySeconds = authentication.retryAt ? Math.max(0, Math.ceil((Date.parse(authentication.retryAt) - serverNow) / 1000)) : 0;
   const elapsed = connection.checkStartedAt ? Math.max(0, Math.floor((serverNow - Date.parse(connection.checkStartedAt)) / 1000)) : 0;
   const loading = checking || connection.status.phase === 'loading';
-  const currentBalance = available && connection.connected && connection.status.complete && Boolean(connection.balance) && !loading;
+  const confirmedProgress = connection.status.phase === 'loading' && connection.checkStartedAt !== null
+    && (!checking || connection.checkStartedAt !== previousCheckStart.current);
+  const currentBalance = available && connection.status.phase === 'ready' && connection.status.complete && Boolean(connection.balance) && !loading;
   const time = (value: string | null) => value ? new Date(value).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '없음';
   const injectionLabel = { unverified: '미확인', missing: '미주입', invalid: '설정 형식 오류', present: '필수 값 있음' }[connection.injection.phase];
   const authLabel = { unverified: '미확인', loading: '인증 중', ready: '토큰 발급됨', expired: '만료·갱신 필요', error: '인증 실패' }[authentication.phase];
@@ -117,34 +131,58 @@ export function Settings() {
   const failure = available && !loading ? injectionFailure ?? connection.failure ?? authentication.failure : null;
   const balance = connection.balance;
   const missingSettings = connection.injection.phase === 'missing';
+  const missingFields = connection.injection.missing;
   const initialLoad = !available && status.phase === 'loading';
   function overview() {
-    if (initialLoad) return { title: '서버 상태를 확인하고 있습니다', detail: '저장된 연결 정보를 불러오는 중입니다.', tone: 'neutral' };
+    if (initialLoad) return { title: '서버 상태를 확인하고 있습니다', detail: '서버의 연결 상태를 불러오는 중입니다.', tone: 'neutral' };
     if (!available) return { title: '로컬 서버 연결을 확인하세요', detail: '개발 서버를 실행한 뒤 서버 상태를 새로고침하세요.', tone: 'warning' };
     if (loading) return { title: '모의 잔고를 조회하고 있습니다', detail: '한국투자증권에서 전체 잔고를 받아오고 있습니다.', tone: 'neutral' };
-    if (injectionFailure) return { title: missingSettings ? '모의 계좌 설정이 필요합니다' : '모의 계좌 설정을 수정하세요', detail: connectionRecovery[injectionFailure.kind].action, tone: 'warning' };
-    if (failure) return { title: connectionRecovery[failure.kind].label, detail: connectionRecovery[failure.kind].action, tone: 'warning' };
+    if (injectionFailure) {
+      const detail = missingSettings && missingFields.length > 0
+        ? `필수 값 ${missingFields.length}개가 빠졌습니다. 연결 설정 방법에서 누락 항목을 확인하고 Infisical에 등록하세요.`
+        : connectionRecovery[injectionFailure.kind].action;
+      return { title: missingSettings ? '모의 계좌 설정이 필요합니다' : '모의 계좌 설정을 수정하세요', detail, tone: 'warning' };
+    }
+    if (connection.status.phase === 'partial') {
+      const recovery = failure && connectionRecovery[failure.kind];
+      const balanceNote = balance ? '표시 금액은 이전 전체 조회 기준입니다.' : '아직 전체 조회 잔고가 없습니다.';
+      return {
+        title: recovery ? `잔고 일부 수신 · ${recovery.label}` : '잔고를 일부만 받았습니다',
+        detail: `${balanceNote} ${recovery?.action ?? '전체 잔고를 확인하려면 다시 조회하세요.'}`,
+        tone: 'warning',
+      };
+    }
+    if (failure) {
+      const recovery = connectionRecovery[failure.kind];
+      return { title: recovery.label, detail: balance ? `표시 금액은 이전 전체 조회 기준입니다. ${recovery.action}` : recovery.action, tone: 'warning' };
+    }
     if (retrySeconds > 0) return { title: '인증 갱신을 기다리고 있습니다', detail: '대기 시간이 끝나면 모의 잔고를 다시 조회할 수 있습니다.', tone: 'neutral' };
     if (currentBalance) return { title: '모의 잔고를 확인했습니다', detail: '아래에서 예수금과 보유 종목을 확인할 수 있습니다.', tone: 'success' };
-    if (connection.status.phase === 'partial') return { title: '잔고를 일부만 받았습니다', detail: '전체 잔고를 확인하려면 다시 조회하세요.', tone: 'warning' };
     if (connection.status.phase === 'error') return { title: '모의 잔고 조회에 실패했습니다', detail: '잠시 후 다시 조회하세요. 서버 상세 정보에서 오류를 확인할 수 있습니다.', tone: 'warning' };
-    if (balance) return { title: '잔고를 다시 조회하세요', detail: '아래 금액은 마지막 조회 때 저장한 값입니다. 다시 조회하면 현재 잔고를 확인할 수 있습니다.', tone: 'warning' };
+    if (balance) return { title: '잔고를 다시 조회하세요', detail: '아래 금액은 이전 전체 조회 기준입니다. 다시 조회하면 현재 잔고를 확인할 수 있습니다.', tone: 'warning' };
     return { title: '모의 잔고를 조회하세요', detail: '조회하면 한국투자증권 모의 계좌의 예수금과 보유 종목을 불러옵니다.', tone: 'neutral' };
   }
   const summary = overview();
   const checkDisabled = !available || setupBlocked || busy || loading || retrySeconds > 0;
+  function toggleGuide() {
+    const next = new URLSearchParams(params);
+    if (showGuide) next.delete('guide');
+    else next.set('guide', 'setup');
+    setParams(next, { replace: true, preventScrollReset: true });
+  }
   async function check() {
+    previousCheckStart.current = connection.checkStartedAt;
     setChecking(true);
     try { await act('kis/check'); } catch { /* App displays the request error. */ } finally { setChecking(false); }
   }
   async function refreshStatus() {
     setRefreshState('pending');
-    try { await refresh(); } finally { setRefreshState('done'); }
+    try { await refresh(); } finally { setRefreshState('settled'); }
   }
   const guideButton = <button key="guide" className={`button ${setupBlocked ? 'primary' : 'secondary'}`} aria-expanded={showGuide}
-    aria-controls="connection-guide" onClick={() => setShowGuide(open => !open)}>연결 설정 방법<ChevronDown size={15} aria-hidden="true" /></button>;
+    aria-controls="connection-guide" onClick={toggleGuide}>연결 설정 방법<ChevronDown size={15} aria-hidden="true" /></button>;
   const checkButton = <button key="check" className={`button ${checkDisabled ? 'secondary' : 'primary'}`} disabled={checkDisabled}
-    aria-describedby={available && retrySeconds > 0 ? 'settings-retry' : undefined} onClick={() => void check()}><Wallet size={17} aria-hidden="true" />모의 잔고 조회</button>;
+    aria-describedby={available && retrySeconds > 0 ? 'settings-retry' : 'settings-summary-detail'} onClick={() => void check()}><Wallet size={17} aria-hidden="true" />KIS 모의 잔고 조회</button>;
   return <div className="settings-page">
     <section className="settings-overview" aria-label="모의 계좌 연결">
       <div className="settings-task">
@@ -152,36 +190,49 @@ export function Settings() {
           <strong>한국투자증권</strong><Badge>모의 계좌</Badge>
         </header>
         <div className={`settings-summary ${summary.tone}`} role="status" aria-label={failure ? '연결 복구 안내' : '현재 연결 상태'}>
-          <h2>{summary.title}</h2><p>{summary.detail}</p>
+          <h2>{summary.title}</h2><p id="settings-summary-detail">{summary.detail}</p>
         </div>
         {available && retrySeconds > 0 && <p id="settings-retry">{retrySeconds}초 후 다시 조회할 수 있습니다.</p>}
-        <div className="settings-actions">{setupBlocked ? [guideButton, checkButton] : [checkButton, guideButton]}</div>
-        <div id="connection-guide" className="settings-guide" hidden={!showGuide}>
-          <h3>모의 계좌 연결 방법</h3>
-          <ol>
-            <li>한국투자증권에서 모의투자 API를 신청하고 모의 전용 키와 계좌를 준비하세요.</li>
-            <li>Infisical의 <code>dev /kis</code>에 <code>KIS_APP_KEY</code>, <code>KIS_APP_SECRET</code>, <code>KIS_CANO</code>(계좌번호 앞 8자리), <code>KIS_ACNT_PRDT_CD</code>(상품코드 2자리)를 등록하세요.</li>
-            <li>프로젝트 폴더에서 <code className="connection-command">npm run dev</code>로 서버를 다시 실행하세요. 로그인 오류가 있으면 터미널에서 Infisical에 다시 로그인하세요.</li>
-          </ol>
-          <p>비밀값은 Infisical에서만 관리하세요. 서버가 준비되면 모의 잔고를 조회할 수 있습니다.</p>
+        <div className="settings-actions">
+          {setupBlocked ? guideButton : checkButton}
+          <button className={`button ${!available && !initialLoad ? 'primary' : 'secondary'}`} disabled={refreshState === 'pending'}
+            aria-describedby="settings-refresh-effect" onClick={() => void refreshStatus()}>
+            <RefreshCw size={15} aria-hidden="true" />로컬 서버 상태 새로고침</button>
+          {setupBlocked ? checkButton : guideButton}
         </div>
+        <p className="settings-hint" id="settings-refresh-effect">새로고침은 로컬 상태만 읽습니다. KIS 조회에 성공하면 전체 잔고가 갱신됩니다.</p>
+        <p className="settings-feedback" role="status" aria-label="새로고침 결과">
+          {refreshState === 'pending' && '서버 응답을 기다리고 있습니다.'}
+          {refreshState === 'confirmed' && available && '로컬 서버 상태를 확인했습니다. 외부 KIS 호출 없음.'}
+          {refreshState === 'unavailable' && !available && '로컬 서버 상태를 확인하지 못했습니다. 외부 KIS 호출 없음.'}
+        </p>
       </div>
       <section className="settings-checks" aria-label="연결 점검">
         <h3>연결 점검</h3>
         <div className="settings-stages">
-          <div role="group" aria-label="서버 필수 설정 상태"><span><Settings2 size={16} />계좌 설정</span>
+          <div role="group" aria-label="서버 필수 설정 상태"><span><Settings2 size={16} aria-hidden="true" />서버 키·계좌 설정</span>
             <Badge>{available ? injectionLabel : '서버 상태 확인 필요'}</Badge></div>
-          <div role="group" aria-label="KIS 인증 상태"><span><ShieldCheck size={16} />KIS 인증</span>
+          <div role="group" aria-label="KIS 인증 상태"><span><ShieldCheck size={16} aria-hidden="true" />KIS 인증</span>
             <Badge tone={available && authentication.phase === 'ready' ? 'teal' : 'neutral'}>{available ? authLabel : '서버 상태 확인 필요'}</Badge></div>
-          <div role="group" aria-label="모의 잔고 조회 상태"><span><Wallet size={16} />잔고 조회</span>
+          <div role="group" aria-label="모의 잔고 조회 상태"><span><Wallet size={16} aria-hidden="true" />잔고 조회</span>
             <Badge tone={currentBalance ? 'teal' : 'neutral'}>{!available ? '서버 상태 확인 필요' : loading ? '조회 중' : balanceLabel}</Badge></div>
         </div>
-        {available && loading && <p className="settings-progress">확인한 페이지: {connection.status.pages} · 경과 {elapsed}초</p>}
-        <button className={`button ${!available && !initialLoad ? 'primary' : 'secondary'}`} disabled={refreshState === 'pending'} onClick={() => void refreshStatus()}>
-          <RefreshCw size={15} aria-hidden="true" />서버 상태 새로고침</button>
-        <p className="settings-hint">로컬 서버에 저장된 상태만 읽습니다.</p>
-        <p className="settings-feedback" role="status" aria-label="새로고침 결과">{refreshState === 'pending' ? '서버 응답을 기다리고 있습니다.' : refreshState === 'done' && (available ? '서버 상태를 확인했습니다. 외부 KIS 호출 없음.' : '서버에 연결할 수 없습니다.')}</p>
+        {available && loading && <p className="settings-progress">{confirmedProgress
+          ? `확인한 페이지: ${connection.status.pages} · 경과 ${elapsed}초`
+          : '서버의 조회 진행 상태를 기다리고 있습니다.'}</p>}
       </section>
+      <div id="connection-guide" className="settings-guide" hidden={!showGuide}>
+        <h3>모의 계좌 연결 방법</h3>
+        <ol>
+          <li>한국투자증권에서 모의투자 API를 신청하고 모의 전용 키와 계좌를 준비하세요.</li>
+          <li>Infisical의 <code>dev /kis</code>에 {available && missingSettings && missingFields.length > 0
+            ? <>누락된 항목을 등록하세요. <code>{missingFields.join(', ')}</code></>
+            : <>모의 계좌의 <code>KIS_APP_KEY</code>, <code>KIS_APP_SECRET</code>, <code>KIS_CANO</code>, <code>KIS_ACNT_PRDT_CD</code>를 등록하세요.</>}
+            {' '}계좌번호는 앞 8자리, 상품코드는 2자리입니다.</li>
+          <li>프로젝트 폴더에서 <code className="connection-command">npm run dev</code>로 서버를 다시 실행하세요. 로그인 오류가 있으면 터미널에서 Infisical에 다시 로그인하세요.</li>
+        </ol>
+        <p>비밀값은 Infisical에서만 관리하세요. 서버를 다시 실행한 뒤 로컬 서버 상태를 새로고침하세요.</p>
+      </div>
     </section>
     {balance && <Panel title="모의 계좌 잔고" className="settings-balance" action={<Badge tone={currentBalance ? 'teal' : 'neutral'}>{currentBalance ? '조회 완료' : '이전 조회 잔고'}</Badge>}>
       <p className="settings-hint">조회 기준 (한국시간) <time dateTime={connection.status.lastSuccessAt ?? undefined}>{time(connection.status.lastSuccessAt)}</time></p>
@@ -204,14 +255,13 @@ export function Settings() {
             <dt>인스턴스</dt><dd>{server?.instanceId.slice(0, 8) ?? '미확인'}</dd>
           </dl>
           <p>필수 값과 계좌 형식만 검사합니다. 주입 출처 미확인. 키를 바꾸면 서버를 다시 실행하세요.</p>
-          {available && connection.injection.missing.length > 0 && <p>미주입 항목: {connection.injection.missing.join(', ')}</p>}
         </div>
         <div><h3>마지막 관측 기록 (한국시간)</h3>
           <dl className="settings-server">
             <dt>토큰 발급</dt><dd>{time(authentication.lastSuccessAt)}</dd><dt>토큰 재확인</dt><dd>{time(authentication.validUntil)}</dd>
             <dt>잔고 전체 조회</dt><dd>{time(connection.status.lastSuccessAt)}</dd><dt>확인한 페이지</dt><dd>{connection.status.pages}</dd>
           </dl>
-          {connection.status.error && !loading && <p>{connection.status.error}</p>}
+          {available && connection.status.error && !loading && <p>{connection.status.error}</p>}
           {failure && failure.message !== connection.status.error && <p>{failure.message}</p>}
           <p>이 화면은 KIS 모의 계좌만 조회합니다. 로컬 데모 잔고와 별개이며 실전 전환은 지원하지 않습니다.</p>
         </div>
