@@ -1,0 +1,117 @@
+[
+  {
+    "device": "desktop",
+    "width": 1440,
+    "height": 900,
+    "initial": {
+      "search": {
+        "x": 1200,
+        "y": 743,
+        "w": 170,
+        "h": 17
+      },
+      "first": {
+        "x": 284,
+        "y": 880,
+        "w": 1098,
+        "h": 112
+      },
+      "scrollWidth": 1440
+    },
+    "filtered": {
+      "first": {
+        "x": 284,
+        "y": 880,
+        "w": 1098,
+        "h": 112
+      },
+      "detailAction": {
+        "x": 1277,
+        "y": 918,
+        "w": 48,
+        "h": 37
+      }
+    },
+    "detailArea": {
+      "x": 260,
+      "y": 1090,
+      "w": 1146,
+      "h": 337
+    },
+    "tradeAction": null,
+    "steps": [
+      "종목명 입력",
+      "ETF 선택",
+      "종목 상세 열기",
+      "메뉴에서 트레이딩 열기",
+      "코드 다시 입력",
+      "종목 조회"
+    ],
+    "arrived": "005930",
+    "destination": "/trade?code=069500",
+    "back": "/trade",
+    "restored": null,
+    "reload": null,
+    "postPaths": [
+      "/api/market/quote"
+    ]
+  },
+  {
+    "device": "mobile",
+    "width": 390,
+    "height": 844,
+    "initial": {
+      "search": {
+        "x": 71,
+        "y": 895,
+        "w": 272,
+        "h": 17
+      },
+      "first": {
+        "x": 35,
+        "y": 1064,
+        "w": 470,
+        "h": 156
+      },
+      "scrollWidth": 390
+    },
+    "filtered": {
+      "first": {
+        "x": 35,
+        "y": 1064,
+        "w": 470,
+        "h": 156
+      },
+      "detailAction": {
+        "x": 449,
+        "y": 1123,
+        "w": 48,
+        "h": 37
+      }
+    },
+    "detailArea": {
+      "x": 16,
+      "y": 1312,
+      "w": 358,
+      "h": 349
+    },
+    "tradeAction": null,
+    "steps": [
+      "종목명 입력",
+      "ETF 선택",
+      "종목 상세 열기",
+      "메뉴 열기",
+      "메뉴에서 트레이딩 열기",
+      "코드 다시 입력",
+      "종목 조회"
+    ],
+    "arrived": "005930",
+    "destination": "/trade?code=069500",
+    "back": "/trade",
+    "restored": null,
+    "reload": null,
+    "postPaths": [
+      "/api/market/quote"
+    ]
+  }
+]

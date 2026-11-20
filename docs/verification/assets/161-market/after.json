@@ -1,0 +1,122 @@
+[
+  {
+    "device": "desktop",
+    "width": 1440,
+    "height": 900,
+    "initial": {
+      "search": {
+        "x": 320,
+        "y": 451,
+        "w": 372,
+        "h": 22
+      },
+      "first": {
+        "x": 284,
+        "y": 573,
+        "w": 1098,
+        "h": 112
+      },
+      "scrollWidth": 1440
+    },
+    "filtered": {
+      "first": {
+        "x": 284,
+        "y": 573,
+        "w": 1098,
+        "h": 112
+      },
+      "detailAction": {
+        "x": 294,
+        "y": 607,
+        "w": 106,
+        "h": 44
+      }
+    },
+    "detailArea": {
+      "x": 260,
+      "y": 812,
+      "w": 1146,
+      "h": 543
+    },
+    "tradeAction": {
+      "x": 284,
+      "y": 894,
+      "w": 159,
+      "h": 37
+    },
+    "steps": [
+      "종목명 입력",
+      "ETF 선택",
+      "종목 상세 열기",
+      "상세에서 트레이딩 열기"
+    ],
+    "arrived": "069500",
+    "destination": "/trade?code=069500",
+    "back": "/market?q=%EC%98%88%EC%8B%9C+%EC%A7%80%EC%88%98&market=ETF&detail=069500",
+    "restored": "예시 지수",
+    "reload": "예시 지수",
+    "postPaths": [
+      "/api/market/quote"
+    ]
+  },
+  {
+    "device": "mobile",
+    "width": 390,
+    "height": 844,
+    "initial": {
+      "search": {
+        "x": 71,
+        "y": 510,
+        "w": 272,
+        "h": 22
+      },
+      "first": {
+        "x": 35,
+        "y": 636,
+        "w": 320,
+        "h": 137
+      },
+      "scrollWidth": 390
+    },
+    "filtered": {
+      "first": {
+        "x": 35,
+        "y": 636,
+        "w": 320,
+        "h": 137
+      },
+      "detailAction": {
+        "x": 35,
+        "y": 644,
+        "w": 106,
+        "h": 44
+      }
+    },
+    "detailArea": {
+      "x": 16,
+      "y": 896,
+      "w": 358,
+      "h": 571
+    },
+    "tradeAction": {
+      "x": 35,
+      "y": 970,
+      "w": 159,
+      "h": 37
+    },
+    "steps": [
+      "종목명 입력",
+      "ETF 선택",
+      "종목 상세 열기",
+      "상세에서 트레이딩 열기"
+    ],
+    "arrived": "069500",
+    "destination": "/trade?code=069500",
+    "back": "/market?q=%EC%98%88%EC%8B%9C+%EC%A7%80%EC%88%98&market=ETF&detail=069500",
+    "restored": "예시 지수",
+    "reload": "예시 지수",
+    "postPaths": [
+      "/api/market/quote"
+    ]
+  }
+]
