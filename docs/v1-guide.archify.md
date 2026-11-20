@@ -279,6 +279,8 @@ DEMO 또는 KIS 모의를 선택해 현금, 보유 수량, 평가손익을 봅�
 
 실패 원인과 주문 상태는 각각 담당 화면에서 확인합니다. 알림을 읽어도 주문이 복구되거나 연결이 재시도되지는 않습니다.
 
+**2차 미리보기**  중요도·환경·읽음 상태로 목록을 좁히면 ‘이 목록 읽음 처리’는 현재 보이는 미읽음 이벤트에만 적용됩니다. ‘KIS 모의 전략 원인 화면’을 누르면 KIS 전략이 열리고, 뒤로 가면 원래 필터가 복원됩니다. [알림·이벤트 #179](https://github.com/krdn/gon-stock03/issues/179) · [읽음 범위와 원인 이동 PR #181](https://github.com/krdn/gon-stock03/pull/181)
+
 **이 화면에서 물어볼 수 있는 것**  이 경고가 어느 주문에서 나온 건지 바로 보고 싶어.
 
 [주문·체결 보기](block:orders) · [전체 목차](block:contents) · [이 화면에 의견 남기기](https://github.com/krdn/gon-stock03/issues/143#issuecomment-new)
