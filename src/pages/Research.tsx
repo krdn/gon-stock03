@@ -1,28 +1,190 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { Play, Plus, Square, Zap } from 'lucide-react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Play, Plus, Square } from 'lucide-react';
 import { useWorkbench } from '../context';
 import { Badge, Chart, Empty, Panel, Stat } from '../components/ui';
-import { won, type BacktestResult } from '../../shared/model';
+import { won, type BacktestResult, type Strategy } from '../../shared/model';
 import { dailyRunsSchema } from '../../shared/data-inventory';
 import type { DailyRun } from '../../shared/market-data';
 import { experimentListSchema, experimentSchema, backtestResultSchema, type Experiment } from '../../shared/backtest';
 import { z } from 'zod';
 
+import './Strategies.css';
+
+type StrategyEnvironment = 'demo' | 'kis-paper';
+const evaluationLabels = { hold: '관망', blocked: '차단', sending: '검사·전송 중', accepted: '접수 · 체결 미확정', unknown: '응답 불명', rejected: '거부 · 미전송' };
+const signalLabels = { hold: '관망', buy: '매수', sell: '매도' };
+const evaluationTime = new Intl.DateTimeFormat('ko-KR', {
+  timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+});
+
 export function Strategies() {
-  const { available, busy } = useWorkbench();
-  const [params] = useSearchParams();
-  const [environment, setEnvironment] = useState<'demo' | 'kis-paper'>(params.get('environment') === 'kis-paper' ? 'kis-paper' : 'demo');
-  return <><label className="field">전략 환경<select disabled={!available || busy} value={environment} onChange={e => setEnvironment(e.target.value as 'demo' | 'kis-paper')}><option value="demo">DEMO 합성 봉</option><option value="kis-paper">KIS 모의 체결가 이벤트</option></select></label><StrategyStudio key={environment} environment={environment} /></>;
+  const [params, setParams] = useSearchParams();
+  const { busy, available } = useWorkbench();
+  const environment = params.get('environment') === 'kis-paper' ? 'kis-paper' : 'demo';
+  const { search } = useLocation();
+  return <section className="strategy-studio" aria-label="전략 작업">
+    <div className="studio-tools">
+      <label className="field">전략 환경
+        <select value={environment} disabled={!available || busy} onChange={e => {
+          const next = new URLSearchParams(params);
+          next.set('environment', e.target.value);
+          setParams(next);
+        }}>
+          <option value="demo">DEMO 합성 봉</option>
+          <option value="kis-paper">KIS 모의 체결가 이벤트</option>
+        </select>
+      </label>
+      <Link className="button secondary" to={{ search, hash: '#strategy-editor' }}><Plus size={15} />새 전략 만들기</Link>
+    </div>
+    <StrategyStudio key={environment} environment={environment} />
+  </section>;
 }
-function StrategyStudio({ environment }: { environment: 'demo' | 'kis-paper' }) {
+
+function StrategyStudio({ environment }: { environment: StrategyEnvironment }) {
   const kis = environment === 'kis-paper';
-  const { state, act, busy, available, realtime } = useWorkbench(); const [name, setName] = useState('나의 이동평균 전략'), [code, setCode] = useState('069500'), [fast, setFast] = useState(5), [slow, setSlow] = useState(20), [qty, setQty] = useState(1);
-  const quoteAge = realtime?.lastQuoteAt ? Date.now() - Date.parse(realtime.lastQuoteAt) : Infinity;
-  const realtimeReady = available && realtime?.fresh && realtime.ordersAllowed && quoteAge >= 0 && quoteAge <= (realtime.quoteSeconds ?? 5) * 1000;
-  async function save(e: React.FormEvent) { e.preventDefault(); try { await act('strategies', { name, code, fast, slow, qty, environment }); } catch { /* Error is shown by the workspace. */ } }
-  return <><div className="notice compact"><Zap size={16} />{kis ? 'KIS 검증 체결가 이벤트마다 교차를 평가합니다. 저장 전략을 시작하려면 이 전략에 맞는 서버 계약과 실시간 대조가 필요합니다. 매도와 누적 주문대금에는 계약 한도가 적용됩니다.' : '자동매매는 로컬 데모 봉 재생에서만 실행됩니다. 전략 시작 후 자동 재생을 켜면 3초마다 신호 → 위험 검사 → 주문을 처리합니다.'}</div>{kis && <p role="status">{realtime?.message ?? '실시간 상태 미확인'} · <a href="/paper">실시간 연결·대조 확인</a></p>}{!kis && <div className="button-row" style={{ marginBottom: 20 }}><button className="button primary" disabled={busy || !available || (!state.playing && state.risk.halted)} onClick={() => void act('playback').catch(() => {})}>{state.playing ? '자동 재생 정지' : '자동 재생 시작'}</button><span className="muted tiny">데모 봉 #{state.tick} · {state.playing ? '3초마다 자동 평가 중' : '재생 정지'}</span></div>}<div className="grid-main"><div className="strategy-list">{state.strategies.filter(s => (s.environment ?? 'demo') === environment).map(s => <Panel key={s.id}><div className="strategy-top"><span className="strategy-icon"><Zap size={22} /></span><Badge tone={s.active ? 'teal' : 'neutral'}>{s.active ? kis ? '실행 중 · 체결가 이벤트 평가' : '실행 대기 · 봉 재생 시 평가' : '정지'}</Badge></div><h2>{s.name}</h2>{kis && <Link className="text-link" to={`/settings/trading/strategy?strategy=${encodeURIComponent(s.id)}`}>다음 계약 준비</Link>}<p className="tiny muted">{kis ? 'KIS 모의' : 'DEMO'} · revision {s.revision ?? 1}</p><p className="muted">{state.instruments.find(i => i.code === s.code)?.name} · 이동평균 교차</p><div className="rule-diagram"><div><small>단기 평균</small><strong>{s.fast}{kis ? '이벤트' : '봉'}</strong></div><span>교차</span><div><small>장기 평균</small><strong>{s.slow}{kis ? '이벤트' : '봉'}</strong></div><span>→</span><div><small>주문 수량</small><strong>{s.qty}주</strong></div></div><div className="check-row"><span>마지막 신호</span><strong>{s.lastSignal === 'hold' ? '관망' : s.lastSignal === 'buy' ? '상향 교차 · 매수' : '하향 교차 · 매도'}</strong></div><div className="button-row"><button disabled={!available || busy || (!s.active && (state.risk.halted || (kis && (!realtimeReady || realtime?.code !== s.code))))} className={`button ${s.active ? 'secondary' : 'primary'}`} onClick={() => void act(kis ? 'kis/strategies/run' : 'strategies/toggle', kis ? { id: s.id, active: !s.active } : { id: s.id }).catch(() => {})}>{s.active ? <Square size={14} /> : <Play size={14} />}{s.active ? '전략 정지' : '전략 시작'}</button>{!kis && <button disabled={!available || busy} className="button secondary" onClick={() => void act('tick').catch(() => {})}>다음 데모 봉 재생</button>}</div>{kis && <><p className="soft-note">{!s.active ? '정지 · 개별 시작 전 신규 평가/주문 없음' : realtimeReady ? '신선한 이벤트 대기 · 승인/위험 조건은 주문마다 검사' : '신규 주문 차단 · ' + (!available ? '상태 미확인' : realtime?.message ?? '실시간 미확인')}</p><details open><summary>최근 평가 · 최대 100건</summary>{s.evaluations?.length ? s.evaluations.map(e => <div className="strategy-evaluation" key={e.event}><p>{e.event} · revision {e.revision} · {e.signal === 'hold' ? '관망' : e.signal === 'buy' ? '매수' : '매도'} · {{ hold: '관망', blocked: '차단', sending: '검사·전송 중', accepted: '접수 · 체결 미확정', unknown: '응답 불명', rejected: '거부 · 미전송' }[e.status]}</p><p>{e.reason}</p>{e.requestId && <p>요청 ID: <code>{e.requestId}</code> · 주문번호: {e.brokerId ?? '없음'} · <a href="/paper">원장 대조</a></p>}</div>) : <p>평가 기록 없음 · 시작 이후 새 체결가 이벤트가 필요합니다.</p>}</details></>}</Panel>)}<Panel title="실행 규칙">{kis ? <><p className="prose">검증된 KRX 체결가 이벤트의 이동평균 교차만 신호로 사용합니다. 분봉·일봉 전략이 아닙니다. 표본 부족·교차 없음·차단도 기록합니다. 저장 설정은 revision 1로 고정하며 변경하려면 새 전략을 저장하세요.</p><p className="prose">계약에서 계좌 보유 매도를 허용하면 수동 보유분도 매도 가능 수량에 포함됩니다. 모든 주문은 수동과 같은 금액·종목·손실 한도·긴급정지·승인 검사를 거칩니다. 한 번 예약한 횟수와 금액은 주문 거절 후에도 사용량에 남습니다. 응답 불명은 재전송하지 않고 원장을 대조하세요.</p><p className="prose">정지·서버 재시작·연결 중단 후 자동 재개하지 않습니다. 시작 전에 받은 이벤트도 재실행하지 않습니다. 시작 후 브라우저를 닫아도 서버가 새 이벤트를 평가하므로 종료하려면 전략 정지를 누르세요. 접수된 주문은 정지로 취소되지 않습니다.</p></> : <><p className="prose">단기 평균이 장기 평균을 아래에서 위로 교차하면 매수합니다. 위에서 아래로 교차하면 보유 범위에서 매도합니다. 같은 봉을 두 번 평가하지 않으며, 신규 주문은 다음 봉에서 체결 여부를 판단하고 미체결 전략 주문은 그 봉에서 만료됩니다. 전략은 수동으로 매수한 보유분도 매도할 수 있습니다.</p><p className="muted prose">서버 재시작 시 전략은 정지 상태로 복구합니다. DEMO 재생은 KIS 전략 실행과 분리됩니다.</p></>}</Panel></div><Panel title="새 전략 만들기" action={<Plus size={18} />}><form onSubmit={save}><label className="field">전략 이름<input value={name} onChange={e => setName(e.target.value)} required maxLength={60} /></label><label className="field">대상 종목<select value={code} onChange={e => setCode(e.target.value)}>{state.instruments.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}</select></label><div className="form-grid"><label className="field">단기 평균 ({kis ? '이벤트' : '봉'})<input type="number" min="2" max="60" value={fast} onChange={e => setFast(Number(e.target.value))} required /></label><label className="field">장기 평균 ({kis ? '이벤트' : '봉'})<input type="number" min="3" max="100" value={slow} onChange={e => setSlow(Number(e.target.value))} required /></label></div><label className="field">회당 수량 (주)<input type="number" min="1" max="10000" value={qty} onChange={e => setQty(Number(e.target.value))} required /></label><div className="soft-note">시작 전 백테스트를 확인하세요. 단기 기간은 장기 기간보다 작아야 합니다.</div><button disabled={!available || busy} className="button primary wide">전략 저장</button></form></Panel></div></>;
+  const { state, act, busy, available, server, status } = useWorkbench();
+  const { search, hash, key } = useLocation();
+  const navigate = useNavigate();
+  const strategies = server ? state.strategies.filter(s => (s.environment ?? 'demo') === environment) : [];
+  const latest = strategies.filter(s => s.evaluations?.length).sort((a, b) =>
+    Date.parse(b.evaluations![0].at) - Date.parse(a.evaluations![0].at))[0];
+  const evaluation = latest?.evaluations?.[0];
+  const [savedId, setSavedId] = useState('');
+  useEffect(() => {
+    if (savedId) {
+      setSavedId('');
+      navigate({ search, hash: '#strategy-' + savedId }, { replace: true });
+    }
+  }, [savedId, navigate, search]);
+  let emptyList = '새 규칙을 저장하면 여기에 표시합니다.';
+  if (!available) {
+    if (status.phase === 'loading') emptyList = '저장 전략을 불러오는 중입니다.';
+    else emptyList = server ? '마지막 조회는 0건입니다. 최신 목록은 미확인입니다.' : '로컬 조회 실패 · 저장 전략 미확인';
+  }
+  const targetId = hash.slice(1);
+  const targetExists = targetId === 'strategy-editor' || (kis && targetId === 'strategy-evaluations') ||
+    strategies.some(s => targetId === 'strategy-' + s.id);
+  useEffect(() => {
+    if (!targetExists) return;
+    const target = document.getElementById(targetId);
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ block: 'start' });
+  }, [targetId, targetExists, key]);
+  return <div className="studio-grid">
+    <div className="studio-results">
+      {kis ? <section className="panel studio-recent" aria-labelledby="strategy-evaluations">
+        <h2 id="strategy-evaluations" tabIndex={-1}>최근 KIS 평가</h2>
+        {!available && <p className="studio-warning">{status.phase === 'loading' ? '저장된 평가 불러오는 중' : server ? '최신 평가 미확인 · 마지막 조회 기록' : '로컬 조회 실패 · 평가 미확인'}</p>}
+        {latest && evaluation ? <>
+          <div className="studio-result-line"><span className={'studio-outcome ' + evaluation.status}>{evaluationLabels[evaluation.status]}</span><strong>{evaluation.reason}</strong></div>
+          <p className="studio-meta">{latest.name} · revision {evaluation.revision} · {signalLabels[evaluation.signal]}</p>
+          <p className="studio-meta"><time dateTime={evaluation.at}>{evaluationTime.format(new Date(evaluation.at))} KST</time> · 로컬 저장 기록</p>
+          <Link className="text-link" to={{ search, hash: '#strategy-' + latest.id }}>해당 전략 보기</Link>
+        </> : available && <p>{strategies.length ? '평가 기록 없음 · 시작 후 새 체결가 이벤트가 필요합니다.' : '저장된 KIS 전략이 없습니다.'}</p>}
+      </section> : <div className="studio-replay">
+        <div><strong>DEMO 봉 재생</strong><p className="studio-meta">{available ? `합성 봉 #${state.tick} · ${state.playing ? '3초마다 자동 평가 중' : state.risk.halted ? '긴급정지로 재생 시작 차단' : '재생 정지'}` : '재생 상태 미확인'}</p></div>
+        <button className="button secondary" disabled={busy || !available || (!state.playing && state.risk.halted)} onClick={() => void act('playback').catch(() => {})}>{state.playing ? '자동 재생 정지' : '자동 재생 시작'}</button>
+      </div>}
+      <div className="studio-list-title"><h2>저장 전략</h2><span className="studio-meta">{server ? `${strategies.length}개${available ? '' : ' · 이전 조회'}` : '미확인'}</span></div>
+      {!strategies.length && <p className="studio-meta">{emptyList}</p>}
+      {strategies.map(strategy => <StrategyCard key={strategy.id} strategy={strategy} kis={kis} />)}
+      <details className="panel studio-rules">
+        <summary>실행 규칙</summary>
+        {kis ? <>
+          <p>검증된 KRX 체결가 이벤트의 이동평균 교차를 평가합니다. 분봉·일봉 계산과 단위가 다릅니다. 표본 부족과 교차 없음도 기록합니다.</p>
+          <p>계좌 보유 매도가 계약에서 허용되면 수동 보유분도 매도 가능 수량에 포함됩니다. 공통 금액·종목·손실 한도와 승인 검사를 거치며, 거절된 주문의 예약 횟수와 금액도 사용량에 남습니다. 응답 불명은 재전송하지 말고 원장을 대조하세요.</p>
+          <p>정지·재시작·연결 중단 후에는 직접 다시 시작해야 합니다. 시작 전에 받은 이벤트는 다시 실행하지 않습니다.</p>
+        </> : <p>이동평균의 상향 교차는 매수, 하향 교차는 보유 범위의 매도입니다. 수동 매수 보유분도 포함합니다. 같은 봉을 두 번 평가하지 않습니다. 신규 주문은 다음 봉에서 체결 여부를 판단하며 미체결분은 그 봉에서 만료됩니다. 서버 재시작 시 전략은 정지합니다.</p>}
+      </details>
+    </div>
+    <StrategyEditor environment={environment} onSaved={setSavedId} />
+  </div>;
 }
+
+function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: boolean }) {
+  const { state, realtime, act, available, busy, serverNow } = useWorkbench();
+  const instrument = state.instruments.find(i => i.code === s.code);
+  const quoteAge = realtime?.lastQuoteAt ? serverNow - Date.parse(realtime.lastQuoteAt) : Infinity;
+  const freshQuote = quoteAge >= 0 && quoteAge <= (realtime?.quoteSeconds ?? 5) * 1000;
+  let blocked = '';
+  if (!available) blocked = '로컬 상태 미확인';
+  else if (state.risk.halted) blocked = '긴급정지 켜짐';
+  else if (kis) {
+    if (!realtime?.fresh || !realtime.ordersAllowed) blocked = realtime?.message || '실시간 상태 미확인';
+    else if (!freshQuote) blocked = '현재 시세 유효 시간 확인 필요';
+    else if (realtime.code !== s.code) blocked = '실시간 대조 종목이 전략과 다릅니다.';
+  }
+  const evaluations = s.evaluations ?? [];
+  const [historyOpen, setHistoryOpen] = useState(false);
+  return <Panel className="studio-card">
+    <div className="studio-card-head">
+      <h3 id={'strategy-' + s.id} tabIndex={-1}>{s.name}</h3>
+      <Badge tone={available && s.active ? 'teal' : 'neutral'}>{!available ? '상태 미확인' : s.active ? '실행 중' : '정지'}</Badge>
+    </div>
+    <p className="studio-meta">{kis ? 'KIS 모의' : 'DEMO'} · revision {s.revision ?? 1} · {instrument?.name ?? s.code}{instrument && ' ' + s.code}</p>
+    <div className="studio-terms"><span>단기 <b>{s.fast}{kis ? '이벤트' : '봉'}</b></span><span>장기 <b>{s.slow}{kis ? '이벤트' : '봉'}</b></span><span>회당 <b>{s.qty}주</b></span></div>
+    {kis && <Link className="text-link" to={`/settings/trading/strategy?strategy=${encodeURIComponent(s.id)}`}>다음 계약 준비</Link>}
+    {kis ? <details className="studio-history" onToggle={e => setHistoryOpen(e.currentTarget.open)}>
+      <summary>최근 평가 · {evaluations.length}건 (최대 100건){!available && ' · 이전 조회'}</summary>
+      {evaluations.length ? historyOpen && evaluations.map(e => <div className="strategy-evaluation" key={e.event}>
+        <p><strong>{evaluationLabels[e.status]}</strong> · {signalLabels[e.signal]} · revision {e.revision}</p>
+        <p>{e.reason}</p><p className="studio-meta"><time dateTime={e.at}>{evaluationTime.format(new Date(e.at))} KST</time> · 이벤트 {e.event}</p>
+        {e.requestId && <p>요청 ID: <code>{e.requestId}</code> · 주문번호: {e.brokerId ?? '없음'} · <Link to="/paper">원장 대조</Link></p>}
+      </div>) : <p>{available ? '평가 기록 없음 · 시작 이후 새 체결가 이벤트가 필요합니다.' : '평가 기록 미확인'}</p>}
+    </details> : <p className="studio-meta">마지막 신호 · {s.lastTick < 0 ? '평가 기록 없음' : signalLabels[s.lastSignal]}{!available && ' · 이전 조회'}</p>}
+    {!kis && blocked && <p className="studio-warning">신규 실행 차단 · {blocked}</p>}
+    {kis && <p className="studio-meta">{blocked ? (s.active ? '신규 주문 차단 · ' : '전략 시작 차단 · ') + blocked : '별도 서버 계약과 주문별 승인·위험 검사 적용'} · <Link to="/paper">실시간 연결·대조 확인</Link></p>}
+    {kis && <p className="studio-meta">시작 후 브라우저를 닫아도 서버는 계속 평가합니다. 전략 정지 후에도 접수된 주문은 유지됩니다.</p>}
+    <div className="button-row">
+      <button disabled={!available || busy || (!s.active && Boolean(blocked))} className={'button ' + (s.active ? 'secondary' : 'primary')} onClick={() => void act(kis ? 'kis/strategies/run' : 'strategies/toggle', kis ? { id: s.id, active: !s.active } : { id: s.id }).catch(() => {})}>
+        {s.active ? <Square size={14} /> : <Play size={14} />}{s.active ? '전략 정지' : '전략 시작'}
+      </button>
+      {!kis && <button disabled={!available || busy} className="button secondary" onClick={() => void act('tick').catch(() => {})}>다음 데모 봉 재생</button>}
+    </div>
+  </Panel>;
+}
+
+function StrategyEditor({ environment, onSaved }: { environment: StrategyEnvironment; onSaved: (id: string) => void }) {
+  const { state, act, busy, available } = useWorkbench();
+  const [name, setName] = useState('나의 이동평균 전략');
+  const [code, setCode] = useState('069500');
+  const [fast, setFast] = useState('5'), [slow, setSlow] = useState('20'), [qty, setQty] = useState('1');
+  const [attempted, setAttempted] = useState(false);
+  const validCode = state.instruments.some(i => i.code === code);
+  const invalidPeriods = attempted && fast !== '' && slow !== '' && Number(fast) >= Number(slow);
+  const unit = environment === 'kis-paper' ? '이벤트' : '봉';
+  async function save(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setAttempted(true);
+    if (Number(fast) >= Number(slow)) {
+      e.currentTarget.querySelector<HTMLInputElement>('[name="fast"]')?.focus();
+      return;
+    }
+    try {
+      const saved = await act<{ id: string }>('strategies', { name, code, fast: Number(fast), slow: Number(slow), qty: Number(qty), environment });
+      onSaved(saved.id);
+    } catch { /* The workspace announces server errors and keeps the draft. */ }
+  }
+  return <Panel className="studio-editor">
+    <h2 id="strategy-editor" tabIndex={-1}>새 전략 만들기</h2>
+    <p className="studio-meta">{environment === 'kis-paper' ? 'KIS 모의' : 'DEMO'} · 새 전략은 revision 1, 정지 상태로 저장됩니다.</p>
+    <form onSubmit={save}>
+      <label className="field">전략 이름<input value={name} onChange={e => setName(e.target.value)} required maxLength={60} /></label>
+      <label className="field">대상 종목<select required value={validCode ? code : ''} onChange={e => setCode(e.target.value)}>{!validCode && <option value="">
+        {state.instruments.length ? '종목을 선택하세요' : '저장 가능한 종목 없음'}</option>}{state.instruments.map(i => <option key={i.code} value={i.code}>{i.name}</option>)}</select></label>
+      <div className="form-grid">
+        <label className="field">단기 평균 ({unit})<input name="fast" type="number" min="2" max="60" value={fast} onChange={e => setFast(e.target.value)} required aria-invalid={invalidPeriods || undefined} aria-describedby={invalidPeriods ? 'strategy-period-error' : undefined} /></label>
+        <label className="field">장기 평균 ({unit})<input type="number" min="3" max="100" value={slow} onChange={e => setSlow(e.target.value)} required aria-invalid={invalidPeriods || undefined} aria-describedby={invalidPeriods ? 'strategy-period-error' : undefined} /></label>
+      </div>
+      {invalidPeriods && <p className="studio-warning" id="strategy-period-error" role="alert">단기 평균은 장기 평균보다 작아야 합니다.</p>}
+      <label className="field">회당 수량 (주)<input type="number" min="1" max="10000" value={qty} onChange={e => setQty(e.target.value)} required /></label>
+      <button disabled={!available || busy || !validCode} className="button primary wide">전략 저장</button>
+    </form>
+  </Panel>;
+}
+
 function DemoBacktest() {
   const { state, act, available, busy } = useWorkbench(); const [code, setCode] = useState('069500'), [fast, setFast] = useState(5), [slow, setSlow] = useState(20), [capital, setCapital] = useState(10000000), [fee, setFee] = useState(1.5), [slip, setSlip] = useState(5), [result, setResult] = useState<BacktestResult | null>(null);
   async function run(e: React.FormEvent) { e.preventDefault(); try { const r = await act<{ result: BacktestResult }>('backtest', { code, fast, slow, capital, feeBps: fee, slippageBps: slip }); setResult(r.result); } catch { setResult(null); } }

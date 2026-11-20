@@ -1,0 +1,38 @@
+.strategy-studio { min-width: 0; }
+.strategy-studio .studio-tools, .studio-list-title, .studio-card-head, .studio-replay, .studio-result-line, .studio-terms {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.studio-tools { justify-content: space-between; margin-bottom: 14px; }
+.studio-tools .field { margin: 0; min-width: 180px; }
+.studio-tools .button { align-self: end; }
+.studio-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(270px, 1fr); align-items: start; gap: 18px; }
+.studio-results, .studio-editor { min-width: 0; }
+.strategy-studio h2, .strategy-studio h3 { margin: 0; font-size: 16px; line-height: 1.4; }
+.strategy-studio [tabindex="-1"] { scroll-margin-top: 80px; }
+.strategy-studio :focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; }
+.strategy-studio .studio-recent { border-left: 3px solid var(--teal); }
+.studio-recent, .studio-card, .studio-editor, .studio-rules { overflow-wrap: anywhere; }
+.studio-result-line { margin: 10px 0; line-height: 1.5; }
+.studio-outcome { background: #e7f2f0; color: #135951; border-radius: 4px; padding: 3px 8px; font-size: 12px; font-weight: 700; }
+.studio-outcome.blocked, .studio-outcome.unknown, .studio-outcome.rejected { color: #803c22; background: #fff0e7; }
+.studio-meta, .studio-warning, .studio-rules p, .studio-history p { margin: 5px 0; font-size: 13px; line-height: 1.55; }
+.studio-meta { color: var(--muted); }
+.studio-warning { color: #8c351e; }
+.studio-recent .text-link, .studio-card .text-link { display: inline-flex; align-items: center; min-height: 30px; }
+.studio-list-title { margin: 18px 0 9px; }
+.studio-card, .studio-rules { margin-bottom: 10px; }
+.studio-card-head, .studio-replay { justify-content: space-between; }
+.studio-terms { margin: 10px 0 4px; background: #f4f7f6; padding: 10px 12px; border-radius: 5px; font-size: 13px; gap: 6px 16px; }
+.studio-card .button-row { margin-top: 10px; }
+.studio-history { border-top: 1px solid var(--line); margin-top: 6px; }
+.studio-history summary, .studio-rules summary { cursor: pointer; padding: 8px 0; font-weight: 600; font-size: 13px; }
+.studio-rules { padding-block: 8px; }
+.studio-editor form { margin-top: 12px; }
+.studio-editor .field { gap: 5px; margin-bottom: 10px; }
+.studio-editor .button.wide { margin-top: 2px; }
+.studio-replay { background: white; border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; }
+@media (max-width: 900px) {
+  .studio-grid { grid-template-columns: 1fr; gap: 10px; }
+  .studio-tools { gap: 8px; }
+  .studio-tools .field { min-width: 0; flex: 1; }
+}
