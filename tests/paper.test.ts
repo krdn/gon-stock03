@@ -1628,3 +1628,87 @@ test('상한을 명시한 현재가 매수는 마지막 시세로 금액·원장
     f.close();
   }
 });
+
+for (const outcome of ['cancelled', 'filled-before-send', 'rejected-then-filled'] as const) {
+  test('부분체결 원주문의 HTTP 잔량 취소와 최종 수량 대조 · ' + outcome, async t => {
+    t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-20T10:20:52+09:00') });
+    const f = lowerLimitFixture();
+    t.after(() => f.close());
+    const date = '2026-11-20', code = '069500';
+    Object.assign(f.response, {
+      price: '77755', lower: '55000', upper: '100000', tick: '5',
+      quoteFields: { stck_shrn_iscd: code, sltr_yn: 'N' },
+    });
+    const pin = pinSettings(f, {
+      kind: 'once', date, code, orderType: 'limit', maxQty: 2, maxAmount: 160000,
+      allowExistingHolding: false, cancelProbe: true,
+      policy: { ...defaultOncePolicy(date), priceMode: 'cappedCurrent', limitPrice: 80000, consumeAt: 'validated' },
+    });
+    const port = apiPort++;
+    const server = makeServer(pin.store, f.client, [port], pin.config, undefined, undefined, pin.check);
+    try {
+      server.listen(port, '127.0.0.1');
+      await once(server, 'listening');
+      const post = (path: string, body: unknown) => fetch('http://127.0.0.1:' + port + '/api/kis/' + path, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(body),
+      });
+      const order = { requestId: pin.config.requestId, code, side: 'buy', qty: 2, price: 80000, priceMode: 'cappedCurrent' };
+      const receipt = await post('order', order);
+      assert.equal(receipt.status, 200);
+      const accepted = (await receipt.json()).order;
+      assert.deepEqual([accepted.requestId, accepted.status, accepted.price], [order.requestId, 'accepted', 77755]);
+
+      const partial = brokerRow({ pdno: code, ord_qty: '2', ord_unpr: '77755', tot_ccld_qty: '1', rmn_qty: '1', cncl_cfrm_qty: '0' });
+      f.response.rows = [partial];
+      const first = await post('orders', {});
+      assert.equal(first.status, 200);
+      const observed = await first.json();
+      assert.deepEqual([observed.orders[0].requestId, observed.orders[0].status, observed.orders[0].filled, observed.orders[0].remaining],
+        [order.requestId, 'partial', 1, 1]);
+      assert.equal(observed.cancellation.candidate.requestId, order.requestId);
+      assert.equal(Number(partial.odno), Number(accepted.brokerId));
+      const full = { ...partial, tot_ccld_qty: '2', rmn_qty: '0' };
+      if (outcome === 'filled-before-send') f.response.rows = [full];
+      if (outcome === 'rejected-then-filled') f.response.cancelMode = 'reject';
+
+      const cancel = { id: order.requestId, reconcileFirst: true };
+      const result = await post('cancel-probe', cancel);
+      const expectedPosts = outcome === 'filled-before-send' ? 0 : 1;
+      if (expectedPosts === 0) {
+        assert.equal(result.status, 400);
+        assert.match((await result.json()).error, /미체결 원주문/);
+      } else {
+        assert.equal(result.status, 200);
+        const pending = (await result.json()).order;
+        assert.equal(pending.status, 'unknown');
+        if (outcome === 'rejected-then-filled') assert.match(pending.message, /거부/);
+        else assert.match(pending.message, /요청 접수/);
+      }
+
+      const cancelled = outcome === 'cancelled';
+      f.response.rows = [cancelled ? { ...partial, rmn_qty: '0', cncl_yn: 'Y', cncl_cfrm_qty: '1' } : full];
+      const last = await post('orders', {});
+      assert.equal(last.status, 200);
+      const final = await last.json();
+      const [local] = final.orders, [remote] = final.brokerOrders;
+      assert.deepEqual([local.requestId, local.status, local.filled, remote.confirmedCancelQty, local.remaining],
+        [order.requestId, cancelled ? 'cancelled' : 'filled', cancelled ? 1 : 2, cancelled ? 1 : 0, 0]);
+      assert.equal(local.filled + remote.confirmedCancelQty + local.remaining, order.qty);
+      assert.equal(final.cancellation.candidate, null);
+      assert.equal((await post('cancel-probe', cancel)).status, 400);
+      assert.equal((await post('order', order)).status, 200);
+      const transmissions = f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl'));
+      assert.equal(transmissions.length, expectedPosts);
+      assert.equal(f.count(), 1);
+      for (const tx of transmissions) {
+        const body = JSON.parse(String(tx.init?.body));
+        assert.deepEqual([body.ORGN_ODNO, body.KRX_FWDG_ORD_ORGNO, body.QTY_ALL_ORD_YN, body.ORD_QTY],
+          [partial.odno, partial.ord_gno_brno, 'Y', '0']);
+      }
+      assert.equal(pin.store.paperAudit(order.requestId).filter(a => a.action === 'cancel-attempt').length, expectedPosts);
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      pin.store.close();
+    }
+  });
+}

@@ -709,6 +709,26 @@
         }
       ],
       "decisions": "상태 fixture의 수신 시각은 기존 snapshot()이 제공한다. 시세 성공·실패 및 자동 갱신 단정은 유지한다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/25",
+      "checked_at": "2026-11-20T01:35:35.131841+00:00",
+      "objective": "현행 모의 버전의 원주문 부분체결·잔량 취소 경합에 대한 HTTP 인수 검사 및 장중 관측 예외 판정",
+      "sources": [
+        {
+          "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/order_rvsecncl/order_rvsecncl.py",
+          "finding": "모의 취소 TR은 VTTC0013U이며 이미 체결된 수량은 취소할 수 없다. 정정취소 가능수량 사전조회를 요구한다."
+        },
+        {
+          "url": "https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/trading/inquire-psbl-rvsecncl",
+          "finding": "해당 사전조회의 virtualDomain과 virtualTrId가 모두 모의투자 미지원이다."
+        },
+        {
+          "url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/ccnl_notice/ccnl_notice.py",
+          "finding": "H0STCNI9는 구독 중 수신하는 모의 접수·체결 통보다."
+        }
+      ],
+      "decisions": "신규 주문 없이 한정 모의 경로를 격리 검증한다. 동일 원주문에서의 장중 취소 경합은 미관측 예외로 명시하고 일반 취소 권한을 확대하지 않는다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."

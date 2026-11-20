@@ -1,5 +1,7 @@
 # 1차 화면·설계 시각화
 
+11월 20일 최종 인수 범위는 [모의 버전 수용 판정](../verification/2026-11-20-paper-acceptance.md)을 따른다. 아래는 단계별 이력이다.
+
 이슈: https://github.com/krdn/gon-stock03/issues/3 · 상위 #1 · 브랜치 `feat/trading-workbench`
 
 2026-11-15부터 15개 화면의 후속 완성·수용 이슈를 묶어 관리한다. [세션 계획](../plans/interface-sessions-2026-11.md)에서 화면별 실제 이슈와 선행 작업을 확인한다. 초기 구현·검증 기록은 아래에 보존한다.
