@@ -1,7 +1,7 @@
 # Graph Report - ux2-179-alerts  (2026-11-20)
 
 ## Corpus Check
-- 304 files · ~292,843 words
+- 305 files · ~293,000 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 11 file(s) not represented in the graph (top: .css 3, (none) 2, .zip 2)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `29492696`
+- Built from commit: `8fb200ba`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -574,14 +574,14 @@ Nodes (3): 먼저 읽을 자료, PaperRiskSnapshot, Workbench
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `KisClient` connect `KisClient` to `http.ts`, `trading-plans.ts`, `server/realtime.ts`, `Store`, `vts-runner.ts`, `#21 저장 일봉 백테스트 검증`, `store.ts`, `snapshot`, `server/market-data.ts`, `KisNotSent`, `realtime.test.ts`, `.submit`, `작업: 국내 종목 마스터·일봉 수집`, `.constructor`, `#8 연결·설정 검증`, `paper.ts`?**
-  _High betweenness centrality (0.062) - this node is a cross-community bridge._
+- **Why does `Store` connect `Store` to `http.ts`, `contracts.ts`, `server/realtime.ts`, `trading-plans.ts`, `vts-runner.ts`, `store.ts`, `order-history.ts`, `server/market-data.ts`, `realtime.test.ts`, `.submit`, `.riskSnapshot`, `.constructor`, `PaperBroker`, `#9 최소 모의 실행 절차`, `paper.ts`?**
+  _High betweenness centrality (0.061) - this node is a cross-community bridge._
 - **Are the 31 inferred relationships involving `makeServer()` (e.g. with `.refreshMaster()` and `.start()`) actually correct?**
   _`makeServer()` has 31 INFERRED edges - model-reasoned connections that need verification._
 - **Should `shared/market-data.ts` be split into smaller, more focused modules?**
   _Cohesion score 0.14285714285714285 - nodes in this community are weakly interconnected._
-- **Why does `Store` connect `Store` to `http.ts`, `contracts.ts`, `server/realtime.ts`, `trading-plans.ts`, `vts-runner.ts`, `store.ts`, `order-history.ts`, `server/market-data.ts`, `realtime.test.ts`, `.submit`, `.riskSnapshot`, `.constructor`, `PaperBroker`, `#9 최소 모의 실행 절차`, `paper.ts`?**
-  _High betweenness centrality (0.044) - this node is a cross-community bridge._
+- **Why does `KisClient` connect `KisClient` to `http.ts`, `trading-plans.ts`, `server/realtime.ts`, `Store`, `vts-runner.ts`, `#21 저장 일봉 백테스트 검증`, `store.ts`, `snapshot`, `server/market-data.ts`, `KisNotSent`, `realtime.test.ts`, `.submit`, `작업: 국내 종목 마스터·일봉 수집`, `.constructor`, `#8 연결·설정 검증`, `paper.ts`?**
+  _High betweenness centrality (0.060) - this node is a cross-community bridge._
 - **Are the 3 inferred relationships involving `KisClient` (e.g. with `계약과 저장` and `실제 공개 마스터`) actually correct?**
   _`KisClient` has 3 INFERRED edges - model-reasoned connections that need verification._
 - **Should `작업: #64 SQLite 원장 파일 권한 보호` be split into smaller, more focused modules?**

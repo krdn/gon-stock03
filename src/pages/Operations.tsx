@@ -183,6 +183,10 @@ export function Alerts() {
   const realtimePhase = received && realtime ? { stopped: '미연결', connecting: '연결 중', reconciling: '대조 필요', ready: '대조 완료', disconnected: '수신 중단', error: '오류' }[realtime.phase] : '상태 미확인';
   const urgent = realtime?.phase === 'error' || realtime?.phase === 'disconnected' || realtime?.phase === 'reconciling'
     || Boolean(realtime?.required && !realtime.ordersAllowed);
+  const realtimeDetails = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (received && urgent && realtimeDetails.current) realtimeDetails.current.open = true;
+  }, [received, urgent]);
 
   function updateFilter(key?: string, value?: string) {
     const next = new URLSearchParams(params);
@@ -226,7 +230,7 @@ export function Alerts() {
     {received && urgent && <p className="alerts-warning" role="alert">{!current && '마지막 수신 기준 · '}KIS 실시간 {realtimePhase}
       {realtime?.required && !realtime.ordersAllowed && ' · 실시간 기준 신규 주문 차단'} · <Link to="/paper">KIS 대조 화면</Link>
     </p>}
-    <details className="alerts-realtime"><summary>{received && realtime && !current && '마지막 수신 기준 · '}KIS 실시간 {realtimePhase} 상세</summary><RealtimeStatus /></details>
+    <details className="alerts-realtime" ref={realtimeDetails}><summary>{received && realtime && !current && '마지막 수신 기준 · '}KIS 실시간 {realtimePhase} 상세</summary><RealtimeStatus /></details>
     {rows.map(e => {
       const cause = alertCause(e);
       return <article className={`event ${e.read ? 'read' : ''}`} key={e.id}>
