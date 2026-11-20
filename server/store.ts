@@ -2,6 +2,7 @@ import { approvalBinding, type OncePolicy } from '../shared/trading-policy.ts';
 import type { PaperKrxSession } from './paper.ts';
 import type { PlanKind, PlanRecord } from '../shared/trading-plan.ts';
 import { DatabaseSync } from 'node:sqlite';
+import { displayOrders } from './order-history.ts';
 import { closeSync, constants, fchmodSync, fstatSync, openSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { initialState } from '../shared/fixtures.ts';
@@ -49,6 +50,7 @@ export class Store {
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_orders (request_id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS paper_baseline (day TEXT PRIMARY KEY, equity REAL NOT NULL);');
     this.db.exec('CREATE TABLE IF NOT EXISTS trading_plans (kind TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS trading_pins (run_id TEXT PRIMARY KEY, draft_id TEXT NOT NULL UNIQUE, kind TEXT NOT NULL);');
     this.db.exec('CREATE TABLE IF NOT EXISTS strategy_contract (id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS strategy_claim (request_id TEXT PRIMARY KEY, event TEXT NOT NULL UNIQUE, amount INTEGER NOT NULL CHECK(amount>0), dispatched INTEGER NOT NULL DEFAULT 0);');
+    this.db.exec('CREATE TABLE IF NOT EXISTS paper_order_checks (request_id TEXT PRIMARY KEY, observed_at TEXT NOT NULL)');
     this.db.exec('CREATE TABLE IF NOT EXISTS realtime_guard (id INTEGER PRIMARY KEY CHECK(id=1));');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_event_read (id TEXT PRIMARY KEY);');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_audit (id TEXT PRIMARY KEY, request_id TEXT NOT NULL, body TEXT NOT NULL); CREATE INDEX IF NOT EXISTS paper_audit_request ON paper_audit(request_id);');
@@ -136,6 +138,21 @@ export class Store {
       this.db.exec('COMMIT');
       return next;
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  recordOrderChecks(checks: { id: string; at: string }[]) {
+    if (!checks.length) return;
+    const put = this.db.prepare(`INSERT INTO paper_order_checks VALUES (?,?)
+      ON CONFLICT(request_id) DO UPDATE SET observed_at = max(observed_at, excluded.observed_at)`);
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const check of checks) put.run(check.id, check.at);
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  displayPaperOrders() { return displayOrders(this.db); }
+  pinnedRuns() {
+    return this.db.prepare('SELECT kind, draft_id AS draftId, run_id AS runId FROM trading_pins ORDER BY rowid').all() as
+      { kind: PlanKind; draftId: string; runId: string }[];
   }
   paperOrders(): PaperOrder[] { return this.db.prepare('SELECT body FROM paper_orders ORDER BY rowid DESC').all().map(row => JSON.parse(row.body as string) as PaperOrder); }
   hasPaperRun() { return Boolean(this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='paper_run'").get()); }

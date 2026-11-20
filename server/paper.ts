@@ -169,18 +169,31 @@ export class PaperBroker {
     this.riskOrders = null;
     const day = koreaDate();
     const connection = await this.kis.balance(freshBalance); const orders = await this.kis.dailyOrders(day);
-    const byDay = new Map([[day, orders]]);
-    const pending = this.store.paperOrders().filter(local => local.brokerId && !['filled', 'cancelled', 'rejected'].includes(local.status));
-    for (const local of pending) {
-      if (!byDay.has(local.tradeDate)) byDay.set(local.tradeDate, await this.kis.dailyOrders(local.tradeDate));
+    const byDay = new Map([[day, { rows: orders, observedAt: new Date().toISOString() }]]);
+    const localOrders = this.store.paperOrders().filter(local => local.brokerId);
+    const settled = (local: PaperOrder) => ['filled', 'cancelled', 'rejected'].includes(local.status);
+    for (const local of localOrders) {
+      if (!settled(local) && !byDay.has(local.tradeDate)) {
+        const rows = await this.kis.dailyOrders(local.tradeDate);
+        byDay.set(local.tradeDate, { rows, observedAt: new Date().toISOString() });
+      }
     }
-    for (const local of pending) {
-      const rows = byDay.get(local.tradeDate)!;
+    const checks: { id: string; at: string }[] = [];
+    for (const local of localOrders) {
+      const observation = byDay.get(local.tradeDate);
+      if (!observation) continue;
+      const { rows, observedAt } = observation;
       const found = rows.filter(row => sameId(row.brokerId, local.brokerId!) && (!local.organization || sameId(row.organization, local.organization)) && matches(local, row));
       const row = found.length === 1 ? found[0] : undefined;
-      const next: PaperOrder = row && row.filled >= local.filled && !(row.cancelled && row.remaining > 0) ? reconciled(local, row) : { ...local, status: 'unknown', message: '저장한 주문과 KIS 조회가 일치하지 않습니다. 추가 주문을 차단합니다.' };
-      if (next.status !== local.status || next.filled !== local.filled || next.remaining !== local.remaining) this.store.savePaper(next, { actor: 'system', action: 'reconcile', before: local.status, evidence: evidence(local.tradeDate, rows, connection) });
+      const matched = row && row.filled >= local.filled && !(row.cancelled && row.remaining > 0);
+      const next: PaperOrder = matched ? reconciled(local, row) : { ...local, status: 'unknown', message: '저장한 주문과 KIS 조회가 일치하지 않습니다. 추가 주문을 차단합니다.' };
+      const changed = next.status !== local.status || next.filled !== local.filled || next.remaining !== local.remaining;
+      if (changed && !settled(local)) {
+        this.store.savePaper(next, { actor: 'system', action: 'reconcile', before: local.status, evidence: { ...evidence(local.tradeDate, rows, connection), observedAt } });
+      }
+      if (matched && (!settled(local) || !changed)) checks.push({ id: local.requestId, at: observedAt });
     }
+    this.store.recordOrderChecks(checks);
     this.riskOrders = { day, observedAt: new Date().toISOString(), rows: orders.map(({ code, side, price, remaining, cancelled }) => ({ code, side, price, remaining, cancelled })) };
     return { connection, brokerOrders: orders, orders: this.store.paperOrders() };
   }
@@ -263,8 +276,9 @@ export class PaperBroker {
       const row = candidates.length === 1 ? candidates[0] : undefined;
       if (!row || !sameId(row.brokerId, input.brokerId) || !sameId(row.organization, input.organization) || row.filled < selected[0].filled) throw new Error('최신 조회가 복구 근거와 일치하지 않습니다. 불명을 유지합니다.');
       if (this.store.paperOrders().some(other => other.requestId !== input.id && other.tradeDate === row.date && other.brokerId && sameId(other.brokerId, row.brokerId) && (!other.organization || sameId(other.organization, row.organization)))) throw new Error('이미 다른 로컬 주문에 연결된 주문번호입니다.');
+      const observation = evidence(order.tradeDate, rows, connection);
       const next = reconciled(order, row);
-      this.store.savePaper(next, { actor: 'local-user', action: 'recovery-confirm', before: 'unknown', evidence: evidence(order.tradeDate, rows, connection), recovery: { evidenceId: input.evidenceId, brokerId: row.brokerId, organization: row.organization } });
+      this.store.savePaper(next, { actor: 'local-user', action: 'recovery-confirm', before: 'unknown', evidence: observation, recovery: { evidenceId: input.evidenceId, brokerId: row.brokerId, organization: row.organization } });
       return next;
     });
   }

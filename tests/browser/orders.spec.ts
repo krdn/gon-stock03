@@ -96,3 +96,22 @@ test('switching environments discards an older ledger response and first-read fa
   await expect(page.getByRole('table')).not.toContainText('00001234');
   await expect(page.getByRole('table')).toContainText('00005678');
 });
+
+test('past runs show a separate read-only table and stored check time, including partial archive failure', async ({ page }) => {
+  const posts: string[] = [];
+  page.on('request', r => { if (r.method() === 'POST') posts.push(r.url()); });
+  await page.route('**/api/state', route => route.fulfill({ json: snapshot() }));
+  await page.route('**/api/kis/ledger', route => route.fulfill({ json: { orders: [] } }));
+  await page.route('**/api/kis/history', route => route.fulfill({ json: { sourceCount: 1, unavailable: ['옛 실행'],
+    orders: [{ ...paper, sourceLabel: '테스트 실행', sourceId: '0', lastMatchedAt: '2026-11-15T01:05:20.000Z' }] } }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/orders'); await page.getByRole('button', { name: 'KIS 모의 원장', exact: true }).click();
+  await page.getByRole('button', { name: '지난 실행 기록 보기' }).click();
+  const table = page.getByRole('table');
+  await expect(table).toContainText('테스트 실행'); await expect(table).toContainText('10:05:20');
+  await expect(page.getByRole('alert')).toContainText('옛 실행');
+  await expect(table.getByRole('link')).toHaveCount(0); await expect(table.getByRole('button')).toHaveCount(0);
+  await page.getByRole('button', { name: 'KIS 모의 원장', exact: true }).click();
+  await expect(page.getByText('저장된 KIS 주문이 없습니다')).toBeVisible();
+  await expect(page.getByText('테스트 실행')).toHaveCount(0); expect(posts).toEqual([]);
+});
