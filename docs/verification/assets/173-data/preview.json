@@ -1,0 +1,24 @@
+[
+  {
+    "width": 1440,
+    "height": 900,
+    "restoredSelectedRun": "96b3f123-f72e-4d77-9091-72a057ce26e4",
+    "requestedRunAtBacktest": "96b3f123-f72e-4d77-9091-72a057ce26e4",
+    "selectedRunAtBacktest": "86b3f123-f72e-4d77-9091-72a057ce26e4",
+    "storedSource": "stored",
+    "syntheticLanding": "stored",
+    "syntheticAfterSelection": "demo",
+    "nonGetPaths": []
+  },
+  {
+    "width": 390,
+    "height": 844,
+    "restoredSelectedRun": "96b3f123-f72e-4d77-9091-72a057ce26e4",
+    "requestedRunAtBacktest": "96b3f123-f72e-4d77-9091-72a057ce26e4",
+    "selectedRunAtBacktest": "86b3f123-f72e-4d77-9091-72a057ce26e4",
+    "storedSource": "stored",
+    "syntheticLanding": "stored",
+    "syntheticAfterSelection": "demo",
+    "nonGetPaths": []
+  }
+]
