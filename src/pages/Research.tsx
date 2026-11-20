@@ -59,10 +59,20 @@ function StrategyStudio({ environment }: { environment: StrategyEnvironment }) {
     }
   }, [savedId, navigate, search]);
   const loading = status.phase === 'loading';
+  const rechecking = loading && Boolean(server);
   let emptyList = '새 규칙을 저장하면 여기에 표시합니다.';
+  let evaluationNotice = '';
+  let replayStatus = `합성 봉 #${state.tick} · ${state.playing ? '3초마다 자동 평가 중' : state.risk.halted ? '긴급정지로 재생 시작 차단' : '재생 정지'}`;
   if (!available) {
-    if (loading) emptyList = '저장 전략을 불러오는 중입니다.';
+    if (loading) emptyList = rechecking ? '저장 전략 재확인 중 · 마지막 조회는 0건입니다.' : '저장 전략을 불러오는 중입니다.';
     else emptyList = server ? '마지막 조회는 0건입니다. 최신 목록은 미확인입니다.' : '로컬 조회 실패 · 저장 전략 미확인';
+    if (server) {
+      const previous = evaluation ? '마지막 조회 기록' : '마지막 조회에서 평가 기록 없음';
+      evaluationNotice = (rechecking ? '최신 평가 재확인 중' : '최신 평가 미확인') + ' · ' + previous;
+    } else {
+      evaluationNotice = loading ? '저장된 평가 불러오는 중' : '로컬 조회 실패 · 평가 미확인';
+    }
+    replayStatus = rechecking ? '재생 상태 재확인 중' : loading ? '재생 상태 조회 중' : '재생 상태 미확인';
   }
   const targetId = hash.slice(1);
   const targetExists = targetId === 'strategy-editor' || (kis && targetId === 'strategy-evaluations') ||
@@ -77,7 +87,7 @@ function StrategyStudio({ environment }: { environment: StrategyEnvironment }) {
     <div className="studio-results">
       {kis ? <section className="panel studio-recent" aria-labelledby="strategy-evaluations">
         <h2 id="strategy-evaluations" tabIndex={-1}>최근 KIS 평가</h2>
-        {!available && <p className={loading ? 'studio-meta' : 'studio-warning'}>{loading ? '저장된 평가 불러오는 중' : server ? (evaluation ? '최신 평가 미확인 · 마지막 조회 기록' : '최신 평가 미확인 · 마지막 조회에서 평가 기록 없음') : '로컬 조회 실패 · 평가 미확인'}</p>}
+        {evaluationNotice && <p className={loading ? 'studio-meta' : 'studio-warning'}>{evaluationNotice}</p>}
         {latest && evaluation ? <>
           <div className="studio-result-line"><span className={'studio-outcome ' + evaluation.status}>{evaluationLabels[evaluation.status]}</span><strong>{evaluation.reason}</strong></div>
           <p className="studio-meta">{latest.name} · revision {evaluation.revision} · {signalLabels[evaluation.signal]}</p>
@@ -85,8 +95,8 @@ function StrategyStudio({ environment }: { environment: StrategyEnvironment }) {
           <Link className="text-link" to={{ search, hash: '#strategy-' + latest.id }}>해당 전략 보기</Link>
         </> : available && <p>{strategies.length ? '평가 기록 없음 · 시작 후 새 체결가 이벤트가 필요합니다.' : '저장된 KIS 전략이 없습니다.'}</p>}
       </section> : <div className="studio-replay">
-        <div><strong>DEMO 봉 재생</strong><p className="studio-meta">{available ? `합성 봉 #${state.tick} · ${state.playing ? '3초마다 자동 평가 중' : state.risk.halted ? '긴급정지로 재생 시작 차단' : '재생 정지'}` : loading ? '재생 상태 조회 중' : '재생 상태 미확인'}</p></div>
-        <button className="button secondary" disabled={busy || !available || (!state.playing && state.risk.halted)} onClick={() => void act('playback').catch(() => {})}>{state.playing ? '자동 재생 정지' : '자동 재생 시작'}</button>
+        <div><strong>DEMO 봉 재생</strong><p className="studio-meta">{replayStatus}</p></div>
+        <button className="button secondary" disabled={busy || !available || (!state.playing && state.risk.halted)} onClick={() => void act('playback').catch(() => {})}>{!available ? '자동 재생 제어' : state.playing ? '자동 재생 정지' : '자동 재생 시작'}</button>
       </div>}
       <div className="studio-list-title"><h2>저장 전략</h2><span className="studio-meta">{server ? `${strategies.length}개${available ? '' : ' · 이전 조회'}` : loading ? '조회 중' : '미확인'}</span></div>
       {!strategies.length && <p className="studio-meta">{emptyList}</p>}
@@ -105,7 +115,7 @@ function StrategyStudio({ environment }: { environment: StrategyEnvironment }) {
 }
 
 function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: boolean }) {
-  const { state, realtime, act, available, busy, serverNow } = useWorkbench();
+  const { state, realtime, act, available, busy, serverNow, status } = useWorkbench();
   const instrument = state.instruments.find(i => i.code === s.code);
   const quoteAge = realtime?.lastQuoteAt ? serverNow - Date.parse(realtime.lastQuoteAt) : Infinity;
   const freshQuote = quoteAge >= 0 && quoteAge <= (realtime?.quoteSeconds ?? 5) * 1000;
@@ -117,14 +127,16 @@ function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: boolean }
     else if (realtime.code !== s.code) blocked = '실시간 대조 종목이 전략과 다릅니다.';
   }
   let controlNote = '';
-  if (!available) controlNote = '서버 실행 상태 미확인 · 연결 복구 전 시작·정지 불가';
+  const rechecking = status.phase === 'loading';
+  if (rechecking) controlNote = '서버 실행 상태 재확인 중 · 시작·정지 대기';
+  else if (!available) controlNote = status.error ? '서버 실행 상태 미확인 · 연결 복구 전 시작·정지 불가' : '서버 실행 상태 미확인 · 최신 상태 확인 필요';
   else if (blocked) controlNote = (s.active ? '신규 주문 차단 · ' : '전략 시작 차단 · ') + blocked;
   const evaluations = s.evaluations ?? [];
   const [historyOpen, setHistoryOpen] = useState(false);
   return <Panel className="studio-card">
     <div className="studio-card-head">
       <h3 id={'strategy-' + s.id} tabIndex={-1}>{s.name}</h3>
-      <Badge tone={available && s.active ? 'teal' : 'neutral'}>{!available ? '상태 미확인' : s.active ? '실행 중' : '정지'}</Badge>
+      <Badge tone={available && s.active ? 'teal' : 'neutral'}>{rechecking ? '재확인 중' : !available ? '상태 미확인' : s.active ? '실행 중' : '정지'}</Badge>
     </div>
     <p className="studio-meta">{kis ? 'KIS 모의' : 'DEMO'} · revision {s.revision ?? 1} · {instrument?.name ?? s.code}{instrument && ' ' + s.code}</p>
     <div className="studio-terms"><span>단기 <b>{s.fast}{kis ? '이벤트' : '봉'}</b></span><span>장기 <b>{s.slow}{kis ? '이벤트' : '봉'}</b></span><span>회당 <b>{s.qty}주</b></span></div>
@@ -137,12 +149,12 @@ function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: boolean }
         {e.requestId && <p>요청 ID: <code>{e.requestId}</code> · 주문번호: {e.brokerId ?? '없음'} · <Link to="/paper">원장 대조</Link></p>}
       </div>) : <p>{available ? '평가 기록 없음 · 시작 이후 새 체결가 이벤트가 필요합니다.' : '평가 기록 미확인'}</p>}
     </details> : <p className="studio-meta">마지막 신호 · {s.lastTick < 0 ? '평가 기록 없음' : signalLabels[s.lastSignal]}{!available && ' · 이전 조회'}</p>}
-    {!kis && controlNote && <p className="studio-warning">{controlNote}</p>}
+    {!kis && controlNote && <p className={rechecking ? 'studio-meta' : 'studio-warning'}>{controlNote}</p>}
     {kis && <p className="studio-meta">{controlNote || '별도 서버 계약과 주문별 승인·위험 검사 적용'} · <Link to="/paper">실시간 연결·대조 확인</Link></p>}
     {kis && <p className="studio-meta">시작 후 브라우저를 닫아도 서버는 계속 평가합니다. 전략 정지 후에도 접수된 주문은 유지됩니다.</p>}
     <div className="button-row">
-      <button disabled={!available || busy || (!s.active && Boolean(blocked))} className={'button ' + (s.active ? 'secondary' : 'primary')} onClick={() => void act(kis ? 'kis/strategies/run' : 'strategies/toggle', kis ? { id: s.id, active: !s.active } : { id: s.id }).catch(() => {})}>
-        {s.active ? <Square size={14} /> : <Play size={14} />}{s.active ? '전략 정지' : '전략 시작'}
+      <button disabled={!available || busy || (!s.active && Boolean(blocked))} className={'button ' + (!available || s.active ? 'secondary' : 'primary')} onClick={() => void act(kis ? 'kis/strategies/run' : 'strategies/toggle', kis ? { id: s.id, active: !s.active } : { id: s.id }).catch(() => {})}>
+        {available && (s.active ? <Square size={14} /> : <Play size={14} />)}{!available ? '전략 실행 제어' : s.active ? '전략 정지' : '전략 시작'}
       </button>
       {!kis && <button disabled={!available || busy} className="button secondary" onClick={() => void act('tick').catch(() => {})}>다음 데모 봉 재생</button>}
     </div>

@@ -178,7 +178,7 @@ test('정상 빈 목록과 최초 조회 실패, 이전 조회의 평가 기록�
   await expect(latest).toContainText('예시 접수');
   await expect(page.getByText('서버 실행 상태 미확인 · 연결 복구 전 시작·정지 불가', { exact: false })).toBeVisible();
   await expect(page.getByText('신규 주문 차단 · 로컬 상태 미확인', { exact: false })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '전략 정지' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '전략 실행 제어' })).toBeDisabled();
 });
 
 test('DEMO 긴급정지와 종목 미제공 차단 사유를 조작 옆에 표시한다', async ({ page }) => {
@@ -213,3 +213,73 @@ test('KIS 시세가 서버 관측보다 미래이면 차단하고 유효 시간 
   await page.reload();
   await expect(start).toBeEnabled();
 });
+
+
+for (const environment of ['kis-paper', 'demo'] as const) {
+  test(`${environment} 기존 기록 재확인과 조회 실패에서 이전 실행 동작을 표시하지 않는다`, async ({ page }) => {
+    await page.clock.install();
+    const state = snapshot();
+    const example = { ...state.strategies[0], environment };
+    state.playing = true;
+    state.strategies = [
+      { ...example, id: 'waiting', name: '대기 예시', active: false },
+      { ...example, id: 'running', name: '실행 이력 예시', active: true, evaluations: [
+        { event: 'sample', at: new Date().toISOString(), revision: 1, signal: 'hold', status: 'hold', reason: '예시 표본 부족' },
+      ] },
+    ];
+    let failed = false;
+    const posts: string[] = [];
+    page.on('request', r => { if (r.method() === 'POST') posts.push(new URL(r.url()).pathname); });
+    await page.route('**/api/state', r => failed ? r.fulfill({ status: 503, body: 'example' }) :
+      r.fulfill({ json: { ...state, status: { ...state.status, observedAt: new Date().toISOString() } } }));
+    const poll = async () => {
+      const response = page.waitForResponse('**/api/state');
+      await page.clock.fastForward(3000);
+      await response;
+    };
+    await page.goto('/strategies?environment=' + environment);
+    const activeCard = page.locator('.studio-card').filter({ has: page.getByRole('heading', { name: '실행 이력 예시' }) });
+    await expect(activeCard.getByRole('button', { name: '전략 정지' })).toBeEnabled();
+    state.status.phase = 'loading';
+    state.status.complete = false;
+    await poll();
+    await expect(page.getByText('서버 실행 상태 재확인 중 · 시작·정지 대기', { exact: false })).toHaveCount(2);
+    await expect(page.getByText(/연결 복구 전/)).toHaveCount(0);
+    const controls = page.getByRole('button', { name: '전략 실행 제어', exact: true });
+    await expect(controls).toHaveCount(2);
+    await expect(controls.first()).toBeDisabled();
+    await expect(controls.last()).toBeDisabled();
+    await expect(controls.locator('svg')).toHaveCount(0);
+    const directional = page.getByRole('button', { name: /^(전략|자동 재생) (시작|정지)$/ });
+    await expect(directional).toHaveCount(0);
+    if (environment === 'kis-paper') {
+      const latest = page.getByRole('region', { name: '최근 KIS 평가' });
+      await expect(latest).toContainText('최신 평가 재확인 중');
+      await latest.getByRole('link', { name: '해당 전략 보기' }).click();
+      await expect(activeCard.getByRole('heading')).toBeFocused();
+      await activeCard.locator('summary').click();
+      await expect(activeCard.getByText('예시 표본 부족')).toBeVisible();
+    } else {
+      await expect(page.getByText('재생 상태 재확인 중')).toBeVisible();
+      await expect(page.getByRole('button', { name: '자동 재생 제어' })).toBeDisabled();
+    }
+    failed = true;
+    await poll();
+    await expect(activeCard).toContainText('연결 복구 전 시작·정지 불가');
+    await expect(directional).toHaveCount(0);
+    await expect(controls.last()).toBeDisabled();
+    failed = false;
+    state.status.phase = 'ready';
+    state.status.complete = true;
+    await page.getByRole('button', { name: '다시 확인' }).click();
+    await expect(activeCard.getByRole('button', { name: '전략 정지' })).toBeEnabled();
+    if (environment === 'kis-paper') {
+      state.strategies[1].evaluations = [];
+      state.status.phase = 'loading';
+      state.status.complete = false;
+      await poll();
+      await expect(page.getByRole('region', { name: '최근 KIS 평가' })).toContainText('최신 평가 재확인 중 · 마지막 조회에서 평가 기록 없음');
+    }
+    expect(posts).toEqual([]);
+  });
+}
