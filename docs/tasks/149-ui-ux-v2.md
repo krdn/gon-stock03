@@ -22,6 +22,9 @@ Orca Run `run_083cd1245215`. 작업자의 착수 메시지·실제 worktree·브
 |[시장 탐색 #161](https://github.com/krdn/gon-stock03/issues/161#issuecomment-7037510045)|`01a1f88d-91c8-7181-b70a-1ba2e4289568`|`ux2-161-market`|4454|공개 마스터·합성 목록 검색 → 종목 상세 → 트레이딩. 검색·거래소 필터와 빈 결과, 시세 출처, 선택 코드 전달|
 |[트레이딩 #158](https://github.com/krdn/gon-stock03/issues/158#issuecomment-7037441623)|`01a1f88a-5f9c-7972-b6c4-a9cd82622f8d`|`ux2-158-trade`|4455|종목과 20/60/100 일봉의 출처·기준 시각·조회 실패, DEMO 입력과 확인 후 원장 이동, 모의 매매로 종목 전달|
 |[연결·설정 #162](https://github.com/krdn/gon-stock03/issues/162#issuecomment-7037537016)|`01a1f88e-f161-7c42-992b-061f51942b6d`|`ux2-162-settings`|4456|키 주입·인증·잔고를 구별하고 오류 후 다음 행동 찾기, 저장 상태/새로고침 효과와 매매 설정 복귀|
+|[관심종목 #169](https://github.com/krdn/gon-stock03/issues/169#issuecomment-7037993739)|`01a1f8a4-2c74-7a81-a52d-7cbb6af3a63f`|`ux2-169-watchlist`|4457|관심 등록·해제·재접속, 시세 미확인, 종목 상세·코드 복사·키보드 초점 복귀 및 트레이딩 전달|
+|[KIS 모의 매매 #166](https://github.com/krdn/gon-stock03/issues/166#issuecomment-7037873381)|`01a1f89e-cb7e-7dd0-9282-3892bc8aef16`|`ux2-166-paper`|4458|종목·매매 입력→일반 설정 왕복, 시세/대조·접수/불명·복구/잔량취소, 식별자는 합성 fixture, 실제 API 차단|
+|[위험관리 #168](https://github.com/krdn/gon-stock03/issues/168#issuecomment-7037908801)|`01a1f8a0-48be-7033-abad-643fc955f63d`|`ux2-168-risk`|4459|DEMO/KIS 사용량·차단 이유, 일반 한도 편집/복귀, 기존 주문과 신규 정지·재개 차이 및 미확인|
 
 #152의 예시 주문은 설정 왕복 뒤 4주·72,500원이 1주·빈 가격으로 바뀌었다. [#154](https://github.com/krdn/gon-stock03/issues/154)에서 Paper.tsx 복원 수명을 전담한다. #152는 TradingSettings.tsx와 기존 복귀 계약을 담당하며 메인이 두 후보를 함께 검증한다. 이후 /paper 전체 화면 검토는 이 결과를 재사용한다.
 
@@ -33,21 +36,30 @@ Orca Run `run_083cd1245215`. 작업자의 착수 메시지·실제 worktree·브
 
 - 주문·체결 [PR #155](https://github.com/krdn/gon-stock03/pull/155) `f45ad2b`는 CI 4개, 단위 276·브라우저 183건, 지정 Gemini 구현·수정분 검토가 통과했다. 모바일 첫 KIS 확인 시각이 935→459px, DEMO 취소 버튼은 1,266→726px로 올라왔다. [주문별 보기](http://127.0.0.1:4452/orders)에서 직접 검토할 수 있다.
 - 설정 복귀 [PR #159](https://github.com/krdn/gon-stock03/pull/159) `af44cd5`와 매매 설정 [PR #160](https://github.com/krdn/gon-stock03/pull/160) `bb0477c`를 격리된 후보 `7975d6a`에 결합했다. 충돌한 Graphify 산출물 2개는 결합 소스에서 다시 생성했다. 두 PR의 최종 CI 각 4건, 결합 빌드와 관련 브라우저 35건이 통과했다. [최종 결합 예시](http://127.0.0.1:4475/paper?code=069500)에서도 PC·모바일 각 1건으로 069500 매도 4주·72,500원, 수량 한도 8주, 주문 전송 0건을 확인했다. 저장·새로고침·뒤로·앞으로·명시 복귀를 수행한 뒤 예시 한도를 5주로 되돌렸다. 확정 거부는 입력을 수정할 수 있고, 최초 전송 결과가 불명인 요청은 재시도 거부 후에도 원래 ID로 대조하도록 #14 계약을 유지했다. 실제 통합 시 둘째 PR의 그래프는 병합할 소스에서 재생성하고 그 커밋으로 검사한다. [매매 설정 지도](http://127.0.0.1:4328/guide.html#limits)
-- 대시보드 [PR #156](https://github.com/krdn/gon-stock03/pull/156) `28e0cdd`는 CI 4개를 통과했다. 공통 시각 #157과의 결합 검증, 전략 목적지의 최근 평가 사유 확인을 추적한다.
+- 대시보드 [PR #156](https://github.com/krdn/gon-stock03/pull/156) `28e0cdd`는 CI 4개를 통과했다. 공통 시각은 아래 결합 검증에서 통과했다. 전략 목적지에서 최근 평가 사유까지 스크롤하는 동작은 전략 페이지가 검토한다.
+
+## 대시보드·주문·트레이딩·설정 결합 검증
+
+[주문 #155](https://github.com/krdn/gon-stock03/pull/155) `f45ad2b`, [대시보드 #156](https://github.com/krdn/gon-stock03/pull/156) `28e0cdd`, [공통 시각 #163](https://github.com/krdn/gon-stock03/pull/163) `9ddd657`, [트레이딩 #164](https://github.com/krdn/gon-stock03/pull/164) `ed4418b`, [연결·설정 #165](https://github.com/krdn/gon-stock03/pull/165) `04fba00` 순서의 로컬 결합 후보는 `b4183d2`이다. 각 PR의 CI 4건이 성공했다. 결합 소스에서 Graphify를 재생성하고 빌드·Chromium 122건이 통과했다. 첫 예비 검사에서는 메인의 고정 시계가 차트의 200ms 조회 지연을 진행시키지 않아 새 검사 여섯 건이 실패했다. 단조 경과를 진행하도록 검사기를 수정하고 기본 로컬 10초·계좌 60초 임계값에서 다시 확인했다.
+
+- 1440×900·390×844와 단말 −120/0/+120초를 조합한 6건에서 정상 로컬·계좌, KIS 환경 전달, 새 시세와 45초 지난 시세를 구분했다. 만료 후 행동 차단, 부분·오류·복귀와 거부 경로도 관련 회귀에 포함했다.
+- [4476 결합 예시](http://127.0.0.1:4476/trade?code=000660&range=100)에서 두 크기 모두 +120초에 KIS 전략 선택, 100일봉과 종목의 주문 화면 전달·뒤로가기, [연결 설정](http://127.0.0.1:4476/settings?guide=setup)의 수동 로컬 조회 실패 피드백을 재현했다. 모바일에서 DEMO 주문 1건을 예시 메모리 원장에 접수하고 한 번에 [결과](http://127.0.0.1:4476/orders?view=demo)를 열었다. 외부 시세 연결을 차단한 합성 예시이며 실제 KIS 주문은 0회다.
+- 지정 Gemini 4 Neon High 통합 재검토에서 벽시계 편차와 수동 GET 실패 안내 두 항목 모두 PASS였다. CLI 초기화 모델만 확인했다. 단말 시간대가 UTC이면 대시보드 확인 시각이 지역 시각으로 나오는 P3를 4476에서 재현했다. 다음 포트폴리오 세션에서 같은 Workspace.tsx의 대시보드 시각 포맷을 KST로 맞추고 서울/UTC를 비교한다. ‘시세 수신시각이 추정 서버 현재보다 조금이라도 앞서면 오래됨’이라는 일괄 판정은 시세 응답이 상태 스냅샷보다 늦게 생성될 수 있어 적용하지 않았다. 수동 조회와 더 최신 폴링이 겹치면 설정 피드백은 최신 로컬 상태 기준이다. 첫 응답의 절대 나이와 무이벤트 실기기 절전은 미측정이다.
+- [시장 탐색 #167](https://github.com/krdn/gon-stock03/pull/167) `da1d5ef`는 별도 CI 4개와 지정 리뷰를 통과했다. [4454 ETF 상세](http://127.0.0.1:4454/market?market=ETF&detail=069500)에서 메인이 두 크기 모두 트레이딩 069500 전달, 뒤로가기·재접속 후 069500 상세 복원을 확인했다.
 
 ## 다음 배정
 
-src/specs.ts의 15개 화면, App.tsx의 매매 설정 추가 경로와 4303 주 메뉴 16개가 일치했다. 아래 13개는 Orca에 등록한 후속 화면이다. 착수 확인을 받은 화면에는 2차 이슈를 연결한다. 권장 순서는 탐색·거래 → 설정·위험·계좌 → 전략·연구·데이터 → 운영 기록·설계다. 같은 파일을 만지는 페이지와 환경 전달을 검증할 양쪽을 고려해 독립 배정을 진행한다. 먼저 반환된 작업 줄에서 독립 세션을 이어서 열 수 있다.
+src/specs.ts의 15개 화면, App.tsx의 매매 설정 추가 경로와 4303 주 메뉴 16개가 일치했다. 아래 13개는 Orca에 등록한 후속 화면이다. 착수 확인을 받은 화면에는 2차 이슈를 연결한다. 권장 순서는 탐색·거래 → 설정·위험·계좌 → 전략·연구·데이터 → 운영 기록·설계다. 같은 파일을 만지는 페이지와 환경 전달을 검증할 양쪽을 고려해 독립 배정을 진행한다. 먼저 반환된 작업 줄에서 독립 세션을 이어서 연다. Paper.tsx를 공유하는 #166은 #159의 af44cd5에서, MarketExplorer.tsx를 공유하는 #169는 #167의 da1d5ef에서 시작했다. #168은 변경한 일반·전용 설정의 위험관리 복귀 링크 두 곳을 #160과 함께 검사한다.
 
 |화면|사용자 행동과 확인 결과|기존 기록|대기 작업|
 |---|---|---|---|
 |[시장 탐색](http://127.0.0.1:4303/market)|공개 마스터·합성 목록 검색 → 종목 상세 → 트레이딩. 검색·거래소 필터와 빈 결과, 시세 출처, 선택 코드 전달|[#10](https://github.com/krdn/gon-stock03/issues/10)|[161번 작업](https://github.com/krdn/gon-stock03/issues/161) · `task_05d1c5081709`|
 |[트레이딩](http://127.0.0.1:4303/trade)|종목과 20/60/100 일봉의 출처·기준 시각·조회 실패와 브라우저 시계 편차, DEMO 입력과 확인 후 원장 이동, 모의 매매로 종목 전달|[#12](https://github.com/krdn/gon-stock03/issues/12)|[158번 작업](https://github.com/krdn/gon-stock03/issues/158) · `task_368706006902`|
 |[연결·설정](http://127.0.0.1:4303/settings)|키 주입·인증·잔고를 구별하고 오류 후 다음 행동 찾기, 저장 상태/새로고침 효과와 매매 설정 복귀|[#8](https://github.com/krdn/gon-stock03/issues/8), [#113](https://github.com/krdn/gon-stock03/issues/113)|[162번 작업](https://github.com/krdn/gon-stock03/issues/162) · `task_1eff32bf0737`|
-|[관심종목](http://127.0.0.1:4303/watchlist)|관심 등록·해제·재접속, 시세 미확인, 종목 상세·코드 복사·키보드 초점 복귀 및 트레이딩 전달|[#20](https://github.com/krdn/gon-stock03/issues/20)|`task_d7787e831cb7`|
-|[KIS 모의 매매](http://127.0.0.1:4303/paper)|종목·매매 입력→일반 설정 왕복, 시세/대조·접수/불명·복구/잔량취소, 식별자는 합성 fixture, 실제 API 차단|[#14](https://github.com/krdn/gon-stock03/issues/14), [#116](https://github.com/krdn/gon-stock03/issues/116)|`task_e08af9e521b1`|
-|[위험관리](http://127.0.0.1:4303/risk)|DEMO/KIS 사용량·차단 이유, 일반 한도 편집/복귀, 기존 주문과 신규 정지·재개 차이 및 미확인|[#11](https://github.com/krdn/gon-stock03/issues/11)|`task_b864a6cdc943`|
-|[포트폴리오](http://127.0.0.1:4303/portfolio)|KIS/DEMO 환경별 보유·예수금·손익 출처와 기준 시각, 부분/미조회 상태, 원인 화면/종목으로 이동|[#16](https://github.com/krdn/gon-stock03/issues/16)|`task_cba9a21f608f`|
+|[관심종목](http://127.0.0.1:4303/watchlist)|관심 등록·해제·재접속, 시세 미확인, 종목 상세·코드 복사·키보드 초점 복귀 및 트레이딩 전달|[#20](https://github.com/krdn/gon-stock03/issues/20)|[169번 작업](https://github.com/krdn/gon-stock03/issues/169) · `task_d7787e831cb7`|
+|[KIS 모의 매매](http://127.0.0.1:4303/paper)|종목·매매 입력→일반 설정 왕복, 시세/대조·접수/불명·복구/잔량취소, 식별자는 합성 fixture, 실제 API 차단|[#14](https://github.com/krdn/gon-stock03/issues/14), [#116](https://github.com/krdn/gon-stock03/issues/116)|[166번 작업](https://github.com/krdn/gon-stock03/issues/166) · `task_e08af9e521b1`|
+|[위험관리](http://127.0.0.1:4303/risk)|DEMO/KIS 사용량·차단 이유, 일반 한도 편집/복귀, 기존 주문과 신규 정지·재개 차이 및 미확인|[#11](https://github.com/krdn/gon-stock03/issues/11)|[168번 작업](https://github.com/krdn/gon-stock03/issues/168) · `task_b864a6cdc943`|
+|[포트폴리오](http://127.0.0.1:4303/portfolio)|KIS/DEMO 보유·예수금·손익과 시각, 부분/미조회, 원인 화면·종목 전달. 대시보드 확인 시각의 KST 표기를 서울/UTC에서 비교|[#16](https://github.com/krdn/gon-stock03/issues/16)|`task_cba9a21f608f`|
 |[전략 스튜디오](http://127.0.0.1:4303/strategies)|DEMO/KIS 환경 전달, 모바일에서 KIS 최근 평가 사유를 찾는 거리·직접 이동, 규칙 편집·revision·저장→계약과 차단 원인. 실행은 격리 예시|[#22](https://github.com/krdn/gon-stock03/issues/22)|`task_b2eaad633318`|
 |[데이터 상태](http://127.0.0.1:4303/data)|마스터 마지막 성공/부분, KIS 저장 일봉 목록·상세/누락, 합성 인벤토리 → 시장 및 백테스트 출처 추적|[#15](https://github.com/krdn/gon-stock03/issues/15)|`task_8fbd736c9f7e`|
 |[백테스트](http://127.0.0.1:4303/backtest)|저장 KIS 일봉→입력·실험 결과→불러오기·재현, DEMO 합성 실험과 비용·데이터 기준 및 입력 실패 구별|[#21](https://github.com/krdn/gon-stock03/issues/21)|`task_05be3cdd3bd4`|
