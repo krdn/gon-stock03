@@ -707,6 +707,22 @@
       "decisions": "신규 주문 없이 한정 모의 경로를 격리 검증한다. 동일 원주문에서의 장중 취소 경합은 미관측 예외로 명시하고 일반 취소 권한을 확대하지 않는다."
     },
     {
+      "issue": "https://github.com/krdn/gon-stock03/issues/143",
+      "checked_at": "2026-11-20T06:35:04.481486+00:00",
+      "objective": "1차 화면의 동작을 이해하고 2차 수정 의견을 공유하는 문서 지도",
+      "sources": [
+        {
+          "url": "https://github.com/tt-a1i/archify",
+          "finding": "독립 HTML에 대화형 다이어그램과 설명을 담고 저장소의 소스 위치로 연결할 수 있다."
+        },
+        {
+          "url": "https://github.com/Graphify-Labs/graphify",
+          "finding": "코드 관계를 그래프로 탐색하며 직접 추출과 추론을 구분한다."
+        }
+      ],
+      "decisions": "Graphify로 화면의 담당 코드를 찾아 기준 커밋 원문과 대조하고, Archify에서 현재 동작과 과거 캡처, 질문 대상의 고유 위치를 함께 제공한다."
+    },
+    {
       "issue": "https://github.com/krdn/gon-stock03/issues/145",
       "checked_at": "2026-11-20T07:26:56.623500+00:00",
       "objective": "현재·지난 실행 원장 읽기와 주문별 증권사 확인 시각",
