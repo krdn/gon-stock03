@@ -4,12 +4,11 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { dailyInput, addDays, type DailyInput, type DailyPrice, type DailyRun, type Exchange, type MasterSnapshot } from '../shared/market-data.ts';
+import { dailyInput, addDays, masterUrl, type DailyInput, type DailyPrice, type DailyRun, type Exchange, type MasterSnapshot } from '../shared/market-data.ts';
 import { emptyStatus } from '../shared/status.ts';
 import { KisClient, KisDataError, koreaDate } from './kis.ts';
 import { Store } from './store.ts';
 
-const masterUrl = (exchange: Exchange) => `https://new.real.download.dws.co.kr/common/master/${exchange.toLowerCase()}_code.mst.zip`;
 const endpoint = '/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice';
 const unzip = promisify(execFile);
 
@@ -82,7 +81,7 @@ export class MarketData {
     const previousSources = this.store.masterData().sources;
     const states = (['KOSPI', 'KOSDAQ'] as const).map(exchange => {
       const previous = previousSources.find(row => row.exchange === exchange);
-      return { exchange, source: masterUrl(exchange), phase: 'loading' as const, observedAt: new Date().toISOString(), lastSuccessAt: previous?.lastSuccessAt ?? null, sha256: previous?.sha256 ?? null, count: previous?.count ?? 0, error: null };
+      return { exchange, source: previous?.source ?? masterUrl(exchange), phase: 'loading' as const, observedAt: new Date().toISOString(), lastSuccessAt: previous?.lastSuccessAt ?? null, sha256: previous?.sha256 ?? null, count: previous?.count ?? 0, error: null };
     });
     this.store.saveMasterStates(states);
     try {

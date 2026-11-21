@@ -32,6 +32,15 @@ export interface DailyRun extends DailyInput {
   quality: { state: 'pending' | 'unverified' | 'passed' | 'failed'; missingDates: string[]; unexpectedDates: string[]; candidateMissingDates: string[]; duplicates: number; emptyWindows: { from: string; to: string }[] };
 }
 export type Exchange = 'KOSPI' | 'KOSDAQ';
+export const masterUrl = (exchange: Exchange) => `https://new.real.download.dws.co.kr/common/master/${exchange.toLowerCase()}_code.mst.zip`;
+
+export function masterSourceLabel(state?: MasterState) {
+  if (!state?.lastSuccessAt) return '목록 출처 미확인';
+  if (state.source === masterUrl(state.exchange) && /^[a-f0-9]{64}$/.test(state.sha256 ?? '')) return 'KIS 공개 종목 마스터';
+  if (['synthetic', 'fixture', 'https://example.test/master', 'https://example.test/fixture'].includes(state.source)) return '합성 예시 목록';
+  return '목록 출처 미확인';
+}
+
 export interface MasterInstrument { code: string; isin: string; name: string; exchange: Exchange; kind: 'stock' | 'etf'; group: string; tradingHalted?: boolean; liquidation?: boolean }
 export interface RemovedInstrument extends MasterInstrument { removedAt: string }
 export interface MasterSnapshot { exchange: Exchange; source: string; sha256: string; collectedAt: string; rows: MasterInstrument[] }

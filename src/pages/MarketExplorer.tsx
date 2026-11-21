@@ -4,7 +4,7 @@ import { ArrowRight, ChevronRight, RefreshCw, Search, Star } from 'lucide-react'
 import { useWorkbench } from '../context';
 import { Badge, Change, Empty, Panel } from '../components/ui';
 import { won, type KisQuote, type Market } from '../../shared/model';
-import { MARKET_PAGE_SIZE, MARKET_REFRESH_MS, MARKET_STALE_MS, masterDataSchema, marketQuoteSchema, type MasterDataSnapshot, type MasterInstrument, type RemovedInstrument } from '../../shared/market-data';
+import { MARKET_PAGE_SIZE, MARKET_REFRESH_MS, MARKET_STALE_MS, masterDataSchema, masterSourceLabel, marketQuoteSchema, type MasterDataSnapshot, type MasterInstrument, type RemovedInstrument } from '../../shared/market-data';
 
 import './market-explorer.css';
 import './watchlist.css';
@@ -223,8 +223,9 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
   const masterRefresh = <button className="button secondary" disabled={loadingMaster} onClick={() => void loadMaster(true)}>
     <RefreshCw size={15} />{loadingMaster ? '마스터 확인 중' : '마스터 갱신'}
   </button>;
+  const rowSource = (row: Row) => masterSourceLabel(removed(row) || unverified(row) ? undefined : data.sources.find(s => s.exchange === row.exchange));
   const sources = <div className="market-sources">{data.sources.map(source => <span key={source.exchange}>
-    {source.exchange} · {source.phase === 'loading' ? '수집 중 · 이전 목록' : source.phase === 'error' ? '갱신 실패' : '수집 완료'} · {source.lastSuccessAt ? time(source.lastSuccessAt) : '성공 기록 없음'}
+    {source.exchange} · {masterSourceLabel(source)} · {source.phase === 'loading' ? '수집 중 · 이전 목록' : source.phase === 'error' ? '갱신 실패' : '수집 완료'} · {source.lastSuccessAt ? time(source.lastSuccessAt) : '성공 기록 없음'}
   </span>)}</div>;
   const quoteRefresh = <button className="button secondary" disabled={reading || !codes || !visible} onClick={() => setRefresh(value => value + 1)}>
     <RefreshCw size={15} />{reading ? '표시 종목 조회 중' : '표시 종목 시세 갱신'}
@@ -266,8 +267,8 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
       </tr></thead><tbody>{rows.map(row => {
         const value = removed(row) || unverified(row) ? undefined : quotes[row.code], quote = value?.quote;
         return <tr key={row.code}>
-          <td className="market-identity"><button id={'market-open-' + row.code} className="market-name" aria-label={`${row.name} 상세`} aria-controls={detail?.code === row.code ? 'market-detail' : undefined} aria-expanded={detail?.code === row.code} onClick={() => openDetail(row.code)}>
-            {row.name}<ChevronRight size={14} aria-hidden="true" /><small>{row.code} · {row.exchange ?? '마스터 미확인'}{row.kind === 'etf' ? ' · ETF' : ''}</small></button></td>
+          <td className="market-identity"><button id={'market-open-' + row.code} className="market-name" aria-label={`${row.name} 상세`} aria-describedby={`market-info-${row.code}`} aria-controls={detail?.code === row.code ? 'market-detail' : undefined} aria-expanded={detail?.code === row.code} onClick={() => openDetail(row.code)}>
+            {row.name}<ChevronRight size={14} aria-hidden="true" /><small id={`market-info-${row.code}`}>{row.code} · {row.exchange ?? '마스터 미확인'}{row.kind === 'etf' ? ' · ETF' : ''} · {rowSource(row)}</small></button></td>
           <td className="number market-price"><small aria-hidden="true">현재가 </small>{quote ? won(quote.price) : '—'}</td>
           <td className="market-change">{quote ? <Change value={quote.change} /> : '—'}</td>
           <td className="number market-volume">{quote?.volume === undefined ? '—' : won(quote.volume)}</td>
@@ -281,7 +282,6 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
       </Empty>}
       {(!watchOnly || (server && lastPage > 0)) && <div className="table-foot"><span>{currentPage + 1} / {lastPage + 1}페이지</span><div className="button-row"><button className="button quiet" disabled={currentPage === 0} onClick={() => updateView({ page: currentPage === 1 ? null : String(currentPage), detail: null })}>이전 페이지</button><button className="button quiet" disabled={currentPage === lastPage} onClick={() => updateView({ page: String(currentPage + 2), detail: null })}>다음 페이지</button></div></div>}
       <details className="market-provenance"><summary>마스터 출처와 시세 갱신 기준</summary>
-        <p>KIS 공개 종목 마스터 · KOSPI·KOSDAQ 주식과 ETF를 분류합니다.</p>
         {sources}
         <p>{data.sources.length ? ['KOSPI', 'KOSDAQ', 'ETF'].map(m => `${m} ${data.instruments.filter(row => category(row) === m).length}개`).join(' · ') : '수집 기록 없음'}</p>
         {!masterError && !missingMaster && masterRefresh}
@@ -296,6 +296,7 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
         {!removed(detail) && !unverified(detail) && /^\d{6}$/.test(detail.code) ? <Link className="button primary" to={`/trade?code=${detail.code}`}>트레이딩에서 시세 보기 <ArrowRight size={15} /></Link>
           : <p>{unverified(detail) ? '마스터 확인 후 트레이딩에서 시세를 볼 수 있습니다.' : removed(detail) ? '마스터에서 제외된 종목입니다.' : '트레이딩 시세 조회는 숫자 6자리 종목을 지원합니다.'}</p>}
       </div>
+      <div className="check-row"><span>종목 목록 출처</span><strong>{rowSource(detail)}</strong></div>
       <div className="check-row"><span>시장 / 종류</span><strong>{detail.exchange ?? '마스터 미확인'} / {unverified(detail) ? '확인 필요' : detail.kind === 'etf' ? 'ETF' : '주식'}</strong></div>
       <div className="check-row"><span>업종</span><strong>{removed(detail) ? '확인 필요' : detailQuote?.sector || '미수신'}</strong></div>
       <div className="check-row"><span>거래 상태</span><Badge>{tradingLabel(detail)}</Badge></div>
