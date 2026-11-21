@@ -25,6 +25,7 @@ test('settings keeps token and complete balance responses separate, suppresses o
   await page.route('**/api/kis/check', async route => {
     await gate;
     const now = new Date().toISOString();
+    state.connection.checkStartedAt = now;
     state.connection.status = { ...state.connection.status, phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now, pages: 2 };
     state.connection.connected = true; state.connection.balance = { cash: 123456, totalEquity: 123456, positions: [] };
     await route.fulfill({ json: { connection: state.connection, message: '전체 조회 확인' } });
@@ -52,6 +53,7 @@ test('settings keeps token and complete balance responses separate, suppresses o
   let releaseAgain!: () => void; const again = new Promise<void>(resolve => { releaseAgain = resolve; });
   await page.route('**/api/kis/check', async route => { await again; state.connection.status = { ...state.connection.status, phase: 'error', complete: false, error: '네트워크 실패' }; state.connection.failure = { kind: 'network', message: '네트워크 실패' }; await route.fulfill({ status: 400, json: { error: '네트워크 실패' } }); });
   await page.getByRole('button', { name: '모의 잔고 조회' }).click();
+  await expect(page.locator('.settings-progress')).toHaveText('서버의 조회 진행 상태를 기다리고 있습니다.');
   const oldSnapshot = page.waitForResponse('**/api/state'); await page.clock.fastForward(3500); await oldSnapshot;
   await expect(page.getByRole('heading', { name: '모의 잔고를 확인했습니다' })).toHaveCount(0);
   await expect(page.getByText('이전 조회 잔고', { exact: true })).toBeVisible();
@@ -96,8 +98,9 @@ test('settings expires token evidence locally and hides positive stages when the
 test('settings keeps GET recovery open during a hung check and bounds browser waiting without resending', async ({ page }) => {
   await page.clock.install();
   const state = snapshot(); let posts = 0, offline = false;
+  let serverTime = Date.now() + 180_000;
   await page.route('**/api/state', route => {
-    const now = new Date(Date.now() + 180_000).toISOString();
+    const now = new Date(++serverTime).toISOString();
     state.status.observedAt = now; state.status.lastSuccessAt = now;
     return offline ? route.abort() : route.fulfill({ json: state });
   });
@@ -108,6 +111,7 @@ test('settings keeps GET recovery open during a hung check and bounds browser wa
   await expect(page.getByRole('button', { name: '서버 상태 새로고침' })).toBeEnabled();
   await page.getByRole('button', { name: '서버 상태 새로고침' }).click();
   await expect(page.getByText('외부 KIS 호출 없음', { exact: false })).toBeVisible();
+  serverTime += 125_001;
   await page.clock.fastForward(125_001);
   await expect(page.getByRole('alert')).toContainText('응답 확인 지연');
   await expect(page.getByRole('button', { name: '모의 잔고 조회' })).toBeEnabled();
@@ -260,4 +264,84 @@ test('a stale balance keeps authentication and dated holdings legible on a narro
   await page.keyboard.press('Space');
   await expect(page.getByLabel('실행 서버 식별')).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+});
+
+test('settings keeps the guide and local refresh together when returning from trading settings', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const state = snapshot();
+  state.connection.injection = { phase: 'missing', missing: ['KIS_CANO'] };
+  const writes: string[] = [];
+  page.on('request', req => { if (req.method() !== 'GET') writes.push(req.url()); });
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.goto('/settings');
+  const guide = page.getByRole('button', { name: '연결 설정 방법' });
+  const refresh = page.getByRole('button', { name: '로컬 서버 상태 새로고침' });
+  await expect(page.getByLabel('연결 복구 안내')).toContainText('필수 값 1개');
+  const historyLength = await page.evaluate(() => history.length);
+  await guide.focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/settings\?guide=setup$/);
+  await expect(page.locator('#connection-guide h3')).toBeInViewport({ ratio: 1 });
+  await expect(page.locator('#connection-guide')).toContainText('KIS_CANO');
+  await expect(page.locator('#connection-guide')).not.toContainText('KIS_APP_SECRET');
+  await expect(refresh).toBeInViewport({ ratio: 1 });
+  await expect(page.getByLabel('모의 잔고 조회 상태', { exact: true })).toBeInViewport({ ratio: 1 });
+  await refresh.focus();
+  await page.keyboard.press('Space');
+  await expect(page.getByLabel('새로고침 결과')).toContainText('외부 KIS 호출 없음');
+  await page.reload();
+  await expect(guide).toHaveAttribute('aria-expanded', 'true');
+  await page.locator('main').getByRole('link', { name: '매매 설정', exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/trading$/);
+  await page.goBack();
+  await expect(guide).toHaveAttribute('aria-expanded', 'true');
+  await guide.focus();
+  await page.keyboard.press('Space');
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(guide).toBeFocused();
+  expect(await page.evaluate(() => history.length)).toBe(historyLength + 1);
+  expect(writes).toEqual([]);
+});
+
+test('partial balance explains the recovery action and identifies the previous full balance', async ({ page }) => {
+  const state = snapshot();
+  state.connection.injection = { phase: 'present', missing: [] };
+  state.connection.status = { ...state.connection.status, phase: 'partial', pages: 1 };
+  state.connection.failure = { kind: 'network', message: '예시 네트워크 오류' };
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.goto('/settings');
+  const recovery = page.getByLabel('연결 복구 안내');
+  await expect(recovery).toContainText('잔고 일부 수신 · 네트워크 오류');
+  await expect(recovery).toContainText('다시 조회하세요');
+  await expect(recovery).toContainText('아직 전체 조회 잔고가 없습니다');
+  await expect(page.locator('.settings-balance')).toHaveCount(0);
+
+  const previousTime = new Date(Date.now() - 120_000).toISOString();
+  state.connection.status.lastSuccessAt = previousTime;
+  state.connection.balance = { cash: 22000, totalEquity: 22000, positions: [] };
+  await page.getByRole('button', { name: '로컬 서버 상태 새로고침' }).click();
+  await expect(recovery).toContainText('표시 금액은 이전 전체 조회 기준');
+  await expect(page.locator('.settings-balance')).toContainText('22,000원');
+  await expect(page.locator('.settings-balance time')).toHaveAttribute('datetime', previousTime);
+  await expect(page.getByRole('button', { name: 'KIS 모의 잔고 조회' })).toBeEnabled();
+});
+
+test('local refresh feedback stays accurate when the next poll loses the server', async ({ page }) => {
+  await page.clock.install();
+  const state = snapshot();
+  let offline = false;
+  await page.route('**/api/state', route => offline ? route.abort() : route.fulfill({ json: state }));
+  await page.goto('/settings');
+  const refresh = page.getByRole('button', { name: '로컬 서버 상태 새로고침' });
+  await expect(page.getByRole('heading', { name: '모의 잔고를 조회하세요' })).toBeVisible();
+  await refresh.click();
+  const feedback = page.getByLabel('새로고침 결과');
+  await expect(feedback).toContainText('로컬 서버 상태를 확인했습니다.');
+  offline = true;
+  await page.clock.fastForward(3001);
+  await expect(page.getByRole('heading', { name: '로컬 서버 연결을 확인하세요' })).toBeVisible();
+  await expect(feedback).toBeEmpty();
+  await refresh.click();
+  await expect(feedback).toContainText('로컬 서버 상태를 확인하지 못했습니다.');
+  await expect(page.getByRole('button', { name: 'KIS 모의 잔고 조회' })).toBeDisabled();
 });

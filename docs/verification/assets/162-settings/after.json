@@ -1,0 +1,102 @@
+[
+  {
+    "device": "desktop",
+    "width": 1440,
+    "height": 900,
+    "missing": {
+      "first": "모의 계좌 설정이 필요합니다",
+      "titleY": 277,
+      "guideY": 380,
+      "refreshY": 380,
+      "stagesY": 257,
+      "tradingLinkY": 116,
+      "checkDisabled": true
+    },
+    "guide": {
+      "refreshY": 380,
+      "stagesY": 257,
+      "headingY": 499,
+      "detailY": 674,
+      "afterRefresh": "true",
+      "url": "/settings?guide=setup",
+      "afterReload": "true",
+      "afterBack": "true"
+    },
+    "tradingActions": 1,
+    "partial": {
+      "first": "잔고 일부 수신 · 네트워크 오류",
+      "retryY": 401,
+      "recovery": "표시 금액은 이전 전체 조회 기준입니다. 네트워크와 KIS 모의 서버 연결을 확인한 뒤 다시 조회하세요. 실전 서버로 전환하지 않습니다.",
+      "balanceY": 543,
+      "mockPostCount": 1,
+      "retryResult": "모의 잔고를 확인했습니다"
+    },
+    "offline": {
+      "first": "로컬 서버 연결을 확인하세요",
+      "retryY": 501,
+      "checkDisabled": true
+    },
+    "overflow": 0,
+    "savedLimit": {
+      "source": "fixture",
+      "before": 7,
+      "afterReturn": 7,
+      "afterReload": 7
+    },
+    "api": [
+      "GET /api/state",
+      "GET /api/trading-settings",
+      "POST /api/kis/check"
+    ]
+  },
+  {
+    "device": "mobile",
+    "width": 390,
+    "height": 844,
+    "missing": {
+      "first": "모의 계좌 설정이 필요합니다",
+      "titleY": 249,
+      "guideY": 341,
+      "refreshY": 341,
+      "stagesY": 554,
+      "tradingLinkY": 84,
+      "checkDisabled": true
+    },
+    "guide": {
+      "refreshY": 341,
+      "stagesY": 554,
+      "headingY": 709,
+      "detailY": 1037,
+      "afterRefresh": "true",
+      "url": "/settings?guide=setup",
+      "afterReload": "true",
+      "afterBack": "true"
+    },
+    "tradingActions": 1,
+    "partial": {
+      "first": "잔고 일부 수신 · 네트워크 오류",
+      "retryY": 362,
+      "recovery": "표시 금액은 이전 전체 조회 기준입니다. 네트워크와 KIS 모의 서버 연결을 확인한 뒤 다시 조회하세요. 실전 서버로 전환하지 않습니다.",
+      "balanceY": 754,
+      "mockPostCount": 1,
+      "retryResult": "모의 잔고를 확인했습니다"
+    },
+    "offline": {
+      "first": "로컬 서버 연결을 확인하세요",
+      "retryY": 548,
+      "checkDisabled": true
+    },
+    "overflow": 0,
+    "savedLimit": {
+      "source": "fixture",
+      "before": 7,
+      "afterReturn": 7,
+      "afterReload": 7
+    },
+    "api": [
+      "GET /api/state",
+      "GET /api/trading-settings",
+      "POST /api/kis/check"
+    ]
+  }
+]

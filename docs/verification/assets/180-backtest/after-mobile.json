@@ -1,0 +1,38 @@
+{
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "arrival": "86b3f123-f72e-4d77-9091-72a057ce26e4",
+  "actions": [
+    "저장 일봉 링크",
+    "단기 (봉)",
+    "장기 (봉)",
+    "실험 실행",
+    "새로고침",
+    "저장 실험 선택",
+    "불러오기",
+    "재현 검증"
+  ],
+  "pos": {
+    "source": 471,
+    "run": 737,
+    "execute": 1206
+  },
+  "resultY": 1303,
+  "verifyY": 1909,
+  "scrollAfterRun": 1227,
+  "demoArrival": "demo",
+  "demoActions": [
+    "합성 출처 링크",
+    "백테스트 실행"
+  ],
+  "demoExecuteY": 1029,
+  "demoResultY": 1295,
+  "demoScroll": 1022,
+  "posts": [
+    "/api/backtest/daily",
+    "/api/backtest/replay",
+    "/api/backtest"
+  ]
+}
