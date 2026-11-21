@@ -1,0 +1,54 @@
+.dash-accounts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.dash-account {
+  min-width: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.dash-account header, .dash-value, .dash-actions, .dash-status, .dash-alert {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.dash-account header { justify-content: space-between; }
+.dash-account h2 { font-size: 16px; }
+.dash-account header span, .dash-time, .dash-status span { color: var(--muted); }
+.dash-value { margin-top: 4px; }
+.dash-value strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.dash-actions .text-link, .dash-account > .text-link, .dash-alert a, .dash-status a, .dash-account summary {
+  min-height: 28px;
+  align-content: center;
+  align-items: center;
+}
+.dash-account summary { cursor: pointer; font-weight: 600; }
+.dash-account details { border-top: 1px solid var(--line); margin-top: 6px; }
+.dash-account details p { margin: 6px 0; }
+.dash-account .stats-grid { grid-template-columns: repeat(auto-fit,minmax(min(100%,135px),1fr)); margin: 8px 0; padding: 8px 0; }
+.dash-account .stat { padding: 4px 10px; }
+.dash-account .stat > strong { white-space: normal; font-size: 17px; margin: 3px 0; }
+.dash-warning, .dash-alerts { color: #78481b; }
+.dash-warning { font-weight: 600; }
+.dash-alerts { padding: 6px 12px; margin-bottom: 10px; background: #fff6e9; border: 1px solid #ebd7b6; border-radius: 8px; }
+.dash-alert, .dash-status { font-size: 12px; }
+.dash-alert { align-items: center; overflow-wrap: anywhere; }
+.dash-alert + .dash-alert { border-top: 1px solid #ebd7b6; }
+.dash-alert a { color: inherit; text-decoration: underline; }
+.dash-alert time { font-size: 11px; }
+.dash-status { align-items: center; margin: 10px 0 16px; }
+@media (max-width: 700px) {
+  .dash-accounts { grid-template-columns: minmax(0,1fr); gap: 8px; }
+  .dash-account { padding: 8px 12px 4px; }
+  .dash-value { margin: 0; }
+  .dash-value strong { font-size: 20px; }
+  .dash-account details { margin-top: 2px; }
+}

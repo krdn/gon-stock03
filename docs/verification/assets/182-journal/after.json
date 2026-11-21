@@ -1,0 +1,50 @@
+[
+  {
+    "device": "desktop",
+    "width": 1440,
+    "height": 900,
+    "geometry": {
+      "firstEmpty": 479,
+      "instrument": 408,
+      "memo": 482,
+      "save": 571,
+      "search": null,
+      "firstResult": 466,
+      "resultInViewportAfterSave": true
+    },
+    "savePosts": 1,
+    "representativeActions": [
+      "종목 선택",
+      "본문 입력",
+      "Enter 저장",
+      "검색 입력",
+      "새로고침"
+    ],
+    "restoredSearch": "분할",
+    "failedDraftPreserved": true
+  },
+  {
+    "device": "mobile",
+    "width": 390,
+    "height": 844,
+    "geometry": {
+      "firstEmpty": 533,
+      "instrument": 625,
+      "memo": 699,
+      "save": 788,
+      "search": null,
+      "firstResult": 572,
+      "resultInViewportAfterSave": true
+    },
+    "savePosts": 1,
+    "representativeActions": [
+      "종목 선택",
+      "본문 입력",
+      "Enter 저장",
+      "검색 입력",
+      "새로고침"
+    ],
+    "restoredSearch": "분할",
+    "failedDraftPreserved": true
+  }
+]
