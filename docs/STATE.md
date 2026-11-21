@@ -4,7 +4,7 @@
 
 프로젝트를 처음 볼 때는 [한 장 그림](architecture/figures/gon-stock-overview.png)에서 KIS 모의 주문과 DEMO 연습 흐름을 따라간다. [구조도 작업 #110](https://github.com/krdn/gon-stock03/issues/110)
 
-- **2차 UI/UX · [전체 범위·배정](tasks/149-ui-ux-v2.md).** 16개 화면·제품 PR 18개 통합 [#187](https://github.com/krdn/gon-stock03/pull/187). [화면별 검토표](verification/2026-11-20-ux-v2.md). 제품 main 병합·4303 실화면 검증 완료. 사용자 직접 수용 대기. [전체 진행 #149](https://github.com/krdn/gon-stock03/issues/149) · [보드](https://github.com/users/krdn/projects/25)
+- **2차 UI/UX · [전체 범위·배정](tasks/149-ui-ux-v2.md).** 16개 화면·제품 PR 18개 통합 [#187](https://github.com/krdn/gon-stock03/pull/187). [화면별 검토표](verification/2026-11-20-ux-v2.md). 시장 출처 수정 [#194](https://github.com/krdn/gon-stock03/pull/194)까지 main·4303 반영. 사용자가 위임한 판단에 따라 순차 점검 20건의 UX 범위를 수용했다. [최종 판단·검증 한계](tasks/149-ui-ux-v2.md#위임에-따른-최종-수용) [전체 진행 #149](https://github.com/krdn/gon-stock03/issues/149) · [보드](https://github.com/users/krdn/projects/25)
 - **2차 설계 시작 · [1차 화면 함께 보기](tasks/143-v1-guide.md).** [검토 #143](https://github.com/krdn/gon-stock03/issues/143)에서 화면별 질문과 수정 의견을 모은다. [프로젝트 보드](https://github.com/users/krdn/projects/25)
 - **지난 주문 UX · [#147 작업](tasks/147-orders-ux.md).** 첫 주문 결과와 KIS 확인 시각, 보기 복원, 식별자 상세·검색. [진행 이슈](https://github.com/krdn/gon-stock03/issues/147)
 - **주문 원장 읽기 · [#145 작업](tasks/145-order-history.md).** 현재 원장과 지난 실행, PC 읽기와 주문별 KIS 확인 시각을 구분한다. [진행 이슈](https://github.com/krdn/gon-stock03/issues/145)
