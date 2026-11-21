@@ -1,0 +1,35 @@
+[
+  {
+    "stage": "observations",
+    "requestedModel": "gemini-4-neon-high",
+    "cliInitModel": "gemini-4-neon-high",
+    "providerModelAndEffort": "별도 미확인",
+    "resultStatus": "SUCCESS",
+    "decision": "유지·개선·상세·제거 및 이견을 작업 문서에 기록"
+  },
+  {
+    "stage": "implementation first call",
+    "requestedModel": "gemini-4-neon-high",
+    "cliInitModel": "gemini-4-neon-high",
+    "providerModelAndEffort": "별도 미확인",
+    "resultStatus": null,
+    "decision": "init 후 종료 코드 143, 결과 없음"
+  },
+  {
+    "stage": "implementation retry",
+    "requestedModel": "gemini-4-neon-high",
+    "cliInitModel": "gemini-4-neon-high",
+    "providerModelAndEffort": "별도 미확인",
+    "resultStatus": "SUCCESS",
+    "decision": "FAIL, P1 1건 및 P2 5건"
+  },
+  {
+    "stage": "fix verification",
+    "requestedModel": "gemini-4-neon-high",
+    "cliInitModel": "gemini-4-neon-high",
+    "providerModelAndEffort": "별도 미확인",
+    "resultStatus": "SUCCESS",
+    "decision": "PASS",
+    "response": "**판정: PASS**\n\n직전 FAIL의 6개 차단 지적사항 수정이 diff, 테스트, 측정값에서 모두 확인되었습니다.\n\n### 결함 (Defects)\n- 차단 결함 없음.\n  - **재개 문구·ARIA**: `halted` 상태별 `risk-impact` 분기, `<Check aria-hidden=\"true\" />`, `aria-describedby=\"risk-impact risk-resume\"` 및 접근성 설명 테스트 확인.\n  - **로딩/실패**: `loading` 기준 `확인 중`/`미확인` 분리 및 지연 후 503 전환 테스트 확인.\n  - **종목명 폴백**: KIS 잔고 → `state.instruments` → `code` 단독 출력으로 폴백 보완.\n  - **이중 차단**: `halted`와 `loss >= state.risk.dailyLoss` 문구 동시 노출 및 테스트 검증.\n  - **400 피드백**: `.catch(() => {})` 처리, HTTP 400 시 `role=\"alert\"` 오류 표시 및 버튼 재활성화 확인.\n  - **터치/읽기**: 탭·제어 버튼 `min-height: 44px`(390×844에서 `firstHaltTop/Bottom` 799.45~843.45px, `horizontalOverflow: 0`), `aria-live` 제거 후 `role=\"status\"`로 축소.\n\n### 설계 (Design)\n- 추가 설계 지적 없음.\n\n### 남은 차단 사항\n- 없음.\n"
+  }
+]

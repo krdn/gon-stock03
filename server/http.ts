@@ -144,7 +144,8 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
               if (state.strategies.length >= 30) throw new Error('전략은 최대 30개까지 저장할 수 있습니다.');
               const id = randomUUID();
               state.strategies.push({ ...strategy, id, active: false, lastSignal: 'hold', lastTick: -1, revision: 1, run: 0, evaluations: [] });
-              record(state, '전략 저장', strategy.name); return {id, revision:1};
+              record(state, '전략 저장', strategy.name, 'info', { environment: strategy.environment, target: 'strategies' });
+              return {id, revision:1};
             }
             case '/api/strategies/toggle': {
               const strategy = state.strategies.find(s => s.id === idInput.parse(input).id);

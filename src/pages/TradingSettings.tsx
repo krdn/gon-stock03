@@ -18,14 +18,21 @@ import { useWorkbench } from '../context';
 
 import { defaultOncePolicy, defaultStrategyPolicy, krxHours, validOncePolicy } from '../../shared/trading-policy';
 import { NumberField, priceNames, TradingPolicyFields } from '../components/TradingPolicyFields';
+import './trading-settings-v2.css';
 
 const home = '/settings/trading';
 const titles = { general: '일반 주문·위험', once: '다음 한정 실행', strategy: '다음 전략 계약' };
 const stages = ['대상·기간', '한도·조건', '검토·고정'];
 const kst = (value: string) =>
   Number.isFinite(Date.parse(value)) ? new Date(Date.parse(value) + 9 * 3600000).toISOString().slice(0, 16) : '';
-const instant = (value: string) => (value ? new Date(value + ':00+09:00').toISOString() : '');
-const localTime = (value: string) => kst(value).replace('T', ' ') + ' KST';
+const instant = (value: string) => {
+  const time = Date.parse(value + '+09:00');
+  return Number.isFinite(time) ? new Date(time).toISOString() : '';
+};
+const localTime = (value: string) => {
+  const time = kst(value);
+  return time ? time.replace('T', ' ') + ' KST' : '미입력';
+};
 function defaults(kind: PlanKind, strategy?: Strategy): TradingTerms {
   const start = new Date().toISOString(),
     end = new Date(Date.now() + 600000).toISOString();
@@ -67,7 +74,7 @@ function description(t: TradingTerms): [string, string][] {
           ],
           ['수량 상한', t.maxQty + '주'],
           ['금액 상한', won(t.maxAmount) + '원'],
-          ['기존 보유', t.allowExistingHolding ? '허용' : '차단'],
+          ['기존 보유 종목 매수', t.policy?.side === 'sell' ? '매도 시 미적용' : t.allowExistingHolding ? '허용' : '차단'],
           ['잔량 취소', t.cancelProbe ? '한정 API 1회' : '모의 앱 수동 대응'],
         ]
       : [
@@ -138,29 +145,39 @@ function Comparison({
   source?: string;
 }) {
   const before = new Map(previous ? description(previous) : []);
-  return (
-    <div className="table-scroll">
-      <table>
-        <caption className="sr-only">기존 고정본과 다음 설정</caption>
-        <thead>
-          <tr>
-            <th>항목</th>
-            <th>{source}</th>
-            <th>다음 설정</th>
-          </tr>
-        </thead>
-        <tbody>
-          {description(next).map(([key, value]) => (
-            <tr key={key}>
-              <th scope="row">{key}</th>
-              <td>{before.get(key) ?? '없음'}</td>
-              <td>{value}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  const rows = new Map(description(next));
+  const primary = new Set([
+    '실행일', '종목', '주문 방식', '수량 상한', '금액 상한', '기존 보유 종목 매수', '잔량 취소', '지정가 기준',
+    '고정 단가', '매수 단가 상한', '저장 전략', '시작', '종료', '주문당 금액', '총 시도', '누적 금액',
+    '매도 범위', '전략 주문 방식', '실행 시간창', '원 신호 유효시간', '시세 유효시간',
+  ]);
+  const standard = new Map(description(next.kind === 'once'
+    ? { ...next, policy: defaultOncePolicy(next.date) }
+    : { ...next, policy: defaultStrategyPolicy() }));
+  const keys = [...new Set([...rows.keys(), ...before.keys()])];
+  const emphasized = [...primary].filter(key => rows.has(key) || before.has(key));
+  emphasized.push(...keys.filter(key => !primary.has(key) && (
+    (previous && before.get(key) !== rows.get(key)) || (next.policy && standard.get(key) !== rows.get(key))
+  )));
+  const other = keys.filter(key => !emphasized.includes(key));
+  function table(items: string[], caption: string) {
+    return <table className="plan-comparison">
+      <caption className="sr-only">{caption}</caption>
+      <thead><tr><th scope="col">항목</th>{previous && <th scope="col">{source}</th>}<th scope="col">다음 설정</th></tr></thead>
+      <tbody>{items.map(key => <tr key={key}>
+        <th scope="row">{key}</th>
+        {previous && <td>{before.get(key) ?? '없음'}</td>}
+        <td>{rows.get(key) ?? '해제'}</td>
+      </tr>)}</tbody>
+    </table>;
+  }
+  return <>
+    {table(emphasized, '대상·주문 한도와 변경 조건')}
+    {other.length > 0 && <details className="plan-more">
+      <summary>나머지 실행 조건 {other.length}개</summary>
+      {table(other, '추가 실행 조건')}
+    </details>}
+  </>;
 }
 function initialEdit(key: string, base: string | null, fallback: TradingTerms) {
   try {
@@ -183,12 +200,14 @@ function Editor({
   data,
   update,
   refresh,
+  checking,
 }: {
   kind: PlanKind;
   step: number;
   data: TradingSettingsData;
   update: (p: PlanRecord) => void;
   refresh: () => void;
+  checking: boolean;
 }) {
   const { state, act, available, busy, server } = useWorkbench();
   const navigationState = useLocation().state;
@@ -197,24 +216,18 @@ function Editor({
   const record = data.plans[kind],
     initial = record?.draft,
     id = initial?.id ?? null;
-  const key = 'trading-draft-' + server?.instanceId + '-' + kind;
-  const strategies = state.strategies.filter((s) => s.environment === 'kis-paper');
-  const requested = strategies.find((s) => s.id === params.get('strategy'));
+  const requestedId = kind === 'strategy' ? params.get('strategy') : null;
+  const key = 'trading-draft-' + server?.instanceId + '-' + kind + (requestedId ? ':' + requestedId : '');
+  const strategies = state.strategies.filter(s => s.environment === 'kis-paper');
   const [base, setBase] = useState(id);
-  const [terms, setTerms] = useState<TradingTerms>(() =>
-    initialEdit(
-      key,
-      id,
-      requested && kind === 'strategy'
-        ? ({
-            ...(initial?.terms.kind === 'strategy' ? initial.terms : defaults('strategy', requested)),
-            kind: 'strategy',
-            strategyId: requested.id,
-            revision: requested.revision ?? 1,
-          } as TradingTerms)
-        : (initial?.terms ?? defaults(kind, strategies[0])),
-    ),
-  );
+  const [terms, setTerms] = useState<TradingTerms>(() => {
+    let fallback = initial?.terms ?? defaults(kind, strategies[0]);
+    if (requestedId && fallback.kind === 'strategy' && fallback.strategyId !== requestedId) {
+      const requested = strategies.find(s => s.id === requestedId);
+      fallback = { ...fallback, strategyId: requested?.id ?? '', revision: requested?.revision ?? 1 };
+    }
+    return initialEdit(key, id, fallback);
+  });
   const [error, setError] = useState(''),
     errorRef = useRef<HTMLParagraphElement>(null);
   const [copied, setCopied] = useState<TradingTerms | undefined>(() => {
@@ -234,12 +247,20 @@ function Editor({
     fast: number;
     slow: number;
   } | null>(null);
-  const locked = busy || !available || base !== id;
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const fixedRef = useRef<HTMLParagraphElement>(null);
+  const policyRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    headingRef.current?.focus({ preventScroll: true });
+  }, [step]);
+  const locked = busy || checking || !available || base !== id;
   const selected = terms.kind === 'strategy' ? strategies.find((s) => s.id === terms.strategyId) : undefined;
-  const mismatch = terms.kind === 'strategy' && (!selected || selected.revision !== terms.revision);
-  const saved = id !== null && JSON.stringify(initial?.terms) === JSON.stringify(tradingTerms.safeParse(terms).data);
+  const mismatch = available && terms.kind === 'strategy' && (!selected || selected.revision !== terms.revision);
+  const parsedTerms = tradingTerms.safeParse(terms);
+  const saved = !!initial && parsedTerms.success &&
+    JSON.stringify(tradingTerms.safeParse(initial.terms).data) === JSON.stringify(parsedTerms.data);
   const limitsChanged =
-    !!initial && !initial.fixed && JSON.stringify(initial.limits) !== JSON.stringify(planLimits(state));
+    available && !!initial && !initial.fixed && JSON.stringify(initial.limits) !== JSON.stringify(planLimits(state));
   function edit(t: TradingTerms) {
     if (!t.policy)
       t = t.kind === 'once' ? { ...t, policy: defaultOncePolicy(t.date) } : { ...t, policy: defaultStrategyPolicy() };
@@ -269,12 +290,16 @@ function Editor({
       return;
     }
     if (step === 1) {
+      if (terms.kind === 'strategy' && !(Date.parse(terms.startsAt) < Date.parse(terms.endsAt))) {
+        setError('종료 시각은 시작 시각보다 늦어야 합니다.');
+        return;
+      }
       goto(2);
       return;
     }
-    const parsed = tradingTerms.safeParse(terms);
-    if (!parsed.success) {
-      setError(parsed.error.issues.map((i) => i.message).join(' · '));
+    if (!parsedTerms.success) {
+      if (policyRef.current) policyRef.current.open = true;
+      setError(parsedTerms.error.issues.map((i) => i.message).join(' · '));
       return;
     }
     try {
@@ -283,13 +308,13 @@ function Editor({
         return;
       }
       const fixing = step === 3;
-      if (fixing && (!saved || initial?.fixed || !data.canFix)) {
+      if (fixing && (!saved || initial?.fixed || !data.canFix || limitsChanged)) {
         setError('먼저 지원되는 초안을 저장하고 검토하세요.');
         return;
       }
       const result = await act<{ plan: PlanRecord }>(
         fixing ? 'trading-settings/fix' : 'trading-settings/draft',
-        fixing ? { kind, expectedId: base } : { expectedId: base, terms: parsed.data },
+        fixing ? { kind, expectedId: base } : { expectedId: base, terms: parsedTerms.data },
       );
       if (copied) {
         try {
@@ -312,20 +337,34 @@ function Editor({
       refresh();
     }
   }
+  const fixed = initial?.fixed && saved;
+  const wasFixed = useRef(fixed);
+  useEffect(() => {
+    if (fixed && !wasFixed.current && step === 3) {
+      setError('');
+      fixedRef.current?.focus();
+    }
+    wasFixed.current = fixed;
+  }, [fixed, step]);
   return (
-    <Panel title={stages[step - 1]}>
-      <p className="muted">
-        {step}/3 · {titles[kind]}
-      </p>
+    <Panel className="plan-editor">
+      <header className="panel-head">
+        <h2 tabIndex={-1} ref={headingRef}>{stages[step - 1]}</h2>
+        <span>{step} / 3</span>
+      </header>
       {error && (
         <p role="alert" tabIndex={-1} ref={errorRef}>
           {error}
         </p>
       )}
-      {base !== id && (
+      {!available && <p role="status">로컬 상태 미확인 · 최신 한도와 전략을 확인할 때까지 편집이 잠깁니다.</p>}
+      {checking && step !== 3 && <p role="status">저장 상태를 원장에서 다시 확인하는 중입니다.</p>}
+      {base !== id && !checking && (<>
+        <p role="alert">다른 화면에서 초안이 변경됐습니다. 최신 저장본을 확인하세요.</p>
         <button
           className="button secondary"
           onClick={() => {
+            setCopied(undefined);
             setBase(id);
             setTerms(initial?.terms ?? defaults(kind));
             setError('');
@@ -334,9 +373,10 @@ function Editor({
         >
           최신 저장본 다시 열기
         </button>
-      )}
+      </>)}
       <form onSubmit={advance}>
         <fieldset className="plan-fields" disabled={locked}>
+          {step > 1 && mismatch && <p role="alert">저장 전략을 확인할 수 없거나 revision이 변경됐습니다. 대상·기간에서 다시 선택하세요.</p>}
           {step === 1 && terms.kind === 'once' && (
             <>
               <label className="field">
@@ -448,7 +488,7 @@ function Editor({
                   ))}
                 </select>
               </label>
-              {selected && (
+              {available && selected && (
                 <p>
                   {selected.code} · revision {selected.revision} · {selected.fast}/{selected.slow} 교차 · {selected.qty}
                   주
@@ -456,7 +496,8 @@ function Editor({
               )}
               {mismatch && (
                 <p role="status">
-                  저장 전략과 revision을 확인하세요. <Link to="/strategies?environment=kis-paper">전략 스튜디오</Link>
+                  {selected ? `초안 revision ${terms.revision} · 현재 revision ${selected.revision}` : strategies.length ? '계약에 사용할 저장 전략을 선택하세요.' : '저장된 KIS 전략이 없습니다.'}{' '}
+                  <Link to="/strategies?environment=kis-paper">전략 스튜디오</Link>
                   {selected && (
                     <button type="button" onClick={() => edit({ ...terms, revision: selected.revision ?? 1 })}>
                       현재 revision 사용
@@ -618,10 +659,11 @@ function Editor({
               <label className="check-row">
                 <input
                   type="checkbox"
+                  disabled={terms.policy?.side === 'sell'}
                   checked={terms.allowExistingHolding}
                   onChange={(e) => edit({ ...terms, allowExistingHolding: e.target.checked })}
                 />
-                기존 보유 종목 매수 허용
+                기존 보유 종목 매수 허용{terms.policy?.side === 'sell' && ' (매도 시 미적용)'}
               </label>
               <label className="check-row">
                 <input
@@ -641,10 +683,13 @@ function Editor({
                 />
                 승인 원주문 잔량 취소 1회 허용 (기존 두 종목·현재가 매수·승인액 20만원 이내)
               </label>
-              <TradingPolicyFields terms={terms} edit={edit} />
+              <details className="plan-more" ref={policyRef}>
+                <summary>지정가·시간·응답 정책</summary>
+                <TradingPolicyFields terms={terms} edit={edit} />
+              </details>
               <p className="muted">
-                공통 수동 {state.paperManualMaxQty ?? DEFAULT_PAPER_MAX_QTY}주 · 주문당 {won(state.risk.maxOrder)}원 ·
-                종목별 {won(state.risk.maxPosition)}원. <Link to={home + '/general'}>일반 한도 수정</Link>
+                {available ? <>공통 수동 {state.paperManualMaxQty ?? DEFAULT_PAPER_MAX_QTY}주 · 주문당 {won(state.risk.maxOrder)}원 ·
+                종목별 {won(state.risk.maxPosition)}원.</> : '현재 공통 한도 미확인'}{' '}<Link to={home + '/general'}>일반 한도 수정</Link>
               </p>
               <p>
                 시장가는 상한가 × 전체 수량으로 검사합니다. 하한가·시장가 주문의 잔량은 KIS 모의 앱에서 직접 취소하고
@@ -692,70 +737,63 @@ function Editor({
                   <option value="contract">이 계약에서 체결된 순매수 수량만</option>
                 </select>
               </label>
-              <TradingPolicyFields terms={terms} edit={edit} />
+              <details className="plan-more" ref={policyRef}>
+                <summary>주문 방식·신호·응답 정책</summary>
+                <TradingPolicyFields terms={terms} edit={edit} />
+              </details>
               <p>교차 신호가 없으면 대상 단계에서 종목·수량·교차 주기를 바꾼 새 전략을 저장하고 선택하세요.</p>
             </>
           )}
           {step === 3 && (
             <>
-              {mismatch && <p role="alert">저장 전략 revision 불일치 · 대상 단계를 다시 확인하세요.</p>}
-              {initial?.symbol && (
+              <div className={fixed ? 'plan-phase fixed' : 'plan-phase'}>
+                {fixed ? <>
+                  <p role="status" tabIndex={-1} ref={fixedRef}>고정 완료 · 실행 대기</p>
+                  <span>별도 서버를 이 고정 파일로 시작할 때 조건이 적용됩니다.</span>
+                  <details><summary>다음 실행에 사용할 고정 파일</summary>
+                    <p>다음 서버의 <code>{kind === 'once' ? 'KIS_PAPER_APPROVAL_FILE' : 'KIS_STRATEGY_CONTRACT_FILE'}</code>에
+                      일반 원장 폴더 기준의 파일을 지정하세요.</p>
+                    <code>trading-runs/{kind === 'once' ? 'approval' : 'strategy'}-{initial.id}/
+                      {kind === 'once' ? 'approval' : 'strategy'}-{initial.runId}.json</code>
+                  </details>
+                </> : <>
+                  <p role="status">{checking ? '저장 결과 확인 중' : saved ? '초안 저장됨 · 고정 전' : '편집 중 · 초안 재저장 필요'}</p>
+                  <span>{checking ? '원장 확인 후 고정 여부를 표시합니다.' : saved ? '고정하면 다음 실행용 파일이 만들어집니다. 주문과 전략은 시작되지 않습니다.' : '한도·조건에서 저장한 뒤 다시 검토하세요.'}</span>
+                </>}
+              </div>
+              {saved && initial?.symbol && (
                 <p>
-                  고정 대상 {initial.symbol} · {initial.fast}/{initial.slow} · {initial.qty}주
+                  저장 대상 {initial.symbol} · {initial.fast}/{initial.slow} · {initial.qty}주
                 </p>
               )}
               {initial?.limits && (
-                <p>
-                  공통 한도 · 주문당 {won(initial.limits.maxOrder)}원 · 종목별 {won(initial.limits.maxPosition)}원 ·
-                  손실 {won(initial.limits.dailyLoss)}원 · 수동 {initial.limits.manualQty}주 · 긴급정지{' '}
-                  {initial.limits.halted ? '켜짐' : '꺼짐'}
-                </p>
+                <div className="plan-snapshot">
+                  {saved && terms.kind === 'once' && <p><strong>적용 상한</strong> {Math.min(initial.limits.manualQty, terms.maxQty)}주
+                    · 주문당 {won(Math.min(initial.limits.maxOrder, terms.maxAmount))}원</p>}
+                  <p>저장 시 긴급정지 {initial.limits.halted ? '켜짐' : '꺼짐'} · 종목별 {won(initial.limits.maxPosition)}원
+                    · 일일 손실 {won(initial.limits.dailyLoss)}원</p>
+                  <details><summary>저장한 공통 한도</summary>
+                    <p>수동 {initial.limits.manualQty}주 · 주문당 {won(initial.limits.maxOrder)}원.
+                      종목별 투자금과 KIS 가능수량은 전송 전에 다시 검사합니다.</p>
+                  </details>
+                </div>
               )}
-              {initial?.limits && terms.kind === 'once' && (
-                <p>
-                  실제 적용 상한 · 수량 {Math.min(initial.limits.manualQty, terms.maxQty)}주 · 주문당{' '}
-                  {won(Math.min(initial.limits.maxOrder, terms.maxAmount))}원. 종목별 투자금과 KIS 가능수량을 전송 전에
-                  다시 검사합니다.
-                </p>
-              )}
+              {!data.canFix && <p role="status">고정은 전용 파일을 만들 수 있는 일반 디스크 원장에서 가능합니다.</p>}
               {limitsChanged && <p role="alert">공통 한도가 변경됐습니다. 한도·조건 단계에서 다시 저장하세요.</p>}
               <Comparison
                 next={terms}
                 previous={copied ?? record?.previous?.terms}
                 source={copied ? '복사한 실행 조건' : '이전 고정본'}
               />
-              <div className="button-row">
-                <button type="button" className="text-link" onClick={() => goto(1)}>
-                  대상·기간 수정
-                </button>
-                <button type="button" className="text-link" onClick={() => goto(2)}>
-                  한도·조건 수정
-                </button>
-              </div>
-              <p>
-                일반 원장의 공통 위험 한도를 전용 원장에 복사합니다. 고정 후에는 해당 실행의 조건을 변경할 수 없습니다.
-              </p>
-              {initial?.fixed && saved && (
-                <div role="status">
-                  <p>고정 완료 · 실행 대기</p>
-                  <p className="tiny">
-                    다음 서버의 {kind === 'once' ? 'KIS_PAPER_APPROVAL_FILE' : 'KIS_STRATEGY_CONTRACT_FILE'}에 이 파일을
-                    지정하세요. 경로는 일반 원장 폴더 기준입니다.
-                  </p>
-                  <code>
-                    trading-runs/{kind === 'once' ? 'approval' : 'strategy'}-{initial.id}/
-                    {kind === 'once' ? 'approval' : 'strategy'}-{initial.runId}.json
-                  </code>
-                </div>
-              )}
             </>
           )}
           <div className="button-row">
             {step > 1 && (
               <button type="button" className="button secondary" onClick={() => goto(step - 1)}>
-                이전 단계
+                {step === 3 ? '한도·조건 수정' : '이전 단계'}
               </button>
             )}
+            {step === 3 && <button type="button" className="text-link" onClick={() => goto(1)}>대상·기간 수정</button>}
             {(step < 3 || !initial?.fixed || !saved) && (
               <button
                 className="button primary"
@@ -776,7 +814,6 @@ function Editor({
           주문 입력으로 돌아가기
         </Link>
       )}
-      {step === 3 && !data.canFix && <p>고정은 전용 파일을 만들 수 있는 일반 디스크 원장에서 가능합니다.</p>}
     </Panel>
   );
 }
@@ -785,9 +822,11 @@ export function TradingSettings() {
   const { state, available, server } = useWorkbench();
   const loc = useLocation(),
     [params] = useSearchParams();
+  const riskReturn = params.get('env') === 'kis' ? '/risk?env=kis' : '/risk';
   const [, , , section, stage, ...extra] = loc.pathname.split('/');
   const [data, setData] = useState<TradingSettingsData | null>(null),
     [failed, setFailed] = useState(false);
+  const [checking, setChecking] = useState(false);
   const loadSequence = useRef(0);
   const [copy, setCopy] = useState(false),
     [refreshKey, refresh] = useState(0);
@@ -801,11 +840,15 @@ export function TradingSettings() {
         return r.json();
       })
       .then((v) => {
-        if (!controller.signal.aborted && seq === loadSequence.current) setData(v);
+        if (!controller.signal.aborted && seq === loadSequence.current) {
+          setData(v);
+          setChecking(false);
+        }
       })
       .catch(() => {
         if (!controller.signal.aborted && seq === loadSequence.current) {
           setFailed(true);
+          setChecking(false);
           setData(null);
         }
       });
@@ -813,8 +856,11 @@ export function TradingSettings() {
   }, [server?.instanceId, refreshKey, section]);
   const update = (plan: PlanRecord) => {
     loadSequence.current++;
+    setChecking(false);
     setData((old) => old && { ...old, plans: { ...old.plans, [plan.draft.terms.kind]: plan } });
   };
+  if (loc.pathname.endsWith('/'))
+    return <Navigate replace to={loc.pathname.replace(/\/+$/, '') + loc.search + loc.hash} state={loc.state} />;
   if (failed)
     return (
       <div role="alert">
@@ -829,7 +875,7 @@ export function TradingSettings() {
   )
     return <Navigate replace to={home} />;
   if (!data.active && (section === 'once' || section === 'strategy') && stage === '3' && !data.plans[section])
-    return <Navigate replace to={home + '/' + section + '/1'} />;
+    return <Navigate replace to={home + '/' + section + '/1' + loc.search} state={loc.state} />;
   if (data.active)
     return (
       <Panel title="현재 실행 조건">
@@ -851,7 +897,7 @@ export function TradingSettings() {
           </Link>
         )}
         {params.get('from') === 'risk' && (
-          <Link className="text-link" to="/risk">
+          <Link className="text-link" to={riskReturn}>
             위험관리로 돌아가기
           </Link>
         )}
@@ -868,8 +914,8 @@ export function TradingSettings() {
             사용 {data.usage.attempts}회 · {won(data.usage.amount)}원
           </p>
         )}
-        <button className="button secondary" onClick={() => setCopy((v) => !v)}>
-          다음 계약으로 복사
+        <button className="button secondary" aria-expanded={copy} onClick={() => setCopy((v) => !v)}>
+          다음 실행용 설정 보기
         </button>
         {copy && (
           <label className="field">
@@ -885,17 +931,18 @@ export function TradingSettings() {
         {(['general', 'once', 'strategy'] as const).map((k, i) => {
           const Icon = [SlidersHorizontal, ClipboardList, Workflow][i];
           const plan = k === 'general' ? null : data.plans[k]?.draft;
+          const destination = plan ? k + '/3' : k;
           return (
-            <Link className="panel plan-link" key={k} to={home + '/' + k}>
+            <Link className="panel plan-link" key={k} to={home + '/' + destination}>
               <Icon size={22} />
               <span>
                 <strong>{titles[k]}</strong>
                 <small>
                   {k === 'general'
                     ? available
-                      ? `수동 ${state.paperManualMaxQty ?? 5}주 · 주문당 ${won(state.risk.maxOrder)}원`
+                      ? `저장 즉시 적용 · 수동 ${state.paperManualMaxQty ?? DEFAULT_PAPER_MAX_QTY}주 · 주문당 ${won(state.risk.maxOrder)}원`
                       : '현재 한도 미확인'
-                    : `${plan?.fixed ? '고정 완료' : plan ? '저장된 초안' : '초안 없음'} · ${plan?.terms.kind === 'once' ? plan.terms.code + ' · ' + plan.terms.maxQty + '주 · ' + won(plan.terms.maxAmount) + '원' : plan?.terms.kind === 'strategy' ? plan.terms.maxAttempts + '회 · 합산 ' + won(plan.terms.maxTotalAmount) + '원' : '다음 전용 실행에 적용'}`}
+                    : `${plan?.fixed ? '고정 완료 · 실행 대기' : plan ? '저장된 초안 · 고정 전' : '초안 없음'} · ${plan?.terms.kind === 'once' ? plan.terms.code + ' · ' + plan.terms.maxQty + '주 · ' + won(plan.terms.maxAmount) + '원' : plan?.terms.kind === 'strategy' ? plan.terms.maxAttempts + '회 · 합산 ' + won(plan.terms.maxTotalAmount) + '원' : '다음 실행 조건 준비'}`}
                 </small>
               </span>
               <ChevronRight size={18} />
@@ -930,30 +977,34 @@ export function TradingSettings() {
       {section === 'general' ? (
         <>
           <PaperQuantitySetting saved={state.paperManualMaxQty ?? DEFAULT_PAPER_MAX_QTY} />
-          <RiskLimitSettings />
           {from === 'paper' && (
             <Link
-              className="button secondary"
+              className="button secondary plan-return"
               state={{ paperReturn: loc.state?.paperKey }}
               to={'/paper?code=' + encodeURIComponent(code)}
             >
               주문 입력으로 돌아가기
             </Link>
           )}
+          <RiskLimitSettings />
           {from === 'risk' && (
-            <Link className="button secondary" to="/risk">
+            <Link className="button secondary" to={riskReturn}>
               위험관리로 돌아가기
             </Link>
           )}
         </>
       ) : (
         <Editor
-          key={section}
+          key={section === 'strategy' ? section + ':' + (params.get('strategy') ?? '') : section}
           kind={section as PlanKind}
           step={Number(stage ?? 1)}
           data={data}
           update={update}
-          refresh={() => refresh((n) => n + 1)}
+          checking={checking}
+          refresh={() => {
+            setChecking(true);
+            refresh(n => n + 1);
+          }}
         />
       )}
     </div>

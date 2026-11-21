@@ -4,7 +4,11 @@
 
 사용자가 화면에서 가능한 행동을 찾고, 데이터의 환경·출처·시각과 버튼의 결과를 설명할 수 있는지 확인한다. 최초 배정 기준은 `04434fdbd44b3eb7cc169e651fdd537086f7e568`이다. 당시 GitHub main과 4303 웹·4304 API를 제공하는 `/home/gon/llm-projects/gon-stock03`의 HEAD가 일치했고 [PR #146](https://github.com/krdn/gon-stock03/pull/146)과 [PR #148](https://github.com/krdn/gon-stock03/pull/148)이 병합됐다. 해당 main의 앱·구성 CI가 성공했다. 원래 안내 지도 [PR #144](https://github.com/krdn/gon-stock03/pull/144)는 초안으로 별도 검토 중이다.
 
-## 현재 검토본
+## 11월 21일 병합
+
+사용자 위임에 따라 제품 [PR #187](https://github.com/krdn/gon-stock03/pull/187)을 main에 병합했다. 실행 체크아웃을 갱신하고 4303의 PC·모바일 읽기 동선을 확인했다. 아래는 병합 전 검토 이력이다. 사용자 직접 수용은 대기 중이다.
+
+## 검토 당시 기준
 
 16개 화면과 매매 설정 하위 단계가 [제품 통합 PR #187](https://github.com/krdn/gon-stock03/pull/187)에 있다. **[화면별 직접 열기와 수용 기록](../verification/2026-11-20-ux-v2.md)** · [통합 앱](http://127.0.0.1:4486/dashboard) · [의견 지도](http://127.0.0.1:4328/guide.html#contents).
 

@@ -41,6 +41,7 @@ test('lost DEMO response blocks new requests across reload and reconciles by req
   await page.getByRole('button', { name: '데모 주문 접수', exact: true }).evaluate((b: HTMLButtonElement) => { b.click(); b.click(); });
   await expect(page.getByText('DEMO 주문 응답 미확인', { exact: true })).toBeVisible();
   expect(posts).toBe(1);
+  await expect(page.getByRole('button', { name: '매수 주문 확인' })).toHaveAccessibleDescription(/미확인 DEMO 요청/);
   await page.reload(); await expect(page.getByRole('button', { name: '매수 주문 확인' })).toBeDisabled();
   state.orders = [{ ...body, id: 'accepted', status: 'pending', source: 'manual', createdAt: new Date().toISOString(), fee: 0 }]; state.revision++;
   await page.getByRole('button', { name: 'DEMO 주문 대조' }).click();
@@ -87,6 +88,7 @@ test('connection loss blocks confirmation until fresh state and edited price is 
   await expect(page.getByRole('button', { name: '데모 주문 접수', exact: true })).toBeDisabled();
   await expect(page.getByRole('dialog')).toContainText('최신 로컬 상태 확인');
   await page.getByRole('button', { name: '돌아가기', exact: true }).click();
+  state.status.observedAt = state.status.lastSuccessAt = new Date(Date.parse(state.status.observedAt!) + 7000).toISOString();
   fail = false; const fresh = page.waitForResponse('**/api/state'); await page.clock.fastForward(3500); await fresh;
   await page.getByLabel('주문 가격 (원)').fill('65000'); await page.getByLabel('주문 수량 (주)').fill('2');
   await page.getByRole('button', { name: '매수 주문 확인' }).click();
@@ -99,7 +101,10 @@ test('freshness expiry between render and submit is a definitive local refusal w
   await page.route('**/api/state', route => route.fulfill({ json: state }));
   let posts = 0; page.on('request', r => { if (r.method() === 'POST') posts++; });
   await page.goto('/trade?mode=demo'); await page.getByRole('button', { name: '매수 주문 확인' }).click();
-  await page.clock.setSystemTime(new Date(Date.parse(state.status.observedAt!) + state.status.staleAfterMs + 1));
+  await page.evaluate(elapsed => {
+    const tick = performance.now.bind(performance);
+    Object.defineProperty(performance, 'now', { value: () => tick() + elapsed });
+  }, state.status.staleAfterMs);
   await page.getByRole('button', { name: '데모 주문 접수', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('최신 로컬 상태');
   await expect(page.getByText('DEMO 주문 응답 미확인', { exact: true })).toHaveCount(0);
@@ -115,7 +120,10 @@ test('a locally blocked retry retains the original unknown request across reload
   await expect(page.getByText('DEMO 주문 응답 미확인', { exact: true })).toBeVisible();
   const pending = await page.evaluate(() => sessionStorage.getItem('demo-order-pending'));
   await page.getByRole('button', { name: '재시도 시세 확인' }).click();
-  await page.clock.setSystemTime(new Date(Date.parse(state.status.observedAt!) + state.status.staleAfterMs + 1));
+  await page.evaluate(elapsed => {
+    const tick = performance.now.bind(performance);
+    Object.defineProperty(performance, 'now', { value: () => tick() + elapsed });
+  }, state.status.staleAfterMs);
   await page.getByRole('button', { name: '같은 DEMO 요청 재시도' }).click();
   await expect(page.getByRole('alert')).toContainText('최신 로컬 상태');
   await expect(page.getByText('DEMO 주문 응답 미확인', { exact: true })).toBeVisible();
@@ -166,6 +174,7 @@ for (const failure of ['corrupt', 'read', 'write', 'remove']) {
     }
     await expect(page.getByRole('alert').filter({ hasText: '요청 보존 저장소' })).toBeVisible();
     await expect(page.getByRole('button', { name: '매수 주문 확인' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: '매수 주문 확인' })).toHaveAccessibleDescription(/요청 보존 저장소/);
     expect(posts).toBe(failure === 'remove' ? 1 : 0); expect(errors).toEqual([]);
     if (failure === 'remove') {
       await expect(page.getByText('DEMO 요청 보존 확인 필요', { exact: true })).toBeVisible();
@@ -238,3 +247,46 @@ for (const limit of ['position', 'loss']) {
     await expect(page.getByRole('button', { name: '매수 주문 확인' })).toBeDisabled();
   });
 }
+
+test('mobile DEMO review returns focus and opens the accepted order in its own ledger', async ({ page }) => {
+  const state = snapshot();
+  const posts: string[] = [];
+  page.on('request', r => { if (r.method() === 'POST') posts.push(new URL(r.url()).pathname); });
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.route('**/api/orders', route => {
+    const order = { ...route.request().postDataJSON(), id: 'fixture', status: 'pending', createdAt: state.startedAt, source: 'manual', fee: 0 };
+    state.orders.unshift(order); state.revision++;
+    return route.fulfill({ json: { order } });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/trade?mode=demo&code=000660');
+  const price = page.getByLabel('주문 가격 (원)');
+  await expect(price).toBeInViewport();
+  await price.fill('65000'); await page.keyboard.press('Tab');
+  const quantity = page.getByLabel('주문 수량 (주)'); await expect(quantity).toBeFocused();
+  await quantity.fill('2');
+  const review = page.getByRole('button', { name: '매수 주문 확인' });
+  await review.press('Enter'); await expect(page.getByRole('dialog')).toContainText('2주 × 65,000원');
+  await page.keyboard.press('Escape'); await expect(review).toBeFocused(); expect(posts).toEqual([]);
+  await review.press('Enter'); await page.getByRole('button', { name: '데모 주문 접수', exact: true }).press('Enter');
+  await expect(page.getByText('접수 · 미체결', { exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'DEMO 주문 원장' }).press('Enter');
+  await expect(page).toHaveURL(/\/orders\?view=demo$/);
+  const row = page.getByRole('row').filter({ hasText: 'SK하이닉스' });
+  await expect(row).toContainText('65,000'); await expect(row).toContainText('접수 · 미체결');
+  expect(posts).toEqual(['/api/orders']);
+});
+
+
+test('DEMO chart labels only the available samples and shows an empty chart state', async ({ page }) => {
+  const state = snapshot();
+  state.instruments[0].history = [65000, 65100, 65200];
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.goto('/trade?mode=demo');
+  await page.getByRole('button', { name: '120봉' }).click();
+  await expect(page.getByRole('img', { name: '삼성전자 합성 3봉 종가' })).toBeVisible();
+  state.instruments[0].history = []; state.revision++;
+  await page.reload();
+  await expect(page.getByText('합성 종가 표본이 부족합니다')).toBeVisible();
+  await expect(page.getByRole('img', { name: /합성 .*봉 종가/ })).toHaveCount(0);
+});

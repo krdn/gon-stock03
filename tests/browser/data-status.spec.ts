@@ -34,14 +34,19 @@ test('data inventory separates sources and shows partial ranges, stored trading 
   const detail = page.getByRole('region', { name: '일봉 수집 상세' });
   await expect(detail).toContainText('일부 수집'); await expect(detail).toContainText('2026-04-01 ~ 2026-04-15');
   await expect(detail).toContainText('저장 2봉'); await expect(detail).toContainText('수정주가');
-  await expect(detail).toContainText('중복 제거 2건'); await expect(detail).toContainText('KIS 호출 제한');
-  await expect(detail.getByTestId('daily-last-success')).toContainText(successAt);
+  await expect(detail).toContainText('누락 일수 미확인');
+  await expect(detail).not.toContainText('누락 0일');
+  await detail.getByText('품질 상세 펼치기', { exact: true }).click();
+  await expect(detail.getByText(/중복 제거 2건/)).toBeVisible(); await expect(detail).toContainText('KIS 호출 제한');
+  await detail.getByText('수집 시각·출처·기록 ID', { exact: true }).click();
+  await expect(detail.getByTestId('daily-last-success').locator('time')).toHaveAttribute('datetime', successAt);
+  await expect(detail.getByTestId('daily-last-success')).toContainText('2026-11-12 11:00:00 KST');
   await page.getByRole('combobox', { name: '일봉 수집 기록' }).selectOption(previous.id);
   await expect(detail).toContainText('수집 후 오래됨');
   await page.getByRole('combobox', { name: '일봉 수집 기록' }).selectOption(run().id);
   await detail.getByText('저장 거래일 펼치기').click(); await expect(detail).toContainText('2026-01-02');
   const masterRegion = page.getByRole('region', { name: '공개 마스터 상태' });
-  await expect(masterRegion).toContainText('수집 실패'); await expect(masterRegion).toContainText(successAt);
+  await expect(masterRegion).toContainText('수집 실패'); await expect(masterRegion.locator('time').first()).toHaveAttribute('datetime', successAt);
   await expect(masterRegion).toContainText('기준 거래일 미확인');
   const demo = page.getByRole('region', { name: 'DEMO 합성 데이터' });
   await expect(demo).toContainText('실제 과거 아님'); await expect(demo).toContainText('120');
@@ -74,7 +79,10 @@ test('data refresh failures preserve previous data and do not become empty or fr
   await expect(page.getByRole('alert').filter({ hasText: '일봉 목록 조회 실패' })).toContainText('이전 표시');
   await expect(detail).toContainText('상세 조회 실패'); await expect(detail).toContainText('저장 2봉');
   await expect(page.getByText('저장된 KIS 일봉이 없습니다', { exact: true })).toHaveCount(0);
-  await page.reload(); await expect(page.getByRole('alert').filter({ hasText: '일봉 목록 조회 실패' })).toBeVisible();
+  await page.reload();
+  const firstError = page.getByRole('alert').filter({ hasText: '일봉 목록 조회 실패' });
+  await expect(firstError).toBeVisible();
+  await expect(firstError).not.toContainText('이전 표시');
   await expect(page.getByText('저장된 KIS 일봉이 없습니다', { exact: true })).toHaveCount(0);
 });
 
@@ -111,7 +119,9 @@ test('a successful detail refresh advances last success even when the run list r
   await page.route('**/api/data/daily/*', route => route.fulfill({ json: { run: completed, bars } }));
   await page.getByRole('button', { name: '저장 상태 새로고침', exact: true }).click();
   await expect(detail).toContainText('구간 수집 종료');
-  await expect(detail.getByTestId('daily-last-success')).toContainText(successAt);
+  await detail.getByText('수집 시각·출처·기록 ID', { exact: true }).click();
+  await expect(detail.getByTestId('daily-last-success').locator('time')).toHaveAttribute('datetime', successAt);
+  await expect(detail.getByTestId('daily-last-success')).toContainText('2026-11-12 11:00:00 KST');
   await expect(page.getByRole('alert').filter({ hasText: '일봉 목록 조회 실패' })).toBeVisible();
 });
 
@@ -122,4 +132,131 @@ test('a newly created collection has no stored bars and is marked as not collect
   await page.goto('/data'); const detail = page.getByRole('region', { name: '일봉 수집 상세' });
   await expect(detail).toContainText('저장 0봉');
   await expect(detail.locator('.badge')).toContainText(['수집 전', '대조 대기', '저장 없음']);
+});
+
+test('keyboard selection survives reload, source navigation and history on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const second = run({ id: '96b3f123-f72e-4d77-9091-72a057ce26e4', code: '00088K', adjustment: 'raw' });
+  await setup(page, [run(), second]);
+  await page.goto('/data');
+  const picker = page.getByRole('combobox', { name: '일봉 수집 기록' });
+  await expect(picker).toHaveValue(run().id);
+  const jump = page.getByRole('link', { name: 'KIS 일봉', exact: true });
+  await jump.focus();
+  await jump.press('Enter');
+  await expect(page.getByRole('region', { name: 'KIS 저장 일봉', exact: true })).toBeFocused();
+  await expect(picker).toBeInViewport();
+  await picker.focus();
+  await picker.press('End');
+  await expect(picker).toBeFocused();
+  await expect(page).toHaveURL(new RegExp('run=' + second.id));
+  await page.reload();
+  await expect(picker).toHaveValue(second.id);
+  const detail = page.getByRole('region', { name: '일봉 수집 상세' });
+  await expect(detail).toContainText('00088K · 원주가');
+  const quality = detail.getByText('품질 상세 펼치기', { exact: true });
+  await quality.focus();
+  await quality.press('Space');
+  await expect(detail.getByText(/중복 제거 2건/)).toBeVisible();
+  await quality.press('Enter');
+  await expect(quality).toBeFocused();
+  const next = detail.getByRole('link', { name: /백테스트/ });
+  await next.press('Enter');
+  await expect(page).toHaveURL(new RegExp('/backtest.*run=' + second.id));
+  await page.goBack();
+  await expect(picker).toHaveValue(second.id);
+  await page.goBack();
+  await expect(picker).toHaveValue(run().id);
+  await page.goForward();
+  await expect(picker).toHaveValue(second.id);
+});
+
+test('unavailable record link never loads a different record and recovers explicitly', async ({ page }) => {
+  await setup(page);
+  const details: string[] = [];
+  page.on('request', request => { if (request.url().includes('/api/data/daily/')) details.push(request.url()); });
+  await page.goto('/data?run=missing');
+  await expect(page.getByText(/요청한 수집 기록을 찾을 수 없습니다/)).toBeVisible();
+  await expect(page.getByRole('region', { name: '일봉 수집 상세' })).toHaveCount(0);
+  expect(details).toHaveLength(0);
+  await page.getByRole('button', { name: '최근 기록 보기' }).press('Enter');
+  await expect(page.getByRole('combobox', { name: '일봉 수집 기록' })).toBeFocused();
+  await expect(page).toHaveURL(new RegExp('run=' + run().id));
+  await expect(page.getByRole('region', { name: '일봉 수집 상세' })).toContainText('저장 2봉');
+});
+
+test('missing master exchange, empty snapshots and unconfirmed DEMO stay distinct', async ({ page }) => {
+  await setup(page, []);
+  await page.route('**/api/state', route => route.fulfill({ status: 503 }));
+  await page.goto('/data');
+  const masterPanel = page.getByRole('region', { name: '공개 마스터 상태' });
+  await expect(masterPanel.getByText('KOSDAQ · 저장 상태 미확인')).toBeVisible();
+  const demo = page.getByRole('region', { name: 'DEMO 합성 데이터' });
+  await expect(demo.getByText('로컬 합성 자료 미확인')).toBeVisible();
+  await expect(demo).not.toContainText('120봉');
+  await page.route('**/api/data/master', route => route.fulfill({ json: { sources: [], instruments: [] } }));
+  await page.getByRole('button', { name: '저장 상태 새로고침' }).click();
+  await expect(masterPanel.getByText('저장된 마스터가 없습니다')).toBeVisible();
+  await expect(page.getByText('저장된 KIS 일봉이 없습니다')).toBeVisible();
+});
+
+test('DEMO source links lead to the backtest source picker and official market', async ({ page }) => {
+  await setup(page);
+  const masterOnly = { code: '00123K', name: '마스터 전용 예시', isin: 'fixture', exchange: 'KOSPI', kind: 'stock', group: 'ST', removedAt: successAt };
+  const sources = ['KOSPI', 'KOSDAQ'].map(exchange => ({
+    ...master.sources[0], exchange, phase: 'ready', observedAt: successAt, count: 0, error: null,
+  }));
+  await page.route('**/api/data/master', route => route.fulfill({ json: { sources, instruments: [], removed: [masterOnly] } }));
+  const writes: string[] = [];
+  page.on('request', req => { if (req.method() !== 'GET') writes.push(req.url()); });
+  await page.goto('/data#inventory-demo');
+  const demo = page.getByRole('region', { name: 'DEMO 합성 데이터' });
+  await expect(demo).toContainText('추가 재생 0회');
+  await expect(demo.getByRole('heading')).toBeInViewport();
+  await page.reload();
+  await expect(demo.getByRole('heading')).toBeInViewport();
+  const backtest = demo.getByRole('link', { name: /백테스트/ });
+  await backtest.press('Enter');
+  await expect(page).toHaveURL(/\/backtest\?source=demo$/);
+  await page.getByRole('combobox', { name: '데이터 출처' }).selectOption('demo');
+  await expect(page.getByText(/현재 저장된 합성 봉/)).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/data#inventory-demo$/);
+  await expect(demo.getByRole('heading')).toBeInViewport();
+  await demo.getByRole('link', { name: /시장 탐색/ }).press('Enter');
+  await expect(page).toHaveURL(/\/market$/);
+  const search = page.getByRole('textbox', { name: '종목명 또는 코드 검색' });
+  const row = page.getByRole('row').filter({ hasText: masterOnly.name });
+  await expect(row).toContainText(masterOnly.code);
+  await search.fill('005930');
+  await expect(page.getByText(/현재 마스터에 없는 코드입니다/)).toBeVisible();
+  await expect(row).toHaveCount(0);
+  await expect(page.getByRole('row').filter({ hasText: '005930' })).toHaveCount(0);
+  await search.fill(masterOnly.code);
+  await expect(row).toBeVisible();
+  await expect(row).toContainText('마스터 제외');
+  expect(writes).toEqual([]);
+});
+
+test('mobile DEMO shortcut keeps its results in view after a delayed daily detail', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setup(page);
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/data/daily/*', async route => {
+    await gate;
+    await route.fulfill({ json: { run: run(), bars } }).catch(() => {});
+  });
+  await page.goto('/data');
+  const detail = page.getByRole('region', { name: '일봉 수집 상세' });
+  await expect(detail.getByRole('status')).toHaveText('상세 조회 중');
+  const demo = page.getByRole('region', { name: 'DEMO 합성 데이터' });
+  const backtest = demo.getByRole('link', { name: /백테스트/ });
+  await page.getByRole('link', { name: 'DEMO 합성', exact: true }).press('Enter');
+  await expect(demo).toBeFocused();
+  await expect(backtest).toBeInViewport();
+  release();
+  await expect(detail).toContainText('저장 2봉');
+  await expect(backtest).toBeInViewport();
+  await expect(demo).toBeFocused();
 });
