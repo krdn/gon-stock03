@@ -1,41 +1,17 @@
 {
-  "checked_at": "2026-11-19T11:57:16.190830+00:00",
-  "objective": "기능별 제품 검증·수정·기능 제안과 Astra 프로젝트 지침의 비교·선발 설계",
+  "checked_at": "2026-11-21T07:28:21.733152+00:00",
+  "objective": "화면 시각화 문서 생성·갱신용 Orca Quick Command 제작 가이드와 등록",
   "sources": [
     {
-      "url": "https://arxiv.org/abs/2504.15228",
-      "finding": "SICA는 모델 호출·도구를 구성하는 에이전트 시스템을 변경하고 코딩 과제 결과로 비교했다."
+      "url": "https://orca.dev/docs/settings#quick-commands",
+      "finding": "Agent Prompt 프리셋의 범위를 프로젝트로 제한할 수 있고 명령 소유 호스트와 표시 범위를 구분한다."
     },
     {
-      "url": "https://arxiv.org/abs/2505.22954",
-      "finding": "DGM은 자기수정 에이전트 후보 아카이브와 실험적 코딩 평가를 결합한다."
-    },
-    {
-      "url": "https://arxiv.org/abs/2507.19457",
-      "finding": "GEPA는 작업 기록과 피드백을 반영해 지침 후보를 만들고 여러 예에서 비교한다."
-    },
-    {
-      "url": "https://github.com/SWE-bench/SWE-bench/blob/02e7a74ffd0b707aab73d203fe87bdc7c76afc8e/swebench/harness/grading.py",
-      "finding": "SWE-bench 판정 구현은 수정할 검사와 유지할 정상 검사를 구별한다."
-    },
-    {
-      "url": "https://openai.com/index/separating-signal-from-noise-coding-evaluations/",
-      "finding": "명세 밖 구현을 강제하거나 실제 요구를 덜 검사하는 평가의 결함을 분석했다."
-    },
-    {
-      "url": "https://www.anthropic.com/research/demystifying-evals-for-ai-agents",
-      "finding": "과제·시행·판정·실행 결과를 구분하고 여러 시도의 안정성을 평가한다."
-    },
-    {
-      "url": "https://docs.github.com/en/actions/reference/security/secure-use",
-      "finding": "워크플로 자격증명·토큰에는 작업별 최소 권한을 권장한다."
-    },
-    {
-      "url": "https://github.com/mickeyyaya/evolve-loop/blob/577f1b88708154769bdcf3231bd2ae8b194f15a9/skills/loop/SKILL.md",
-      "finding": "로컬 23.2.1과 일치하는 버전. 단계 분리, ship 동작과 Codex에서의 보호 집행 조건을 확인했다."
+      "url": "https://github.com/tt-a1i/archify",
+      "finding": "저장소 근거, 다이어그램과 설명을 독립 HTML로 만들고 검증할 수 있다."
     }
   ],
-  "decisions": "제품 패치는 별도 PR로 평가하고 프로젝트 전용 에이전트 지침은 동일 조건의 비공개 쌍별 평가를 거친다. 첫 단계는 #20 과거 회귀의 오프라인 재생이다. #25 실증·거래·스케줄 및 에이전트 가동은 별도다.",
+  "decisions": "기존 지도 원본과 생성기를 사용하되 실제 설정에는 별도 ID로 Codex 프롬프트 하나만 등록하고 재조회한다.",
   "status": "reviewed",
   "task_contexts": [
     {
@@ -761,6 +737,22 @@
         }
       ],
       "decisions": "보기와 상태만 URL에 담고 식별자 검색은 페이지 안에서 처리한다. 핵심 체결·확인 시각은 상세 바깥에 둔다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/192",
+      "checked_at": "2026-11-21T07:28:21.733152+00:00",
+      "objective": "화면 시각화 문서 생성·갱신용 Orca Quick Command 제작 가이드와 등록",
+      "sources": [
+        {
+          "url": "https://orca.dev/docs/settings#quick-commands",
+          "finding": "Agent Prompt 프리셋의 범위를 프로젝트로 제한할 수 있고 명령 소유 호스트와 표시 범위를 구분한다."
+        },
+        {
+          "url": "https://github.com/tt-a1i/archify",
+          "finding": "저장소 근거, 다이어그램과 설명을 독립 HTML로 만들고 검증할 수 있다."
+        }
+      ],
+      "decisions": "기존 지도 원본과 생성기를 사용하되 실제 설정에는 별도 ID로 Codex 프롬프트 하나만 등록하고 재조회한다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."
