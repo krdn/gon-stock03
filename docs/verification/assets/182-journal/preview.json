@@ -1,0 +1,26 @@
+[
+  {
+    "size": "desktop",
+    "code": "000660",
+    "matched": 1,
+    "saved": 1,
+    "restoredQuery": "분할",
+    "posts": [
+      "/api/journal"
+    ],
+    "playing": false,
+    "activeStrategies": 0
+  },
+  {
+    "size": "mobile",
+    "code": "005930",
+    "matched": 1,
+    "saved": 2,
+    "restoredQuery": "거래량",
+    "posts": [
+      "/api/journal"
+    ],
+    "playing": false,
+    "activeStrategies": 0
+  }
+]

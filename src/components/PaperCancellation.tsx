@@ -57,7 +57,7 @@ export function PaperCancellationPanel({ info, orders, refreshOrders }: Props) {
       <button className="button secondary" disabled={busy || !available || inFlight.current} onClick={() => void reconcile(orders.find(o => o.requestId === attempted))}>취소 결과 조회</button>
     </div>
     {feedback && <p role="status">{feedback}</p>}
-    <dialog ref={dialog} className="order-dialog" aria-labelledby="paper-cancel-heading" onClose={() => setSelected(null)} onCancel={() => setSelected(null)}>
+    <dialog ref={dialog} className="order-dialog" aria-labelledby="paper-cancel-heading" onClose={event => { if (!event.currentTarget.open) setSelected(null); }} onCancel={() => setSelected(null)}>
       <h2 id="paper-cancel-heading">미체결 잔량을 취소할까요?</h2>
       {order && <p>종목 {order.code} · 주문번호 {order.brokerId}<br />지정가 {won(order.price)}원 · 주문 {order.qty}주 · 체결 {order.filled}주 · 취소 요청 잔량 {order.remaining}주</p>}
       <p>확인하는 동안 체결되면 실제 취소 수량이 달라질 수 있습니다.</p>

@@ -1,0 +1,102 @@
+[
+  {
+    "device": "desktop",
+    "width": 1440,
+    "height": 900,
+    "missing": {
+      "first": "모의 계좌 설정이 필요합니다",
+      "titleY": 277,
+      "guideY": 380,
+      "refreshY": 377,
+      "stagesY": 257,
+      "tradingLinkY": 116,
+      "checkDisabled": true
+    },
+    "guide": {
+      "refreshY": 377,
+      "stagesY": 257,
+      "headingY": 457,
+      "detailY": 689,
+      "afterRefresh": "true",
+      "url": "/settings",
+      "afterReload": "false",
+      "afterBack": "false"
+    },
+    "tradingActions": 1,
+    "partial": {
+      "first": "네트워크 오류",
+      "retryY": 380,
+      "recovery": "네트워크와 KIS 모의 서버 연결을 확인한 뒤 다시 조회하세요. 실전 서버로 전환하지 않습니다.",
+      "balanceY": 513,
+      "mockPostCount": 1,
+      "retryResult": "모의 잔고를 확인했습니다"
+    },
+    "offline": {
+      "first": "로컬 서버 연결을 확인하세요",
+      "retryY": 520,
+      "checkDisabled": true
+    },
+    "overflow": 0,
+    "savedLimit": {
+      "source": "fixture",
+      "before": 7,
+      "afterReturn": 7,
+      "afterReload": 7
+    },
+    "api": [
+      "GET /api/state",
+      "GET /api/trading-settings",
+      "POST /api/kis/check"
+    ]
+  },
+  {
+    "device": "mobile",
+    "width": 390,
+    "height": 844,
+    "missing": {
+      "first": "모의 계좌 설정이 필요합니다",
+      "titleY": 249,
+      "guideY": 341,
+      "refreshY": 574,
+      "stagesY": 454,
+      "tradingLinkY": 84,
+      "checkDisabled": true
+    },
+    "guide": {
+      "refreshY": 879,
+      "stagesY": 759,
+      "headingY": 418,
+      "detailY": 983,
+      "afterRefresh": "true",
+      "url": "/settings",
+      "afterReload": "false",
+      "afterBack": "false"
+    },
+    "tradingActions": 1,
+    "partial": {
+      "first": "네트워크 오류",
+      "retryY": 341,
+      "recovery": "네트워크와 KIS 모의 서버 연결을 확인한 뒤 다시 조회하세요. 실전 서버로 전환하지 않습니다.",
+      "balanceY": 699,
+      "mockPostCount": 1,
+      "retryResult": "모의 잔고를 확인했습니다"
+    },
+    "offline": {
+      "first": "로컬 서버 연결을 확인하세요",
+      "retryY": 729,
+      "checkDisabled": true
+    },
+    "overflow": 0,
+    "savedLimit": {
+      "source": "fixture",
+      "before": 7,
+      "afterReturn": 7,
+      "afterReload": 7
+    },
+    "api": [
+      "GET /api/state",
+      "GET /api/trading-settings",
+      "POST /api/kis/check"
+    ]
+  }
+]

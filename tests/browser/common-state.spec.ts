@@ -139,7 +139,8 @@ test('loss of local transport clears KIS loading and ready instead of claiming b
   await expect(page.getByLabel('로컬 상태', { exact: true })).toContainText('오래됨');
   await expect(page.getByLabel('KIS 계좌 상태', { exact: true })).toContainText('미연결');
   await expect(page.getByLabel('KIS 계좌 상태', { exact: true })).not.toContainText('로딩');
-  offline = false; const success = state.status.lastSuccessAt!;
+  offline = false; const success = new Date().toISOString();
+  state.status.observedAt = state.status.lastSuccessAt = success;
   state.connection = { ...state.connection, connected: true, status: { ...state.connection.status, phase: 'ready', complete: true, observedAt: success, lastSuccessAt: success } };
   await page.getByRole('button', { name: '다시 확인', exact: true }).click();
   await expect(page.getByLabel('KIS 계좌 상태', { exact: true })).toContainText('정상');
