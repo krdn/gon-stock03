@@ -1,0 +1,105 @@
+[
+  {
+    "device": "desktop",
+    "viewport": [
+      1440,
+      900
+    ],
+    "firstRow": {
+      "x": 284,
+      "y": 770,
+      "width": 1098,
+      "height": 112
+    },
+    "rowStatus": {
+      "x": 759,
+      "y": 770,
+      "width": 430,
+      "height": 112
+    },
+    "add": {
+      "x": 260,
+      "y": 471,
+      "width": 117,
+      "height": 37
+    },
+    "tableOverflow": 0,
+    "excluded": "—\n표시할 종목이 없습니다\n\n관심목록에 없는 종목입니다. 시장 탐색에서 추가하세요.",
+    "trigger": {
+      "x": 1146,
+      "y": 797,
+      "width": 48,
+      "height": 37
+    },
+    "copied": "069500",
+    "detailURL": "/watchlist",
+    "escapeClosed": false,
+    "focusReturned": true,
+    "reloadDetail": false,
+    "reloadSearch": "",
+    "detailToTradeActions": [
+      "트레이딩 메뉴",
+      "코드 입력",
+      "종목 조회"
+    ],
+    "backFromTrade": "/trade",
+    "registration": "시장 탐색에서 추가 → 069500 입력 → 관심 등록 → 뒤로 → 새로고침해 3개 확인",
+    "removal": "해제 → 새로고침해 2개 확인",
+    "localPosts": [
+      "/api/market/quote",
+      "/api/watchlist"
+    ]
+  },
+  {
+    "device": "mobile",
+    "viewport": [
+      390,
+      844
+    ],
+    "firstRow": {
+      "x": 35,
+      "y": 1001,
+      "width": 470,
+      "height": 156
+    },
+    "rowStatus": {
+      "x": 291,
+      "y": 1001,
+      "width": 138,
+      "height": 156
+    },
+    "add": {
+      "x": 16,
+      "y": 572,
+      "width": 117,
+      "height": 37
+    },
+    "tableOverflow": 150,
+    "excluded": "—\n표시할 종목이 없습니다\n\n관심목록에 없는 종목입니다. 시장 탐색에서 추가하세요.",
+    "trigger": {
+      "x": 423,
+      "y": 1026,
+      "width": 48,
+      "height": 37
+    },
+    "copied": "069500",
+    "detailURL": "/watchlist",
+    "escapeClosed": false,
+    "focusReturned": true,
+    "reloadDetail": false,
+    "reloadSearch": "",
+    "detailToTradeActions": [
+      "메뉴 열기",
+      "트레이딩 메뉴",
+      "코드 입력",
+      "종목 조회"
+    ],
+    "backFromTrade": "/trade",
+    "registration": "시장 탐색에서 추가 → 069500 입력 → 관심 등록 → 뒤로 → 새로고침해 3개 확인",
+    "removal": "해제 → 새로고침해 2개 확인",
+    "localPosts": [
+      "/api/market/quote",
+      "/api/watchlist"
+    ]
+  }
+]

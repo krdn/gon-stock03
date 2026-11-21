@@ -1,0 +1,78 @@
+{
+  "pc": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "positions": {
+      "demoTitle": 453,
+      "demoResult": 555,
+      "demoAction": 711,
+      "kisTitle": 754,
+      "kisResult": 855,
+      "kisAction": 1132,
+      "warning": 1375
+    },
+    "arrivals": {
+      "kis": {
+        "url": "/strategies",
+        "selected": "demo",
+        "reload": "demo",
+        "actionsToRequestedEnvironment": 2,
+        "evaluationY": 1060,
+        "back": "/dashboard"
+      },
+      "demo": {
+        "url": "/strategies",
+        "selected": "demo",
+        "reload": "demo",
+        "actionsToRequestedEnvironment": 1,
+        "back": "/dashboard"
+      },
+      "warning": {
+        "url": "/risk",
+        "back": "/dashboard"
+      }
+    },
+    "posts": [],
+    "overflow": 0
+  },
+  "mobile": {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "positions": {
+      "demoTitle": 538,
+      "demoResult": 686,
+      "demoAction": 998,
+      "kisTitle": 1041,
+      "kisResult": 1189,
+      "kisAction": 1669,
+      "warning": 1937
+    },
+    "arrivals": {
+      "kis": {
+        "url": "/strategies",
+        "selected": "demo",
+        "reload": "demo",
+        "actionsToRequestedEnvironment": 2,
+        "evaluationY": 1174,
+        "back": "/dashboard"
+      },
+      "demo": {
+        "url": "/strategies",
+        "selected": "demo",
+        "reload": "demo",
+        "actionsToRequestedEnvironment": 1,
+        "back": "/dashboard"
+      },
+      "warning": {
+        "url": "/risk",
+        "back": "/dashboard"
+      }
+    },
+    "posts": [],
+    "overflow": 0
+  }
+}

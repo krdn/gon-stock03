@@ -148,3 +148,66 @@ test('local connection loss pauses quotes and recovery resumes without orders', 
   await expect.poll(() => calls).toBe(2);
   await expect(page.getByLabel('실제 시세 상태')).toHaveText('수신 완료');
 });
+
+for (const offset of [-120_000, 120_000]) {
+  test(`uses server time for fresh and aged KRX quotes with device offset ${offset}`, async ({ page }) => {
+    const state = snapshot();
+    // Keep common availability independent from the quote clock under test (#157).
+    state.status.staleAfterMs = 3_600_000;
+    const serverTime = Date.parse(state.status.observedAt!);
+    await page.clock.install({ time: new Date(serverTime + offset) });
+    await page.route('**/api/state', route => route.fulfill({ json: state }));
+    const value = market();
+    value.quote.receivedAt = new Date(serverTime - 26_000).toISOString();
+    await page.route('**/api/kis/market', route => route.fulfill({ json: value }));
+    await page.goto('/trade');
+    await expect(page.getByLabel('실제 시세 상태')).toHaveText('수신 완료');
+    await expect(page.locator('.trade-quote-time time')).toHaveAttribute('datetime', value.quote.receivedAt);
+    await page.clock.fastForward(5500);
+    await expect(page.getByLabel('실제 시세 상태')).toHaveText('이전 수신값 · 최신 아님');
+    value.quote.receivedAt = new Date(serverTime - 45_000).toISOString();
+    await page.getByRole('button', { name: '시세 다시 조회' }).click();
+    await expect(page.locator('.trade-quote-time time')).toHaveAttribute('datetime', value.quote.receivedAt);
+    await expect(page.getByLabel('실제 시세 상태')).toHaveText('이전 수신값 · 최신 아님');
+  });
+}
+
+test('keyboard range preserves actual count, code and return URL without extra market reads', async ({ page }) => {
+  await local(page);
+  const posts: string[] = [];
+  page.on('request', r => { if (r.method() === 'POST') posts.push(new URL(r.url()).pathname); });
+  await page.route('**/api/kis/market', route => route.fulfill({ json: market(route.request().postDataJSON().code) }));
+  await page.goto('/trade?code=000660&range=bad');
+  const range = page.getByRole('group', { name: '일봉 범위' });
+  await expect(range.getByRole('button', { name: '60일봉' })).toHaveAttribute('aria-pressed', 'true');
+  await range.getByRole('button', { name: '60일봉' }).press('Enter');
+  await expect(page).toHaveURL(/range=60/);
+  for (const n of [20, 60, 100]) {
+    const button = range.getByRole('button', { name: n + '일봉' });
+    await button.focus(); await page.keyboard.press('Space');
+    await expect(button).toBeFocused();
+    await expect(page).toHaveURL(new RegExp('range=' + n));
+    await expect(page.getByText(`KIS 수정 종가 · 3개 거래일 (선택 ${n}일) · 마지막 거래일 2026-11-17`)).toBeVisible();
+  }
+  expect(posts).toEqual(['/api/kis/market']);
+  await page.reload();
+  await expect(range.getByRole('button', { name: '100일봉' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('link', { name: 'KIS 모의 주문 화면' }).press('Enter');
+  await expect(page).toHaveURL(/\/paper\?code=000660$/);
+  await page.goBack();
+  await expect(range.getByRole('button', { name: '100일봉' })).toHaveAttribute('aria-pressed', 'true');
+  expect(posts.every(path => path === '/api/kis/market')).toBe(true);
+});
+
+test('partial local state retains labeled previous quote and blocks retry', async ({ page }) => {
+  const state = snapshot();
+  await page.clock.install();
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.route('**/api/kis/market', route => route.fulfill({ json: market() }));
+  await page.goto('/trade'); await expect(page.getByLabel('실제 현재가')).toBeVisible();
+  state.status.phase = 'partial'; state.status.complete = false;
+  const response = page.waitForResponse('**/api/state'); await page.clock.fastForward(3500); await response;
+  await expect(page.getByLabel('실제 시세 상태')).toHaveText('로컬 서버 연결 대기');
+  await expect(page.locator('.quote').getByText('이전 수신값')).toBeVisible();
+  await expect(page.getByRole('button', { name: '시세 다시 조회' })).toBeDisabled();
+});

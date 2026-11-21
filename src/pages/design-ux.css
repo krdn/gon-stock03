@@ -1,0 +1,34 @@
+.design-workspace .design-tabs {
+  gap: 4px;
+  margin: 12px 0;
+  padding-bottom: 8px;
+}
+.design-workspace .design-tabs button { min-height: 38px; }
+.design-workspace .screen-map { margin-top: 16px; }
+.design-workspace .panel-head { margin-bottom: 12px; }
+.design-workspace .design-screen-detail { min-width: 0; scroll-margin-top: 12px; }
+.design-workspace .design-screen-detail:focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; }
+.design-purpose { margin: 2px 0 12px; }
+.design-feedback { width: fit-content; }
+.design-feedback small { font-size: 11px; font-weight: normal; }
+.design-record-note, .design-references {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.design-record-note { margin: 16px 0 8px; }
+.design-references {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 20px;
+}
+@media (max-width: 700px) {
+  .design-workspace .design-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .design-workspace .spec-layout { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .design-workspace .step-buttons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+  .design-workspace .step-buttons button { min-width: 0; padding: 8px; gap: 3px; }
+  .design-workspace .step-buttons svg { display: none; }
+}
+.design-trading-settings { margin-top: 12px; }
