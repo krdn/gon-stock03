@@ -92,7 +92,7 @@ for (const failure of ['unavailable', 'denied'] as const) {
 
 test('market searches actual master with combined filters, limits quote reads, keeps codes and opens matching details', async ({ page }) => {
   const calls = await setup(page); await page.goto('/market');
-  await expect(page.getByText('총 13개 종목', { exact: false })).toBeVisible();
+  await expect(page.getByText('검색 결과 13개', { exact: true })).toBeVisible();
   await expect.poll(() => calls.length).toBe(8); expect(calls).toEqual([...instruments, ...removed].slice(0, 8).map(row => row.code));
   await page.getByRole('button', { name: '다음 페이지', exact: true }).click();
   await expect(page.getByRole('row').filter({ hasText: '이전 종목' })).toContainText('마스터 제외');
@@ -196,7 +196,10 @@ test('market discards an in-flight previous page and rejects a mismatched quote 
 test('market preserves previous master on refresh failure and provides an empty first-load retry', async ({ page }) => {
   await setup(page);
   await page.route('**/api/data/master/refresh', route => route.fulfill({ json: { ...master(), sources: master().sources.map(source => ({ ...source, phase: 'error', error: '전체 교체 보류' })) } }));
-  await page.goto('/market'); await page.getByRole('button', { name: '마스터 갱신', exact: true }).click();
+  await page.goto('/market');
+  await page.getByText('마스터 출처와 시세 갱신 기준', { exact: true }).click();
+  await page.getByRole('button', { name: '마스터 갱신', exact: true }).click();
+  await expect(page.getByText('갱신 실패 · 이전 목록 13개', { exact: true })).toBeVisible();
   await expect(page.getByRole('alert').filter({ hasText: '마스터' })).toContainText('이전 목록'); await expect(page.locator('tbody')).toContainText('005930');
   await page.route('**/api/data/master', route => route.fulfill({ status: 503, body: 'not json' })); await page.reload();
   await expect(page.getByText('종목 마스터를 불러오지 못했습니다.', { exact: false })).toBeVisible();
@@ -326,4 +329,100 @@ test('watchlist distinguishes a pending first load from a confirmed empty list',
   expect(calls).toEqual([]);
   release();
   await expect(page.getByText('관심종목이 없습니다', { exact: true })).toBeVisible();
+});
+
+for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+  test(`market at ${viewport.width}px opens the selected trading quote and restores keyboard context`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await setup(page);
+    const writes: string[] = [];
+    page.on('request', request => {
+      if (request.method() !== 'GET') writes.push(new URL(request.url()).pathname);
+    });
+    await page.route('**/api/kis/market', route => route.fulfill({ status: 400, json: { error: '격리 예시 · 미연결' } }));
+    await page.goto('/market');
+    const search = page.getByRole('textbox', { name: '종목명 또는 코드 검색' });
+    await expect(page.getByText('검색 결과 13개')).toBeVisible();
+    const first = page.locator('tbody tr').first();
+    await expect(first).toBeInViewport({ ratio: 0.95 });
+    const bounds = await first.boundingBox();
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+    await search.pressSequentially('0695');
+    await expect(search).toHaveValue('0695');
+    await search.press('Tab');
+    await expect(page.getByRole('button', { name: '전체', exact: true })).toBeFocused();
+    await page.getByRole('button', { name: 'ETF', exact: true }).press('Space');
+    const trigger = page.getByRole('button', { name: 'KODEX 200 상세', exact: true });
+    await trigger.focus();
+    await page.keyboard.press('Tab');
+    await expect(page.getByRole('button', { name: /KODEX 200 관심/ })).toBeFocused();
+    const volumeHeader = page.getByRole('columnheader', { name: '거래량' });
+    if (viewport.width === 390) await expect(volumeHeader).toHaveCount(0);
+    else await expect(volumeHeader).toBeVisible();
+    await trigger.press('Enter');
+    const detail = page.getByRole('region', { name: '종목 상세' });
+    await expect(detail).toBeFocused();
+    await expect(detail.getByText('KIS 모의 REST 수신 시각')).toBeVisible();
+    await detail.getByRole('link', { name: '트레이딩에서 시세 보기' }).press('Enter');
+    await expect(page).toHaveURL(/\/trade\?code=069500$/);
+    await expect(page.getByLabel('실제 시세 종목코드')).toHaveValue('069500');
+    await page.goBack();
+    await expect(detail).toBeFocused();
+    await page.reload();
+    await expect(detail).toBeFocused();
+    await expect(search).toHaveValue('0695');
+    await expect(page.getByRole('button', { name: 'ETF', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await detail.press('Escape');
+    await expect(detail).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    expect(writes.filter(path => !['/api/market/quote', '/api/kis/market'].includes(path))).toEqual([]);
+  });
+}
+
+test('market distinguishes incomplete master from confirmed empty and recovers search', async ({ page }) => {
+  await setup(page);
+  await page.goto('/market?market=KOSDAQ&q=069500');
+  const search = page.getByRole('textbox', { name: '종목명 또는 코드 검색' });
+  await expect(page.getByText('다른 시장 필터에 있는 종목입니다.', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: '검색 조건 지우기' }).press('Enter');
+  await expect(search).toBeFocused();
+  await expect(page.getByText('검색 결과 13개')).toBeVisible();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/data/master', async route => {
+    await gate;
+    await route.fulfill({ json: { instruments: [], removed: [], sources: master().sources.slice(0, 1) } });
+  });
+  await page.goto('/market?q=123456');
+  await expect(page.getByText('종목 마스터를 확인하고 있습니다')).toBeVisible();
+  release();
+  await expect(page.getByText('검색 결과 확인 전', { exact: true })).toBeVisible();
+  await expect(page.getByText('현재 마스터에 없는 코드입니다.', { exact: false })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '마스터 갱신' })).toBeEnabled();
+});
+
+test('market deep links clamp pages, explain unavailable details and preserve unsupported codes', async ({ page }) => {
+  await setup(page);
+  await page.goto('/market?page=99');
+  await expect(page.getByText('2 / 2페이지', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: '이전 종목 상세' })).toBeVisible();
+  await page.getByRole('button', { name: '이전 종목 상세' }).click();
+  const detail = page.getByRole('region', { name: '종목 상세' });
+  await expect(detail).toContainText('마스터 제외');
+  await expect(detail.getByRole('link', { name: /트레이딩/ })).toHaveCount(0);
+  await page.goto('/market?detail=00088K&page=bad&market=unknown');
+  await expect(detail).toContainText('숫자 6자리 종목을 지원');
+  await expect(detail.getByRole('link', { name: /트레이딩/ })).toHaveCount(0);
+  await detail.getByRole('button', { name: '상세 닫기' }).press('Space');
+  await expect(page.getByRole('button', { name: '한화우 상세' })).toBeFocused();
+  await page.goto('/market?detail=300006');
+  await expect(detail).toContainText('300006');
+  await detail.getByRole('button', { name: '상세 닫기' }).click();
+  await expect(page.getByRole('button', { name: '검증 종목 6 상세' })).toBeFocused();
+  await page.goto('/market?market=ETF&q=999999');
+  await expect(page.getByText('현재 마스터에서 제외된 종목입니다.', { exact: false })).toBeVisible();
+  await page.goto('/market?q=not-a-stock&detail=069500');
+  await expect(page.getByText('이 목록에서 선택한 상세 종목을 확인하지 못했습니다.', { exact: false })).toBeVisible();
+  await expect(detail).toHaveCount(0);
 });

@@ -1,0 +1,7 @@
+[
+  {"id":"example-wait","name":"예시 · 표본 대기","code":"069500","fast":5,"slow":20,"qty":1,"active":false,"lastSignal":"hold","lastTick":-1,"environment":"kis-paper","revision":1,"evaluations":[]},
+  {"id":"example-cross","name":"예시 · 이동평균 교차","code":"005930","fast":2,"slow":3,"qty":1,"active":false,"lastSignal":"buy","lastTick":-1,"environment":"kis-paper","revision":1,"evaluations":[
+    {"event":"예시-02","at":"2026-11-20T02:00:00.000Z","revision":1,"signal":"buy","status":"blocked","reason":"예시 계약의 회당 한도를 초과했습니다."},
+    {"event":"예시-01","at":"2026-11-20T01:59:00.000Z","revision":1,"signal":"hold","status":"hold","reason":"이동평균 표본 부족"}
+  ]}
+]

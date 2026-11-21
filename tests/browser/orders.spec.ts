@@ -13,10 +13,11 @@ test('orders searches DEMO name/code together with status and displays fills and
   await page.getByLabel('주문 종목 검색').fill('삼성');
   await expect(page.getByRole('table')).toContainText('pending-id'); await expect(page.getByRole('table')).not.toContainText('filled-id');
   await expect(page.getByRole('table')).toContainText('접수 · 미체결');
-  await page.getByRole('button', { name: '체결', exact: true }).click();
+  await page.getByLabel('상태 필터').selectOption('filled');
   await expect(page.getByText('검색 조건에 맞는 주문이 없습니다')).toBeVisible();
   await page.getByLabel('주문 종목 검색').fill('000660');
-  await expect(page.getByRole('table')).toContainText('101,000'); await expect(page.getByRole('table')).toContainText('16원');
+  await expect(page.getByRole('table')).toContainText('101,000');
+  await page.locator('tbody summary').click(); await expect(page.getByText('16원', { exact: true })).toBeVisible();
   await expect(page.getByRole('table').getByRole('button', { name: '취소', exact: true })).toHaveCount(0);
 });
 
@@ -27,14 +28,16 @@ test('KIS ledger is read-only, separates status and dates and links without any 
   await page.route('**/api/kis/ledger', route => { reads++; return route.fulfill({ json: { orders: [paper, { ...paper, requestId: '22222222-2222-4222-8222-222222222222', status: 'unknown', brokerId: undefined, filled: 0, remaining: 3 }] } }); });
   await page.goto('/orders'); await page.getByRole('button', { name: 'KIS 모의 원장', exact: true }).click();
   await expect(page.getByRole('table')).toContainText('부분체결');
-  await expect(page.getByRole('table')).toContainText('20261115');
+  await page.locator('tbody summary').first().click();
+  await expect(page.getByText('20261115', { exact: true }).first()).toBeVisible();
   await expect(page.getByRole('table')).toContainText('00001234');
+  await page.locator('summary').filter({ hasText: '원장 정보' }).click();
   await expect(page.getByText('평균 체결가·수수료는 현재 원장에 미제공')).toBeVisible();
   await expect(page.getByText('로컬 원장 읽기 완료', { exact: false })).toBeVisible();
   await expect(page.getByRole('table')).not.toContainText('not for display');
-  await page.getByRole('button', { name: '불명', exact: true }).click();
+  await page.getByLabel('상태 필터').selectOption('unknown');
   await expect(page.getByRole('table').getByRole('row')).toHaveCount(2);
-  await expect(page.getByRole('table').getByRole('button')).toHaveCount(0);
+  await expect(page.getByRole('table').getByRole('button', {name: /취소|전송|정정/})).toHaveCount(0);
   await page.getByRole('button', { name: '원장 다시 읽기' }).click(); expect(reads).toBeGreaterThanOrEqual(2);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -59,6 +62,10 @@ test('ledger errors and malformed responses keep last rows without claiming empt
   mode = 'empty'; await page.getByRole('button', { name: '원장 다시 읽기' }).click();
   await expect(page.getByText('저장된 KIS 주문이 없습니다')).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
+  mode = 'fail'; await page.getByRole('button', { name: '원장 다시 읽기' }).click();
+  await expect(page.getByRole('alert')).toContainText('원장을 읽지 못했습니다');
+  await expect(page.getByText('이전에 읽은 범위는 0건입니다. 현재 건수는 미확인입니다.')).toBeVisible();
+  await expect(page.getByText('저장된 KIS 주문이 없습니다')).toHaveCount(0);
 });
 
 test('duplicate DEMO cancel sends once and a fill racing ahead is shown after the server refuses cancellation', async ({ page }) => {
@@ -128,11 +135,16 @@ test('history restores navigation, supports private identifier search and shows 
   page.on('request', r => { if (r.method() !== 'GET') writes.push(r.method()); });
   await page.route('**/api/state', r => r.fulfill({ json: snapshot() }));
   await page.route('**/api/kis/history', r => r.fulfill({ json: { sourceCount: 1, unavailable: [],
-    orders: [{ ...paper, sourceLabel: '예시 원장', sourceId: '0', lastMatchedAt: '2026-11-15T01:05:20Z' },
+    orders: [{ ...paper, code: '069500', qty: 2, price: 77755, filled: 2, remaining: 0, status: 'filled', tradeDate: '20261120',
+      createdAt: '2026-11-20T01:20:00Z', sourceLabel: '예시 원장', sourceId: '0', lastMatchedAt: '2026-11-20T01:20:55Z' },
       { ...paper, requestId: 'other-request', sourceId: '0', tradeDate: '20261114', status: 'unknown', brokerId: undefined }] } }));
   await page.goto('/orders?view=history');
   const list = page.getByRole('list', { name: '지난 주문 목록' }), first = list.getByRole('listitem').first();
-  await expect(first.locator('time')).toHaveText(/10:05:20/);
+  await expect(first.locator('time')).toHaveText(/10:20:55/);
+  await expect(first).toContainText('지정가 77,755원');
+  await expect(first).toContainText('체결 2주');
+  await expect(first).toContainText('전량 체결');
+  await expect(first).toContainText('잔량 0주');
   for (const [width, height] of [[1440, 900], [390, 844]]) {
     await page.setViewportSize({ width, height });
     expect(await first.evaluate(el => el.getBoundingClientRect().bottom)).toBeLessThanOrEqual(height);
@@ -144,9 +156,9 @@ test('history restores navigation, supports private identifier search and shows 
   await expect(first.getByText(paper.requestId)).toBeVisible();
   await page.keyboard.press('Space'); await expect(first.getByText(paper.requestId)).toBeHidden();
   const search = page.getByRole('searchbox');
-  for (const q of ['삼성전자','005930','2026-11-15',paper.brokerId,paper.requestId]) {
+  for (const q of ['KODEX 200','069500','2026-11-20',paper.brokerId,paper.requestId]) {
     await search.fill(q);
-    await expect(first.locator('time')).toHaveText(/10:05:20/);
+    await expect(first.locator('time')).toHaveText(/10:20:55/);
     expect(page.url()).not.toContain(q);
   }
   await expect(first.getByText(paper.requestId)).toBeVisible();
@@ -218,4 +230,111 @@ test('a current-session reconciliation refreshes current orders but leaves the a
   const initial = currentReads; s.realtime.reconciledAt = '2026-11-15T01:00:03Z';
   await page.clock.fastForward(3100);
   await expect.poll(() => currentReads).toBeGreaterThan(initial);
+});
+
+test('DEMO distinguishes first-read failure, confirmed empty and stale orders, and blocks stale cancellation', async ({ page }) => {
+  const state = snapshot();
+  let online = false;
+  const writes: string[] = [];
+  page.on('request', r => { if (r.method() !== 'GET') writes.push(r.method()); });
+  let release!: () => void;
+  const firstResponse = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/state', async r => {
+    await firstResponse;
+    return online ? r.fulfill({ json: state }) : r.fulfill({ status: 503, json: {} });
+  });
+  await page.goto('/orders?status=pending');
+  await expect(page.getByText('DEMO 주문 확인 중…')).toBeVisible();
+  await expect(page.getByText(/DEMO 주문 내역 미확인/)).toHaveCount(0);
+  await expect(page.getByRole('searchbox')).toHaveCount(0);
+  release();
+  await expect(page.getByText(/DEMO 주문 내역 미확인/)).toBeVisible();
+  await expect(page.getByText('아직 주문이 없습니다')).toHaveCount(0);
+  await expect(page.getByText(/전체 0건/)).toHaveCount(0);
+  online = true;
+  await page.getByRole('button', { name: '다시 확인' }).click();
+  await expect(page.getByLabel('상태 필터')).toHaveValue('pending');
+  await page.getByLabel('상태 필터').selectOption('all');
+  await expect(page.getByText('아직 주문이 없습니다')).toBeVisible();
+  await expect(page.getByRole('searchbox')).toHaveCount(0);
+  state.orders = [{ id: 'demo-fixture', requestId: 'demo-request', code: '005930', side: 'buy', qty: 2,
+    price: 70000, status: 'pending', createdAt: paper.createdAt, source: 'manual', fee: 0 }];
+  await page.reload();
+  const cancel = page.getByRole('table').getByRole('button', { name: '취소', exact: true });
+  await expect(cancel).toBeEnabled();
+  for (const [width, height] of [[1440, 900], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    const pos = await cancel.boundingBox();
+    expect(pos!.x + pos!.width).toBeLessThanOrEqual(width);
+    expect(pos!.y + pos!.height).toBeLessThanOrEqual(height);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  }
+  online = false;
+  await expect(page.getByText(/이전에 확인한 DEMO 주문/)).toBeVisible({ timeout: 8000 });
+  await expect(cancel).toBeDisabled();
+  await expect(page.getByRole('button', { name: '다음 데모 봉 재생' })).toBeDisabled();
+  expect(writes).toEqual([]);
+});
+
+test('current order actions, keyboard details and read time stay separate from the saved KIS match', async ({ page }) => {
+  const matched = '2026-11-15T01:05:20Z';
+  const demo = snapshot(); const requests: string[] = [];
+  let reads = 0;
+  await page.clock.install();
+  await page.route('**/api/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    requests.push(route.request().method() + ' ' + path);
+    if (path === '/api/state') return route.fulfill({ json: demo });
+    if (path === '/api/kis/ledger') {
+      reads++;
+      return route.fulfill({ json: { orders: [{ ...paper, lastMatchedAt: matched }] } });
+    }
+    return route.abort();
+  });
+  await page.goto('/orders');
+  await expect(page.getByText('아직 주문이 없습니다')).toBeVisible();
+  const view = page.getByRole('button', { name: 'KIS 모의 원장', exact: true });
+  await view.focus(); await page.keyboard.press('Enter');
+  const table = page.getByRole('table', { name: '현재 KIS 주문 목록' });
+  const time = table.locator('time'), toggle = table.locator('summary');
+  await expect(time).toHaveAttribute('datetime', matched);
+  for (const [width, height] of [[1440, 900], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    for (const el of [time, table.getByRole('link'), toggle]) {
+      const rect = await el.boundingBox();
+      expect(rect!.x + rect!.width).toBeLessThanOrEqual(width);
+      expect(rect!.y + rect!.height).toBeLessThanOrEqual(height);
+    }
+  }
+  await expect(table.getByText(paper.requestId)).toBeHidden();
+  const closedPosition = await toggle.boundingBox();
+  await toggle.focus(); await page.keyboard.press('Space'); await expect(table.getByText(paper.requestId)).toBeVisible();
+  expect(await toggle.boundingBox()).toEqual(closedPosition);
+  await page.keyboard.press('Enter'); await expect(table.getByText(paper.requestId)).toBeHidden();
+  const filter = page.getByLabel('상태 필터');
+  await filter.focus(); await filter.press('Home'); await filter.press('ArrowDown');
+  await expect(page).toHaveURL(/status=sending/);
+  await filter.selectOption('partial');
+  await page.reload(); await expect(filter).toHaveValue('partial');
+  await page.getByRole('button', { name: 'DEMO 주문', exact: true }).click(); await page.goBack();
+  await expect(filter).toHaveValue('partial'); await expect(time).toHaveAttribute('datetime', matched);
+  const beforeReads = reads, readStatus = page.getByRole('status').filter({ hasText: '로컬 원장 읽기 완료' });
+  const previous = await readStatus.textContent();
+  await page.clock.fastForward(1200);
+  await page.getByRole('button', { name: '원장 다시 읽기' }).click();
+  await expect(readStatus).not.toHaveText(previous!);
+  expect(reads).toBe(beforeReads + 1);
+  await expect(time).toHaveAttribute('datetime', matched);
+  await page.setViewportSize({ width: 320, height: 844 });
+  await table.locator('*').evaluateAll(elements => {
+    const sizes = elements.map(el => parseFloat(getComputedStyle(el).fontSize));
+    elements.forEach((el, i) => (el as HTMLElement).style.fontSize = sizes[i] * 2 + 'px');
+  });
+  const recovery = await table.getByRole('link').boundingBox();
+  expect(recovery!.x + recovery!.width).toBeLessThanOrEqual((await toggle.boundingBox())!.x);
+  await toggle.focus(); await page.keyboard.press('Enter');
+  const detail = await table.locator('dl').boundingBox();
+  expect(detail!.x).toBeGreaterThanOrEqual(0);
+  expect(detail!.x + detail!.width).toBeLessThanOrEqual(320);
+  expect([...new Set(requests)].sort()).toEqual(['GET /api/kis/ledger','GET /api/state']);
 });

@@ -1,0 +1,16 @@
+.settings-overview > .settings-guide {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 16px clamp(18px, 2vw, 30px);
+}
+
+.settings-overview .settings-actions + .settings-hint {
+  margin-top: 10px;
+}
+
+@media (max-width: 640px) {
+  .settings-actions .button {
+    gap: 6px;
+    padding-inline: 10px;
+  }
+}

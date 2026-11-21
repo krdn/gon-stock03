@@ -1,0 +1,10 @@
+.watchlist-explorer .market-name[aria-expanded="true"] { color: var(--teal); text-decoration: underline; }
+.watchlist-explorer .market-provenance { margin-top: 12px; }
+.watchlist-actions { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px 12px; }
+.watchlist-actions p { margin: 8px 0; }
+
+@media (max-width: 700px) {
+  .watchlist-explorer .watchlist-order { grid-column: 1 / -1; }
+  .watchlist-explorer .watchlist-order:empty { display: none; }
+  .watchlist-explorer .table-action { display: inline-flex; align-items: center; min-height: 32px; }
+}

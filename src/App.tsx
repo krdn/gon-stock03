@@ -4,7 +4,7 @@ import { Activity, ArrowLeftRight, Bell, BookOpen, ChartNoAxesCombined, Check, C
 import { initialState } from '../shared/fixtures';
 import type { StateSnapshot, DataStatus as DataStatusContract } from '../shared/model';
 import { stateSnapshotSchema, storageErrorMessage } from '../shared/contracts';
-import { disconnectedConnection, emptyStatus, freshness } from '../shared/status';
+import { disconnectedConnection, emptyStatus } from '../shared/status';
 import { screens } from './specs';
 import { WorkbenchContext } from './context';
 import { Badge, DataStatusLine, phaseLabels } from './components/ui';
@@ -18,18 +18,43 @@ import { Paper } from './pages/Paper';
 
 const icons = [LayoutDashboard, Search, Star, ChartNoAxesCombined, ArrowLeftRight, Wallet, Zap, FlaskConical, ShieldCheck, BookOpen, Bell, Database, Settings2, Network, Link2];
 function WatchlistPage() { return <Market watchOnly />; }
+type SuccessDeadline = { successAt: number; until: number };
+const noSuccess: SuccessDeadline = { successAt: -Infinity, until: -Infinity };
+
+function statusDeadline(status: DataStatusContract, serverAt: number, sentAt: number, prior: SuccessDeadline, restarted: boolean): SuccessDeadline {
+  const successAt = Date.parse(status.lastSuccessAt ?? '');
+  // A new instance has its own clock, but copying an identical timestamp cannot renew it.
+  const previous = restarted && successAt !== prior.successAt ? noSuccess : prior;
+  const failed = ['partial', 'error', 'stale'].includes(status.phase);
+  if (!Number.isFinite(serverAt) && !failed) return previous;
+  const observedAt = Date.parse(status.observedAt ?? '');
+  if (!(successAt <= observedAt) || successAt < previous.successAt) return { ...previous, until: -Infinity };
+  if (failed) return { successAt, until: -Infinity };
+  const until = sentAt + status.staleAfterMs - Math.max(0, serverAt - successAt);
+  return { successAt, until: previous.successAt === successAt ? Math.min(previous.until, until) : until };
+}
+
+function currentStatus(status: DataStatusContract, deadline: number, tick: number): DataStatusContract {
+  if (status.phase !== 'ready' || (status.complete && tick < deadline)) return status;
+  return { ...status, phase: status.lastSuccessAt ? 'stale' : 'disconnected' };
+}
+
 export default function App() {
   const [state, setState] = useState(initialState);
   const [localStatus, setLocalStatus] = useState<DataStatusContract>({ ...emptyStatus('demo'), phase: 'loading' });
   const [connectionState, setConnection] = useState(disconnectedConnection);
-  const [now, setNow] = useState(Date.now);
+  const [, setTick] = useState(0);
   const snapshot = useRef<StateSnapshot | null>(null);
-  const serverClock = useRef({ observedAt: null as string | null, receivedAt: 0 });
-  const serverNow = serverClock.current.observedAt ? Date.parse(serverClock.current.observedAt) + now - serverClock.current.receivedAt : now;
+  const clock = useRef({ observedAt: -Infinity, receivedAt: 0, displayFloor: 0, local: noSuccess, account: noSuccess, needsObservation: false });
+  const retiredServers = useRef(new Set<string>());
+  const instanceId = snapshot.current?.instanceId;
+  const tick = performance.now();
+  const trustedClock = !clock.current.needsObservation && Number.isFinite(clock.current.observedAt);
+  const serverNow = trustedClock ? Math.max(clock.current.displayFloor, clock.current.observedAt + (tick - clock.current.receivedAt)) : NaN;
   const requests = useRef({ issued: 0, applied: 0 });
-  const status = freshness(localStatus, now);
-  const accountStatus = freshness(connectionState.status, now);
-  const connection = { ...connectionState, status: accountStatus, connected: accountStatus.phase === 'ready' };
+  const status = currentStatus(localStatus, trustedClock ? clock.current.local.until : -Infinity, tick);
+  const accountStatus = currentStatus(connectionState.status, trustedClock ? clock.current.account.until : -Infinity, tick);
+  const connection = { ...connectionState, status: accountStatus, connected: connectionState.connected && accountStatus.phase === 'ready' };
   const available = status.phase === 'ready';
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
@@ -39,10 +64,17 @@ export default function App() {
   const [, , , tradingSection, step] = location.pathname.split('/');
   const tradingTitle = ({ general:'일반 주문·위험', once:'다음 한정 실행', strategy:'다음 전략 계약' } as Record<string,string>)[tradingSection] ?? '매매 설정';
   const current = trading ? { ...screens.find(s=>s.id==='settings')!, title:tradingTitle, subtitle:tradingSection==='once'||tradingSection==='strategy' ? `${step??1}/3 · 대상, 한도, 검토` : '일반 한도와 다음 전용 실행 조건' } : screens.find(s => location.pathname === '/' + s.id) ?? screens[0];
+  const invalidate = useCallback((reason: 'failure' | 'regression' | 'resume' = 'failure') => {
+    const waiting = reason === 'resume';
+    clock.current.needsObservation = true;
+    setLocalStatus(old => ({ ...old, phase: waiting ? 'loading' : reason === 'regression' ? 'error' : old.lastSuccessAt ? 'stale' : 'disconnected', complete: false,
+      error: waiting ? null : reason === 'regression' ? '저장 상태가 이전 버전으로 바뀌었습니다. 페이지를 새로고침해 다시 확인하세요.' : '로컬 상태를 확인하지 못했습니다. 연결과 서버 버전을 확인하세요.' }));
+    setConnection(old => ({ ...old, connected: false, status: { ...old.status, phase: waiting ? 'loading' : old.status.lastSuccessAt ? 'stale' : 'disconnected', complete: false, error: waiting ? null : '로컬 상태를 신뢰할 수 없어 KIS 상태를 다시 확인해야 합니다.' } }));
+  }, []);
   const refresh = useCallback(async () => {
+    const sentAt = performance.now();
     const sequence = ++requests.current.issued;
     const atStart = snapshot.current;
-    const invalidateConnection = () => setConnection(old => ({ ...old, connected: false, status: { ...old.status, phase: old.status.lastSuccessAt ? 'stale' : 'disconnected', complete: false, error: '로컬 상태를 신뢰할 수 없어 KIS 상태를 다시 확인해야 합니다.' } }));
     try {
       const response = await fetch('/api/state', { signal: AbortSignal.timeout(8000) });
       if (!response.ok) throw new Error('서버를 연결하지 못했습니다.');
@@ -52,25 +84,74 @@ export default function App() {
       const previous = snapshot.current;
       if (previous && previous.instanceId === result.instanceId && result.revision < previous.revision) {
         if (atStart !== previous) return;
-        invalidateConnection();
-        setLocalStatus(old => ({ ...old, phase: 'error', complete: false, error: '저장 상태가 이전 버전으로 바뀌었습니다. 페이지를 새로고침해 다시 확인하세요.' })); return;
+        invalidate('regression'); return;
       }
-      if (previous && previous.instanceId !== result.instanceId) setNotice({ text: '서버가 다시 시작되어 저장 상태를 새로 불러왔습니다. 주문과 한도를 다시 확인하세요.', error: true });
-      if (result.status.observedAt !== serverClock.current.observedAt) serverClock.current = { observedAt: result.status.observedAt, receivedAt: Date.now() };
-      snapshot.current = result; setState(result); setLocalStatus(result.status); setConnection(result.connection); setNow(Date.now());
+      const restarted = previous !== null && previous.instanceId !== result.instanceId;
+      const bodyTime = Date.parse(result.status.observedAt ?? '');
+      const httpDate = Date.parse(response.headers.get('Date') ?? '');
+      // HTTP Date is truncated to seconds. A body from after the response cannot establish time.
+      const observedAt = bodyTime >= httpDate + 1000 ? NaN : bodyTime;
+      const last = clock.current;
+      if (retiredServers.current.has(result.instanceId)) { invalidate(); return; }
+      if (restarted) {
+        retiredServers.current.add(previous.instanceId);
+        setNotice({ text: '서버가 다시 시작되었습니다. 주문과 한도를 다시 확인하세요.', error: true });
+      }
+      const sameObservation = !restarted && observedAt === last.observedAt;
+      const keepAnchor = sameObservation || (!restarted && !Number.isFinite(observedAt));
+      const replayAfterFailure = sameObservation && last.needsObservation && result.status.phase === 'ready' && result.status.complete;
+      if ((!restarted && observedAt < last.observedAt) || replayAfterFailure) { invalidate(); return; }
+      const receivedAt = performance.now();
+      const serverAt = Math.max(observedAt, Number.isFinite(httpDate) ? httpDate : observedAt,
+        sameObservation ? observedAt + Math.max(0, sentAt - last.receivedAt) : observedAt);
+      clock.current = {
+        observedAt: keepAnchor ? last.observedAt : Number.isFinite(observedAt) ? observedAt : -Infinity,
+        receivedAt: keepAnchor ? last.receivedAt : receivedAt,
+        // Hold a previously reached expiry while a newer, delayed sample catches up.
+        displayFloor: restarted ? 0 : Math.max(last.displayFloor, last.observedAt + (receivedAt - last.receivedAt)),
+        local: statusDeadline(result.status, serverAt, sentAt, last.local, restarted),
+        account: statusDeadline(result.connection.status, serverAt, sentAt, last.account, restarted),
+        needsObservation: !Number.isFinite(observedAt) || result.status.phase !== 'ready' || !result.status.complete || !result.status.lastSuccessAt,
+      };
+      snapshot.current = result; setState(result); setLocalStatus(result.status); setConnection(result.connection);
     } catch {
       if (sequence < requests.current.applied) return;
       requests.current.applied = sequence;
-      setLocalStatus(old => ({ ...old, phase: old.lastSuccessAt ? 'stale' : 'disconnected', complete: false, error: '로컬 상태를 확인하지 못했습니다. 연결과 서버 버전을 확인하세요.' }));
-      invalidateConnection();
+      invalidate();
     }
+  }, [invalidate]);
+  useEffect(() => {
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 3000);
+    // A suspended browser may pause its monotonic clock. Require a new GET before accepting actions on return.
+    const resume = () => {
+      if (document.visibilityState !== 'visible') return;
+      requests.current.applied = ++requests.current.issued;
+      invalidate('resume'); void refresh();
+    };
+    const restored = (event: PageTransitionEvent) => { if (event.persisted) resume(); };
+    document.addEventListener('visibilitychange', resume);
+    window.addEventListener('pageshow', restored);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', resume);
+      window.removeEventListener('pageshow', restored);
+    };
+  }, [invalidate, refresh]);
+  useEffect(() => {
+    const update = () => setTick(value => value + 1);
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
   }, []);
-  useEffect(() => { void refresh(); }, [refresh]);
-  useEffect(() => { const timer = window.setInterval(() => void refresh(), 3000); return () => window.clearInterval(timer); }, [refresh]);
-  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
+  const nextDeadline = Math.min(status.phase === 'ready' ? clock.current.local.until : Infinity, accountStatus.phase === 'ready' ? clock.current.account.until : Infinity);
+  useEffect(() => {
+    if (!Number.isFinite(nextDeadline)) return;
+    const timer = window.setTimeout(() => setTick(value => value + 1), Math.max(0, Math.ceil(nextDeadline - performance.now())));
+    return () => window.clearTimeout(timer);
+  }, [nextDeadline]);
   useEffect(() => { setMenu(false); document.title = `${current.title} · GON Stock`; window.scrollTo(0, 0); }, [location.pathname, current.title]);
   async function act<T>(path: string, body?: unknown): Promise<T> {
-    if (freshness(localStatus).phase !== 'ready') {
+    if (instanceId !== snapshot.current?.instanceId || clock.current.needsObservation || currentStatus(localStatus, clock.current.local.until, performance.now()).phase !== 'ready') {
       const message = '최신 로컬 상태를 확인한 뒤 다시 시도하세요.';
       setNotice({ text: message, error: true }); throw Object.assign(new Error(message), { definitive: true, notSent: true });
     }

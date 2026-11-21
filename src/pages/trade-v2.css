@@ -1,0 +1,43 @@
+.trade-quote-panel { max-width: 960px; }
+.trade-stock-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
+.trade-stock-picker .field { margin: 0; }
+.trade-stock-picker > .field { flex: 1 1 190px; }
+.trade-stock-picker details, .trade-data-details { font-size: 13px; color: var(--muted); }
+.trade-stock-picker summary, .trade-data-details summary { cursor: pointer; padding: 7px 0; }
+.trade-stock-picker .button-row { align-items: end; margin-top: 6px; }
+.trade-stock-picker input { width: 9em; max-width: 100%; }
+.trade-quote-source, .trade-quote-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.trade-quote-source { margin-top: 18px; font-size: 13px; }
+.trade-quote-source strong { color: var(--teal); }
+.trade-quote-warning { color: #884919; font-weight: 600; }
+.trade-quote-panel .quote { margin: 6px 0; }
+.trade-quote-time, .trade-bars-caption, .trade-data-details p { font-size: 13px; line-height: 1.6; color: var(--muted); word-break: keep-all; }
+.trade-quote-actions { margin: 12px 0; }
+.trade-quote-actions .text-link { display: inline-flex; align-items: center; gap: 4px; padding: 8px 0; }
+.trade-quote-panel .chart-toolbar { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px; }
+.trade-quote-panel .chart-axis { margin-top: 6px; }
+.trade-data-details { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 4px; }
+@media (max-width: 600px) {
+  .trade-stock-picker { gap: 6px 12px; }
+  .trade-stock-picker > .field { flex-basis: 155px; }
+  .trade-quote-panel .chart-toolbar { align-items: flex-start; flex-direction: column; }
+}
+.demo-trade-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 18px; }
+.demo-ticket .stock-heading { align-items: end; }
+.demo-ticket .stock-heading .field { margin: 0; }
+.demo-ticket .stock-heading .badge { margin-bottom: 12px; }
+.demo-ticket .quote { margin: 10px 0 2px; }
+.demo-ticket .quote .muted { font-size: 12px; }
+.trade-ticket-note { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.demo-ticket .side-tabs { margin: 12px 0; }
+.demo-ticket-inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.demo-ticket-inputs .field { margin: 0; min-width: 0; }
+.demo-ticket .quantity-buttons { margin-top: 8px; }
+.demo-ticket .order-total { margin-top: 12px; }
+.demo-ticket-result { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding-top: 12px; }
+.demo-ticket-result p { font-weight: 600; font-size: 14px; }
+.demo-ticket-result .text-link, .demo-paper-link { display: inline-flex; align-items: center; gap: 4px; padding: 8px 0; }
+.demo-paper-link { margin-top: 8px; }
+@media (max-width: 1000px) {
+  .demo-trade-layout { grid-template-columns: minmax(0, 1fr); }
+}
