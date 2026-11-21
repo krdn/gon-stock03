@@ -1,17 +1,17 @@
 {
-  "checked_at": "2026-11-21T05:55:36.819579+00:00",
-  "objective": "자동진화 총괄 절차를 저장하고 gon-stock03 전용 Orca Quick Command로 등록한다.",
+  "checked_at": "2026-11-21T07:28:21.733152+00:00",
+  "objective": "화면 시각화 문서 생성·갱신용 Orca Quick Command 제작 가이드와 등록",
   "sources": [
     {
-      "url": "https://orca.dev/docs/terminal#quick-commands",
-      "finding": "탭 바에서 프로젝트 범위의 Codex Agent Prompt를 새 탭으로 호출할 수 있다."
+      "url": "https://orca.dev/docs/settings#quick-commands",
+      "finding": "Agent Prompt 프리셋의 범위를 프로젝트로 제한할 수 있고 명령 소유 호스트와 표시 범위를 구분한다."
     },
     {
-      "url": "https://orca.dev/docs/settings#quick-commands",
-      "finding": "Quick Commands의 저장 호스트와 Global/Project 표시 범위는 별도 설정이다."
+      "url": "https://github.com/tt-a1i/archify",
+      "finding": "저장소 근거, 다이어그램과 설명을 독립 HTML로 만들고 검증할 수 있다."
     }
   ],
-  "decisions": "등록과 실행을 구분한다. 프로젝트 범위에 저장한 명령은 기존 단계의 원격 증거와 실제 실행 소유권부터 확인한다.",
+  "decisions": "기존 지도 원본과 생성기를 사용하되 실제 설정에는 별도 ID로 Codex 프롬프트 하나만 등록하고 재조회한다.",
   "status": "reviewed",
   "task_contexts": [
     {
@@ -856,6 +856,22 @@
         }
       ],
       "decisions": "등록과 실행을 구분한다. 프로젝트 범위에 저장한 명령은 기존 단계의 원격 증거와 실제 실행 소유권부터 확인한다."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/192",
+      "checked_at": "2026-11-21T07:28:21.733152+00:00",
+      "objective": "화면 시각화 문서 생성·갱신용 Orca Quick Command 제작 가이드와 등록",
+      "sources": [
+        {
+          "url": "https://orca.dev/docs/settings#quick-commands",
+          "finding": "Agent Prompt 프리셋의 범위를 프로젝트로 제한할 수 있고 명령 소유 호스트와 표시 범위를 구분한다."
+        },
+        {
+          "url": "https://github.com/tt-a1i/archify",
+          "finding": "저장소 근거, 다이어그램과 설명을 독립 HTML로 만들고 검증할 수 있다."
+        }
+      ],
+      "decisions": "기존 지도 원본과 생성기를 사용하되 실제 설정에는 별도 ID로 Codex 프롬프트 하나만 등록하고 재조회한다."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."
