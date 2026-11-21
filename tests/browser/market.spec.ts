@@ -211,7 +211,7 @@ test('watchlist persists shared selections, shows received time and navigates wi
   const state = snapshot(); state.watchlist = ['00088K', '005930']; const calls = await setup(page, state);
   const orders: string[] = []; page.on('request', request => { if (/\/api\/(kis\/order|orders)$/.test(request.url())) orders.push(request.url()); });
   await page.goto('/watchlist'); await expect(page.locator('tbody tr')).toHaveCount(2);
-  await expect(page.locator('header.topbar')).toContainText('공식 마스터 · KIS 모의 시세');
+  await expect(page.locator('header.topbar')).toContainText('종목 목록 · KIS 모의 시세');
   await expect.poll(() => calls.length).toBe(2); expect(calls).toEqual(['00088K', '005930']);
   const row = page.getByRole('row').filter({ hasText: '한화우' });
   await expect(row).toContainText('수신 완료'); await expect(row).toContainText('수신 ');
@@ -426,3 +426,24 @@ test('market deep links clamp pages, explain unavailable details and preserve un
   await expect(page.getByText('이 목록에서 선택한 상세 종목을 확인하지 못했습니다.', { exact: false })).toBeVisible();
   await expect(detail).toHaveCount(0);
 });
+
+for (const width of [1440, 390]) {
+  test(`market identifies the selected instrument's stored list source at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    await setup(page);
+    const data = master();
+    Object.assign(data.sources[0], { source: 'https://new.real.download.dws.co.kr/common/master/kospi_code.mst.zip', sha256: 'a'.repeat(64) });
+    await page.route('**/api/data/master', route => route.fulfill({ json: data }));
+    await page.goto('/market');
+    for (const [name, label] of [['KODEX 200', 'KIS 공개 종목 마스터'], ['에코프로비엠', '합성 예시 목록']]) {
+      const button = page.getByRole('button', { name: name + ' 상세', exact: true });
+      await expect(button).toContainText(label);
+      await button.click();
+      await expect(page.getByRole('region', { name: '종목 상세' })).toContainText(label);
+      await page.getByRole('button', { name: '상세 닫기' }).click();
+    }
+    await page.locator('.market-provenance summary').click();
+    await expect(page.locator('.market-sources')).toContainText('KOSDAQ · 합성 예시 목록');
+    await expect(page.locator('.market-sources')).toContainText('KOSPI · KIS 공개 종목 마스터');
+  });
+}

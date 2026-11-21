@@ -44,3 +44,16 @@ Graphify에서 `Market→MarketExplorer→useWorkbench`, `makeServer→Store.mas
 - Gemini 4 Neon High의 관측 검토는 응답을 받았다. 최초 구현 검토는 스트림 중단·5분 제한으로 본문 없이 실패했다. 같은 모델에 핵심 구현 발췌로 다시 요청해 모바일 포커스와 숨김 열 헤더 지적을 받았다. 종목 상세 → 관심 버튼 순서, 모바일에서 등락률·거래량 헤더/셀 동시 숨김, 가격의 접근성 라벨, 이전 목록·마스터 제외 안내를 수정했다. CSS 적용 범위와 제외 종목이 실제 검색 목록에 들어가는지는 원문에서 대조했다. 관심종목 전용 Escape·제외 종목 추가 안내는 해당 페이지 담당 검토 사항이다.
 - 요청 모델과 CLI 초기화 모델은 `gemini-4-neon-high`로 확인했다. 서버 내부 모델과 추론 강도는 독립 미확인이다. 수정분에 대한 같은 모델의 최종 응답과 원격 CI는 [이슈 #161](https://github.com/krdn/gon-stock03/issues/161)에서 확인한다.
 - 기준 main에서 `ready`, 작업 브랜치에서 `implementation-ready`와 원격 작업 문서·두 선행 PR의 `resume`을 확인했다. Graphify 갱신 후 그래프 1,555노드·3,619연결을 생성했다. 실측은 Chromium 예시 환경에 한정하며 보조기기 이용자 실측은 미확인이다.
+
+## 11월 21일 종목 목록 출처 재검증
+
+기준 main `9323577`에서 4454의 전용 SQLite에 기존 미리보기와 같은 출처 `https://example.test/master`로 예시 ETF를 저장했다. 실제 `GET /api/data/master`는 이 값을 보존했지만, PC·모바일은 ‘공식 마스터’로 표시했다. 4455에서는 4303 저장 마스터 3,966종목을 읽기 전용으로 복사해 같은 코드 069500을 비교했다. 두 서버의 KIS 자격은 비어 있고 외부 fetch는 차단했다. [이슈 재현 기록](https://github.com/krdn/gon-stock03/issues/161#issuecomment-7061278807)
+
+| Chromium | 4454 합성 예시 목록 | 4455 KIS 공개 종목 마스터 |
+| --- | --- | --- |
+| 1440×900 | [수정 전](../verification/assets/161-market/source/before-4454-1440.png) · [수정 후](../verification/assets/161-market/source/after-4454-1440.png) | [저장된 공개 목록](../verification/assets/161-market/source/after-4455-1440.png) |
+| 390×844 | [수정 전](../verification/assets/161-market/source/before-4454-390.png) · [수정 후](../verification/assets/161-market/source/after-4454-390.png) | [저장된 공개 목록](../verification/assets/161-market/source/after-4455-390.png) |
+
+두 화면 크기에서 목록 행·거래소별 펼침·선택 상세가 같은 출처를 표시했다. 각 환경에서 트레이딩으로 069500을 전달했고 뒤로가기 후 상세와 검색어를 복원했다. 가로 넘침은 네 경우 모두 0px였다. 거래소별 저장 출처를 갱신 중과 실패 후에도 유지한다. 제외 이력에는 당시 출처가 없어 ‘목록 출처 미확인’으로 표시한다. 장중 시세와 사용자 직접 수용은 미확인이다.
+
+[선택 ETF와 같은 거래소의 API 출처·목록 행 실측](../verification/assets/161-market/source/measurements.json). 단위 277건, 시장·관심종목 브라우저 35건과 빌드가 통과했다. Gemini 4 Neon High는 제공한 diff와 DOM 근거를 검토해 PASS로 응답했다. 출력의 초기화 모델은 `gemini-4-neon-high`였고 서버 내부 모델은 독립 미확인이다. 미확인 출처 문구는 단위 검사로 검증했다.

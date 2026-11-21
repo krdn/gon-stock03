@@ -6,7 +6,7 @@ import { Store } from '../server/store.ts';
 import { makeServer } from '../server/http.ts';
 import { KisClient } from '../server/kis.ts';
 import { MarketData, parseMaster } from '../server/market-data.ts';
-import { addDays, dailyInput } from '../shared/market-data.ts';
+import { addDays, dailyInput, masterSourceLabel } from '../shared/market-data.ts';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -100,6 +100,13 @@ test('a KOSDAQ to KOSPI transfer preserves one code; inconsistent market snapsho
   } finally { store.close(); }
 });
 
+test('unrecognized source and missing successful collection stay unconfirmed', () => {
+  const state = { exchange: 'KOSPI' as const, source: 'https://unrecognized.test/master', phase: 'ready' as const,
+    lastSuccessAt: new Date().toISOString(), observedAt: new Date().toISOString(), sha256: 'a'.repeat(64), count: 1, error: null };
+  assert.equal(masterSourceLabel(state), '목록 출처 미확인');
+  assert.equal(masterSourceLabel({ ...state, source: 'synthetic', lastSuccessAt: null }), '목록 출처 미확인');
+});
+
 test('master rejects malformed, empty and duplicate data without accepting a shifted layout', () => {
   const line = '005930   KR7000000000Example'.padEnd(61) + 'ST' + ' '.repeat(225);
   assert.throws(() => parseMaster(Buffer.from('broken'), 'KOSPI'), /고정폭/);
@@ -113,12 +120,17 @@ test('an interrupted master refresh is persisted as incomplete instead of retain
   const store = new Store(path); let recovery: Store | undefined; let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   const service = new MarketData(store, clientFor([]), async () => { await gate; return new Response('', { status: 503 }); });
+  store.saveMasters([{ ...parseMaster(Buffer.from('005930   KR7005930003Example'.padEnd(61) + 'ST' + ' '.repeat(225)), 'KOSPI'), source: 'https://example.test/master' }]);
   const pending = service.refreshMaster();
   try {
     const loading = store.masterData();
     assert.equal(loading.sources.length, 2); assert.ok(loading.sources.every(source => source.phase === 'loading'));
+    assert.equal(loading.sources.find(s => s.exchange === 'KOSPI')?.source, 'https://example.test/master');
     recovery = new Store(path);
     assert.ok(recovery.masterData().sources.every(source => source.phase === 'error' && source.error?.includes('재시작')));
+    release();
+    const retry = await pending;
+    assert.equal(retry.sources.find(s => s.exchange === 'KOSPI')?.source, 'https://example.test/master');
   } finally { release(); await pending; recovery?.close(); store.close(); rmSync(directory, { recursive: true }); }
 });
 
