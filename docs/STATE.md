@@ -1,5 +1,6 @@
 # 작업 인수인계
 
+- **장전 포트폴리오 운용** [구현과 검증](tasks/197-morning.md) · [#197](https://github.com/krdn/gon-stock03/issues/197)
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매.
 
 프로젝트를 처음 볼 때는 [한 장 그림](architecture/figures/gon-stock-overview.png)에서 KIS 모의 주문과 DEMO 연습 흐름을 따라간다. [구조도 작업 #110](https://github.com/krdn/gon-stock03/issues/110)

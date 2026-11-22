@@ -1,3 +1,4 @@
+import { MorningPortfolio } from '../components/MorningPortfolio';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight, RefreshCw, ShieldCheck, Star, Zap } from 'lucide-react';
 import { useWorkbench } from '../context';
@@ -41,6 +42,7 @@ export function Dashboard() {
       </div>)}
       {!available && <strong>알림 최신 상태 미확인</strong>}
     </section>}
+    <MorningPortfolio hideEmpty />
     <div className="dash-accounts">
       <section className="dash-account" aria-label="DEMO 계좌 요약">
         <header><h2>DEMO 계좌</h2><span>합성 시나리오</span></header>
@@ -182,6 +184,7 @@ export function Portfolio() {
       <button type="button" className={`button ${!kis ? 'primary' : 'secondary'}`} aria-pressed={!kis} onClick={() => selectEnvironment('demo')}>로컬 DEMO</button>
       {kis && <button type="button" className="button secondary" disabled={!available || busy || connection.status.phase === 'loading'} onClick={() => void act('kis/check').catch(() => {})}><RefreshCw size={15} aria-hidden="true" />KIS 잔고 새로고침</button>}
     </div>
+    {kis && <MorningPortfolio />}
     <div className="portfolio-source" role="group" aria-label="포트폴리오 조회 상태">
       <strong>{kis ? 'KIS 모의 잔고 · REST' : 'DEMO 계좌 · 로컬 합성 데이터'}</strong>
       <Badge tone={current ? 'teal' : 'neutral'}>{phaseLabels[dataStatus.phase]}</Badge>

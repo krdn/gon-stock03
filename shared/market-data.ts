@@ -41,11 +41,11 @@ export function masterSourceLabel(state?: MasterState) {
   return '목록 출처 미확인';
 }
 
-export interface MasterInstrument { code: string; isin: string; name: string; exchange: Exchange; kind: 'stock' | 'etf'; group: string; tradingHalted?: boolean; liquidation?: boolean }
+export interface MasterInstrument { code: string; isin: string; name: string; exchange: Exchange; kind: 'stock' | 'etf'; group: string; sector?: string; tradingHalted?: boolean; liquidation?: boolean }
 export interface RemovedInstrument extends MasterInstrument { removedAt: string }
 export interface MasterSnapshot { exchange: Exchange; source: string; sha256: string; collectedAt: string; rows: MasterInstrument[] }
 export interface MasterState { exchange: Exchange; source: string; phase: 'loading' | 'ready' | 'error'; observedAt: string; lastSuccessAt: string | null; error: string | null; sha256: string | null; count: number }
-const masterInstrumentSchema = z.object({ code: masterCodeSchema, isin: z.string(), name: z.string().min(1), exchange: z.enum(['KOSPI', 'KOSDAQ']), kind: z.enum(['stock', 'etf']), group: z.string(), tradingHalted: z.boolean().optional(), liquidation: z.boolean().optional() });
+const masterInstrumentSchema = z.object({ code: masterCodeSchema, isin: z.string(), name: z.string().min(1), exchange: z.enum(['KOSPI', 'KOSDAQ']), kind: z.enum(['stock', 'etf']), group: z.string(), sector:z.string().optional(), tradingHalted: z.boolean().optional(), liquidation: z.boolean().optional() });
 export const masterDataSchema = z.object({
   instruments: z.array(masterInstrumentSchema), removed: z.array(masterInstrumentSchema.extend({ removedAt: z.iso.datetime() })).default([]),
   sources: z.array(z.object({ exchange: z.enum(['KOSPI', 'KOSDAQ']), source: z.string(), phase: z.enum(['loading', 'ready', 'error']), observedAt: z.iso.datetime(), lastSuccessAt: z.iso.datetime().nullable(), error: z.string().nullable(), sha256: z.string().nullable(), count: z.number().int().nonnegative() })),

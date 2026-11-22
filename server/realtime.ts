@@ -1,3 +1,4 @@
+import type { MorningReport } from '../shared/morning.ts';
 import { krxHours, sessionBounds, type ExchangeNotice } from '../shared/trading-policy.ts';
 import { createDecipheriv, createHash, randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
@@ -20,6 +21,235 @@ const socketFactory: SocketFactory = url => new WebSocket(url, { followRedirects
 const initial = (): RealtimeStatus => ({ phase: 'stopped', required: false, ordersAllowed: false, message: '실시간 미연결 · 자동 시작 없음', code: null, lastQuoteAt: null, lastNoticeAt: null, reconciledAt: null, price: null, fresh: false });
 
 export class Realtime {
+  private morningArmed = false;
+  private morningReport: MorningReport | null = null;
+  private morningWatch = new Map<string, MorningReport['watch'][number]>();
+  private carryReports = new Map<string, MorningReport>();
+  refreshMorningTerms() {
+    const account = this.paper.morningAccount(),
+      day = this.config?.session.date;
+    if (!account || !day) return;
+    this.morningReport = this.store.morning(account, day);
+    this.morningWatch = new Map(this.morningReport?.watch.map((p) => [p.code, p]));
+    this.carryReports = new Map(this.store.carry(account, day).map((c) => [c.code, c.report]));
+  }
+  morningRun() {
+    return {
+      armed: this.morningArmed,
+      buyId: this.morningArmed ? this.morningBuyId : null,
+      subscriptions: this.morningCodes.size,
+      phase: this.state.phase,
+      session: this.config?.session.date ?? null,
+    };
+  }
+  private morningBuyId: string | null = null;
+  private morningBusy = false;
+  private pendingExits = new Set<string>();
+  private exitRetryAfter=new Map<string,number>();
+  private deferredExitRevision = new Map<string, number>();
+  private morningCodes = new Set<string>();
+  private symbolAcks = new Set<string>();
+  private ticks = new Map<string, { time: number; volume: number; price: number; stopped: boolean }>();
+  private opening?: ReturnType<typeof setTimeout>;
+  private autoReconciling = false;
+  private autoReconcile() {
+    if (!this.morningArmed || !this.morningCodes.size || this.autoReconciling || this.acknowledgements.size !== 2)
+      return;
+    this.autoReconciling = true;
+    void this.reconcile()
+      .catch(() => {
+        this.morningArmed = false;
+      })
+      .finally(() => {
+        this.autoReconciling = false;
+      });
+  }
+  morningPrice(code: string) {
+    const tick = this.ticks.get(code);
+    if (
+      !tick ||
+      tick.stopped ||
+      this.now() - tick.time > 5000 ||
+      !this.sessionOpen() ||
+      this.state.phase !== 'ready' ||
+      this.revision !== this.reconciledRevision ||
+      this.store.read().risk.halted
+    )
+      return null;
+    return tick.price;
+  }
+  prepareMorning(report: MorningReport) {
+    if (!this.config?.approvalKey || !this.config.htsId || !this.canApproveMorning(report.day))
+      throw new Error('당일 실시간 구독 설정이 필요합니다.');
+    const account = this.paper.morningAccount();
+    const carry = account ? this.store.carry(account, report.day) : [];
+    const codes = [...new Set([...report.candidates, ...carry].map((p) => p.code))];
+    if (codes.some((code) => !/^\d{6}$/.test(code)) || codes.length > 18)
+      throw new Error('이번 실시간 구독 가능 범위를 초과했습니다.');
+    for (const p of report.watch) if (codes.length < 18 && !codes.includes(p.code) && /^\d{6}$/.test(p.code)) codes.push(p.code);
+    if (this.socket && (!this.morningCodes.size || codes.some((c) => !this.morningCodes.has(c))))
+      throw new Error('기존 실시간 구독을 정지한 뒤 포트폴리오 운용을 승인하세요.');
+    return codes;
+  }
+  canMonitorCarry(day: string) {
+    return this.canApproveMorning(day) && !!this.config?.approvalKey && !!this.config?.htsId && !this.socket && !this.morningArmed;
+  }
+  armMorning(codes: string[], buyId: string | null = null) {
+    this.refreshMorningTerms();
+    this.morningBuyId = buyId;
+    this.morningArmed = true;
+    if (!codes.length) return;
+    if (this.socket) {
+      if (this.state.phase !== 'ready') this.autoReconcile();
+      return;
+    }
+    this.morningCodes = new Set(codes);
+    clearTimeout(this.opening);
+    const start = () => {
+      if (!this.morningArmed || !this.sessionOpen() || this.store.read().risk.halted) return;
+      try {
+        this.start(codes[0], true);
+      } catch {
+        this.morningArmed = false;
+      }
+    };
+    const open = Date.parse(this.config!.session.date + 'T' + this.config!.session.open + ':00+09:00');
+    if (this.now() >= open) start();
+    else {
+      this.opening = setTimeout(start, open - this.now());
+      this.opening.unref();
+    }
+  }
+  morningOpenTime(day: string) {
+    return this.config?.session.verified && this.config.session.date === day ? this.config.session.open : '09:00';
+  }
+  morningCloseTime(day: string) {
+    return this.config?.session.verified && this.config.session.date === day ? this.config.session.close : null;
+  }
+  canApproveMorning(day: string) {
+    const session = this.config?.session;
+    return (
+      !!session &&
+      session.verified &&
+      session.date === day &&
+      this.now() < Date.parse(day + 'T' + session.close + ':00+09:00')
+    );
+  }
+  private async evaluateMorning(code: string, event: string, price: number, previous: number) {
+    const account = this.paper.morningAccount();
+    if (!account || !code || !this.config) return;
+    const today = this.morningReport;
+    const prior = this.carryReports.get(code);
+    const additions = today ? this.store.additions(today.id) : [];
+    const current =
+      today?.candidates.find((p) => p.code === code) ??
+      additions.find((a) => a.approved && a.candidate.code === code)?.candidate;
+    if (today?.approvedAt && !current) {
+      const levels = this.morningWatch.get(code);
+      if (
+        this.morningPrice(code)!==null && !this.store.morningStopped(account,today.day) && today.exposureComplete &&
+        levels &&
+        levels.limit > 0 &&
+        previous <= levels.reference &&
+        price > levels.reference
+      ) {
+        const reserved = additions.filter((a) => a.approved).reduce((v, a) => v + a.candidate.limit, 0);
+        const limit = Math.min(
+          (today.retainedCash ?? 0) - reserved,
+          levels.limit,
+          (levels.sectorRoom??Infinity)-additions.filter(a=>levels.sector && a.approved && a.candidate.sector===levels.sector).reduce((v,a)=>v+a.candidate.limit,0),
+          this.store.read().risk.maxOrder,
+        );
+        if (limit >= price)
+          this.store.proposeMorning(today.id, { ...levels, closes: [], limit }, this.now() + 60000);
+      }
+    }
+    const carry = prior?.candidates.find((p) => p.code === code);
+    const buy = current && previous <= current.reference && price > current.reference;
+    const exitSignal = (report: MorningReport | null | undefined, terms: typeof current) => {
+      if (!report || !terms) return false;
+      const key = report.id + ':' + code;
+      if (price >= terms.exit) {
+        this.pendingExits.delete(key);
+        this.deferredExitRevision.delete(key);
+      } else if (previous >= terms.exit) this.pendingExits.add(key);
+      return this.now()>=(this.exitRetryAfter.get(key)??0) && this.pendingExits.has(key) && this.deferredExitRevision.get(key) !== this.revision;
+    };
+    const sell = exitSignal(today, current),
+      carrySell = exitSignal(prior, carry);
+    const ready = this.morningPrice(code) !== null;
+    if (!ready && !sell && !carrySell) return;
+    const useCarry = carrySell && !(today?.approvedAt && sell);
+    const report = useCarry ? prior : today,
+      candidate = useCarry ? carry : current;
+    if (!(buy || sell || carrySell) || !candidate || !report) return;
+    const side = useCarry || sell ? 'sell' : 'buy';
+    const enabled =
+      !!report.approvedAt &&
+      this.morningArmed &&
+      this.morningCodes.has(code) &&
+      (useCarry || this.morningBuyId === report.id);
+    const requestId=randomUUID();
+    if (
+      !this.store.morningSignal(
+        report.id,
+        event,
+        code,
+        side,
+        price,
+        new Date(this.now()).toISOString(),
+        !ready
+          ? '계좌 대조 대기'
+          : enabled
+            ? this.morningBusy
+              ? '이전 신호 검사 중 · 보류'
+              : '검사 중'
+            : '가상 신호 · 매매 미승인',
+        enabled && ready && !this.morningBusy ? requestId:null,
+      )
+    )
+      return;
+    if (!enabled && side === 'sell') this.pendingExits.delete(report.id + ':' + code);
+    if (!ready && side === 'sell') this.deferredExitRevision.set(report.id + ':' + code, -1);
+    if (!enabled || this.morningBusy || !ready) return;
+    this.morningBusy = true;
+    try {
+      const generation = this.generation,
+        revision = this.revision,
+        signalTime = this.ticks.get(code)!.time;
+      const order = await this.paper.submit(
+        { code, price, qty: 1, side, requestId },
+        (wait) => {
+          const latest=this.morningPrice(code);
+          if (
+            generation !== this.generation ||
+            revision !== this.revision ||
+            this.now() - signalTime + (wait ?? 0) > 5000 ||
+            !this.morningArmed ||
+            latest===null || (side==='buy' ? latest<=candidate.reference : latest>=candidate.exit)
+          )
+            throw new KisNotSent('운용 상태 또는 신호 가격 변경');
+        },
+        undefined,
+        { report, candidate, account },
+      );
+      if (side==='sell'){
+        if(order.notSent) this.exitRetryAfter.set(report.id+':'+code,this.now()+5000);
+        else this.pendingExits.delete(report.id+':'+code);
+      }
+      this.store.finishMorningSignal(report.id, event, code, order.status + ' · ' + order.requestId);
+    } catch (e) {
+      if (side === 'sell') {
+        if (e instanceof Error && e.message.includes('기존 미체결 주문'))
+          this.deferredExitRevision.set(report.id + ':' + code, this.revision);
+        else if(e instanceof KisNotSent || (e instanceof Error && /시세|대조|응답 불명/.test(e.message))) this.exitRetryAfter.set(report.id+':'+code,this.now()+5000);
+        else this.pendingExits.delete(report.id + ':' + code);
+      }
+      this.store.finishMorningSignal(report.id, event, code, e instanceof Error ? e.message : '주문 검사 실패');
+    } finally {
+      this.morningBusy = false;
+    }
+  }
   private state = initial();
   private socket?: Socket;
   private generation = 0;
@@ -93,18 +323,21 @@ export class Realtime {
     this.revision++; this.state.reconciledAt = null;
     this.state.phase = 'reconciling'; this.state.message = message;
   }
-  start(code: string) {
+  start(code: string, portfolio=false) {
     if (!/^\d{6}$/.test(code) || !this.config?.approvalKey.trim() || !this.config.htsId.trim() || !this.sessionOpen()) throw new Error('실시간 시작에는 서버 비밀주입과 당일 개장·거래시간 확인이 필요합니다.');
     if (this.socket) throw new Error('실시간 수신이 이미 시작되었습니다.');
     if (this.store.read().risk.halted) throw new Error('긴급정지 상태에서는 실시간 수신을 시작할 수 없습니다.');
+    if(!portfolio) {this.morningCodes.clear();this.morningArmed=false;clearTimeout(this.opening);}
     clearTimeout(this.retry); this.retry = undefined;
     this.store.requireRealtime(); this.required = true;
     this.state = { ...initial(), code }; this.attempts = 0; this.history = []; this.consumed = 0;
     this.open();
+
   }
   private open() {
     if (!this.sessionOpen() || this.store.read().risk.halted) { this.stop(); return; }
     const generation = ++this.generation;
+    this.ticks.clear();this.symbolAcks.clear();
     this.acknowledgements.clear(); this.key = undefined; this.iv = undefined;
     this.quoteTime = 0; this.volume = -1; this.stopped = false; this.history = []; this.seen.clear();
     this.invalidate('구독 확인과 REST 대조 전 신규 주문 차단'); this.state.phase = 'connecting';
@@ -115,7 +348,7 @@ export class Realtime {
     socket.on('open', () => {
       if (generation !== this.generation) return;
       try {
-        for (const [tr_id, tr_key] of [[PRICE, this.state.code!], [NOTICE, this.config!.htsId]]) socket.send(JSON.stringify({ header: { approval_key: this.config!.approvalKey, custtype: 'P', tr_type: '1', 'content-type': 'utf-8' }, body: { input: { tr_id, tr_key } } }));
+        for (const [tr_id, tr_key] of [...[...(this.morningCodes.size?this.morningCodes:[this.state.code!])].map(code=>[PRICE,code]), [NOTICE, this.config!.htsId]]) socket.send(JSON.stringify({ header: { approval_key: this.config!.approvalKey, custtype: 'P', tr_type: '1', 'content-type': 'utf-8' }, body: { input: { tr_id, tr_key } } }));
       } catch { this.failed(generation); }
     });
     socket.on('message', (data, binary) => {
@@ -134,6 +367,7 @@ export class Realtime {
     this.event('KIS 실시간 연결 시작', '구독 확인·REST 대조와 신선한 시세가 필요합니다.', 'info');
   }
   private detach() {
+    clearTimeout(this.opening); this.morningBuyId=null;this.morningArmed = false;
     ++this.generation;
     clearInterval(this.watchdog); clearTimeout(this.retry); this.watchdog = undefined; this.retry = undefined;
     const socket = this.socket; this.socket = undefined;
@@ -162,21 +396,27 @@ export class Realtime {
       const message = JSON.parse(raw);
       const tr = message.header?.tr_id;
       if (tr === 'PINGPONG') { if (Buffer.byteLength(raw) > 125) throw new Error(); this.socket!.pong(raw); return; }
-      if (String(message.body?.msg1 ?? '').startsWith('UNSUB') || ![PRICE, NOTICE].includes(tr) || message.body?.rt_cd !== '0' || message.header?.tr_key !== (tr === PRICE ? this.state.code : this.config!.htsId)) throw new Error();
+      if (String(message.body?.msg1 ?? '').startsWith('UNSUB') || ![PRICE, NOTICE].includes(tr) || message.body?.rt_cd !== '0' || (tr===PRICE ? !(this.morningCodes.size?this.morningCodes.has(message.header?.tr_key):this.state.code===message.header?.tr_key) : message.header?.tr_key!==this.config!.htsId)) throw new Error();
       if (this.acknowledgements.has(tr)) throw new Error();
+      if(tr===PRICE) {
+        const code=String(message.header.tr_key);
+        if(this.symbolAcks.has(code)) throw new Error();
+        this.symbolAcks.add(code);
+        if(this.symbolAcks.size<Math.max(1,this.morningCodes.size)) return;
+      }
       if (tr === NOTICE) {
         const key = message.body.output?.key, iv = message.body.output?.iv;
         if (typeof key !== 'string' || typeof iv !== 'string' || Buffer.byteLength(key) !== 32 || Buffer.byteLength(iv) !== 16) throw new Error();
         this.key = Buffer.from(key); this.iv = Buffer.from(iv);
       }
       this.acknowledgements.add(tr);
-      if (this.acknowledgements.size === 2) { this.invalidate('구독 확인 · REST 계좌·주문 대조 필요'); this.event('KIS 실시간 구독 확인', this.state.message, 'info'); }
+      if (this.acknowledgements.size === 2) { this.invalidate('구독 확인 · REST 계좌·주문 대조 필요'); this.event('KIS 실시간 구독 확인', this.state.message, 'info');this.autoReconcile(); }
       return;
     }
     const parts = raw.split('|');
     if (parts.length !== 4 || !/^\d{1,3}$/.test(parts[2])) throw new Error();
     const [encrypted, tr, countText, payload] = parts; const count = Number(countText);
-    if (count < 1 || count > 100 || !this.acknowledgements.has(tr)) throw new Error();
+    if (count < 1 || count > 100 || !(this.acknowledgements.has(tr) || (tr===PRICE && this.symbolAcks.size))) throw new Error();
     let plain = payload;
     if (tr === NOTICE && encrypted === '1' && this.key && this.iv) {
       if (!/^[A-Za-z0-9+/]+={0,2}$/.test(payload)) throw new Error();
@@ -195,12 +435,12 @@ export class Realtime {
         if (this.seen.size >= 1000) this.seen.delete(this.seen.values().next().value!);
         this.seen.add(fingerprint); this.state.lastNoticeAt = new Date(this.now()).toISOString();
         this.invalidate('체결통보 수신 · 수량 확정은 REST 대조 필요');
-        this.event('KIS 체결통보 수신', '접수·체결 통보를 수신했습니다. 원장 수량은 REST 대조로 확인하세요.', 'info');
+        this.event('KIS 체결통보 수신', '접수·체결 통보를 수신했습니다. 원장 수량은 REST 대조로 확인하세요.', 'info');this.autoReconcile();
       }
     }
   }
   private quote(row: string[]) {
-    if (row[0] !== this.state.code || !/^\d{8}$/.test(row[33]) || !/^\d{6}$/.test(row[1]) || !/^\d+$/.test(row[2]) || !/^\d+$/.test(row[13])) throw new Error();
+    if (!this.symbolAcks.has(row[0]) || !/^\d{8}$/.test(row[33]) || !/^\d{6}$/.test(row[1]) || !/^\d+$/.test(row[2]) || !/^\d+$/.test(row[13])) throw new Error();
     const date = `${row[33].slice(0, 4)}-${row[33].slice(4, 6)}-${row[33].slice(6)}`;
     const time = Date.parse(`${date}T${row[1].slice(0, 2)}:${row[1].slice(2, 4)}:${row[1].slice(4)}+09:00`);
     const price = Number(row[2]), volume = Number(row[13]), age = this.now() - time;
@@ -208,7 +448,12 @@ export class Realtime {
     const configured = this.paper.timingPolicy && sessionBounds(date, this.paper.timingPolicy.session, this.paper.timingPolicy.exchangeNotice);
     if (configured && (time < configured.start || time >= configured.end)) return;
     if (time < Date.parse(`${this.config!.session.date}T${this.config!.session.open}:00+09:00`)) return;
-    if (!this.sessionOpen() || date !== this.config!.session.date || age < 0 || age > (this.paper.timingPolicy?.quoteSeconds ?? 5) * 1000 || time < this.quoteTime || volume < this.volume) return;
+    if (!this.sessionOpen() || date !== this.config!.session.date || age < 0 || age > (this.paper.timingPolicy?.quoteSeconds ?? 5) * 1000) return;
+    const before=this.ticks.get(row[0]);
+    if(before && (time<before.time || volume<before.volume || (volume===before.volume && row[35]!=='Y'))) return;
+    this.ticks.set(row[0],{time,volume,price,stopped:row[35]==='Y'});
+    if(this.morningCodes.size && !before?.stopped && row[35]!=='Y') void this.evaluateMorning(row[0],row[33]+':'+volume,price,before?.price??Infinity).catch(()=>{this.morningArmed=false;});
+    if(row[0]!==this.state.code) return;
     if (row[35] === 'Y') { this.quoteTime = time; this.volume = volume; this.stopped = true; return; }
     if (volume === this.volume) return;
     this.stopped = false;

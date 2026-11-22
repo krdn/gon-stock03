@@ -200,6 +200,39 @@ export class KisClient {
       return { date: date.data, open, high, low, close, volume };
     });
   }
+  async etfWeights(code: string) {
+    const { data } = await this.request(
+      '/uapi/etfetn/v1/quotations/inquire-component-stock-price',
+      'FHKST121600C0',
+      {
+        FID_COND_MRKT_DIV_CODE: 'J',
+        FID_INPUT_ISCD: code,
+        FID_COND_SCR_DIV_CODE: '11216',
+      },
+    );
+    const result = z
+      .object({
+        rt_cd: z.literal('0'),
+        output2: z
+          .array(
+            z.object({
+              stck_shrn_iscd: z.string().regex(/^[0-9A-Z]{6}$/),
+              etf_cnfg_issu_rlim: z.string().regex(/^\d+(?:\.\d+)?$/),
+            }),
+          )
+          .min(1),
+      })
+      .parse(data);
+    const weights = new Map<string, number>();
+    for (const row of result.output2) {
+      const weight = Number(row.etf_cnfg_issu_rlim) / 100;
+      if (weight <= 0 || weight > 1 || weights.has(row.stck_shrn_iscd)) throw new Error('ETF 구성비 확인 필요');
+      weights.set(row.stck_shrn_iscd, weight);
+    }
+    const total = [...weights.values()].reduce((v, w) => v + w, 0);
+    if (total < 0.995 || total > 1.005) throw new Error('ETF 구성비 합계 확인 필요');
+    return weights;
+  }
   async buyingPower(code: string, price: number) {
     const { data } = await this.request('/uapi/domestic-stock/v1/trading/inquire-psbl-order', 'VTTC8908R', { ...this.accountParams(), PDNO: code, ORD_UNPR: String(price), ORD_DVSN: '01', CMA_EVLU_AMT_ICLD_YN: 'N', OVRS_ICLD_YN: 'N' });
     const parsed = z.object({ rt_cd: z.literal('0'), output: z.object({ nrcvb_buy_qty: amount.refine(Number.isSafeInteger), nrcvb_buy_amt: amount, ord_psbl_cash: amount }) }).safeParse(data);
@@ -211,12 +244,12 @@ export class KisClient {
     let fk = '', nk = ''; const seen = new Set<string>(); const rows: BrokerOrder[] = [];
     for (let page = 0; page < 50; page++) {
       const { response, data } = await this.request('/uapi/domestic-stock/v1/trading/inquire-daily-ccld', 'VTTC0081R', { ...this.accountParams(), INQR_STRT_DT: date, INQR_END_DT: date, SLL_BUY_DVSN_CD: '00', PDNO: '', CCLD_DVSN: '00', INQR_DVSN: '00', INQR_DVSN_3: '00', ORD_GNO_BRNO: '', ODNO: '', INQR_DVSN_1: '', CTX_AREA_FK100: fk, CTX_AREA_NK100: nk, EXCG_ID_DVSN_CD: 'KRX' }, false, page ? 'N' : '');
-      const parsed = z.object({ rt_cd: z.literal('0'), output1: z.array(z.object({ odno: brokerId, ord_dt: marketDate, pdno: z.string().regex(/^\d{6}$/), prdt_name: z.string(), sll_buy_dvsn_cd: z.enum(['01', '02']), ord_qty: amount, ord_unpr: amount, ord_dvsn_cd: z.string().optional(), tot_ccld_qty: amount, rmn_qty: amount, cncl_yn: z.enum(['Y', 'N']), cncl_cfrm_qty: z.string().regex(/^\d+$/).transform(Number).pipe(z.int().nonnegative()).optional().catch(undefined), ord_gno_brno: organizationId })), ctx_area_fk100: z.string().optional(), ctx_area_nk100: z.string().optional() }).safeParse(data);
+      const parsed = z.object({ rt_cd: z.literal('0'), output1: z.array(z.object({ odno: brokerId, ord_dt: marketDate, pdno: z.string().regex(/^\d{6}$/), prdt_name: z.string(), sll_buy_dvsn_cd: z.enum(['01', '02']), ord_qty: amount, ord_unpr: amount, ord_dvsn_cd: z.string().optional(), tot_ccld_qty: amount, tot_ccld_amt:amount.refine(Number.isSafeInteger).optional().catch(undefined), rmn_qty: amount, cncl_yn: z.enum(['Y', 'N']), cncl_cfrm_qty: z.string().regex(/^\d+$/).transform(Number).pipe(z.int().nonnegative()).optional().catch(undefined), ord_gno_brno: organizationId })), ctx_area_fk100: z.string().optional(), ctx_area_nk100: z.string().optional() }).safeParse(data);
       if (!parsed.success) throw new Error('KIS 주문 조회 응답 계약이 일치하지 않습니다.');
       for (const o of parsed.data.output1) {
         if (![o.ord_qty, o.ord_unpr, o.tot_ccld_qty, o.rmn_qty].every(Number.isSafeInteger) || o.ord_qty <= 0 || o.tot_ccld_qty + o.rmn_qty > o.ord_qty) throw new Error('KIS 주문 조회 수량 계약이 일치하지 않습니다.');
         if (rows.some(row => row.date === o.ord_dt && row.organization.replace(/^0+(?=\d)/, '') === o.ord_gno_brno.replace(/^0+(?=\d)/, '') && row.brokerId.replace(/^0+(?=\d)/, '') === o.odno.replace(/^0+(?=\d)/, ''))) throw new Error('KIS 주문 조회에 중복 주문번호가 있습니다.');
-        rows.push({ ...(o.ord_dvsn_cd === '01' ? { orderType: 'market' as const } : {}), brokerId: o.odno, date: o.ord_dt, code: o.pdno, name: o.prdt_name, side: o.sll_buy_dvsn_cd === '02' ? 'buy' : 'sell', qty: o.ord_qty, price: o.ord_unpr, filled: o.tot_ccld_qty, remaining: o.rmn_qty, cancelled: o.cncl_yn === 'Y', confirmedCancelQty: o.cncl_cfrm_qty !== undefined && o.cncl_cfrm_qty <= o.ord_qty - o.tot_ccld_qty ? o.cncl_cfrm_qty : undefined, organization: o.ord_gno_brno });
+        rows.push({ ...(o.tot_ccld_amt!==undefined && {fillAmount:o.tot_ccld_amt}), ...(o.ord_dvsn_cd === '01' ? { orderType: 'market' as const } : {}), brokerId: o.odno, date: o.ord_dt, code: o.pdno, name: o.prdt_name, side: o.sll_buy_dvsn_cd === '02' ? 'buy' : 'sell', qty: o.ord_qty, price: o.ord_unpr, filled: o.tot_ccld_qty, remaining: o.rmn_qty, cancelled: o.cncl_yn === 'Y', confirmedCancelQty: o.cncl_cfrm_qty !== undefined && o.cncl_cfrm_qty <= o.ord_qty - o.tot_ccld_qty ? o.cncl_cfrm_qty : undefined, organization: o.ord_gno_brno });
       }
       if (!['M', 'F'].includes(response.headers.get('tr_cont') ?? '')) return rows;
       fk = parsed.data.ctx_area_fk100?.trim() ?? ''; nk = parsed.data.ctx_area_nk100?.trim() ?? '';

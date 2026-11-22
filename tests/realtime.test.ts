@@ -880,3 +880,61 @@ for (const expiry of ['REST 시세', 'KIS 요청창'] as const)
       rmSync(dir, { recursive: true });
     }
   });
+
+test('장전 승인 전 가상 신호·당일 승인 후 KIS 모의 어댑터·손실 도달 후 추가 매수 차단',async t=>{
+  t.mock.timers.enable({apis:['Date'],now:base});
+  const f=fixture();
+  try{
+    const {buildMorning}=await import('../server/morning.ts');
+    const report=buildMorning(f.store,f.kis.connection(),base,[],[]);
+    const c={code:'005930',name:'검증',held:0,reference:69900,exit:65000,limit:100000,relativeVolume:2,closes:[],asOf:'20261113'};
+    Object.assign(report,{equity:10000000,cash:10000000,retainedCash:9900000,candidates:[c],exposureComplete:true});
+    const account=f.kis.accountFingerprint();
+    f.store.saveMorning(account,report);
+    const codes=f.realtime.prepareMorning(report);
+    f.realtime.armMorning(codes,null);
+    const socket=f.sockets.at(-1)!;socket.emit('open');socket.acknowledge();
+    await new Promise(resolve=>setTimeout(resolve,30));
+    socket.frame(priceFrame(1,69800));socket.frame(priceFrame(2));
+    await new Promise(resolve=>setTimeout(resolve,10));
+    assert.equal(f.sentOrders.length,0);
+    assert.equal(f.store.morningSignals(report.id)[0]?.outcome,'가상 신호 · 매매 미승인');
+    f.store.approveMorning(account,report.day,report.id,new Date(base).toISOString());
+    f.realtime.armMorning(codes,report.id);
+    assert.equal(f.realtime.canMonitorCarry(report.day),false);
+    socket.frame(priceFrame(3,69800));socket.frame(priceFrame(4));
+    await new Promise(resolve=>setTimeout(resolve,30));
+    assert.equal(f.sentOrders.length,1,JSON.stringify(f.store.morningSignals(report.id)));
+    f.store.morningStopped(account,report.day,true);
+    socket.frame(priceFrame(5,69800));socket.frame(priceFrame(6));
+    await new Promise(resolve=>setTimeout(resolve,10));
+    assert.equal(f.sentOrders.length,1);
+  }finally{f.close();}
+});
+
+test('당일 매수 승인 없이 지정한 날의 이월 수량만 매도하고 장중 편입 승인은 만료·중복을 검사한다',async t=>{
+  t.mock.timers.enable({apis:['Date'],now:base});
+  const f=fixture();
+  try{
+    const {buildMorning}=await import('../server/morning.ts');
+    const report=buildMorning(f.store,f.kis.connection(),base-3*86400000,[],[]);
+    const c={code:'005930',name:'검증',held:1,reference:72000,exit:70100,limit:100000,relativeVolume:2,closes:[],asOf:'20261112'};
+    Object.assign(report,{equity:10000000,cash:9000000,retainedCash:8900000,candidates:[c],exposureComplete:true});
+    f.response.positions=[{pdno:'005930',prdt_name:'검증',hldg_qty:'1',ord_psbl_qty:'1',pchs_avg_pric:'69000',prpr:'70000'}];
+    const account=f.kis.accountFingerprint();
+    f.store.saveMorning(account,report);f.store.approveMorning(account,report.day,report.id,new Date(base-3*86400000).toISOString());
+    const approved=f.store.morning(account,report.day)!;
+    f.store.proposeMorning(report.id,{...c,code:'000660'},base+60000);
+    assert.throws(()=>f.store.approveAddition(approved,'000660',base+60000,base+60001));
+    f.store.approveAddition(approved,'000660',base+60000,base);
+    assert.throws(()=>f.store.approveAddition(approved,'000660',base+60000,base));
+    f.store.saveCarry(account,'2026-11-16',report.id,[{code:c.code,qty:1}]);
+    f.realtime.armMorning([c.code]);
+    const ws=f.sockets.at(-1)!;ws.emit('open');ws.acknowledge();
+    await new Promise(resolve=>setTimeout(resolve,20));
+    ws.frame(priceFrame(1,70200));ws.frame(priceFrame(2,70000));
+    await new Promise(resolve=>setTimeout(resolve,30));
+    assert.deepEqual(f.sentOrders,[{tr:'VTTC0011U'}],JSON.stringify(f.store.morningSignals(report.id)));
+    assert.equal(f.store.carry(account,'2026-11-16').length,0);
+  }finally{f.close();}
+});

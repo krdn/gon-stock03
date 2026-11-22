@@ -27,7 +27,10 @@ export function parseMaster(bytes: Buffer, exchange: Exchange): MasterSnapshot {
     if (!/^[0-9A-Z]{6}$/.test(code) || !/^[A-Z0-9]{12}$/.test(isin) || !name || seen.has(code)) throw new Error('종목 마스터 코드·이름이 잘못되었거나 중복되었습니다.');
     const flagOffset = exchange === 'KOSPI' ? 60 : 55;
     const flag = (offset: number) => line.at(-tail + offset) === 'Y' ? true : line.at(-tail + offset) === 'N' ? false : undefined;
-    seen.add(code); rows.push({ code, isin, name, exchange, kind: group === 'EF' ? 'etf' : 'stock', group, tradingHalted: flag(flagOffset), liquidation: flag(flagOffset + 1) });
+    // KIS master fields KRX자동차 through KRX섹터운송. KOSDAQ has five fewer flags before this block.
+    const sectorFlags = ['자동차','반도체','바이오','은행','','에너지·화학','철강','','미디어·통신','건설','','증권','선박','보험','운송'];
+    const sector = sectorFlags.find((label,i) => label && flag((exchange==='KOSPI'?25:20)+i)===true);
+    seen.add(code); rows.push({ code, isin, name, exchange, ...(sector && {sector}), kind: group === 'EF' ? 'etf' : 'stock', group, tradingHalted: flag(flagOffset), liquidation: flag(flagOffset + 1) });
   }
   if (!rows.length) throw new Error('종목 마스터에 주식·ETF가 없습니다.');
   return { exchange, source: masterUrl(exchange), sha256: createHash('sha256').update(bytes).digest('hex'), collectedAt: new Date().toISOString(), rows };
