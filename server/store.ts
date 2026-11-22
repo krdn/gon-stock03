@@ -1,3 +1,4 @@
+import type { MorningReport } from '../shared/morning.ts';
 import { approvalBinding, type OncePolicy } from '../shared/trading-policy.ts';
 import type { PaperKrxSession } from './paper.ts';
 import type { PlanKind, PlanRecord } from '../shared/trading-plan.ts';
@@ -55,6 +56,14 @@ export class Store {
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_event_read (id TEXT PRIMARY KEY);');
     this.db.exec('CREATE TABLE IF NOT EXISTS paper_audit (id TEXT PRIMARY KEY, request_id TEXT NOT NULL, body TEXT NOT NULL); CREATE INDEX IF NOT EXISTS paper_audit_request ON paper_audit(request_id);');
     this.db.exec('CREATE TABLE IF NOT EXISTS market_master (exchange TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS market_instruments (code TEXT PRIMARY KEY, exchange TEXT NOT NULL, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS daily_runs (id TEXT PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS daily_bars (run_id TEXT NOT NULL, date TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(run_id,date));');
+    this.db.exec(`CREATE TABLE IF NOT EXISTS morning_reports (id TEXT PRIMARY KEY, account TEXT NOT NULL, day TEXT NOT NULL, body TEXT NOT NULL, approved TEXT);
+      CREATE UNIQUE INDEX IF NOT EXISTS morning_approved ON morning_reports(account,day) WHERE approved IS NOT NULL;
+      CREATE TABLE IF NOT EXISTS morning_signals (report TEXT NOT NULL, event TEXT NOT NULL, code TEXT NOT NULL, side TEXT NOT NULL, price INTEGER NOT NULL, at TEXT NOT NULL, outcome TEXT NOT NULL, request TEXT, PRIMARY KEY(report,event,code));
+      CREATE TABLE IF NOT EXISTS morning_additions (report TEXT NOT NULL,code TEXT NOT NULL,body TEXT NOT NULL,expires INTEGER NOT NULL,approved TEXT,PRIMARY KEY(report,code));
+      CREATE TABLE IF NOT EXISTS morning_claim (request TEXT PRIMARY KEY,report TEXT NOT NULL,code TEXT NOT NULL,buy_amount INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS morning_carry (account TEXT NOT NULL, day TEXT NOT NULL, code TEXT NOT NULL, report TEXT NOT NULL, qty INTEGER NOT NULL, claimed INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(account,day,code));
+      CREATE TABLE IF NOT EXISTS morning_close (report TEXT PRIMARY KEY,body TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS morning_stops (account TEXT NOT NULL, day TEXT NOT NULL, PRIMARY KEY(account,day));`);
     this.db.exec('CREATE TABLE IF NOT EXISTS backtest_experiments (id TEXT PRIMARY KEY, body TEXT NOT NULL);');
     this.db.exec('CREATE TABLE IF NOT EXISTS market_removed (code TEXT PRIMARY KEY, body TEXT NOT NULL);');
     this.db.prepare('INSERT OR IGNORE INTO workspace VALUES (1, 1, ?)').run(JSON.stringify(initialState()));
@@ -68,8 +77,219 @@ export class Store {
       if (active.length) record(state, '서버 재시작으로 전략 정지', '주문과 잔고를 확인한 뒤 개별 재개하세요.', 'warning');
     });
     for (const order of this.paperOrders()) if (order.status === 'sending') this.savePaper({ ...order, status: 'unknown', message: '전송 중 서버가 재시작되었습니다. KIS 계좌 대조가 필요합니다.' }, { actor: 'system', action: 'restart', before: 'sending' });
+    this.db.exec("UPDATE morning_signals SET outcome=COALESCE((SELECT json_extract(body,'$.status') FROM paper_orders WHERE request_id=morning_signals.request),'서버 중단 · 원장 재확인') WHERE outcome='검사 중'");
     for (const run of this.dailyRuns()) if (run.status.phase === 'loading') this.saveDaily({ ...run, status: { ...run.status, phase: 'partial', complete: false, error: '수집 중 서버가 재시작되었습니다. 마지막 저장 구간부터 재개하세요.' } });
     this.saveMasterStates(this.masterData().sources.filter(state => state.phase === 'loading').map(state => ({ ...state, phase: 'error', error: '마스터 수집 중 서버가 재시작되었습니다. 다시 수집하세요.' })));
+  }
+  saveMorning(account: string, report: MorningReport) {
+    this.db
+      .prepare('INSERT INTO morning_reports(id,account,day,body) VALUES (?,?,?,?)')
+      .run(report.id, account, report.day, JSON.stringify(report));
+  }
+  morning(account: string, day: string): MorningReport | null {
+    const row = this.db
+      .prepare(
+        'SELECT body,approved FROM morning_reports WHERE account=? AND day=? ORDER BY approved IS NOT NULL DESC,rowid DESC LIMIT 1',
+      )
+      .get(account, day);
+    return row ? { ...JSON.parse(String(row.body)), approvedAt: row.approved } : null;
+  }
+  saveMorningClose(report: string, result: import('./morning-close.ts').MorningClose) {
+    this.db
+      .prepare(
+        "INSERT INTO morning_close VALUES (?,?) ON CONFLICT(report) DO UPDATE SET body=excluded.body WHERE json_extract(morning_close.body,'$.hold') IS NULL",
+      )
+      .run(report, JSON.stringify(result));
+  }
+  morningClose(report: string): import('./morning-close.ts').MorningClose | null {
+    const row = this.db.prepare('SELECT body FROM morning_close WHERE report=?').get(report);
+    return row ? JSON.parse(String(row.body)) : null;
+  }
+  morningDays(account: string) {
+    return this.db
+      .prepare('SELECT DISTINCT day FROM morning_reports WHERE account=? ORDER BY day DESC LIMIT 60')
+      .all(account)
+      .map((r) => String(r.day));
+  }
+  additions(report: string) {
+    return this.db
+      .prepare('SELECT body,expires,approved FROM morning_additions WHERE report=? ORDER BY rowid')
+      .all(report)
+      .map((r) => ({
+        candidate: JSON.parse(String(r.body)) as MorningReport['candidates'][number],
+        expires: Number(r.expires),
+        approved: r.approved as string | null,
+      }));
+  }
+  proposeMorning(report: string, candidate: MorningReport['candidates'][number], expires: number) {
+    this.db
+      .prepare(
+        `INSERT INTO morning_additions VALUES (?,?,?,?,NULL) ON CONFLICT(report,code)
+  DO UPDATE SET body=excluded.body,expires=excluded.expires WHERE morning_additions.approved IS NULL`,
+      )
+      .run(report, candidate.code, JSON.stringify(candidate), expires);
+  }
+  approveAddition(report: MorningReport, code: string, expires: number, now: number) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const conditions = this.additions(report.id),
+        proposed = conditions.find((p) => p.candidate.code === code);
+      if (!report.approvedAt || !proposed || proposed.approved || proposed.expires !== expires || expires <= now)
+        throw new Error('편입 제안을 다시 확인하세요.');
+      const total = conditions
+        .filter((p) => p.approved)
+        .reduce((sum, p) => sum + p.candidate.limit, proposed.candidate.limit);
+      const proposedSector = proposed.candidate.sector;
+      if (proposedSector) {
+        const reserved = conditions
+          .filter((a) => a.approved && a.candidate.sector === proposedSector)
+          .reduce((v, a) => v + a.candidate.limit, 0);
+        if (reserved + proposed.candidate.limit > (proposed.candidate.sectorRoom ?? 0))
+          throw new Error('해당 업종의 편입 한도를 초과합니다.');
+      }
+      if (total > (report.retainedCash ?? 0)) throw new Error('새 후보에 배분할 현금이 부족합니다.');
+      this.db
+        .prepare('UPDATE morning_additions SET approved=? WHERE report=? AND code=?')
+        .run(new Date(now).toISOString(), report.id, code);
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
+  }
+  reserveMorning(report: MorningReport, account: string, day: string, order: PaperOrder) {
+    const stored = this.morning(account, report.day);
+    if (
+      !stored?.approvedAt ||
+      stored.id !== report.id ||
+      this.paperOrders().some((o) => o.requestId === order.requestId || ['sending', 'unknown'].includes(o.status))
+    )
+      throw new Error('보고서 승인 또는 이전 주문 대조 필요');
+    const terms =
+      stored.candidates.find((p) => p.code === order.code) ??
+      this.additions(report.id).find((a) => a.approved && a.candidate.code === order.code)?.candidate;
+    if (!terms || order.qty !== 1) throw new Error('승인하지 않은 포트폴리오 주문');
+    const buyAmount = order.side === 'buy' ? order.qty * order.price : 0;
+    if (buyAmount) {
+      const used = Number(
+        this.db
+          .prepare('SELECT COALESCE(SUM(buy_amount),0) AS n FROM morning_claim WHERE report=? AND code=?')
+          .get(report.id, order.code)?.n,
+      );
+      if (
+        report.day !== day ||
+        order.price <= terms.reference ||
+        this.morningStopped(account, day) ||
+        used + buyAmount > terms.limit
+      )
+        throw new Error('당일 매수 조건 또는 누적 한도 초과');
+    } else if (
+      order.price >= terms.exit ||
+      (report.day !== day && !this.claimCarry(account, day, report.id, order.code))
+    )
+      throw new Error('당일 또는 이월 매도 조건 초과');
+    this.db
+      .prepare('INSERT INTO morning_claim VALUES (?,?,?,?)')
+      .run(order.requestId, report.id, order.code, buyAmount);
+  }
+  releaseUnsentMorning(request: string, account: string, day: string, report: MorningReport, code: string) {
+    // Called inside the broker response transaction, only for a proven pre-transmission rejection.
+    const deleted = this.db
+      .prepare('DELETE FROM morning_claim WHERE request=? AND report=? AND code=?')
+      .run(request, report.id, code);
+    if (deleted.changes && report.day !== day)
+      this.db
+        .prepare(
+          'UPDATE morning_carry SET claimed=claimed-1 WHERE account=? AND day=? AND code=? AND report=? AND claimed>0',
+        )
+        .run(account, day, code, report.id);
+  }
+  saveCarry(account: string, day: string, report: string, positions: { code: string; qty: number }[]) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const p of positions)
+        this.db
+          .prepare('INSERT OR IGNORE INTO morning_carry(account,day,code,report,qty) VALUES (?,?,?,?,?)')
+          .run(account, day, p.code, report, p.qty);
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
+  }
+  pendingCarry(account: string) {
+    return Boolean(
+      this.db.prepare("SELECT 1 FROM morning_carry WHERE account=? AND day LIKE 'next:%' LIMIT 1").get(account),
+    );
+  }
+  bindNextSession(account: string, previous: string, today: string) {
+    this.db
+      .prepare('UPDATE morning_carry SET day=? WHERE account=? AND day=?')
+      .run(today, account, 'next:' + previous);
+  }
+  carry(account: string, day: string) {
+    return this.db
+      .prepare(
+        `SELECT c.code,c.qty,c.claimed,r.body,r.approved FROM morning_carry c JOIN morning_reports r ON c.report=r.id AND c.account=r.account
+  WHERE c.account=? AND c.day=? AND c.claimed<c.qty AND r.approved IS NOT NULL`,
+      )
+      .all(account, day)
+      .map((row) => ({
+        code: String(row.code),
+        report: { ...JSON.parse(String(row.body)), approvedAt: row.approved } as MorningReport,
+        remaining: Number(row.qty) - Number(row.claimed),
+      }));
+  }
+  claimCarry(account: string, day: string, report: string, code: string) {
+    return (
+      this.db
+        .prepare(
+          'UPDATE morning_carry SET claimed=claimed+1 WHERE account=? AND day=? AND report=? AND code=? AND claimed<qty',
+        )
+        .run(account, day, report, code).changes === 1
+    );
+  }
+  approveMorning(account: string, day: string, id: string, at: string) {
+    const result = this.db
+      .prepare(
+        `UPDATE morning_reports SET approved=? WHERE id=? AND account=? AND day=? AND approved IS NULL AND id=(
+  SELECT id FROM morning_reports WHERE account=? AND day=? ORDER BY approved IS NOT NULL DESC,rowid DESC LIMIT 1)`,
+      )
+      .run(at, id, account, day, account, day);
+    if (!result.changes && this.morning(account, day)?.approvedAt && this.morning(account, day)?.id === id) return;
+    if (!result.changes) throw new Error('현재 보고서를 다시 확인하세요.');
+  }
+  morningSignal(
+    report: string,
+    event: string,
+    code: string,
+    side: string,
+    price: number,
+    at: string,
+    outcome: string,
+    request:string|null=null,
+  ) {
+    return (
+      this.db
+        .prepare('INSERT OR IGNORE INTO morning_signals(report,event,code,side,price,at,outcome,request) VALUES (?,?,?,?,?,?,?,?)')
+        .run(report, event, code, side, price, at, outcome,request).changes === 1
+    );
+  }
+  finishMorningSignal(report: string, event: string, code: string, outcome: string) {
+    this.db
+      .prepare('UPDATE morning_signals SET outcome=? WHERE report=? AND event=? AND code=?')
+      .run(outcome, report, event, code);
+  }
+  morningSignals(report: string) {
+    return this.db
+      .prepare(
+        'SELECT at,code,side,price,outcome FROM morning_signals WHERE report=? ORDER BY rowid DESC LIMIT 100',
+      )
+      .all(report);
+  }
+  morningStopped(account: string, day: string, reached = false) {
+    if (reached) this.db.prepare('INSERT OR IGNORE INTO morning_stops VALUES (?,?)').run(account, day);
+    return !!this.db.prepare('SELECT 1 FROM morning_stops WHERE account=? AND day=?').get(account, day);
   }
   realtimeRequired() { return Boolean(this.db.prepare('SELECT id FROM realtime_guard WHERE id=1').get()); }
   requireRealtime() { this.db.prepare('INSERT OR IGNORE INTO realtime_guard VALUES (1)').run(); }
@@ -249,8 +469,8 @@ export class Store {
       if (audit?.action === 'sending') {
         const bound = this.strategyContract();
         if (bound !== (contract && JSON.stringify(contract))) throw new Error('원장에 고정된 전략 계약과 전송 설정이 다릅니다.');
+        checkReservation?.();
         if (contract) {
-          checkReservation?.();
           const amount = order.orderType === 'market' && contract.policy?.orderType === 'market' ? marketAmount ?? 0 : order.qty * order.price;
           if (!order.strategy) throw new Error('전략 주문 출처가 필요합니다.');
           this.checkStrategyAmount(contract, amount);
@@ -261,6 +481,7 @@ export class Store {
         }
       }
       this.db.prepare('INSERT INTO paper_orders (request_id,body) VALUES (?,?) ON CONFLICT(request_id) DO UPDATE SET body=excluded.body').run(order.requestId, JSON.stringify(order));
+      if(audit?.action==='response') checkReservation?.();
       if (audit) this.appendPaperAudit({ ...audit, requestId: order.requestId, after: order.status });
       this.db.exec('COMMIT');
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }

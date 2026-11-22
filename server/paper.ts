@@ -1,3 +1,5 @@
+import type { MorningCandidate, MorningReport } from '../shared/morning.ts';
+import { seoulDay } from './morning.ts';
 import { oncePolicy, sessionBounds, validOncePolicy, type OncePolicy } from '../shared/trading-policy.ts';
 import { DEFAULT_PAPER_MAX_QTY, MAX_ORDER_QTY, paperRecoveryInput, samePaperIntent, type PaperOrderInput, type PaperRecoveryInput } from '../shared/contracts.ts';
 import type { PaperOrder, BrokerOrder, PaperEvidence, ConnectionState, PaperRiskSnapshot, KisQuote } from '../shared/model.ts';
@@ -97,6 +99,7 @@ const evidence = (tradeDate: string, orders: BrokerOrder[], connection: Connecti
 export class PaperBroker {
   private realtimeGuard?: (code: string) => () => void;
   setRealtimeGuard(guard: (code: string) => () => void) { this.realtimeGuard = guard; }
+  morningAccount() { return !this.approval && !this.contract && this.kis.configured() ? this.kis.accountFingerprint() : null; }
   private restoredApproval = false;
   private queue: Promise<unknown> = Promise.resolve();
   private riskOrders: (NonNullable<PaperRiskSnapshot['orders']> & { day: string }) | null = null;
@@ -193,9 +196,23 @@ export class PaperBroker {
       }
       if (matched && (!settled(local) || !changed)) checks.push({ id: local.requestId, at: observedAt });
     }
+    this.observeMorningLoss(connection);
     this.store.recordOrderChecks(checks);
     this.riskOrders = { day, observedAt: new Date().toISOString(), rows: orders.map(({ code, side, price, remaining, cancelled }) => ({ code, side, price, remaining, cancelled })) };
     return { connection, brokerOrders: orders, orders: this.store.paperOrders() };
+  }
+  observeMorningLoss(connection: ConnectionState) {
+    const account = this.morningAccount();
+    if (!account || !connection.balance || !connection.status.complete || connection.status.phase !== 'ready')
+      return;
+    const day = seoulDay(Date.now()),
+      report = this.store.morning(account, day);
+    if (
+      report?.equity &&
+      report.equity - connection.balance.totalEquity >=
+        Math.min(report.dailyLoss, this.store.read().risk.dailyLoss)
+    )
+      this.store.morningStopped(account, day, true);
   }
   cancelProbeEnabled() { return this.approval?.cancelProbe === true; }
   private probeOrder(orders: PaperOrder[]) {
@@ -287,7 +304,7 @@ export class PaperBroker {
     if (!order || order.status !== 'unknown' || order.brokerId) throw new Error('주문번호 없는 응답 불명 주문만 명시적 복구할 수 있습니다.');
     return order;
   }
-  async submit(request: PaperOrderInput, checkSignal?: (minimumWaitMs?: number) => void, strategy?: PaperOrder['strategy']): Promise<PaperOrder> {
+  async submit(request: PaperOrderInput, checkSignal?: (minimumWaitMs?: number) => void, strategy?: PaperOrder['strategy'], morning?: { report:MorningReport; candidate:MorningCandidate; account:string }): Promise<PaperOrder> {
     return this.enqueue(async () => {
       let input = request;
       const policy = this.approval?.policy;
@@ -304,6 +321,23 @@ export class PaperBroker {
         if (!samePaperIntent(existing, request)) throw new Error('동일 요청 ID의 주문 내용이 다릅니다.');
         return existing;
       }
+      const checkMorning = () => {
+        if (!morning) return;
+        const day = seoulDay(Date.now()),
+          { report, candidate, account } = morning;
+        if (
+          !report.approvedAt ||
+          account !== this.morningAccount() ||
+          !checkSignal ||
+          !this.store.realtimeRequired() ||
+          candidate.code !== input.code ||
+          input.qty !== 1 ||
+          market ||
+          (input.side === 'buy' && (report.day !== day || this.store.morningStopped(account, day)))
+        )
+          throw new KisNotSent('포트폴리오 승인 범위를 벗어났습니다.');
+      };
+      checkMorning();
       const checkManualQuantity = () => {
         if (!strategy && !checkSignal && input.qty > (this.store.read().paperManualMaxQty ?? DEFAULT_PAPER_MAX_QTY)) {
           throw new KisNotSent('KIS 수동 주문 한도(수량)를 초과했습니다.');
@@ -328,7 +362,7 @@ export class PaperBroker {
       if (market && !this.contract && (this.approval?.orderType !== 'market' || strategy)) throw new Error('시장가 1회 승인이 없습니다.');
       if (this.store.realtimeRequired() && !this.realtimeGuard) throw new KisNotSent('실시간 대조 안전장치 없이 신규 주문을 실행할 수 없습니다.');
       checkSignal?.();
-      const checkRealtime = this.realtimeGuard?.(input.code);
+      const checkRealtime = morning ? checkSignal : this.realtimeGuard?.(input.code);
       checkContract();
       if (this.contract && !market) this.store.checkStrategyAmount(this.contract, input.price * input.qty);
       const quoteMs = (this.timingPolicy?.quoteSeconds ?? 5) * 1000;
@@ -353,7 +387,7 @@ export class PaperBroker {
         if (ceiling === undefined && input.side === 'buy' && balance.cash - input.price < (policy?.cashReserve ?? 1)) throw new Error('승인 조건의 현금 여유가 부족합니다.');
       }
       const quoteStarted = performance.now(), quoteStartedAt = Date.now();
-      const quote = await this.kis.quote(input.code, this.approval?.lowerLimitPrice !== undefined || this.timingPolicy ? 'identified' : true);
+      const quote = await this.kis.quote(input.code, morning || this.approval?.lowerLimitPrice !== undefined || this.timingPolicy ? 'identified' : true);
       checkSignal?.();
       const quoteReceived = performance.now();
       if (ceiling !== undefined) {
@@ -369,7 +403,38 @@ export class PaperBroker {
       const risk = this.store.read().risk;
       if (risk.halted) throw new Error('신규 주문 정지 상태입니다.');
       const value = balance.totalEquity;
-      if (this.store.paperBaseline(koreaDate(), value) - value >= risk.dailyLoss) throw new Error('KIS 모의 계좌 손실 한도에 도달했습니다.');
+      const baseline = this.store.paperBaseline(koreaDate(), value);
+      if (morning) {
+        if (
+          quote.liquidation !== false ||
+          !Number.isSafeInteger(quote.tickSize) ||
+          quote.tickSize <= 0 ||
+          input.price % quote.tickSize ||
+          Date.now() - Date.parse(quote.receivedAt) > 5000 ||
+          (input.side === 'buy' && !morning.report.exposureComplete)
+        )
+          throw new KisNotSent('종목 거래 상태 또는 승인 근거 확인 필요');
+        const limit = Math.min(risk.dailyLoss, morning.report.dailyLoss);
+        const start = morning.report.day === seoulDay(Date.now()) ? (morning.report.equity ?? baseline) : baseline;
+        const stopped = this.store.morningStopped(morning.account, seoulDay(Date.now()), start - value >= limit);
+        if (stopped && input.side === 'buy') throw new Error('오늘은 손실 한도로 새 매수를 중단했습니다.');
+        if (brokerOrders.some((o) => o.code === input.code && o.remaining > 0 && !o.cancelled))
+          throw new Error('이 종목의 기존 미체결 주문을 먼저 대조하세요.');
+        if (input.side === 'buy') {
+          const qty = balance.positions.find((p) => p.code === input.code)?.qty ?? 0;
+          const released = this.store
+            .additions(morning.report.id)
+            .filter((a) => a.approved)
+            .reduce((sum, a) => sum + a.candidate.limit, 0);
+          if (
+            (Math.max(0, qty - morning.candidate.held) + input.qty) * valuationPrice > morning.candidate.limit ||
+            balance.cash - valuationPrice * input.qty < (morning.report.retainedCash ?? balance.cash) - released
+          )
+            throw new Error('승인한 종목별 투자금 또는 보유 현금 한도입니다.');
+        } else if (input.qty > (balance.positions.find((p) => p.code === input.code)?.sellable ?? 0))
+          throw new Error('매도 가능 수량이 없습니다.');
+      }
+      if (!morning && baseline - value >= risk.dailyLoss) throw new Error('KIS 모의 계좌 손실 한도에 도달했습니다.');
       if (this.contract?.policy && (quote.liquidation !== false || quote.lower <= 0 || quote.price < quote.lower || quote.price > quote.upper)) throw new Error('전략 시세 범위·정리매매 상태를 확인하세요.');
       if (policy && market && (quote.liquidation !== false || !Number.isSafeInteger(quote.price) || quote.lower <= 0 || quote.lower > quote.price)) throw new Error('시장가 시세·정리매매 상태를 확인하세요.');
       if (quote.stopped) throw new Error('거래정지 종목은 주문할 수 없습니다.');
@@ -399,15 +464,19 @@ export class PaperBroker {
         this.store.claimPaperRun();
         claimed = true;
       }
-      this.store.savePaper(local, { actor: 'system', action: 'sending', before: null }, this.contract, this.contract && (() => {
+      this.store.savePaper(local, { actor: 'system', action: 'sending', before: null }, this.contract, morning ? () => {
+        checkMorning();checkSignal?.(this.kis.minimumRequestWaitMs());this.store.reserveMorning(morning.report,morning.account,seoulDay(Date.now()),local);
+      } : this.contract && (() => {
         checkSignal?.(this.kis.minimumRequestWaitMs());
         checkRealtime?.();
         checkContract();
       }), amount);
       this.riskOrders = null;
+      let definitelyUnsent=false;
       try {
         const beforeDispatch = () => {
           try { this.checkInstrument?.(); } catch (err) { throw new KisNotSent((err as Error).message); }
+          checkMorning();
           checkManualQuantity();
           const currentRisk = this.store.read().risk;
           if (currentRisk.halted || JSON.stringify(currentRisk) !== JSON.stringify(risk)) throw new KisNotSent('전송 직전 위험 설정 변경으로 주문을 보내지 않았습니다.');
@@ -426,10 +495,11 @@ export class PaperBroker {
         });
         Object.assign(local, receipt, { status: 'accepted', message: 'KIS 모의 주문 접수. 체결은 조회·대조로 확인하세요.' });
       } catch (error) {
+        definitelyUnsent=error instanceof KisNotSent;
         local.status = error instanceof KisRejected || error instanceof KisNotSent ? 'rejected' : 'unknown';
         local.message = error instanceof Error ? error.message : '주문 응답 불명';
       }
-      this.store.savePaper(local, { actor: 'system', action: 'response', before: 'sending' });
+      this.store.savePaper(local, { actor: 'system', action: 'response', before: 'sending' }, undefined, morning && definitelyUnsent ? ()=>this.store.releaseUnsentMorning(local.requestId,morning.account,local.tradeDate.replace(/^(....)(..)(..)$/, '$1-$2-$3'),morning.report,local.code) : undefined);
       return local;
       } finally {
         if (claimed) {

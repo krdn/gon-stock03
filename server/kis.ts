@@ -200,6 +200,39 @@ export class KisClient {
       return { date: date.data, open, high, low, close, volume };
     });
   }
+  async etfWeights(code: string) {
+    const { data } = await this.request(
+      '/uapi/etfetn/v1/quotations/inquire-component-stock-price',
+      'FHKST121600C0',
+      {
+        FID_COND_MRKT_DIV_CODE: 'J',
+        FID_INPUT_ISCD: code,
+        FID_COND_SCR_DIV_CODE: '11216',
+      },
+    );
+    const result = z
+      .object({
+        rt_cd: z.literal('0'),
+        output2: z
+          .array(
+            z.object({
+              stck_shrn_iscd: z.string().regex(/^[0-9A-Z]{6}$/),
+              etf_cnfg_issu_rlim: z.string().regex(/^\d+(?:\.\d+)?$/),
+            }),
+          )
+          .min(1),
+      })
+      .parse(data);
+    const weights = new Map<string, number>();
+    for (const row of result.output2) {
+      const weight = Number(row.etf_cnfg_issu_rlim) / 100;
+      if (weight <= 0 || weight > 1 || weights.has(row.stck_shrn_iscd)) throw new Error('ETF 구성비 확인 필요');
+      weights.set(row.stck_shrn_iscd, weight);
+    }
+    const total = [...weights.values()].reduce((v, w) => v + w, 0);
+    if (total < 0.995 || total > 1.005) throw new Error('ETF 구성비 합계 확인 필요');
+    return weights;
+  }
   async buyingPower(code: string, price: number) {
     const { data } = await this.request('/uapi/domestic-stock/v1/trading/inquire-psbl-order', 'VTTC8908R', { ...this.accountParams(), PDNO: code, ORD_UNPR: String(price), ORD_DVSN: '01', CMA_EVLU_AMT_ICLD_YN: 'N', OVRS_ICLD_YN: 'N' });
     const parsed = z.object({ rt_cd: z.literal('0'), output: z.object({ nrcvb_buy_qty: amount.refine(Number.isSafeInteger), nrcvb_buy_amt: amount, ord_psbl_cash: amount }) }).safeParse(data);
