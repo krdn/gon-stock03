@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-11-22T02:18:02.686621+00:00",
+  "checked_at": "2026-11-22T02:48:17.022997+00:00",
   "objective": "국내 포트폴리오 장전 판단과 모의 승인",
   "sources": [
     {
@@ -9,6 +9,22 @@
     {
       "url": "https://fred.stlouisfed.org/docs/api/fred/fred_vs_alfred.html",
       "finding": "과거 시점 분석에서 이후 수정된 값을 제외한다."
+    },
+    {
+      "url": "https://www.federalreserve.gov/feeds/feds_notes.xml",
+      "finding": "공개 연구진 분석의 제목·발행 시각·원문 링크를 수집하고 인용을 원문과 대조했다."
+    },
+    {
+      "url": "https://dart.fss.or.kr/api/todayRSS.xml",
+      "finding": "당일 공시 RSS는 항목이 없는 정상 응답을 반환할 수 있다."
+    },
+    {
+      "url": "https://raw.githubusercontent.com/koreainvestment/open-trading-api/main/examples_llm/etfetn/inquire_component_stock_price/inquire_component_stock_price.py",
+      "finding": "구성종목 시세를 요청할 수 있다. 모의 KODEX 200 응답의 30종목 합계 82.97%이므로 전체 비중은 미확인이다."
+    },
+    {
+      "url": "https://raw.githubusercontent.com/koreainvestment/open-trading-api/main/examples_llm/domestic_stock/inquire_daily_ccld/chk_inquire_daily_ccld.py",
+      "finding": "총체결금액 tot_ccld_amt와 체결수량을 사용해 승인 매매의 당일 순기여를 계산한다."
     }
   ],
   "decisions": "공개·수집 시각과 승인 보고서를 보존하고 거래 기준 연구와 실행을 구분한다.",
@@ -875,7 +891,7 @@
     },
     {
       "issue": "https://github.com/krdn/gon-stock03/issues/197",
-      "checked_at": "2026-11-22T02:18:02.686621+00:00",
+      "checked_at": "2026-11-22T02:48:17.022997+00:00",
       "objective": "국내 포트폴리오 장전 판단과 모의 승인",
       "sources": [
         {
@@ -885,6 +901,22 @@
         {
           "url": "https://fred.stlouisfed.org/docs/api/fred/fred_vs_alfred.html",
           "finding": "과거 시점 분석에서 이후 수정된 값을 제외한다."
+        },
+        {
+          "url": "https://www.federalreserve.gov/feeds/feds_notes.xml",
+          "finding": "공개 연구진 분석의 제목·발행 시각·원문 링크를 수집하고 인용을 원문과 대조했다."
+        },
+        {
+          "url": "https://dart.fss.or.kr/api/todayRSS.xml",
+          "finding": "당일 공시 RSS는 항목이 없는 정상 응답을 반환할 수 있다."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/koreainvestment/open-trading-api/main/examples_llm/etfetn/inquire_component_stock_price/inquire_component_stock_price.py",
+          "finding": "구성종목 시세를 요청할 수 있다. 모의 KODEX 200 응답의 30종목 합계 82.97%이므로 전체 비중은 미확인이다."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/koreainvestment/open-trading-api/main/examples_llm/domestic_stock/inquire_daily_ccld/chk_inquire_daily_ccld.py",
+          "finding": "총체결금액 tot_ccld_amt와 체결수량을 사용해 승인 매매의 당일 순기여를 계산한다."
         }
       ],
       "decisions": "공개·수집 시각과 승인 보고서를 보존하고 거래 기준 연구와 실행을 구분한다."

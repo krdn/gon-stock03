@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24.0.0 <25" },
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
   "scripts": {
     "dev": "tsx scripts/dev.ts",
     "dev:realtime": "tsx scripts/dev.ts --realtime",
@@ -14,7 +16,8 @@
     "test": "tsx --test tests/*.test.ts",
     "vts:test": "tsx scripts/vts-runner.ts",
     "test:e2e": "playwright test",
-    "start": "tsx server/index.ts"
+    "start": "tsx server/index.ts",
+    "dev:morning": "STOCK_MORNING_REPORT=1 STOCK_MORNING_ANALYST_MODEL=\"${STOCK_MORNING_ANALYST_MODEL:-claude-opus-5-5}\" tsx scripts/dev.ts --realtime"
   },
   "dependencies": {
     "react": "19.3.1",
