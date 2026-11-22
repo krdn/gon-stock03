@@ -83,8 +83,8 @@ export class Store {
   }
   saveMorning(account: string, report: MorningReport) {
     this.db
-      .prepare('INSERT INTO morning_reports(id,account,day,body) VALUES (?,?,?,?)')
-      .run(report.id, account, report.day, JSON.stringify(report));
+      .prepare('INSERT INTO morning_reports(id,account,day,body) SELECT ?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM morning_reports WHERE account=? AND day=? AND approved IS NOT NULL)')
+      .run(report.id, account, report.day, JSON.stringify(report),account,report.day);
   }
   morning(account: string, day: string): MorningReport | null {
     const row = this.db
@@ -223,6 +223,7 @@ export class Store {
     );
   }
   bindNextSession(account: string, previous: string, today: string) {
+    this.db.prepare("UPDATE morning_carry SET day='expired:'||substr(day,6) WHERE account=? AND day LIKE 'next:%' AND substr(day,6)<?").run(account,previous);
     this.db
       .prepare('UPDATE morning_carry SET day=? WHERE account=? AND day=?')
       .run(today, account, 'next:' + previous);

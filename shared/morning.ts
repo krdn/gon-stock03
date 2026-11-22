@@ -18,7 +18,15 @@ export interface MorningCandidate {
   sectorRoom?: number;
   relativeVolume: number;
 }
+interface SourcedView {
+  publisher: string;
+  url: string;
+  publishedAt: string;
+  finding: string;
+  quote: string;
+}
 export interface MorningReport {
+  analysis?: { model: string; takeaway: string; views: SourcedView[]; counter: SourcedView | null };
   id: string;
   day: string;
   createdAt: string;

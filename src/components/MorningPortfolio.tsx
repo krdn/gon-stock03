@@ -100,6 +100,7 @@ export function MorningPortfolio({ hideEmpty = false }: { hideEmpty?: boolean })
                       .join(' · ') || '투자 한도 안에서 살 종목이 없어.'}
             </strong>
           </p>
+          {r.analysis && <p>{r.analysis.takeaway}</p>}
           <p>{r.evaluated ? r.conclusion : '판단에 쓸 최근 가격과 거래량이 아직 없어.'}</p>
           <p>
             가격과 거래량을 확인한 종목 {r.evaluated.toLocaleString()}개 / 공식 목록 {r.universe.toLocaleString()}
@@ -154,6 +155,23 @@ export function MorningPortfolio({ hideEmpty = false }: { hideEmpty?: boolean })
                 </p>
               </section>
             ))}
+            {r.analysis?.views.map((v) => (
+              <p key={v.url + v.finding}>
+                {v.finding}{' '}
+                <a href={v.url} target="_blank" rel="noreferrer">
+                  {v.publisher} 원문
+                </a>{' '}
+                · “{v.quote}”
+              </p>
+            ))}
+            {r.analysis?.counter && (
+              <p>
+                다른 관점 · {r.analysis.counter.finding}{' '}
+                <a href={r.analysis.counter.url} target="_blank" rel="noreferrer">
+                  근거 원문
+                </a>
+              </p>
+            )}
             {r.sectors?.map((s) => (
               <p key={s.sector}>
                 {s.sector} 노출 · 현재 {won(s.held)}원 → 계획 상한 {won(s.planned)}원

@@ -495,7 +495,8 @@ export class PaperBroker {
         });
         Object.assign(local, receipt, { status: 'accepted', message: 'KIS 모의 주문 접수. 체결은 조회·대조로 확인하세요.' });
       } catch (error) {
-        definitelyUnsent=error instanceof KisNotSent;
+        definitelyUnsent=error instanceof KisNotSent || error instanceof KisRejected;
+        if(morning && error instanceof KisNotSent) local.notSent=true;
         local.status = error instanceof KisRejected || error instanceof KisNotSent ? 'rejected' : 'unknown';
         local.message = error instanceof Error ? error.message : '주문 응답 불명';
       }

@@ -45,6 +45,7 @@ export class Realtime {
   private morningBuyId: string | null = null;
   private morningBusy = false;
   private pendingExits = new Set<string>();
+  private exitRetryAfter=new Map<string,number>();
   private deferredExitRevision = new Map<string, number>();
   private morningCodes = new Set<string>();
   private symbolAcks = new Set<string>();
@@ -85,13 +86,13 @@ export class Realtime {
     const codes = [...new Set([...report.candidates, ...carry].map((p) => p.code))];
     if (codes.some((code) => !/^\d{6}$/.test(code)) || codes.length > 18)
       throw new Error('이번 실시간 구독 가능 범위를 초과했습니다.');
-    for (const p of report.watch) if (codes.length < 18 && /^\d{6}$/.test(p.code)) codes.push(p.code);
+    for (const p of report.watch) if (codes.length < 18 && !codes.includes(p.code) && /^\d{6}$/.test(p.code)) codes.push(p.code);
     if (this.socket && (!this.morningCodes.size || codes.some((c) => !this.morningCodes.has(c))))
       throw new Error('기존 실시간 구독을 정지한 뒤 포트폴리오 운용을 승인하세요.');
     return codes;
   }
   canMonitorCarry(day: string) {
-    return this.canApproveMorning(day) && !!this.config?.approvalKey && !!this.config?.htsId && !this.socket;
+    return this.canApproveMorning(day) && !!this.config?.approvalKey && !!this.config?.htsId && !this.socket && !this.morningArmed;
   }
   armMorning(codes: string[], buyId: string | null = null) {
     this.refreshMorningTerms();
@@ -146,7 +147,7 @@ export class Realtime {
     if (today?.approvedAt && !current) {
       const levels = this.morningWatch.get(code);
       if (
-        today.exposureComplete &&
+        this.morningPrice(code)!==null && !this.store.morningStopped(account,today.day) && today.exposureComplete &&
         levels &&
         levels.limit > 0 &&
         previous <= levels.reference &&
@@ -156,6 +157,7 @@ export class Realtime {
         const limit = Math.min(
           (today.retainedCash ?? 0) - reserved,
           levels.limit,
+          (levels.sectorRoom??Infinity)-additions.filter(a=>levels.sector && a.approved && a.candidate.sector===levels.sector).reduce((v,a)=>v+a.candidate.limit,0),
           this.store.read().risk.maxOrder,
         );
         if (limit >= price)
@@ -171,7 +173,7 @@ export class Realtime {
         this.pendingExits.delete(key);
         this.deferredExitRevision.delete(key);
       } else if (previous >= terms.exit) this.pendingExits.add(key);
-      return this.pendingExits.has(key) && this.deferredExitRevision.get(key) !== this.revision;
+      return this.now()>=(this.exitRetryAfter.get(key)??0) && this.pendingExits.has(key) && this.deferredExitRevision.get(key) !== this.revision;
     };
     const sell = exitSignal(today, current),
       carrySell = exitSignal(prior, carry);
@@ -218,24 +220,29 @@ export class Realtime {
       const order = await this.paper.submit(
         { code, price, qty: 1, side, requestId },
         (wait) => {
+          const latest=this.morningPrice(code);
           if (
             generation !== this.generation ||
             revision !== this.revision ||
             this.now() - signalTime + (wait ?? 0) > 5000 ||
             !this.morningArmed ||
-            this.morningPrice(code) !== price
+            latest===null || (side==='buy' ? latest<=candidate.reference : latest>=candidate.exit)
           )
             throw new KisNotSent('운용 상태 또는 신호 가격 변경');
         },
         undefined,
         { report, candidate, account },
       );
-      if (side === 'sell') this.pendingExits.delete(report.id + ':' + code);
+      if (side==='sell'){
+        if(order.notSent) this.exitRetryAfter.set(report.id+':'+code,this.now()+5000);
+        else this.pendingExits.delete(report.id+':'+code);
+      }
       this.store.finishMorningSignal(report.id, event, code, order.status + ' · ' + order.requestId);
     } catch (e) {
       if (side === 'sell') {
         if (e instanceof Error && e.message.includes('기존 미체결 주문'))
           this.deferredExitRevision.set(report.id + ':' + code, this.revision);
+        else if(e instanceof KisNotSent || (e instanceof Error && /시세|대조|응답 불명/.test(e.message))) this.exitRetryAfter.set(report.id+':'+code,this.now()+5000);
         else this.pendingExits.delete(report.id + ':' + code);
       }
       this.store.finishMorningSignal(report.id, event, code, e instanceof Error ? e.message : '주문 검사 실패');

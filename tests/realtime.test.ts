@@ -901,6 +901,7 @@ test('장전 승인 전 가상 신호·당일 승인 후 KIS 모의 어댑터·�
     assert.equal(f.store.morningSignals(report.id)[0]?.outcome,'가상 신호 · 매매 미승인');
     f.store.approveMorning(account,report.day,report.id,new Date(base).toISOString());
     f.realtime.armMorning(codes,report.id);
+    assert.equal(f.realtime.canMonitorCarry(report.day),false);
     socket.frame(priceFrame(3,69800));socket.frame(priceFrame(4));
     await new Promise(resolve=>setTimeout(resolve,30));
     assert.equal(f.sentOrders.length,1,JSON.stringify(f.store.morningSignals(report.id)));

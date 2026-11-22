@@ -1,3 +1,4 @@
+import { analyzePublicResearch } from './morning-analysis.ts';
 import { researchDecision } from './morning-replay.ts';
 import { closeMorning } from './morning-close.ts';
 import { applyExposure } from './morning-exposure.ts';
@@ -93,7 +94,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         report.cash !== null &&
         Date.now() < Date.parse(day + 'T' + realtime.morningOpenTime(day) + ':00+09:00')
       ) {
-        await bindCarry(day);
+        try{await bindCarry(day);}catch{report.gaps.push('직전 거래일 미확인 · 이월 매도 감시 보류');}
         const monitored = new Set(store.carry(key, day).map((p) => p.code));
         report.candidates = report.candidates.filter((p) => {
           if (!/^\d{6}$/.test(p.code) || (!monitored.has(p.code) && monitored.size >= 18)) {
@@ -105,6 +106,11 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         });
         await applyExposure(report, store, kis);
         report.createdAt = new Date().toISOString();
+      }
+      if(process.env.STOCK_MORNING_ANALYST_MODEL && Date.now()<opening){
+        try{report.analysis=await analyzePublicResearch(report.news,process.env.STOCK_MORNING_ANALYST_MODEL);}
+        catch{report.gaps.push('전문가 원문 분석 미확인');}
+        report.createdAt=new Date().toISOString();
       }
       if (process.env.STOCK_MORNING_REPLAY) {
         try {
@@ -122,7 +128,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       if (Date.now() >= opening && prior) return prior;
       if (report.day !== day) throw new Error('거래일이 바뀌었습니다. 다시 작성하세요.');
       store.saveMorning(key, report);
-      return report;
+      return store.morning(key,day)??report;
     } finally {
       generating = false;
     }
