@@ -94,6 +94,11 @@ export class Store {
       .get(account, day);
     return row ? { ...JSON.parse(String(row.body)), approvedAt: row.approved } : null;
   }
+  morningOrders(account:string,day:string):PaperOrder[]{
+    return this.db.prepare(`SELECT p.body FROM morning_claim c JOIN paper_orders p ON p.request_id=c.request
+      JOIN morning_reports r ON r.id=c.report WHERE r.account=? AND json_extract(p.body,'$.tradeDate')=?`)
+      .all(account,day.replaceAll('-','')).map(row=>JSON.parse(String(row.body)) as PaperOrder);
+  }
   saveMorningClose(report: string, result: import('./morning-close.ts').MorningClose) {
     this.db
       .prepare(

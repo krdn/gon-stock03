@@ -112,6 +112,10 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         catch{report.gaps.push('전문가 원문 분석 미확인');}
         report.createdAt=new Date().toISOString();
       }
+      if(process.env.STOCK_MORNING_COST_BPS){
+        try{report.costBps=z.object({buy:z.number().min(0).lt(1000),sell:z.number().min(0).lt(1000)}).strict().parse(JSON.parse(process.env.STOCK_MORNING_COST_BPS));}
+        catch{report.gaps.push('편도 비용률 미확인 · 장후 순기여 미측정');}
+      }
       if (process.env.STOCK_MORNING_REPLAY) {
         try {
           const raw = await readFile(process.env.STOCK_MORNING_REPLAY, 'utf8');
@@ -229,7 +233,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
             close = realtime.morningCloseTime(day);
           if (!report || report.id !== id || !close || approval || contract)
             throw new Error('당일 계획과 공식 거래시간을 확인하세요.');
-          if (store.morningClose(id)?.hold == null) store.saveMorningClose(id, await closeMorning(report, kis, close));
+          if (store.morningClose(id)?.hold == null) store.saveMorningClose(id, await closeMorning(report, kis, close,store.morningOrders(account(),day)));
           json(res, 200, { message: '장후 계좌와 보유 유지 결과를 기록했습니다.' });
           return;
         }

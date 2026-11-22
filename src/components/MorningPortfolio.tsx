@@ -12,6 +12,7 @@ interface View {
   days?: string[];
   close?: {
     change: number;
+    contribution?: { gross: number; estimatedCost: number | null; net: number | null; fills: number } | null;
     difference: number | null;
     predictions: { code: string; reference: number; close: number | null }[];
   } | null;
@@ -227,6 +228,11 @@ export function MorningPortfolio({ hideEmpty = false }: { hideEmpty?: boolean })
       {view.close && (
         <details>
           <summary>장후 종목별 결과</summary>
+          <p>
+            승인한 매매의 비용 차감 기여{' '}
+            {view.close.contribution?.net == null ? '미측정' : won(view.close.contribution.net) + '원'} · 모의 체결
+            금액과 당일 종가, 장전에 저장한 추정 비용률 기준
+          </p>
           {view.close.predictions.map((p) => (
             <p key={p.code}>
               {p.code} · 기준 {won(p.reference)}원 · 종가 {p.close === null ? '미확인' : won(p.close) + '원'}

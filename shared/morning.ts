@@ -50,6 +50,7 @@ export interface MorningReport {
     source: string;
     fraction: number | null;
   };
+  costBps?: { buy: number; sell: number };
   dailyLoss: number;
   indicators: {
     id: string;

@@ -236,3 +236,46 @@ test('전문가 판단의 인용이 원문에 없는 경우 보고서에서 제�
     verifiedAnalysis({ ...raw, counter: { ...raw.views[0], quote: 'Unexpected decline' } }, docs, 'test'),
   );
 });
+
+test('매매 순기여는 실제 모의 체결금액과 종가에 양방향 비용을 적용하며 미확인 체결은 미측정', async () => {
+  const { tradingContribution } = await import('../server/morning-close.ts');
+  const { randomUUID } = await import('node:crypto');
+  const local = {
+    code: '005930',
+    side: 'buy' as const,
+    qty: 2,
+    price: 120,
+    status: 'filled' as const,
+    requestId: randomUUID(),
+    createdAt: '2026-11-20T01:00:00Z',
+    tradeDate: '20261120',
+    brokerId: '001',
+    organization: '01',
+    filled: 2,
+    remaining: 0,
+    message: '',
+  };
+  const row = {
+    code: local.code,
+    side: local.side,
+    qty: 2,
+    price: 120,
+    date: local.tradeDate,
+    filled: 2,
+    remaining: 0,
+    brokerId: '1',
+    organization: '1',
+    cancelled: false,
+    name: 'fixture',
+    fillAmount: 200,
+  };
+  const prices = new Map([[row.code, 125]]);
+  assert.deepEqual(tradingContribution([local], [row], prices, { buy: 50, sell: 10 }), {
+    gross: 50,
+    estimatedCost: 1,
+    net: 49,
+    fills: 1,
+  });
+  assert.equal(tradingContribution([local], [], prices, undefined), null);
+  assert.equal(tradingContribution([local], [row], prices, undefined)?.net, null);
+});
