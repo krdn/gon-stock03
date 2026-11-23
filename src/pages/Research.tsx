@@ -134,6 +134,7 @@ function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: boolean }
   else if (blocked) controlNote = (s.active ? '신규 주문 차단 · ' : '전략 시작 차단 · ') + blocked;
   const evaluations = s.evaluations ?? [];
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [stopping, setStopping] = useState(false);
   return <Panel className="studio-card">
     <div className="studio-card-head">
       <h3 id={'strategy-' + s.id} tabIndex={-1}>{s.name}</h3>
@@ -154,7 +155,10 @@ function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: boolean }
     {kis && <p className="studio-meta">{controlNote || '별도 서버 계약과 주문별 승인·위험 검사 적용'} · <Link to="/paper">실시간 연결·대조 확인</Link></p>}
     {kis && <p className="studio-meta">시작 후 브라우저를 닫아도 서버는 계속 평가합니다. 전략 정지 후에도 접수된 주문은 유지됩니다.</p>}
     <div className="button-row">
-      <button disabled={!available || busy || (!s.active && Boolean(blocked))} className={'button ' + (!available || s.active ? 'secondary' : 'primary')} onClick={() => void act(kis ? 'kis/strategies/run' : 'strategies/toggle', kis ? { id: s.id, active: !s.active } : { id: s.id }).catch(() => {})}>
+      <button disabled={!available || (s.active ? stopping : busy || Boolean(blocked))} className={'button ' + (!available || s.active ? 'secondary' : 'primary')} onClick={() => {
+        if (s.active) setStopping(true);
+        void act(kis ? 'kis/strategies/run' : 'strategies/toggle', kis ? { id: s.id, active: !s.active } : { id: s.id }).catch(() => {}).finally(() => { if (s.active) setStopping(false); });
+      }}>
         {available && (s.active ? <Square size={14} /> : <Play size={14} />)}{!available ? '전략 실행 제어' : s.active ? '전략 정지' : '전략 시작'}
       </button>
       {!kis && <button disabled={!available || busy} className="button secondary" onClick={() => void act('tick').catch(() => {})}>다음 데모 봉 재생</button>}

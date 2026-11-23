@@ -21,6 +21,7 @@ export class KisRejected extends KisFailure { constructor(message: string, kind:
 export class KisNotSent extends KisFailure { constructor(message: string, kind: ConnectionFailure['kind'] = 'rejected') { super(message, kind); } }
 export class KisDataError extends Error { constructor(readonly kind: 'request' | 'contract', message: string) { super(message); } }
 class KisAuthExpired extends KisRejected { constructor(message: string) { super(message, 'expired'); } }
+const validSecret = (value: string) => value.length > 0 && value === value.trim() && !/[\x00-\x1f\x7f]/.test(value);
 const safeFailure = (error: unknown): ConnectionFailure => error instanceof KisFailure ? { kind: error.kind, message: error.message } : { kind: 'upstream', message: 'KIS 모의 요청을 완료하지 못했습니다. 잠시 후 다시 확인하세요.' };
 async function within<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return promise;
@@ -63,7 +64,7 @@ export class KisClient {
     if (!this.configured()) throw new Error('전략 계약의 모의 계좌 설정을 확인하세요.');
     return createHash('sha256').update(this.credentials.account + ':' + this.credentials.product).digest('hex');
   }
-  configured() { const c = this.credentials; return Boolean(c.key.trim() && c.secret.trim() && /^\d{8}$/.test(c.account) && /^\d{2}$/.test(c.product)); }
+  configured() { const c = this.credentials; return Boolean(validSecret(c.key) && validSecret(c.secret) && /^\d{8}$/.test(c.account) && /^\d{2}$/.test(c.product)); }
   limitRequestsFor(ms: number) {
     this.requestDeadline = Math.min(this.requestDeadline, performance.now() + ms);
     this.requestWallDeadline = Math.min(this.requestWallDeadline, Date.now() + ms);
@@ -104,7 +105,7 @@ export class KisClient {
         response = await within(pendingResponse, signal);
       }
       catch { throw new KisFailure('KIS 모의 서버 통신 실패 또는 시간 초과입니다. 실전 서버로 대체하지 않습니다.', 'network'); }
-      if (response.status === 401 && init.method !== 'POST') throw new KisAuthExpired('KIS 모의 인증이 만료되거나 거부되었습니다.');
+      if (response.status === 401 && init.method !== 'POST' && !response.headers.get('content-type')?.includes('json')) throw new KisAuthExpired('KIS 모의 인증이 만료되거나 거부되었습니다.');
       let data: unknown;
       try { data = await within(response.json(), signal); }
       catch (error) {
@@ -114,8 +115,10 @@ export class KisClient {
       const body = data && typeof data === 'object' ? data : {};
       const code = 'msg_cd' in body ? body.msg_cd : 'error_code' in body ? body.error_code : undefined;
       const rateLimited = code === 'EGW00201' || code === 'EGW00133' || response.status === 429;
+      const authKeyDenied = ['EGW00103', 'EGW00105'].includes(typeof code === 'string' ? code : '');
       const denied = ['EGW00103', 'EGW00105', 'EGW00121', 'EGW00122'].includes(typeof code === 'string' ? code : '') || response.status === 401 || response.status === 403;
       if (code === 'EGW00123' && init.method !== 'POST') throw new KisAuthExpired('KIS 모의 인증이 만료되었습니다 (EGW00123).');
+      if (response.status === 401 && init.method !== 'POST' && !rateLimited && !authKeyDenied) throw new KisAuthExpired('KIS 모의 인증이 만료되거나 거부되었습니다.');
       if (!response.ok) throw new KisFailure(`KIS 모의 API가 HTTP ${response.status}로 거부했습니다. ${rateLimited ? '호출 제한 후 잠시 기다려 다시 확인하세요.' : denied ? '모의 키·서비스 권한을 확인하세요.' : '서비스 상태를 확인하고 다시 조회하세요.'}`, rateLimited ? 'rate-limit' : denied ? 'permission' : 'upstream');
       if (('rt_cd' in body && body.rt_cd !== '0') || ((init.method !== 'POST' || path === '/oauth2/tokenP') && 'error_code' in body)) {
         if (code === 'EGW00123') throw new KisAuthExpired('KIS 모의 인증이 만료되었습니다 (EGW00123).');
@@ -317,14 +320,16 @@ export class KisClient {
       this.accountState.checkStartedAt = new Date().toISOString();
       this.accountState.status = { ...this.accountState.status, phase: 'loading', complete: false, error: null, pages: 0 };
       this.accountState.failure = null;
-      this.balanceRequest = this.loadBalance(controller.signal);
-      try { return await this.balanceRequest; }
-      catch (error) {
+      const request = this.loadBalance(controller.signal).catch(error => {
         const failure = safeFailure(error); const message = failure.message;
         const previous = this.accountState.status;
         this.accountState = { ...this.accountState, connected: false, message, failure, status: { ...previous, phase: previous.pages > 0 ? 'partial' : this.configured() ? 'error' : 'disconnected', complete: false, observedAt: new Date().toISOString(), error: message } };
         throw error instanceof KisFailure ? error : new KisFailure(message, failure.kind);
-      } finally { this.balanceRequest = undefined; }
+      }).finally(() => {
+        if (this.balanceRequest === request) this.balanceRequest = undefined;
+      });
+      this.balanceRequest = request;
+      return await request;
     } finally { clearTimeout(timer); }
   }
   private async loadBalance(signal: AbortSignal): Promise<ConnectionState> {
