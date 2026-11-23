@@ -1,17 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { once } from 'node:events';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Store } from '../server/store.ts';
 import { orderHistory } from '../server/order-history.ts';
-import { makeServer } from '../server/http.ts';
 import { KisClient } from '../server/kis.ts';
 import { placeOrder, cancelOrder, advanceTick } from '../server/engine.ts';
 import { initialState } from '../shared/fixtures.ts';
 import { paperLedgerSchema } from '../shared/contracts.ts';
+import { startTestServer } from './test-server.ts';
 
 const input = () => ({ requestId: randomUUID(), code: '005930', side: 'buy' as const, qty: 1, price: 80000 });
 
@@ -35,17 +34,17 @@ test('ledger GET survives restart with original dates and unknown state without 
   const kis = new KisClient({ key: 'fixture-key', secret: 'fixture-secret', account: '12345678', product: '01' }, async () => { calls++; throw new Error('unexpected broker I/O'); });
   const order = { ...input(), createdAt: '2026-11-13T01:00:00.000Z', tradeDate: '20261113', status: 'unknown' as const, filled: 0, remaining: 1, message: 'pending comparison' };
   store.savePaper(order); store.close(); store = new Store(path);
-  const server = makeServer(store, kis, [4401]); server.listen(4401, '127.0.0.1'); await once(server, 'listening');
+  const { url, close } = await startTestServer(store, kis);
   try {
     const before = structuredClone(store.paperOrders()), state = structuredClone(store.read());
     for (let i = 0; i < 2; i++) {
-      const response = await fetch('http://127.0.0.1:4401/api/kis/ledger'); assert.equal(response.status, 200);
+      const response = await fetch(`${url}/api/kis/ledger`); assert.equal(response.status, 200);
       const result = paperLedgerSchema.parse(await response.json());
       assert.equal(result.orders[0].tradeDate, '20261113'); assert.equal(result.orders[0].status, 'unknown');
       assert.equal(result.orders[0].remaining, 1); assert.equal(result.orders[0].requestId, order.requestId);
     }
     assert.deepEqual(store.paperOrders(), before); assert.deepEqual(store.read(), state); assert.equal(calls, 0);
-  } finally { server.closeAllConnections(); server.close(); await once(server, 'close'); store.close(); rmSync(directory, { recursive: true }); }
+  } finally { await close(); store.close(); rmSync(directory, { recursive: true }); }
 });
 
 test('ledger display contract rejects invalid quantities and strips broker messages and extra evidence', () => {

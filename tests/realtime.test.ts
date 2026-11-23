@@ -938,3 +938,88 @@ test('당일 매수 승인 없이 지정한 날의 이월 수량만 매도하고
     assert.equal(f.store.carry(account,'2026-11-16').length,0);
   }finally{f.close();}
 });
+
+test('자동 재연결된 포트폴리오 소켓에서는 이월 매도 감시를 재개하고 수동 단일 소켓은 차단한다', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout', 'setInterval'], now: base });
+  const f = fixture();
+  try {
+    const { buildMorning } = await import('../server/morning.ts');
+    const report = buildMorning(f.store, f.kis.connection(), base - 3 * 86400000, [], []);
+    const c = { code: '005930', name: '검증', held: 1, reference: 72000, exit: 70100, limit: 100000, relativeVolume: 2, closes: [], asOf: '20261112' };
+    Object.assign(report, { equity: 10000000, cash: 9000000, retainedCash: 8900000, candidates: [c], exposureComplete: true });
+    const account = f.kis.accountFingerprint();
+    f.store.saveMorning(account, report);
+    f.store.approveMorning(account, report.day, report.id, new Date(base - 3 * 86400000).toISOString());
+    f.store.saveCarry(account, '2026-11-16', report.id, [{ code: c.code, qty: 1 }]);
+    f.realtime.armMorning([c.code]);
+    const ws1 = f.sockets.at(-1)!;
+    ws1.emit('open');
+    ws1.acknowledge();
+    ws1.emit('close');
+    t.mock.timers.tick(1500);
+    const ws2 = f.sockets.at(-1)!;
+    assert.notEqual(ws2, ws1);
+    ws2.emit('open');
+    ws2.acknowledge();
+    assert.equal(f.realtime.canMonitorCarry('2026-11-16', ['005930']), true);
+    assert.equal(f.realtime.canMonitorCarry('2026-11-16', ['000660']), false);
+    f.realtime.armMorning([c.code]);
+    assert.equal(f.realtime.canMonitorCarry('2026-11-16', ['005930']), false);
+    f.realtime.stop();
+    f.start();
+    assert.equal(f.realtime.canMonitorCarry('2026-11-16', ['005930']), false);
+  } finally {
+    f.close();
+  }
+});
+
+test('재연결 대기(retry) 중인 포트폴리오 세션은 기존 morningCodes를 유지하며 이월 재무장을 허용한다', () => {
+  const f = fixture();
+  try {
+    f.realtime.armMorning(['005930', '000660']);
+    const ws1 = f.sockets.at(-1)!;
+    ws1.emit('open');
+    ws1.emit('close');
+    // 소켓이 끊겨 retry 타이머가 대기 중인 상태
+    assert.equal(f.realtime.canMonitorCarry('2026-11-16', ['005930']), true);
+    assert.equal(f.realtime.canMonitorCarry('2026-11-16', ['035420']), false);
+    f.realtime.armMorning(['005930']);
+    assert.equal(f.realtime.morningRun().subscriptions, 2);
+    assert.equal(f.realtime.morningRun().armed, true);
+  } finally {
+    f.close();
+  }
+});
+
+test('재연결 대기(retry) 중 prepareMorning은 수동 소켓이나 새 종목 집합으로 기존 구독을 덮어쓰지 못한다', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout', 'setInterval'], now: base });
+  const f = fixture();
+  try {
+    const { buildMorning } = await import('../server/morning.ts');
+    const report = buildMorning(f.store, f.kis.connection(), base, [], []);
+    const c = (code: string) => ({ code, name: code, held: 0, reference: 72000, exit: 70000, limit: 100000, relativeVolume: 2, closes: [], asOf: '20261113' });
+    // 1) 포트폴리오 retry 대기 중 새 종목 포함 보고서는 차단되고, 기존 부분집합은 retry 타이머를 보존
+    f.realtime.armMorning(['005930', '000660']);
+    const ws1 = f.sockets.at(-1)!;
+    ws1.emit('open');
+    ws1.emit('close');
+    Object.assign(report, { candidates: [c('005930'), c('035420')], watch: [] });
+    assert.throws(() => f.realtime.prepareMorning(report), /정지한 뒤/);
+    Object.assign(report, { candidates: [c('005930')], watch: [] });
+    const subset = f.realtime.prepareMorning(report);
+    assert.deepEqual(subset, ['005930']);
+    f.realtime.armMorning(subset, report.id);
+    assert.equal(f.realtime.morningRun().subscriptions, 2);
+    t.mock.timers.tick(1500);
+    assert.equal(f.sockets.length, 2);
+
+    // 2) 수동 단일 종목 retry 대기 중에는 prepareMorning 자체가 차단됨
+    f.realtime.stop();
+    const wsManual = f.start();
+    wsManual.emit('close');
+    Object.assign(report, { candidates: [c('005930')], watch: [] });
+    assert.throws(() => f.realtime.prepareMorning(report), /정지한 뒤/);
+  } finally {
+    f.close();
+  }
+});

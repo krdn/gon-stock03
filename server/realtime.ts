@@ -87,12 +87,20 @@ export class Realtime {
     if (codes.some((code) => !/^\d{6}$/.test(code)) || codes.length > 18)
       throw new Error('이번 실시간 구독 가능 범위를 초과했습니다.');
     for (const p of report.watch) if (codes.length < 18 && !codes.includes(p.code) && /^\d{6}$/.test(p.code)) codes.push(p.code);
-    if (this.socket && (!this.morningCodes.size || codes.some((c) => !this.morningCodes.has(c))))
+    if ((this.socket || this.retry) && (!this.morningCodes.size || codes.some((c) => !this.morningCodes.has(c))))
       throw new Error('기존 실시간 구독을 정지한 뒤 포트폴리오 운용을 승인하세요.');
     return codes;
   }
-  canMonitorCarry(day: string) {
-    return this.canApproveMorning(day) && !!this.config?.approvalKey && !!this.config?.htsId && !this.socket && !this.morningArmed;
+  canMonitorCarry(day: string, codes?: string[]) {
+    const active = Boolean(this.socket || this.retry);
+    return (
+      this.canApproveMorning(day) &&
+      !!this.config?.approvalKey &&
+      !!this.config?.htsId &&
+      !this.morningArmed &&
+      !this.store.read().risk.halted &&
+      (!active || (this.morningCodes.size > 0 && (!codes || codes.every((c) => this.morningCodes.has(c)))))
+    );
   }
   armMorning(codes: string[], buyId: string | null = null) {
     this.refreshMorningTerms();
@@ -103,6 +111,7 @@ export class Realtime {
       if (this.state.phase !== 'ready') this.autoReconcile();
       return;
     }
+    if (this.retry && this.morningCodes.size > 0 && codes.every((c) => this.morningCodes.has(c))) return;
     this.morningCodes = new Set(codes);
     clearTimeout(this.opening);
     const start = () => {

@@ -63,7 +63,10 @@ export class Store {
       CREATE TABLE IF NOT EXISTS morning_claim (request TEXT PRIMARY KEY,report TEXT NOT NULL,code TEXT NOT NULL,buy_amount INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS morning_carry (account TEXT NOT NULL, day TEXT NOT NULL, code TEXT NOT NULL, report TEXT NOT NULL, qty INTEGER NOT NULL, claimed INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(account,day,code));
       CREATE TABLE IF NOT EXISTS morning_close (report TEXT PRIMARY KEY,body TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS morning_stops (account TEXT NOT NULL, day TEXT NOT NULL, PRIMARY KEY(account,day));`);
+      CREATE TABLE IF NOT EXISTS morning_stops (account TEXT NOT NULL, day TEXT NOT NULL, PRIMARY KEY(account,day));
+      CREATE TABLE IF NOT EXISTS morning_daily_bars (code TEXT NOT NULL, date TEXT NOT NULL, body TEXT NOT NULL, collected_at TEXT NOT NULL, PRIMARY KEY(code,date));
+      CREATE INDEX IF NOT EXISTS morning_daily_bars_date ON morning_daily_bars(date);
+      CREATE TABLE IF NOT EXISTS morning_scan_meta (code TEXT PRIMARY KEY, to_date TEXT NOT NULL, calendar_hash TEXT NOT NULL, status TEXT NOT NULL, checked_at TEXT NOT NULL);`);
     this.db.exec('CREATE TABLE IF NOT EXISTS backtest_experiments (id TEXT PRIMARY KEY, body TEXT NOT NULL);');
     this.db.exec('CREATE TABLE IF NOT EXISTS market_removed (code TEXT PRIMARY KEY, body TEXT NOT NULL);');
     this.db.prepare('INSERT OR IGNORE INTO workspace VALUES (1, 1, ?)').run(JSON.stringify(initialState()));
@@ -227,6 +230,25 @@ export class Store {
       this.db.prepare("SELECT 1 FROM morning_carry WHERE account=? AND day LIKE 'next:%' LIMIT 1").get(account),
     );
   }
+  carryPreviewCodes(account: string, day: string, nextDay: string): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT c.code, r.body
+         FROM morning_carry c
+         JOIN morning_reports r ON c.report = r.id AND c.account = r.account
+         WHERE c.account = ?
+           AND c.day IN (?, ?)
+           AND c.claimed < c.qty
+           AND r.approved IS NOT NULL`,
+      )
+      .all(account, day, nextDay);
+    const codes = new Set<string>();
+    for (const row of rows) {
+      JSON.parse(String(row.body));
+      codes.add(String(row.code));
+    }
+    return [...codes];
+  }
   bindNextSession(account: string, previous: string, today: string) {
     this.db.prepare("UPDATE morning_carry SET day='expired:'||substr(day,6) WHERE account=? AND day LIKE 'next:%' AND substr(day,6)<?").run(account,previous);
     this.db
@@ -297,6 +319,71 @@ export class Store {
     if (reached) this.db.prepare('INSERT OR IGNORE INTO morning_stops VALUES (?,?)').run(account, day);
     return !!this.db.prepare('SELECT 1 FROM morning_stops WHERE account=? AND day=?').get(account, day);
   }
+  saveMorningScanSymbol(code: string, toDate: string, calendarHash: string, status: 'passed' | 'incomplete', bars: StoredBar[]) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db.prepare('DELETE FROM morning_daily_bars WHERE code=?').run(code);
+      if (status === 'passed') {
+        const insert = this.db.prepare('INSERT INTO morning_daily_bars (code,date,body,collected_at) VALUES (?,?,?,?)');
+        for (const bar of bars) insert.run(code, bar.date, JSON.stringify(bar), bar.collectedAt);
+      }
+      this.db.prepare('INSERT OR REPLACE INTO morning_scan_meta (code,to_date,calendar_hash,status,checked_at) VALUES (?,?,?,?,?)')
+        .run(code, toDate, calendarHash, status, new Date().toISOString());
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+  morningScannedCodes(toDate: string, calendarHash: string): Set<string> {
+    return new Set(
+      this.db
+        .prepare('SELECT code FROM morning_scan_meta WHERE to_date=? AND calendar_hash=?')
+        .all(toDate, calendarHash)
+        .map((row) => String(row.code)),
+    );
+  }
+  morningRecentBars(fromDate: string, beforeDate: string, cutoffIso: string): Map<string, StoredBar[]> {
+    const rows = this.db
+      .prepare(
+        `SELECT b.code, b.body
+         FROM morning_daily_bars b
+         JOIN morning_scan_meta m ON m.code = b.code
+         WHERE m.status = 'passed'
+           AND m.to_date < ?
+           AND m.checked_at <= ?
+           AND b.date >= ?
+           AND b.date < ?
+           AND b.collected_at <= ?
+         ORDER BY b.code, b.date`,
+      )
+      .all(beforeDate, cutoffIso, fromDate, beforeDate, cutoffIso);
+    const result = new Map<string, StoredBar[]>();
+    for (const row of rows) {
+      const code = String(row.code);
+      const bar = JSON.parse(String(row.body)) as StoredBar;
+      const list = result.get(code);
+      if (list) list.push(bar);
+      else result.set(code, [bar]);
+    }
+    return result;
+  }
+  morningIncompleteMeta(beforeDate: string, cutoffIso: string): Map<string, { toDate: string; checkedAt: string }> {
+    const rows = this.db
+      .prepare(
+        `SELECT code, to_date, checked_at
+         FROM morning_scan_meta
+         WHERE status = 'incomplete'
+           AND to_date < ?
+           AND checked_at <= ?`,
+      )
+      .all(beforeDate, cutoffIso);
+    const result = new Map<string, { toDate: string; checkedAt: string }>();
+    for (const row of rows) {
+      result.set(String(row.code), { toDate: String(row.to_date), checkedAt: String(row.checked_at) });
+    }
+    return result;
+  }
   realtimeRequired() { return Boolean(this.db.prepare('SELECT id FROM realtime_guard WHERE id=1').get()); }
   requireRealtime() { this.db.prepare('INSERT OR IGNORE INTO realtime_guard VALUES (1)').run(); }
   masterData() {
@@ -331,7 +418,12 @@ export class Store {
       this.db.exec('COMMIT');
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
-  dailyRuns(): DailyRun[] { return this.db.prepare('SELECT body FROM daily_runs ORDER BY rowid DESC').all().map(row => JSON.parse(row.body as string) as DailyRun); }
+  dailyRuns(limit?: number): DailyRun[] {
+    const rows = limit === undefined
+      ? this.db.prepare('SELECT body FROM daily_runs ORDER BY rowid DESC').all()
+      : this.db.prepare('SELECT body FROM daily_runs ORDER BY rowid DESC LIMIT ?').all(limit);
+    return rows.map(row => JSON.parse(row.body as string) as DailyRun);
+  }
   dailyRun(id: string): DailyRun | undefined { const row = this.db.prepare('SELECT body FROM daily_runs WHERE id=?').get(id); return row ? JSON.parse(row.body as string) as DailyRun : undefined; }
   dailyBars(id: string): StoredBar[] { return this.db.prepare('SELECT body FROM daily_bars WHERE run_id=? ORDER BY date').all(id).map(row => JSON.parse(row.body as string) as StoredBar); }
   saveDaily(run: DailyRun, bars: StoredBar[] = []) {

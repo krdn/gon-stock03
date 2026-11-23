@@ -41,8 +41,8 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
   const account = () => (kis.configured() ? kis.accountFingerprint() : 'unconfigured');
   const scan = new MorningScan(store, kis, market);
   let generating = false;
-  async function bindCarry(day: string) {
-    if (!store.pendingCarry(account()) || !realtime.canApproveMorning(day)) return;
+  async function resolveCarryPrevious(day: string) {
+    if (!store.pendingCarry(account()) || !realtime.canApproveMorning(day)) return null;
     const end = addDays(day.replaceAll('-', ''), -1),
       from = addDays(end, -21);
     const bars = await kis.dailyPage(
@@ -55,7 +55,11 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       .map((b) => b.date)
       .sort()
       .at(-1);
-    if (previous) store.bindNextSession(account(), previous.replace(/^(....)(..)(..)$/, '$1-$2-$3'), day);
+    return previous ? previous.replace(/^(....)(..)(..)$/, '$1-$2-$3') : null;
+  }
+  async function bindCarry(day: string) {
+    const previousDay = await resolveCarryPrevious(day);
+    if (previousDay) store.bindNextSession(account(), previousDay, day);
   }
   async function generateMorning() {
     if (generating) throw new Error('보고서를 작성 중입니다.');
@@ -130,6 +134,12 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         }
       }
       if (Date.now() >= opening && prior) return prior;
+      if (Date.now() >= opening) {
+        report.createdAt = new Date().toISOString();
+        if (!report.gaps.some((g) => g.includes('당일 승인 불가'))) {
+          report.gaps.push('장전 마감 후 열람용 보고서 · 당일 승인 불가');
+        }
+      }
       if (report.day !== day) throw new Error('거래일이 바뀌었습니다. 다시 작성하세요.');
       store.saveMorning(key, report);
       return store.morning(key,day)??report;
@@ -139,7 +149,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
   }
   const instanceId = randomUUID();
   const startedAt = new Date().toISOString();
-  const origins = new Set(ports.flatMap(port => [`http://127.0.0.1:${port}`, `http://localhost:${port}`]));
+  const origins = new Set(ports.filter(port => port > 0).flatMap(port => [`http://127.0.0.1:${port}`, `http://localhost:${port}`]));
   const hosts = new Set([...origins].map(origin => new URL(origin).host));
   const server = createServer(async (req, res) => {
     if (!hosts.has(req.headers.host ?? '') || (req.headers.origin && !origins.has(req.headers.origin)) || req.headers['sec-fetch-site'] === 'cross-site') { json(res, 403, { error: '로컬 워크스페이스에서만 접근할 수 있습니다.' }); return; }
@@ -180,7 +190,12 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         json(res, 200, { audit: store.paperAudit(id) }); return;
       }
       if (path === '/api/data/master' && req.method === 'GET') { json(res, 200, store.masterData()); return; }
-      if (path === '/api/data/daily' && req.method === 'GET') { json(res, 200, { runs: store.dailyRuns() }); return; }
+      if (path === '/api/data/daily' && req.method === 'GET') {
+        const rawLimit = new URL(req.url!, 'http://127.0.0.1').searchParams.get('limit');
+        const limit = rawLimit === null ? undefined : z.string().regex(/^\d+$/).transform(Number).pipe(z.int().min(1).max(500)).parse(rawLimit);
+        json(res, 200, { runs: store.dailyRuns(limit) });
+        return;
+      }
       if (path.startsWith('/api/data/daily/') && req.method === 'GET') {
         const id = idInput.parse({ id: path.slice('/api/data/daily/'.length) }).id;
         const run = store.dailyRun(id); json(res, run ? 200 : 404, run ? { run, bars: store.dailyBars(id) } : { error: '수집 ID를 찾지 못했습니다.' }); return;
@@ -216,12 +231,18 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         }
         if (path === '/api/morning/carry/start') {
           const day = seoulDay(Date.now());
-          if (approval || contract || !realtime.canMonitorCarry(day))
+          if (approval || contract || !realtime.canApproveMorning(day) || store.read().risk.halted)
             throw new Error('일반 모의 운용 세션이 필요합니다.');
-          await bindCarry(day);
-          const codes = store.carry(account(), day).map((p) => p.code);
-          if (approval || contract || !codes.length || !realtime.canMonitorCarry(day))
+          if (!realtime.canMonitorCarry(day))
             throw new Error('이월 승인과 실시간 거래일 설정을 확인하세요.');
+          const previousDay = await resolveCarryPrevious(day);
+          store.morning(account(), day);
+          const codes = previousDay
+            ? store.carryPreviewCodes(account(), day, 'next:' + previousDay)
+            : store.carry(account(), day).map((p) => p.code);
+          if (!codes.length || !realtime.canMonitorCarry(day, codes))
+            throw new Error('이월 승인과 실시간 거래일 설정을 확인하세요.');
+          if (previousDay) store.bindNextSession(account(), previousDay, day);
           realtime.armMorning(codes);
           json(res, 200, { message: '이월 매도 감시를 시작합니다.' });
           return;
@@ -288,6 +309,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
             report.equity <= 0 ||
             !realtime.canApproveMorning(day) ||
             store.read().risk.halted ||
+            report.gaps.some((g) => g.includes('당일 승인 불가')) ||
             Date.parse(report.createdAt) >= Date.parse(day + 'T' + realtime.morningOpenTime(day) + ':00+09:00')
           ) {
             throw new Error('당일 장전 보고서, 모의 잔고, 거래일 설정과 위험 상태를 확인하세요.');
@@ -413,8 +435,11 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       const type = ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' } as Record<string, string>)[extname(file)] ?? 'application/octet-stream';
       res.writeHead(200, { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' }); res.end(req.method === 'HEAD' ? undefined : bytes);
     } catch (error) {
-      if ((path.startsWith('/api/trading-settings') || path.startsWith('/api/morning')) && error instanceof Error && 'code' in error && !(error instanceof ZodError)) {
-        json(res,500,{error:'매매 설정 원장이나 고정 파일을 처리하지 못했습니다. 저장 상태를 다시 확인하세요.'}); return;
+      if (path.startsWith('/api/trading-settings') && error instanceof Error && 'code' in error && !(error instanceof ZodError)) {
+        json(res, 500, { error: '매매 설정 원장이나 고정 파일을 처리하지 못했습니다. 저장 상태를 다시 확인하세요.' }); return;
+      }
+      if (path.startsWith('/api/morning') && error instanceof Error && 'code' in error && !(error instanceof ZodError)) {
+        json(res, 500, { error: '장전 포트폴리오 자료나 저장소를 처리하지 못했습니다. 저장 상태를 다시 확인하세요.' }); return;
       }
       if ((path === '/api/watchlist' || path === '/api/journal' || path.startsWith('/api/strategies') || path.startsWith('/api/risk') || path.startsWith('/api/backtest/') || path.startsWith('/api/kis/') || path === '/api/events/read') && error instanceof Error && 'code' in error && error.code === 'ERR_SQLITE_ERROR') { json(res, 500, { error: storageErrorMessage }); return; }
       if (path === '/api/kis/check' || ['/api/kis/order', '/api/kis/orders', '/api/kis/recovery/inspect', '/api/kis/recovery/confirm', '/api/kis/cancel', '/api/kis/revise', '/api/kis/cancel-probe'].includes(path)) {
@@ -480,5 +505,16 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
     scan.close();
     realtime.stop();
   });
+  if (ports.includes(0)) {
+    server.once('listening', () => {
+      const address = server.address();
+      if (address && typeof address === 'object' && address.port > 0) {
+        origins.add(`http://127.0.0.1:${address.port}`);
+        origins.add(`http://localhost:${address.port}`);
+        hosts.add(`127.0.0.1:${address.port}`);
+        hosts.add(`localhost:${address.port}`);
+      }
+    });
+  }
   return server;
 }

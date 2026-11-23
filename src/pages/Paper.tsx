@@ -42,7 +42,7 @@ export function Paper() {
 }
 
 function PaperForm() {
-  const { state, act, busy, available, connection, realtime } = useWorkbench();
+  const { state, act, busy, available, connection, realtime, serverNow } = useWorkbench();
   const [params] = useSearchParams();
   const location = useLocation();
   const [savedInput] = useState(() => readSettingsInput(location.state?.paperReturn, params.get('code')));
@@ -331,7 +331,7 @@ function PaperForm() {
                   observedAt: quote.receivedAt,
                   lastSuccessAt: quote.receivedAt,
                   staleAfterMs: QUOTE_REFRESH_MS,
-                })}
+                }, Number.isFinite(serverNow) ? serverNow : Date.now())}
               />
               {bars.length ? (
                 <details className="paper-bars">

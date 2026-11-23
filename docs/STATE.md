@@ -1,5 +1,6 @@
 # 작업 인수인계
 
+- **전체 점검·하드닝** [작업 기록·검증](tasks/199-audit-hardening.md) · [#199](https://github.com/krdn/gon-stock03/issues/199) (장전 스캔 분리·경계 수정·동적 포트·`serverNow` 통일; Claude Opus 5.5 + Codex 재리뷰 PASS, PR 검토 대기)
 - **장전 포트폴리오 운용** [구현과 검증](tasks/197-morning.md) · [#197](https://github.com/krdn/gon-stock03/issues/197)
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매.
 
