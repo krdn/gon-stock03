@@ -10,15 +10,19 @@ const feeds = [
   { publisher: '유럽중앙은행', url: 'https://www.ecb.europa.eu/rss/press.html' },
 ];
 
+function decodeEntities(text: string) {
+  return text
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#(?:39|x27);|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&');
+}
+
 function field(item: string, name: string) {
-  return (
-    new RegExp('<' + name + '>([\\s\\S]*?)</' + name + '>', 'i')
-      .exec(item)?.[1]
-      .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-      .replace(/&amp;/g, '&')
-      .replace(/&quot;/g, '"')
-      .trim() ?? ''
-  );
+  return decodeEntities(new RegExp('<' + name + '>([\\s\\S]*?)</' + name + '>', 'i').exec(item)?.[1] ?? '').trim();
 }
 
 export function parseNews(xml: string, feed: (typeof feeds)[number], cutoff: number) {

@@ -17,6 +17,7 @@ const qualityLabels = { pending: '대조 대기', unverified: '달력 미검증'
 function DailyDetail({ id, revision, runs, onSettled }: {
   id: string; revision: number; runs: DailyRun[]; onSettled: (id: string | null) => void;
 }) {
+  const { serverNow } = useWorkbench();
   const [detail, setDetail] = useState<{ run: DailyRun; bars: StoredBar[] } | null>(null);
   const [loading, setLoading] = useState(true), [error, setError] = useState('');
   useEffect(() => {
@@ -40,7 +41,7 @@ function DailyDetail({ id, revision, runs, onSettled }: {
     {error && <p role="alert" className="soft-note">{error}{detail && ' · 이전 표시는 최신 확인값이 아닙니다.'} 저장 상태 새로고침으로 다시 확인하세요.</p>}
     {run && <>
       <h3>{run.code} · {policy(run)} · KRX</h3>
-      <div className="toolbar"><Badge>{run.coverageComplete ? '구간 수집 종료' : run.status.pages ? '일부 수집' : '수집 전'}</Badge><Badge>{qualityLabels[run.quality.state]}</Badge><Badge>{run.status.error ? (detail.bars.length ? '수집 실패 · 이전 저장분' : '수집 실패 · 저장 없음') : run.status.phase === 'loading' ? '수집 중' : !detail.bars.length ? '저장 없음' : freshness(run.status).phase === 'stale' ? '수집 후 오래됨' : '저장 스냅샷'}</Badge></div>
+      <div className="toolbar"><Badge>{run.coverageComplete ? '구간 수집 종료' : run.status.pages ? '일부 수집' : '수집 전'}</Badge><Badge>{qualityLabels[run.quality.state]}</Badge><Badge>{run.status.error ? (detail.bars.length ? '수집 실패 · 이전 저장분' : '수집 실패 · 저장 없음') : run.status.phase === 'loading' ? '수집 중' : !detail.bars.length ? '저장 없음' : freshness(run.status, Number.isFinite(serverNow) ? serverNow : Date.now()).phase === 'stale' ? '수집 후 오래됨' : '저장 스냅샷'}</Badge></div>
       {run.status.error && <p role="alert" className="soft-note">{run.status.error}</p>}
       <dl className="data-facts inventory-range">
         <div><dt>저장 범위</dt><dd><strong>저장 {detail.bars.length}봉</strong>{detail.bars.length > 0 && <small>{date(detail.bars[0].date)} ~ {date(detail.bars.at(-1)!.date)}</small>}</dd></div>

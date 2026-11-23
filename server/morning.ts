@@ -1,11 +1,50 @@
 import { randomUUID } from 'node:crypto';
-import { masterSourceLabel } from '../shared/market-data.ts';
+import { addDays, masterSourceLabel, type StoredBar } from '../shared/market-data.ts';
 import type { MorningReport, MorningCandidate, MorningItem } from '../shared/morning.ts';
 import type { ConnectionState } from '../shared/model.ts';
 import type { Store } from './store.ts';
 
 export function seoulDay(now: number) {
   return new Date(now + 9 * 3600000).toISOString().slice(0, 10);
+}
+
+type EvaluateResult =
+  | { kind: 'skip' }
+  | { kind: 'invalid' }
+  | { kind: 'ok'; breakout: boolean; candidate: MorningCandidate };
+
+function evaluateBars(
+  code: string,
+  name: string,
+  rawBars: StoredBar[],
+  cutoff: number,
+  day: string,
+  heldQty: number,
+): EvaluateResult {
+  const bars = rawBars
+    .filter((b) => b.date < day.replaceAll('-', '') && Date.parse(b.collectedAt) <= cutoff)
+    .slice(-21);
+  if (bars.length < 21) return { kind: 'skip' };
+  const last = bars[20],
+    prev = bars.slice(0, 20);
+  if (cutoff - Date.parse(last.date.replace(/^(....)(..)(..)$/, '$1-$2-$3') + 'T15:30:00+09:00') > 5 * 86400000)
+    return { kind: 'skip' };
+  const reference = Math.max(...prev.map((b) => b.high)),
+    avgVolume = prev.reduce((s, b) => s + b.volume, 0) / 20;
+  if (avgVolume <= 0 || bars.some((b) => b.low <= 0 || b.volume <= 0)) return { kind: 'invalid' };
+  const breakout = last.close >= reference && last.volume > avgVolume;
+  const candidate: MorningCandidate = {
+    code,
+    name,
+    held: heldQty,
+    closes: bars.map((b) => b.close),
+    asOf: last.date,
+    reference: Math.max(reference, last.close),
+    exit: Math.min(...prev.slice(-5).map((b) => b.low)),
+    limit: 0,
+    relativeVolume: last.volume / avgVolume,
+  };
+  return { kind: 'ok', breakout, candidate };
 }
 
 export function buildMorning(
@@ -54,6 +93,28 @@ export function buildMorning(
   const seen = new Set<string>(),
     candidates: MorningCandidate[] = [],
     watch: MorningReport['watch'] = [];
+  const recordEvaluated = (evaluated: Extract<EvaluateResult, { kind: 'ok' }>) => {
+    const { breakout, candidate } = evaluated;
+    seen.add(candidate.code);
+    if (breakout || held.has(candidate.code)) candidates.push(candidate);
+    if (!breakout && !held.has(candidate.code)) {
+      const { closes, ...levels } = candidate;
+      watch.push(levels);
+    }
+  };
+  const recentBars = store.morningRecentBars(
+    addDays(day.replaceAll('-', ''), -60),
+    day.replaceAll('-', ''),
+    new Date(cutoff).toISOString(),
+  );
+  const incompleteMeta = store.morningIncompleteMeta(day.replaceAll('-', ''), new Date(cutoff).toISOString());
+  for (const [code, rawBars] of recentBars) {
+    const instrument = instruments.get(code);
+    if (!instrument || seen.has(code)) continue;
+    const evaluated = evaluateBars(code, instrument.name, rawBars, cutoff, day, held.get(code)?.qty ?? 0);
+    if (evaluated.kind === 'invalid') seen.add(code);
+    else if (evaluated.kind === 'ok') recordEvaluated(evaluated);
+  }
   const runs = store
     .dailyRuns()
     .filter(
@@ -68,36 +129,19 @@ export function buildMorning(
   for (const run of runs) {
     const instrument = instruments.get(run.code);
     if (!instrument || seen.has(run.code)) continue;
-    const bars = store
-      .dailyBars(run.id)
-      .filter((b) => b.date < day.replaceAll('-', '') && Date.parse(b.collectedAt) <= cutoff)
-      .slice(-21);
-    if (bars.length < 21) continue;
-    const last = bars[20],
-      prev = bars.slice(0, 20);
-    if (cutoff - Date.parse(last.date.replace(/^(....)(..)(..)$/, '$1-$2-$3') + 'T15:30:00+09:00') > 5 * 86400000)
+    const incomplete = incompleteMeta.get(run.code);
+    if (incomplete && (run.to < incomplete.toDate || Date.parse(run.status.lastSuccessAt!) <= Date.parse(incomplete.checkedAt)))
       continue;
-    seen.add(run.code);
-    const reference = Math.max(...prev.map((b) => b.high)),
-      avgVolume = prev.reduce((s, b) => s + b.volume, 0) / 20;
-    if (avgVolume <= 0 || bars.some((b) => b.low <= 0 || b.volume <= 0)) continue;
-    const breakout = last.close >= reference && last.volume > avgVolume;
-    const candidate = {
-      code: run.code,
-      name: instrument.name,
-      held: held.get(run.code)?.qty ?? 0,
-      closes: bars.map((b) => b.close),
-      asOf: last.date,
-      reference: Math.max(reference, last.close),
-      exit: Math.min(...prev.slice(-5).map((b) => b.low)),
-      limit: 0,
-      relativeVolume: last.volume / avgVolume,
-    };
-    if (breakout || held.has(run.code)) candidates.push(candidate);
-    if (!breakout && !held.has(run.code)) {
-      const { closes, ...levels } = candidate;
-      watch.push(levels);
-    }
+    const evaluated = evaluateBars(
+      run.code,
+      instrument.name,
+      store.dailyBars(run.id),
+      cutoff,
+      day,
+      held.get(run.code)?.qty ?? 0,
+    );
+    if (evaluated.kind === 'invalid') seen.add(run.code);
+    else if (evaluated.kind === 'ok') recordEvaluated(evaluated);
   }
   candidates.sort((a, b) => b.relativeVolume - a.relativeVolume || a.code.localeCompare(b.code));
   const materialNews = (p: MorningCandidate) =>

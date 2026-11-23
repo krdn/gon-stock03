@@ -37,7 +37,7 @@ function CopyStockCode({ code }: { code: string }) {
 }
 
 export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
-  const { state, act, busy, available, server, status } = useWorkbench();
+  const { state, act, busy, available, server, status, serverNow } = useWorkbench();
   const watchlist = useMemo(() => server ? state.watchlist : [], [state.watchlist, server?.instanceId]);
   const [data, setData] = useState<MasterDataSnapshot>({ instruments: [], removed: [], sources: [] });
   const [saveError, setSaveError] = useState('');
@@ -64,6 +64,7 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
   const [quotes, setQuotes] = useState<Record<string, QuoteState>>({});
   const detailSection = useRef<HTMLElement | null>(null);
   const [now, setNow] = useState(Date.now()), [visible, setVisible] = useState(document.visibilityState === 'visible');
+  const clockNow = Number.isFinite(serverNow) ? serverNow : now;
   const [refresh, setRefresh] = useState(0), [reading, setReading] = useState(false);
   const query = search.trim().toLocaleUpperCase('ko-KR');
   const waitingForWatchMaster = watchOnly && loadingMaster && !data.sources.length && !data.instruments.length && !data.removed.length;
@@ -186,7 +187,7 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
     const value = quotes[row.code];
     if (!value?.quote) return value?.error ? '미수신 · 조회 실패' : '미수신';
     if (value.error) return '지연 · 갱신 실패';
-    return now - Date.parse(value.quote.receivedAt) >= MARKET_STALE_MS ? '지연 · 이전 수신값' : '수신 완료';
+    return clockNow - Date.parse(value.quote.receivedAt) >= MARKET_STALE_MS ? '지연 · 이전 수신값' : '수신 완료';
   }
   function tradingLabel(row: Row) {
     if (unverified(row)) return '마스터 갱신 후 확인 필요';
@@ -218,7 +219,7 @@ export function MarketExplorer({ watchOnly = false }: { watchOnly?: boolean }) {
   function changeFilter(value: string) {
     updateView({ market: value === '전체' ? null : value, page: null, detail: null });
   }
-  const masterOld = data.sources.some(source => source.lastSuccessAt && now - Date.parse(source.lastSuccessAt) >= 86_400_000);
+  const masterOld = data.sources.some(source => source.lastSuccessAt && clockNow - Date.parse(source.lastSuccessAt) >= 86_400_000);
 
   const masterRefresh = <button className="button secondary" disabled={loadingMaster} onClick={() => void loadMaster(true)}>
     <RefreshCw size={15} />{loadingMaster ? '마스터 확인 중' : '마스터 갱신'}

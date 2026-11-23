@@ -1,15 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { Store } from '../server/store.ts';
-import { makeServer } from '../server/http.ts';
 import { KisClient } from '../server/kis.ts';
 import { MarketData, parseMaster } from '../server/market-data.ts';
 import { addDays, dailyInput, masterSourceLabel } from '../shared/market-data.ts';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { startTestServer } from './test-server.ts';
 
 const credentials = { key: 'fixture-key', secret: 'fixture-secret', account: '00000000', product: '01' };
 const row = (date: string) => ({ stck_bsop_date: date, stck_oprc: '100', stck_hgpr: '110', stck_lwpr: '90', stck_clpr: '105', acml_vol: '42' });
@@ -24,9 +23,9 @@ test('daily API persists paged progress and provenance, resumes failures and doe
     if (fail) return new Response('fixture-secret', { status: 429 });
     return Response.json({ rt_cd: '0', output2: [row(query.get('FID_INPUT_DATE_1')!)] });
   }, 0);
-  const server = makeServer(store, kis, [4321]); server.listen(4321, '127.0.0.1'); await once(server, 'listening');
+  const { url, close } = await startTestServer(store, kis);
   const post = async (path: string, input: unknown) => {
-    const response = await fetch('http://127.0.0.1:4321/api/data/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(input) });
+    const response = await fetch(`${url}/api/data/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(input) });
     assert.equal(response.status, 200); return response.json();
   };
   try {
@@ -46,12 +45,12 @@ test('daily API persists paged progress and provenance, resumes failures and doe
     assert.equal(done.nextDate, null); assert.equal(done.coverageComplete, true); assert.equal(done.quality.state, 'unverified');
     assert.equal(done.status.complete, false); assert.equal(done.status.lastSuccessAt, null);
     await post('daily/step', { id }); assert.equal(windows.length, 3);
-    const stored = await (await fetch('http://127.0.0.1:4321/api/data/daily/' + id)).json();
+    const stored = await (await fetch(`${url}/api/data/daily/${id}`)).json();
     assert.deepEqual(stored.bars.map((b: { date: string }) => b.date), ['20260101', '20260401']);
     assert.equal(stored.bars[0].code, '005930'); assert.equal(stored.bars[0].adjustment, 'raw');
     assert.equal(stored.bars[0].source, 'kis-rest'); assert.ok(stored.bars[0].collectedAt); assert.equal(stored.bars[0].volume, 42);
     assert.deepEqual(store.read(), before);
-  } finally { server.closeAllConnections(); server.close(); await once(server, 'close'); store.close(); }
+  } finally { await close(); store.close(); }
 });
 
 const config = <T extends object = Record<never, never>>(extra = {} as T) => ({ id: randomUUID(), code: '005930', from: '20260102', to: '20260105', adjustment: 'adjusted' as const, ...extra });

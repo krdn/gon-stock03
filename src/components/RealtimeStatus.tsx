@@ -2,8 +2,8 @@ import { Link } from 'react-router-dom';
 import { useWorkbench } from '../context';
 
 export function RealtimeStatus({ code }: { code?: string }) {
-  const { realtime, available, act, busy } = useWorkbench();
-  const age = realtime?.lastQuoteAt ? Date.now() - Date.parse(realtime.lastQuoteAt) : Infinity;
+  const { realtime, available, act, busy, serverNow } = useWorkbench();
+  const age = realtime?.lastQuoteAt && Number.isFinite(serverNow) ? serverNow - Date.parse(realtime.lastQuoteAt) : Infinity;
   const fresh = available && realtime?.fresh && age >= 0 && age <= (realtime.quoteSeconds ?? 5) * 1000;
   const allowed = fresh && realtime?.ordersAllowed;
   const time = (value: string | null | undefined) => value ? new Date(value).toLocaleString('ko-KR') : '미확인';

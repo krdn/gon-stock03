@@ -8,12 +8,11 @@ import { onceTerms, type TradingTerms } from '../shared/trading-plan.ts';
 import { defaultOncePolicy } from '../shared/trading-policy.ts';
 import { activeTerms, fixTradingDraft, readPreparedRun, saveTradingDraft } from '../server/trading-plans.ts';
 import { Store } from '../server/store.ts';
-import { once } from 'node:events';
-import { makeServer } from '../server/http.ts';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { startTestServer } from './test-server.ts';
 
 function fixture(mode: 'success' | 'timeout' | 'reject' | 'unauthorized' | 'error-code-only', spacing = 0, approval?: { date: string; requestId: string; cancelProbe?: true; code?: '069500' | '005930'; maxQty?: number; maxAmount?: number; allowExistingHolding?: true; orderType?: 'market' }, ledger = ':memory:') {
   let submits = 0;
@@ -180,13 +179,12 @@ test('next trading day reconciles the original order date and never infers cance
   } finally { f.store.close(); }
 });
 
-let apiPort = 4349;
 async function apiFixture(run: (f: ReturnType<typeof fixture>, post: (path: string, body: unknown) => Promise<Response>, get: (path: string) => Promise<Response>) => Promise<void>) {
-  const f = fixture('timeout'); const port = apiPort++;
-  const server = makeServer(f.store, f.client, [port]); server.listen(port, '127.0.0.1'); await once(server, 'listening');
-  const post = (path: string, body: unknown) => fetch(`http://127.0.0.1:${port}/api/kis/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(body) });
-  try { await run(f, post, path => fetch(`http://127.0.0.1:${port}/api/kis/${path}`)); }
-  finally { server.closeAllConnections(); server.close(); await once(server, 'close'); f.store.close(); }
+  const f = fixture('timeout');
+  const srv = await startTestServer(f.store, f.client);
+  const post = (path: string, body: unknown) => fetch(`${srv.url}/api/kis/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(body) });
+  try { await run(f, post, path => fetch(`${srv.url}/api/kis/${path}`)); }
+  finally { await srv.close(); f.store.close(); }
 }
 
 test('unsupported VTS cancel and revise fail closed without authentication or broker traffic', async () => {
@@ -556,10 +554,9 @@ test('approved attempt and halt survive SQLite restart, with no unguarded server
 
 test('approved HTTP order path exposes the active restriction and persists halt without enabling cancel', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
-  const order = approvedInput(); const f = fixture('success'); const port = apiPort++;
-  const server = makeServer(f.store, f.client, [port], approvalFor(order));
-  server.listen(port, '127.0.0.1'); await once(server, 'listening');
-  const base = `http://127.0.0.1:${port}`;
+  const order = approvedInput(); const f = fixture('success');
+  const srv = await startTestServer(f.store, f.client, approvalFor(order));
+  const base = srv.url;
   const headers = { 'content-type': 'application/json', 'x-workbench': 'local' };
   try {
     const ledgerResponse = await fetch(`${base}/api/kis/ledger`, { headers }); assert.equal(ledgerResponse.status, 200);
@@ -571,7 +568,7 @@ test('approved HTTP order path exposes the active restriction and persists halt 
     assert.equal(f.store.read().risk.halted, true); assert.equal(f.count(), 1);
     const blocked = await fetch(`${base}/api/kis/cancel`, { method: 'POST', headers, body: JSON.stringify({ id: order.requestId }) });
     assert.equal(blocked.status, 409); assert.equal(f.count(), 1);
-  } finally { await new Promise<void>(resolve => server.close(() => resolve())); f.store.close(); }
+  } finally { await srv.close(); f.store.close(); }
 });
 
 test('approved run cannot send when durable claim fails', async t => {
@@ -775,10 +772,9 @@ test('cancel attempt survives disk reopen and a failed atomic audit prevents tra
 test('HTTP cancel probe is opt-in while ordinary cancel and revise remain blocked', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-16T10:01:00+09:00') });
   const order = approvedInput(); const approval = { ...approvalFor(order), cancelProbe: true as const };
-  const f = fixture('success'); const port = 15429;
-  const server = makeServer(f.store, f.client, [port], approval);
-  server.listen(port, '127.0.0.1'); await once(server, 'listening');
-  const post = (path: string, body: unknown) => fetch(`http://127.0.0.1:${port}/api/kis/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(body) });
+  const f = fixture('success');
+  const srv = await startTestServer(f.store, f.client, approval);
+  const post = (path: string, body: unknown) => fetch(`${srv.url}/api/kis/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(body) });
   try {
     assert.equal((await post('order', order)).status, 200);
     for (const path of ['cancel', 'revise']) assert.equal((await post(path, { id: order.requestId })).status, 409);
@@ -786,7 +782,7 @@ test('HTTP cancel probe is opt-in while ordinary cancel and revise remain blocke
     assert.equal(response.status, 200); assert.equal((await response.json()).order.status, 'unknown');
     assert.equal((await post('cancel-probe', { id: order.requestId })).status, 400);
     assert.equal(f.requests.filter(r => r.url.pathname.endsWith('/order-rvsecncl')).length, 1);
-  } finally { server.closeAllConnections(); server.close(); await once(server, 'close'); f.store.close(); }
+  } finally { await srv.close(); f.store.close(); }
 });
 
 test('cancel probe expires while queued for transport and consumes its attempt without sending', async t => {
@@ -960,18 +956,16 @@ test('market HTTP input stays isolated from DEMO and accepts only the exact one-
   assert.equal(paperApprovalSchema.safeParse({ ...approval, maxAmount: 300001 }).success, false);
   assert.equal(paperApprovalSchema.safeParse({ ...approval, orderType: undefined }).success, false);
   assert.equal(paperApprovalSchema.safeParse({ ...approval, cancelProbe: true }).success, false);
-  const f = fixture('success', 0, approval), port = apiPort++, server = makeServer(f.store, f.client, [port], approval);
-  server.listen(port, '127.0.0.1'); await once(server, 'listening');
+  const f = fixture('success', 0, approval), srv = await startTestServer(f.store, f.client, approval);
   try {
-    const address = server.address() as { port: number };
-    const response = await fetch(`http://127.0.0.1:${address.port}/api/kis/order`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(order) });
+    const response = await fetch(`${srv.url}/api/kis/order`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(order) });
     assert.equal(response.status, 200);
     const result = await response.json(); assert.equal(result.order.status, 'accepted'); assert.equal(result.order.orderType, 'market');
     assert.equal(paperLedgerSchema.safeParse({ orders: [result.order] }).success, true);
     assert.equal(paperLedgerSchema.safeParse({ orders: [{ ...result.order, orderType: undefined }] }).success, false);
     assert.equal(paperLedgerSchema.safeParse({ orders: [{ ...result.order, price: 192200 }] }).success, false);
     assert.equal(f.count(), 1);
-  } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); f.store.close(); }
+  } finally { await srv.close(); f.store.close(); }
 });
 
 test('market reconciliation fails closed on missing order type or changed zero order price', async t => {
@@ -1094,15 +1088,14 @@ test('legacy one-share approval cannot be enlarged by reopening; manual setting 
 
 
 test('actual ledger GET provides the fixed five-share approval to the page', async () => {
-  const input = approvedInput(), f = fixture('success'), port = apiPort++;
-  const server = makeServer(f.store, f.client, [port], { ...approvalFor(input), maxQty: 5 });
-  server.listen(port, '127.0.0.1'); await once(server, 'listening');
+  const input = approvedInput(), f = fixture('success');
+  const srv = await startTestServer(f.store, f.client, { ...approvalFor(input), maxQty: 5 });
   try {
-    const response = await fetch(`http://127.0.0.1:${port}/api/kis/ledger`);
+    const response = await fetch(`${srv.url}/api/kis/ledger`);
     assert.equal(response.status, 200);
     assert.deepEqual(paperLedgerSchema.parse(await response.json()).minimumRun, { active: true, requestId: input.requestId, maxQty: 5 });
     assert.equal(f.requests.length, 0);
-  } finally { await new Promise<void>(resolve => server.close(() => resolve())); f.store.close(); }
+  } finally { await srv.close(); f.store.close(); }
 });
 
 function lowerLimitFixture() {
@@ -1122,12 +1115,11 @@ function lowerLimitFixture() {
 test('같은 136300원 HTTP 주문은 기존 계약에서 차단되고 새 하한가 계약만 지정가로 전송한다', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-19T12:16:00+09:00') });
   for (const candidate of [false, true]) {
-    const f = lowerLimitFixture(), port = apiPort++;
+    const f = lowerLimitFixture();
     if (candidate) f.store.configurePaperRun(f.candidate);
-    const server = makeServer(f.store, f.client, [port], candidate ? f.candidate : f.approval);
-    server.listen(port, '127.0.0.1'); await once(server, 'listening');
+    const srv = await startTestServer(f.store, f.client, candidate ? f.candidate : f.approval);
     try {
-      const submit = () => fetch(`http://127.0.0.1:${port}/api/kis/order`, { method: 'POST',
+      const submit = () => fetch(`${srv.url}/api/kis/order`, { method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(f.order) });
       const res = await submit();
       const body = await res.json();
@@ -1155,7 +1147,7 @@ test('같은 136300원 HTTP 주문은 기존 계약에서 차단되고 새 하�
       assert.equal(f.requests.length, calls);
       assert.equal(f.count(), candidate ? 1 : 0);
       assert.equal(f.requests.some(r => r.url.pathname.endsWith('/order-rvsecncl')), false);
-    } finally { await new Promise<void>(resolve => server.close(() => resolve())); f.close(); }
+    } finally { await srv.close(); f.close(); }
   }
 });
 
@@ -1397,10 +1389,7 @@ test('다주 시장가는 고정 조건에서만 허용하고 상한가 총액 �
               prpr: '190700',
             },
           ];
-        const port = apiPort++,
-          server = makeServer(pin.store, f.client, [port], pin.config, undefined, undefined, pin.check);
-        server.listen(port, '127.0.0.1');
-        await once(server, 'listening');
+        const srv = await startTestServer(pin.store, f.client, pin.config, undefined, undefined, pin.check);
         try {
           const order = {
             code: '069500',
@@ -1410,7 +1399,7 @@ test('다주 시장가는 고정 조건에서만 허용하고 상한가 총액 �
             qty: 2,
             requestId: pin.config.requestId,
           };
-          const res = await fetch(`http://127.0.0.1:${port}/api/kis/order`, {
+          const res = await fetch(`${srv.url}/api/kis/order`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' },
             body: JSON.stringify(order),
@@ -1430,7 +1419,7 @@ test('다주 시장가는 고정 조건에서만 허용하고 상한가 총액 �
             assert.deepEqual([wire.PDNO, wire.ORD_DVSN, wire.ORD_QTY, wire.ORD_UNPR], ['069500', '01', '2', '0']);
           }
         } finally {
-          await new Promise<void>((resolve) => server.close(() => resolve()));
+          await srv.close();
         }
       } finally {
         pin.store.close();
@@ -1548,12 +1537,9 @@ test('상한을 명시한 현재가 매수는 마지막 시세로 금액·원장
       assert.equal(pin.store.paperOrders().length, 0);
       assert.equal(f.count(), 0);
       f.response.price = '79830';
-      const port = apiPort++;
-      const server = makeServer(pin.store, f.client, [port], pin.config, undefined, undefined, pin.check);
-      server.listen(port, '127.0.0.1');
-      await once(server, 'listening');
+      const srv = await startTestServer(pin.store, f.client, pin.config, undefined, undefined, pin.check);
       try {
-        const base = 'http://127.0.0.1:' + port + '/api/kis/';
+        const base = srv.url + '/api/kis/';
         const ledger = paperLedgerSchema.parse(await (await fetch(base + 'ledger')).json());
         assert.ok(ledger.minimumRun?.active);
         assert.equal(ledger.minimumRun.policy?.priceMode, 'cappedCurrent');
@@ -1565,7 +1551,7 @@ test('상한을 명시한 현재가 매수는 마지막 시세로 금액·원장
         const {order} = await response.json();
         assert.equal(order.price, 79830);
         assert.equal(order.priceCeiling, 80000);
-      } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+      } finally { await srv.close(); }
       const [accepted] = pin.store.paperOrders();
       assert.equal(accepted.status, 'accepted');
       assert.equal(accepted.price, 79830);
@@ -1647,12 +1633,9 @@ for (const outcome of ['cancelled', 'filled-before-send', 'rejected-then-filled'
       allowExistingHolding: false, cancelProbe: true,
       policy: { ...defaultOncePolicy(date), priceMode: 'cappedCurrent', limitPrice: 80000, consumeAt: 'validated' },
     });
-    const port = apiPort++;
-    const server = makeServer(pin.store, f.client, [port], pin.config, undefined, undefined, pin.check);
+    const srv = await startTestServer(pin.store, f.client, pin.config, undefined, undefined, pin.check);
     try {
-      server.listen(port, '127.0.0.1');
-      await once(server, 'listening');
-      const post = (path: string, body: unknown) => fetch('http://127.0.0.1:' + port + '/api/kis/' + path, {
+      const post = (path: string, body: unknown) => fetch(srv.url + '/api/kis/' + path, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(body),
       });
       const order = { requestId: pin.config.requestId, code, side: 'buy', qty: 2, price: 80000, priceMode: 'cappedCurrent' };
@@ -1710,7 +1693,7 @@ for (const outcome of ['cancelled', 'filled-before-send', 'rejected-then-filled'
       }
       assert.equal(pin.store.paperAudit(order.requestId).filter(a => a.action === 'cancel-attempt').length, expectedPosts);
     } finally {
-      await new Promise<void>(resolve => server.close(() => resolve()));
+      await srv.close();
       pin.store.close();
     }
   });
