@@ -9,6 +9,7 @@ function loadDevCredentials(env: NodeJS.ProcessEnv) {
   const result = spawnSync('infisical', [
     'secrets-manager', 'secrets', 'get', ...kisVariables, '--env', 'dev', '--path', '/kis', '-o', 'json', '--silent',
   ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15_000 });
+  let diagnosis = '';
   if (result.status === 0) {
     try {
       const records = z.array(z.object({
@@ -16,17 +17,19 @@ function loadDevCredentials(env: NodeJS.ProcessEnv) {
         secretValue: z.string().refine(value => !value.includes('\0')),
       })).parse(JSON.parse(result.stdout));
       const values = new Map(records.map(record => [record.secretKey, record.secretValue]));
-      const completeAndCompatible = kisVariables.every(key => {
-        const value = values.get(key);
-        return value?.trim() && (!env[key]?.trim() || env[key] === value);
-      });
-      if (completeAndCompatible) {
+      const missingKeys = kisVariables.filter(key => !values.get(key)?.trim());
+      const conflictKeys = kisVariables.filter(key => env[key]?.trim() && values.get(key)?.trim() && env[key] !== values.get(key));
+      if (!missingKeys.length && !conflictKeys.length) {
         for (const key of kisVariables) env[key] = values.get(key);
         return;
       }
+      const details: string[] = [];
+      if (missingKeys.length) details.push(`누락 항목: ${missingKeys.join(', ')}`);
+      if (conflictKeys.length) details.push(`기존 환경변수와 불일치: ${conflictKeys.join(', ')}`);
+      diagnosis = details.length ? ` (${details.join(' · ')})` : '';
     } catch { /* CLI output may contain secrets. Report only the recovery steps below. */ }
   }
-  console.warn('KIS 설정을 불러오지 못했습니다. Infisical CLI 설치·로그인, dev /kis 읽기 권한과 기존 환경변수를 확인한 뒤 npm run dev를 다시 실행하세요. 로컬 데모를 시작합니다.');
+  console.warn(`KIS 설정을 불러오지 못했습니다${diagnosis}. Infisical CLI 설치·로그인, dev /kis 읽기 권한과 기존 환경변수를 확인한 뒤 npm run dev를 다시 실행하세요. 로컬 데모를 시작합니다.`);
 }
 
 const realtime = process.argv.includes('--realtime');
