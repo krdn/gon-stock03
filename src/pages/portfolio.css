@@ -19,7 +19,28 @@
 .portfolio-details { border: 1px solid var(--line); border-radius: 8px; padding: 0 14px; background: white; }
 .portfolio-details summary { cursor: pointer; padding: 12px 0; font-weight: 600; }
 .portfolio-details p { margin: 0 0 10px; color: #435660; }
+.morning-layout { display: grid; gap: 12px; min-width: 0; font-size: 13px; line-height: 1.6; }
+.morning-layout p, .morning-layout li, .morning-layout blockquote { overflow-wrap: anywhere; }
+.morning-card-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.morning-block-notice { border: 1px solid #e6c6c6; border-left: 3px solid var(--red); border-radius: 7px; padding: 10px 12px; background: #fff5f5; color: #7a2930; display: grid; gap: 6px; min-width: 0; }
+.morning-block-notice ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.morning-rule-card { border: 1px solid var(--line); border-radius: 7px; padding: 12px; background: #f8fbfa; display: grid; gap: 6px; min-width: 0; }
+.morning-briefing { border: 1px solid #d9e3ea; border-radius: 7px; padding: 12px; background: #f9fbfd; display: grid; gap: 10px; min-width: 0; }
+.morning-coverage-warn { border-left: 3px solid #b6802e; padding: 6px 10px; background: #fff6e9; color: #73491c; border-radius: 4px; font-size: 12px; }
+.morning-takeaway { font-weight: 500; color: #24333e; }
+.morning-contrast-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.morning-contrast-card { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; background: #fff; display: grid; gap: 6px; min-width: 0; align-content: start; }
+.morning-finding { color: #24333e; }
+.morning-quote { margin: 0; padding: 6px 10px; border-left: 2px solid #b8c7d1; background: #f5f8fa; color: #435660; font-size: 12px; }
+.morning-card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; }
+.morning-card-foot a, .morning-candidate-evidence a { color: var(--teal); text-decoration: underline; }
+.morning-match-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.morning-candidate-card { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; display: grid; gap: 6px; min-width: 0; }
+.morning-candidate-card h4 { margin: 0; font-size: 13px; }
+.morning-candidate-evidence { border-left: 2px solid #cbd9d4; padding: 6px 10px; background: #f7faf9; display: grid; gap: 4px; font-size: 12px; }
+.morning-analysis-list { display: grid; gap: 8px; margin: 12px 0; }
 @media (max-width: 700px) {
+  .morning-contrast-grid { grid-template-columns: 1fr; }
   .portfolio-page { gap: 8px; }
   .portfolio-warning a { display: inline-flex; align-items: center; min-height: 44px; }
   .portfolio-page .stats-grid { gap: 8px 0; padding: 10px 0; }
