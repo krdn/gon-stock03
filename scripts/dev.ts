@@ -1,33 +1,65 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { z } from 'zod';
 import { Realtime } from '../server/realtime.ts';
+import {
+  applyKisRecords,
+  fetchKisSecretsViaUniversalAuth,
+  kisVariables,
+  readMachineAuthConfig,
+  resolveInfisicalDomain,
+  secretRecordSchema,
+  stripInfisicalEnv,
+} from './infisical-dev.ts';
 
-const kisVariables = ['KIS_APP_KEY', 'KIS_APP_SECRET', 'KIS_CANO', 'KIS_ACNT_PRDT_CD'] as const;
-function loadDevCredentials(env: NodeJS.ProcessEnv) {
+async function loadDevCredentials(env: NodeJS.ProcessEnv) {
   if (kisVariables.every(key => env[key]?.trim())) return;
+
+  const machineAuth = readMachineAuthConfig(env);
+  if (machineAuth.kind === 'error') {
+    console.warn(`Infisical 머신 인증 설정을 사용할 수 없습니다: ${machineAuth.reason} 로컬 데모를 시작합니다.`);
+    return;
+  }
+  if (machineAuth.kind === 'ok') {
+    console.info('Infisical 머신 인증으로 KIS 모의 계좌 설정을 불러오는 중입니다.');
+    const fetched = await fetchKisSecretsViaUniversalAuth(machineAuth.config);
+    if (!fetched.ok) {
+      console.warn(`Infisical 머신 인증에 실패했습니다 (${fetched.reason}). Client ID/Secret·프로젝트 ID·dev /kis 읽기 권한을 확인한 뒤 npm run dev를 다시 실행하세요. 로컬 데모를 시작합니다.`);
+      return;
+    }
+    const applied = applyKisRecords(env, fetched.records);
+    if (applied.ok) return;
+    console.warn(`Infisical 머신 인증으로 KIS 설정을 불러오지 못했습니다${applied.diagnosis}. dev /kis 읽기 권한과 기존 환경변수를 확인한 뒤 npm run dev를 다시 실행하세요. 로컬 데모를 시작합니다.`);
+    return;
+  }
+
   console.info('Infisical에서 KIS 모의 계좌 설정을 불러오는 중입니다.');
-  const result = spawnSync('infisical', [
+  const cliArgs = [
     'secrets-manager', 'secrets', 'get', ...kisVariables, '--env', 'dev', '--path', '/kis', '-o', 'json', '--silent',
-  ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15_000 });
+  ];
+  let result = spawnSync('infisical', cliArgs, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15_000 });
+  const isTimeout = (res: typeof result) => (res.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT';
+  if (isTimeout(result) && process.stdin.isTTY && process.stdout.isTTY) {
+    const loginDomain = resolveInfisicalDomain(env);
+    if (!loginDomain) {
+      console.warn('INFISICAL_DOMAIN 형식이 올바르지 않아 대화형 로그인을 시작하지 못했습니다.');
+    } else {
+      console.info('Infisical CLI 응답이 시간 초과되었습니다(로그인 세션 만료 가능). 대화형 로그인을 시작합니다.');
+      const login = spawnSync('infisical', ['login', '--domain', loginDomain], { stdio: 'inherit' });
+      if (login.status === 0) {
+        result = spawnSync('infisical', cliArgs, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15_000 });
+      }
+    }
+  }
   let diagnosis = '';
   if (result.status === 0) {
     try {
-      const records = z.array(z.object({
-        secretKey: z.string(),
-        secretValue: z.string().refine(value => !value.includes('\0')),
-      })).parse(JSON.parse(result.stdout));
-      const values = new Map(records.map(record => [record.secretKey, record.secretValue]));
-      const missingKeys = kisVariables.filter(key => !values.get(key)?.trim());
-      const conflictKeys = kisVariables.filter(key => env[key]?.trim() && values.get(key)?.trim() && env[key] !== values.get(key));
-      if (!missingKeys.length && !conflictKeys.length) {
-        for (const key of kisVariables) env[key] = values.get(key);
-        return;
-      }
-      const details: string[] = [];
-      if (missingKeys.length) details.push(`누락 항목: ${missingKeys.join(', ')}`);
-      if (conflictKeys.length) details.push(`기존 환경변수와 불일치: ${conflictKeys.join(', ')}`);
-      diagnosis = details.length ? ` (${details.join(' · ')})` : '';
+      const records = z.array(secretRecordSchema).parse(JSON.parse(result.stdout));
+      const applied = applyKisRecords(env, records);
+      if (applied.ok) return;
+      diagnosis = applied.diagnosis;
     } catch { /* CLI output may contain secrets. Report only the recovery steps below. */ }
+  } else if (isTimeout(result)) {
+    diagnosis = ' (CLI 응답 시간 초과 · Infisical 로그인 세션 만료 가능)';
   }
   console.warn(`KIS 설정을 불러오지 못했습니다${diagnosis}. Infisical CLI 설치·로그인, dev /kis 읽기 권한과 기존 환경변수를 확인한 뒤 npm run dev를 다시 실행하세요. 로컬 데모를 시작합니다.`);
 }
@@ -54,9 +86,10 @@ if (realtime) {
     process.exit(1);
   }
 }
-const serverEnv = { ...process.env };
-if (realtime) serverEnv.KIS_WS_APPROVAL_KEY = approvalKey;
-else loadDevCredentials(serverEnv);
+const rawServerEnv = { ...process.env };
+if (realtime) rawServerEnv.KIS_WS_APPROVAL_KEY = approvalKey;
+else await loadDevCredentials(rawServerEnv);
+const serverEnv = stripInfisicalEnv(rawServerEnv);
 const webEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('KIS_') && !name.startsWith('INFISICAL_')));
 const children = [
   spawn('npm', ['run', 'dev:server'], { stdio: 'inherit', env: serverEnv }),

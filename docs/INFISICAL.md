@@ -33,6 +33,32 @@ API 키·DB 비밀번호·모델 제공자 키는 Secrets Management에 저장�
 npm run dev
 ```
 
+### 로컬 무인 자동 인증 (Machine Identity · Universal Auth)
+
+사람 계정(`infisical login`)의 CLI 세션 만료 없이 재기동 시 자동으로 KIS 모의 키를 불러오려면 Infisical의 **Machine Identity (Universal Auth)**를 사용한다.
+
+1. [Infisical 대시보드](https://app.infisical.com)에서 조직(`Organization`) → **Access Control** → **Machine Identities** → **Create Identity**로 전용 Identity를 만든다.
+2. **Authentication Method**에서 **Universal Auth**를 추가하고 `Client ID`와 `Client Secret`을 발급받는다. 기본 Access Token TTL(30일) 대신 **Access Token TTL 단축(예: 300~600초)**, **Access Token Num Uses** 제한, **Client Secret Trusted IPs** 설정을 권장한다.
+3. 프로젝트(`5fdf34cd-9a4e-4992-a82f-1472fb0a61b5`)의 **Access Control → Machine Identities**에서 해당 Identity를 추가하고, **`dev` 환경 `/kis` 경로 읽기 권한만** 부여한다(실전·타 환경·쓰기 권한 금지).
+4. 프로젝트 폴더의 Git 제외 경로 `.secrets/infisical-dev.json`에 권한 `0700`/`0600`으로 저장한다(또는 `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `INFISICAL_PROJECT_ID` 환경변수 사용):
+
+```bash
+mkdir -m 700 -p .secrets
+cat <<'EOF' > .secrets/infisical-dev.json
+{
+  "clientId": "<CLIENT_ID>",
+  "clientSecret": "<CLIENT_SECRET>",
+  "projectId": "5fdf34cd-9a4e-4992-a82f-1472fb0a61b5",
+  "domain": "https://app.infisical.com"
+}
+EOF
+chmod 600 .secrets/infisical-dev.json
+```
+
+`npm run dev`는 기동 시 `POST https://app.infisical.com/api/v1/auth/universal-auth/login`으로 Access Token을 메모리에만 발급받아 `GET /api/v4/secrets`(구버전 서버는 `/api/v3/secrets/raw` 폴백)에서 KIS 4개 키를 읽어 API 자식 프로세스에만 주입하며, 웹 프로세스 및 모든 자식 프로세스에서는 `INFISICAL_*` 변수를 제거한다. 심볼릭 링크·권한 과다(`0600`/`0700` 위반)·평문 `http://` 주소는 거부하며, [vite.config.ts](../vite.config.ts)의 `server.fs.deny`로 `.secrets/**`·`.local/**`의 개발 서버 HTTP 노출을 차단한다.
+
+머신 인증 설정이 없으면 기존 `infisical` CLI 조회로 폴백하며, 대화형 터미널에서 CLI 응답 시간 초과(`ETIMEDOUT`)가 감지되면 자동으로 `infisical login --domain ...`을 실행해 로그인 완료 후 재조회한다. `--realtime`(`npm run dev:realtime`) 및 `npm run dev:morning`은 기존 `infisical secrets-manager run --env dev --path /kis` 경로를 유지하며 `.secrets/infisical-dev.json` 자동 주입 범위 밖이다.
+
 서버·컨테이너·Kubernetes에서는 지원되는 workload identity/OIDC와 Agent·SDK·Operator 중 해당 배포 방식을 사용한다.
 머신 인증은 설정 파일의 프로젝트 선택에 의존하지 않고 `INFISICAL_PROJECT_ID` 또는 `--projectId`를 지정한다.
 장기 공유 토큰 대신 짧은 수명의 인증과 최소 권한을 사용한다.
