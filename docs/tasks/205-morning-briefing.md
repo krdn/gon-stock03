@@ -7,8 +7,8 @@
 - 목표·완료 조건: 3자 협의(Codex Astra 6.2 · Claude Opus 5.5 · Gemini) 결과에 따라 장전 공개 원문 분석의 신뢰·UX 결함 6건을 고정 계약·UI(Step 0)로 해결하고, A2UI v1.0 최소 서브셋(Step 1)의 조건부 진입 게이트를 문서화한다.
 - 허용된 작업·제외 범위: `shared/morning.ts`, `server/morning-analysis.ts`, `server/morning.ts`, `server/realtime.ts`, `server/http.ts`, `src/components/MorningPortfolio.tsx`, `src/pages/portfolio.css`, `tests/morning.test.ts`, `tests/browser/morning.spec.ts`, 관련 `docs/`. 기존 15개 화면·매매 설정·주문/위험/승인 안전 경계 변경, `@a2ui/*` 공식 패키지 도입, Step 1 구현 제외.
 - 선행 작업·의존관계: [#197](https://github.com/krdn/gon-stock03/issues/197), [#199](https://github.com/krdn/gon-stock03/issues/199)
-- 이슈 / PR: [#205](https://github.com/krdn/gon-stock03/issues/205) / PR 생성 직후 반영
-- 작업 브랜치 / 마지막 확인 SHA: `feat/205-morning-briefing-step0` (기준 `e41fd23`)
+- 이슈 / PR: [#205](https://github.com/krdn/gon-stock03/issues/205) / [#206](https://github.com/krdn/gon-stock03/pull/206)
+- 작업 브랜치 / 마지막 확인 SHA: `feat/205-morning-briefing-step0` (`11e5719`, 기준 `e41fd23`)
 
 ## 먼저 읽을 자료
 
