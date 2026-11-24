@@ -35,6 +35,8 @@ npm run dev
 
 ### 로컬 무인 자동 인증 (Machine Identity · Universal Auth)
 
+단계별 설정·적용 확인·오류 복구 절차는 [KIS 자동 주입 가이드](operations/kis-auto-injection.md)에서 한눈에 볼 수 있다.
+
 사람 계정(`infisical login`)의 CLI 세션 만료 없이 재기동 시 자동으로 KIS 모의 키를 불러오려면 Infisical의 **Machine Identity (Universal Auth)**를 사용한다.
 
 1. [Infisical 대시보드](https://app.infisical.com)에서 조직(`Organization`) → **Access Control** → **Machine Identities** → **Create Identity**로 전용 Identity를 만든다.

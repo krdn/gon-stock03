@@ -22,7 +22,7 @@ npm ci
 npm run dev
 ```
 
-Infisical CLI에 로그인하면 `npm run dev`가 `dev /kis`의 모의 계좌 설정 4개를 읽어 API 서버에 전달합니다. Node 24가 필요합니다. [실행·중지·복구 안내](docs/operations/local.md)를 참고하세요.
+Infisical Machine Identity(`.secrets/infisical-dev.json`) 또는 Infisical CLI 로그인으로 `npm run dev`가 `dev /kis`의 모의 계좌 설정 4개를 읽어 API 서버에 자동 주입합니다. Node 24가 필요합니다. [KIS 자동 주입 가이드](docs/operations/kis-auto-injection.md)와 [실행·중지·복구 안내](docs/operations/local.md)를 참고하세요.
 
 Orca로 화면 개선 작업을 운영할 때는 [총괄 명령의 제작 기록·등록 원문·업그레이드 방법](docs/operations/orca-commands/ux-v2-coordinator.md)을 확인하세요.
 
