@@ -1,4 +1,12 @@
-import { analyzePublicResearch } from './morning-analysis.ts';
+import { analyzeCollectedDocuments, collectPublicDocuments } from './morning-analysis.ts';
+import {
+  AFTER_OPEN_BLOCK_REASON,
+  APPROVAL_BLOCK_TEXT,
+  MISSING_BALANCE_BLOCK_REASON,
+  reportApprovalBlocked,
+  type MorningApprovalState,
+  type MorningReport,
+} from '../shared/morning.ts';
 import { researchDecision } from './morning-replay.ts';
 import { closeMorning } from './morning-close.ts';
 import { applyExposure } from './morning-exposure.ts';
@@ -111,10 +119,20 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         await applyExposure(report, store, kis);
         report.createdAt = new Date().toISOString();
       }
-      if(process.env.STOCK_MORNING_ANALYST_MODEL && Date.now()<opening){
-        try{report.analysis=await analyzePublicResearch(report.news,process.env.STOCK_MORNING_ANALYST_MODEL);}
-        catch{report.gaps.push('전문가 원문 분석 미확인');}
-        report.createdAt=new Date().toISOString();
+      if (process.env.STOCK_MORNING_ANALYST_MODEL && Date.now() < opening) {
+        try {
+          const { docs, coverage } = await collectPublicDocuments(report.news);
+          if (coverage.attempted > 0) report.analysisCoverage = coverage;
+          report.analysis = await analyzeCollectedDocuments(
+            docs,
+            process.env.STOCK_MORNING_ANALYST_MODEL,
+            coverage,
+            report.candidates,
+          );
+        } catch {
+          report.gaps.push('전문가 원문 분석 미확인');
+        }
+        report.createdAt = new Date().toISOString();
       }
       if(process.env.STOCK_MORNING_COST_BPS){
         try{report.costBps=z.object({buy:z.number().min(0).lt(1000),sell:z.number().min(0).lt(1000)}).strict().parse(JSON.parse(process.env.STOCK_MORNING_COST_BPS));}
@@ -136,8 +154,10 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       if (Date.now() >= opening && prior) return prior;
       if (Date.now() >= opening) {
         report.createdAt = new Date().toISOString();
-        if (!report.gaps.some((g) => g.includes('당일 승인 불가'))) {
-          report.gaps.push('장전 마감 후 열람용 보고서 · 당일 승인 불가');
+        report.approvalBlocked = true;
+        report.approvalBlockReasons = [...new Set([...(report.approvalBlockReasons ?? []), AFTER_OPEN_BLOCK_REASON])];
+        if (!report.gaps.some((g) => g.includes(APPROVAL_BLOCK_TEXT))) {
+          report.gaps.push(AFTER_OPEN_BLOCK_REASON);
         }
       }
       if (report.day !== day) throw new Error('거래일이 바뀌었습니다. 다시 작성하세요.');
@@ -146,6 +166,32 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
     } finally {
       generating = false;
     }
+  }
+  function evaluateMorningApproval(report: MorningReport | null, day: string, now: number): MorningApprovalState {
+    if (!report) return { allowed: false, reasons: [] };
+    const reasons: string[] = [];
+    const addReason = (reason: string) => {
+      if (reason && !reasons.includes(reason)) reasons.push(reason);
+    };
+    const today = seoulDay(now);
+    if (day !== today) addReason('과거 거래일 보고서는 열람 전용입니다.');
+    if (approval || contract) addReason('전용 실행 중에는 일반 장전 계획을 승인할 수 없습니다.');
+    if (!kis.configured()) addReason('KIS 모의 계좌 설정이 필요합니다.');
+    const reportBlock = reportApprovalBlocked(report);
+    for (const reason of reportBlock.reasons) addReason(reason);
+    if (reportBlock.blocked && reportBlock.reasons.length === 0) addReason(APPROVAL_BLOCK_TEXT);
+    if (report.equity === null || report.equity <= 0) addReason(MISSING_BALANCE_BLOCK_REASON);
+    if (Date.parse(report.createdAt) >= Date.parse(day + 'T' + realtime.morningOpenTime(day) + ':00+09:00')) {
+      addReason(AFTER_OPEN_BLOCK_REASON);
+    }
+    if (!realtime.canApproveMorning(day)) {
+      addReason('당일 공식 거래일·실시간 설정 확인이 필요합니다.');
+    } else {
+      const prepare = realtime.checkPrepareMorning(report);
+      if (!prepare.ok) addReason(prepare.reason);
+    }
+    if (store.read().risk.halted) addReason('긴급정지가 켜져 있어 당일 승인을 차단했습니다.');
+    return { allowed: reasons.length === 0, reasons };
   }
   const instanceId = randomUUID();
   const startedAt = new Date().toISOString();
@@ -162,15 +208,17 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         json(res, 200, snapshot); return;
       }
       if (path === '/api/morning' && req.method === 'GET') {
-        const day = new URL(req.url!, 'http://127.0.0.1').searchParams.get('day') ?? seoulDay(Date.now());
-        const report = store.morning(account(), z.iso.date().parse(day));
+        const now = Date.now();
+        const day = z.iso.date().parse(new URL(req.url!, 'http://127.0.0.1').searchParams.get('day') ?? seoulDay(now));
+        const report = store.morning(account(), day);
         json(res, 200, {
           run: realtime.morningRun(),
           pendingCarry: store.pendingCarry(account()),
-          carry: store.carry(account(), seoulDay(Date.now())).map((p) => ({ code: p.code, remaining: p.remaining })),
+          carry: store.carry(account(), seoulDay(now)).map((p) => ({ code: p.code, remaining: p.remaining })),
           days: store.morningDays(account()),
           close: report && store.morningClose(report.id),
           scan: scan.state,
+          approval: report ? evaluateMorningApproval(report, day, now) : { allowed: false, reasons: [] },
           report: report && { ...report, watch: [] },
           additions: report ? store.additions(report.id) : [],
           signals: report ? store.morningSignals(report.id) : [],
@@ -299,19 +347,8 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
             day = seoulDay(now),
             key = account();
           const report = store.morning(key, day);
-          if (
-            approval ||
-            contract ||
-            !kis.configured() ||
-            !report ||
-            report.id !== id ||
-            report.equity === null ||
-            report.equity <= 0 ||
-            !realtime.canApproveMorning(day) ||
-            store.read().risk.halted ||
-            report.gaps.some((g) => g.includes('당일 승인 불가')) ||
-            Date.parse(report.createdAt) >= Date.parse(day + 'T' + realtime.morningOpenTime(day) + ':00+09:00')
-          ) {
+          const approvalState = evaluateMorningApproval(report, day, now);
+          if (!report || report.id !== id || !approvalState.allowed) {
             throw new Error('당일 장전 보고서, 모의 잔고, 거래일 설정과 위험 상태를 확인하세요.');
           }
           const codes = realtime.prepareMorning(report);

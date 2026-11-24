@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { addDays, masterSourceLabel, type StoredBar } from '../shared/market-data.ts';
-import type { MorningReport, MorningCandidate, MorningItem } from '../shared/morning.ts';
+import {
+  AFTER_OPEN_BLOCK_REASON,
+  APPROVAL_BLOCK_TEXT,
+  MISSING_BALANCE_BLOCK_REASON,
+  type MorningCandidate,
+  type MorningItem,
+  type MorningReport,
+} from '../shared/morning.ts';
 import type { ConnectionState } from '../shared/model.ts';
 import type { Store } from './store.ts';
 
@@ -57,7 +64,8 @@ export function buildMorning(
   open = '09:00',
 ): MorningReport {
   const day = seoulDay(now);
-  const cutoff = Math.min(now, Date.parse(day + 'T' + open + ':00+09:00'));
+  const openAt = Date.parse(day + 'T' + open + ':00+09:00');
+  const cutoff = Math.min(now, openAt);
   const market = store.masterData(),
     risk = store.read().risk;
   const fresh = (at: string | null, ttl: number) =>
@@ -157,8 +165,23 @@ export function buildMorning(
   const cautious = weakerMarket && weakerWon;
   const picks = [...candidates.filter((p) => p.held > 0), ...candidates.filter((p) => !p.held).slice(0, 5)];
   const warnings = [...gaps];
-  if (now > cutoff) warnings.push('장전 마감 후 열람용 보고서 · 당일 승인 불가');
-  if (!balance) warnings.push('장전 잔고 전체 조회 필요');
+  const approvalBlockReasons: string[] = [];
+  const addBlockReason = (reason: string) => {
+    if (!approvalBlockReasons.includes(reason)) approvalBlockReasons.push(reason);
+  };
+  for (const gap of gaps) {
+    if (gap.includes(APPROVAL_BLOCK_TEXT)) addBlockReason(gap);
+  }
+  if (now >= openAt) {
+    warnings.push(AFTER_OPEN_BLOCK_REASON);
+    addBlockReason(AFTER_OPEN_BLOCK_REASON);
+  }
+  if (!balance) {
+    warnings.push(MISSING_BALANCE_BLOCK_REASON);
+    addBlockReason(MISSING_BALANCE_BLOCK_REASON);
+  } else if (balance.totalEquity <= 0) {
+    addBlockReason(MISSING_BALANCE_BLOCK_REASON);
+  }
   if (available.size !== 2) warnings.push('두 시장의 공식 종목 목록 갱신 필요');
   if (seen.size < universe.length) warnings.push('검증된 최근 일봉이 없는 종목 제외');
   // Exposure by ETF constituent is unknown until a point-in-time holdings file is available.
@@ -214,6 +237,8 @@ export function buildMorning(
           Number(picks.some((p) => a.title.includes(p.name))),
       ),
     gaps: warnings,
+    approvalBlocked: approvalBlockReasons.length > 0,
+    approvalBlockReasons,
     approvedAt: null,
   };
 }

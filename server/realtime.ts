@@ -78,25 +78,30 @@ export class Realtime {
       return null;
     return tick.price;
   }
-  prepareMorning(report: MorningReport) {
-    if (!this.config?.approvalKey || !this.config.htsId || !this.canApproveMorning(report.day))
-      throw new Error('당일 실시간 구독 설정이 필요합니다.');
+  checkPrepareMorning(report: MorningReport): { ok: true; codes: string[] } | { ok: false; reason: string } {
+    if (!this.config?.approvalKey.trim() || !this.config.htsId.trim() || !this.canApproveMorning(report.day))
+      return { ok: false, reason: '당일 실시간 구독 설정이 필요합니다.' };
     const account = this.paper.morningAccount();
     const carry = account ? this.store.carry(account, report.day) : [];
     const codes = [...new Set([...report.candidates, ...carry].map((p) => p.code))];
     if (codes.some((code) => !/^\d{6}$/.test(code)) || codes.length > 18)
-      throw new Error('이번 실시간 구독 가능 범위를 초과했습니다.');
+      return { ok: false, reason: '이번 실시간 구독 가능 범위를 초과했습니다.' };
     for (const p of report.watch) if (codes.length < 18 && !codes.includes(p.code) && /^\d{6}$/.test(p.code)) codes.push(p.code);
     if ((this.socket || this.retry) && (!this.morningCodes.size || codes.some((c) => !this.morningCodes.has(c))))
-      throw new Error('기존 실시간 구독을 정지한 뒤 포트폴리오 운용을 승인하세요.');
-    return codes;
+      return { ok: false, reason: '기존 실시간 구독을 정지한 뒤 포트폴리오 운용을 승인하세요.' };
+    return { ok: true, codes };
+  }
+  prepareMorning(report: MorningReport) {
+    const check = this.checkPrepareMorning(report);
+    if (!check.ok) throw new Error(check.reason);
+    return check.codes;
   }
   canMonitorCarry(day: string, codes?: string[]) {
     const active = Boolean(this.socket || this.retry);
     return (
       this.canApproveMorning(day) &&
-      !!this.config?.approvalKey &&
-      !!this.config?.htsId &&
+      !!this.config?.approvalKey.trim() &&
+      !!this.config?.htsId.trim() &&
       !this.morningArmed &&
       !this.store.read().risk.halted &&
       (!active || (this.morningCodes.size > 0 && (!codes || codes.every((c) => this.morningCodes.has(c)))))
