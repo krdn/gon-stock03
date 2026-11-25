@@ -2,12 +2,12 @@
 
 기준 이슈: https://github.com/krdn/gon-stock03/issues/203
 
-- 상태: 검증 대기 (Claude Opus 5.5 재리뷰 PASS, PR·CI 확인)
+- 상태: 완료 (PR #204 머지 `2e64669`, 이슈 #203 종료)
 - 목표·완료 조건: `npm run dev`([scripts/dev.ts](../../scripts/dev.ts))가 사람 계정 CLI 세션 만료에 의존하지 않고 Infisical Machine Identity(Universal Auth)로 Access Token을 메모리 발급받아 `dev /kis` 4개 키를 API 자식 프로세스에만 안전하게 주입하며, 미설정 시 기존 CLI 조회(및 대화형 터미널 `ETIMEDOUT` 시 `infisical login`)로 폴백하도록 구현하고, `typecheck`/`npm test`/`build` 및 Claude Opus 5.5 (`high`) 독립 재리뷰 PASS 후 커밋·PR·CI 완료
 - 허용된 작업·제외 범위: `vite.config.ts`, `scripts/infisical-dev.ts`, `scripts/dev.ts`, `tests/infisical-dev.test.ts`, `tests/ws-startup.test.ts`, `docs/INFISICAL.md`, 작업/상태 문서 / `--realtime`·`dev:morning` 자동 주입 확장 및 실제 Infisical·KIS 원격 호출·`.secrets/` 실자격증명 파일 생성 제외
 - 선행 작업·의존관계: [연결·설정 하드닝 #201](201-settings-hardening.md)
-- 이슈 / PR: https://github.com/krdn/gon-stock03/issues/203
-- 작업 브랜치 / 마지막 확인 SHA: `feat/203-infisical-machine-auth` (기준 `e41fd23` 위 미커밋 변경)
+- 이슈 / PR: https://github.com/krdn/gon-stock03/issues/203 / https://github.com/krdn/gon-stock03/pull/204
+- 작업 브랜치 / 마지막 확인 SHA: `feat/203-infisical-machine-auth` → `main` 머지 완료 (`2e64669`, PR #204)
 
 ## 먼저 읽을 자료
 
@@ -40,7 +40,7 @@
 
 ## 다음 행동
 
-Claude Opus 5.5 (`high`) 재리뷰 결과를 확인하고, PASS 시 커밋·푸시·PR·CI 통과까지 마무리한다.
+PR #204의 `main` 머지(`2e64669`) 및 이슈 #203 종료 완료. 실제 Infisical Cloud Machine Identity 발급·연동 실측 및 보류 Optional 항목은 필요 시 별도 이슈로 진행한다.
 
 ## 새 세션 시작 문구
 

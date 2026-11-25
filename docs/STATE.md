@@ -1,10 +1,10 @@
 # 작업 인수인계
 
-- **Infisical 무인 자동 인증** [작업 기록·검증](tasks/203-infisical-machine-auth.md) · [KIS 자동 주입 가이드](operations/kis-auto-injection.md) · [#203](https://github.com/krdn/gon-stock03/issues/203) (PR [#204](https://github.com/krdn/gon-stock03/pull/204) 머지 `2e64669`)
-- **장전 브리핑 신뢰·UX 개선(Step 0) 및 A2UI 게이트** [작업 기록·검증](tasks/205-morning-briefing.md) · [설계](plans/a2ui-morning-briefing.md) · [#205](https://github.com/krdn/gon-stock03/issues/205) (`feat/205-morning-briefing-step0`: Step 0 결함 6건 고정 계약·UI 구현, A2UI v1.0 Step 1 조건부 게이트 문서화; Claude Opus 5.5 + Codex Astra 6.2 재리뷰 PASS, PR 검토 대기)
+- **Infisical 무인 자동 인증** [작업 기록·검증](tasks/203-infisical-machine-auth.md) · [KIS 자동 주입 가이드](operations/kis-auto-injection.md) · [#203](https://github.com/krdn/gon-stock03/issues/203) (PR [#204](https://github.com/krdn/gon-stock03/pull/204) 머지 `2e64669`) · [#207](https://github.com/krdn/gon-stock03/issues/207) (PR [#208](https://github.com/krdn/gon-stock03/pull/208) 머지 `c64bcfc`)
+- **장전 브리핑 신뢰·UX 개선(Step 0) 및 A2UI 게이트** [작업 기록·검증](tasks/205-morning-briefing.md) · [설계](plans/a2ui-morning-briefing.md) · [#205](https://github.com/krdn/gon-stock03/issues/205) (PR [#206](https://github.com/krdn/gon-stock03/pull/206) 머지 `63dbbf5`; Step 0 결함 6건 고정 계약·UI 구현 및 A2UI v1.0 Step 1 조건부 게이트 문서화, 이슈 #205 종료)
 - **연결·설정 하드닝** [작업 기록·검증](tasks/201-settings-hardening.md) · [#201](https://github.com/krdn/gon-stock03/issues/201) (PR [#202](https://github.com/krdn/gon-stock03/pull/202) 머지 `e41fd23`)
-- **전체 점검·하드닝** [작업 기록·검증](tasks/199-audit-hardening.md) · [#199](https://github.com/krdn/gon-stock03/issues/199) (장전 스캔 분리·경계 수정·동적 포트·`serverNow` 통일; Claude Opus 5.5 + Codex 재리뷰 PASS, PR 검토 대기)
-- **장전 포트폴리오 운용** [구현과 검증](tasks/197-morning.md) · [#197](https://github.com/krdn/gon-stock03/issues/197)
+- **전체 점검·하드닝** [작업 기록·검증](tasks/199-audit-hardening.md) · [#199](https://github.com/krdn/gon-stock03/issues/199) (PR [#200](https://github.com/krdn/gon-stock03/pull/200) 머지 `78d4391`; 장전 스캔 분리·경계 수정·동적 포트·`serverNow` 통일, 이슈 #199 종료)
+- **장전 포트폴리오 운용** [구현과 검증](tasks/197-morning.md) · [#197](https://github.com/krdn/gon-stock03/issues/197) (PR [#198](https://github.com/krdn/gon-stock03/pull/198) 머지 `aea3e67`, 실제 장중 운용 수용 대기)
 기준: [상위 #1](https://github.com/krdn/gon-stock03/issues/1). 개인 PC·국내 주식/ETF·모의 수동/전략 매매.
 
 프로젝트를 처음 볼 때는 [한 장 그림](architecture/figures/gon-stock-overview.png)에서 KIS 모의 주문과 DEMO 연습 흐름을 따라간다. [구조도 작업 #110](https://github.com/krdn/gon-stock03/issues/110)
