@@ -1,31 +1,28 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { once } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../server/store.ts';
-import { makeServer } from '../server/http.ts';
 import { KisClient, koreaDate } from '../server/kis.ts';
 import { initialState } from '../shared/fixtures.ts';
 import { equity } from '../shared/model.ts';
 import { advanceTick, placeOrder } from '../server/engine.ts';
+import { startTestServer } from './test-server.ts';
 
 test('risk resume rejects unknown and sending, persists halt across restart, and never cancels accepted orders', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'stock03-risk-'));
   let store = new Store(join(dir, 'risk.sqlite')), calls = 0;
   const kis = new KisClient({ key: '', secret: '', account: '', product: '' }, async () => { calls++; throw new Error('unexpected broker call'); }, 0);
-  let server = makeServer(store, kis, [4341]);
-  server.listen(4341, '127.0.0.1'); await once(server, 'listening');
-  const post = (path: string, data: unknown) => fetch('http://127.0.0.1:4341/api/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local', Connection: 'close' }, body: JSON.stringify(data) });
+  let srv = await startTestServer(store, kis);
+  const post = (path: string, data: unknown) => fetch(`${srv.url}/api/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': 'local', Connection: 'close' }, body: JSON.stringify(data) });
   const order = { requestId: 'risk-fixture', code: '005930', side: 'buy' as const, qty: 1, price: 70000, createdAt: new Date().toISOString(), tradeDate: koreaDate(), status: 'accepted' as const, filled: 0, remaining: 1, message: 'fixture' };
   try {
     store.savePaper(order);
     assert.equal((await post('risk/halt', { halted: true })).status, 200);
     assert.equal(store.paperOrders()[0].status, 'accepted');
-    server.closeAllConnections(); server.close(); await once(server, 'close'); store.close();
-    store = new Store(join(dir, 'risk.sqlite')); server = makeServer(store, kis, [4341]);
-    server.listen(4341, '127.0.0.1'); await once(server, 'listening');
+    await srv.close(); store.close();
+    store = new Store(join(dir, 'risk.sqlite')); srv = await startTestServer(store, kis);
     assert.equal(store.read().risk.halted, true);
     for (const status of ['unknown', 'sending'] as const) {
       store.savePaper({ ...order, status });
@@ -39,22 +36,22 @@ test('risk resume rejects unknown and sending, persists halt across restart, and
     assert.equal(store.read().risk.halted, false);
     assert.ok(store.read().strategies.every(s => !s.active));
     assert.equal(calls, 0);
-  } finally { server.closeAllConnections(); server.close(); await once(server, 'close'); store.close(); rmSync(dir, { recursive: true }); }
+  } finally { await srv?.close(); store.close(); rmSync(dir, { recursive: true }); }
 });
 
 test('risk snapshot is local-only and reading an unset loss baseline does not initialize it', async () => {
   const store = new Store(':memory:'); let calls = 0;
   const kis = new KisClient({ key: '', secret: '', account: '', product: '' }, async () => { calls++; throw new Error('unexpected broker call'); }, 0);
-  const server = makeServer(store, kis, [4342]); server.listen(4342, '127.0.0.1'); await once(server, 'listening');
+  const { url, close } = await startTestServer(store, kis);
   try {
-    const read = async () => (await (await fetch('http://127.0.0.1:4342/api/state')).json()).paperRisk;
+    const read = async () => (await (await fetch(`${url}/api/state`)).json()).paperRisk;
     const first = await read();
     assert.equal(first.baselineEquity, null); assert.equal(first.orders, null); assert.equal(first.unresolvedCount, 0);
     store.paperBaseline(koreaDate(), 1234567);
     assert.equal((await read()).baselineEquity, 1234567);
     assert.equal(store.paperBaseline(koreaDate(), 999999), 1234567);
     assert.equal(calls, 0);
-  } finally { server.closeAllConnections(); server.close(); await once(server, 'close'); store.close(); }
+  } finally { await close(); store.close(); }
 });
 
 test('DEMO manual and actual strategy signals share order and position limits, loss halt and sell reservations', () => {

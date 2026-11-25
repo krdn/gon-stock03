@@ -1,23 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { once } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { Store } from '../server/store.ts';
-import { makeServer } from '../server/http.ts';
 import { KisClient } from '../server/kis.ts';
 import { dailyFixture } from './backtest-fixture.ts';
+import { startTestServer } from './test-server.ts';
 
 async function serve(store: Store) {
   let calls = 0;
   const kis = new KisClient({ key: '', secret: '', account: '', product: '' }, async () => { calls++; throw new Error('No upstream calls permitted'); }, 0);
-  const server = makeServer(store, kis, [4331]); server.listen(4331, '127.0.0.1'); await once(server, 'listening');
+  const { url, close } = await startTestServer(store, kis);
   return { calls: () => calls, async request(path: string, input?: unknown) {
-    const response = await fetch('http://127.0.0.1:4331/api/' + path, input === undefined ? { headers: { Connection: 'close' } } : { method: 'POST', headers: { Connection: 'close', 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(input) });
+    const response = await fetch(`${url}/api/${path}`, input === undefined ? { headers: { Connection: 'close' } } : { method: 'POST', headers: { Connection: 'close', 'Content-Type': 'application/json', 'X-Workbench': 'local' }, body: JSON.stringify(input) });
     return { status: response.status, data: await response.json() as any };
-  }, async close() { server.closeAllConnections(); server.close(); await once(server, 'close'); } };
+  }, close };
 }
 
 test('stored daily experiment uses next open, exact costs/drawdown and no broker or demo mutations', async () => {

@@ -484,3 +484,32 @@ test('malformed balance prices still reject the response and preserve the last c
     assert.equal(client.connection().status.complete, false);
   }
 });
+
+test('keys with whitespace or control characters are classified as invalid without sending requests', async () => {
+  let calls = 0;
+  const transport: typeof fetch = async () => { calls++; throw new Error('must not send'); };
+  for (const malformed of ['fixture-key\n', ' fixture-key', 'fixture\rkey', 'fixture\x00key']) {
+    const client = new KisClient({ ...credentials, key: malformed }, transport, 0);
+    assert.equal(client.configured(), false);
+    assert.equal(client.connection().injection.phase, 'invalid');
+    await assert.rejects(client.balance(), /계좌 형식/);
+    assert.equal(client.connection().failure?.kind, 'invalid');
+  }
+  const secretClient = new KisClient({ ...credentials, secret: 'fixture-secret\r\n' }, transport, 0);
+  assert.equal(secretClient.configured(), false);
+  assert.equal(secretClient.connection().injection.phase, 'invalid');
+  assert.equal(calls, 0);
+});
+
+test('GET 401 with EGW00103 or EGW00105 classifies as permission without reissuing token', async () => {
+  for (const errorCode of ['EGW00103', 'EGW00105']) {
+    let tokens = 0;
+    const client = new KisClient(credentials, async url => {
+      if (String(url).endsWith('/tokenP')) { tokens++; return Response.json({ access_token: 'fixture-token', expires_in: 86400 }); }
+      return Response.json({ error_code: errorCode, error_description: 'fixture-secret' }, { status: 401 });
+    }, 0);
+    await assert.rejects(client.balance(), /권한/);
+    assert.equal(tokens, 1);
+    assert.equal(client.connection().failure?.kind, 'permission');
+  }
+});

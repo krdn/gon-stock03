@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useWorkbench } from '../context';
 
 export function RealtimeStatus({ code }: { code?: string }) {
-  const { realtime, available, act, busy } = useWorkbench();
-  const age = realtime?.lastQuoteAt ? Date.now() - Date.parse(realtime.lastQuoteAt) : Infinity;
+  const { realtime, available, act, busy, serverNow } = useWorkbench();
+  const [stopping, setStopping] = useState(false);
+  const age = realtime?.lastQuoteAt && Number.isFinite(serverNow) ? serverNow - Date.parse(realtime.lastQuoteAt) : Infinity;
   const fresh = available && realtime?.fresh && age >= 0 && age <= (realtime.quoteSeconds ?? 5) * 1000;
   const allowed = fresh && realtime?.ordersAllowed;
   const time = (value: string | null | undefined) => value ? new Date(value).toLocaleString('ko-KR') : '미확인';
@@ -16,7 +18,7 @@ export function RealtimeStatus({ code }: { code?: string }) {
     {code ? <div className="button-row">
       <button className="button small secondary" disabled={!available || busy || !/^\d{6}$/.test(code) || !realtime || !['stopped', 'disconnected'].includes(realtime.phase)} onClick={() => void act('kis/realtime/start', { code }).catch(() => {})}>실시간 수신 시작</button>
       <button className="button small secondary" disabled={!available || busy || !realtime || !['reconciling', 'ready'].includes(realtime.phase)} onClick={() => void act('kis/realtime/reconcile').catch(() => {})}>실시간 REST 대조</button>
-      <button className="button small secondary" disabled={!available || busy || !realtime || realtime.phase === 'stopped'} onClick={() => void act('kis/realtime/stop').catch(() => {})}>실시간 수신 정지</button>
+      <button className="button small secondary" disabled={!available || stopping || !realtime || realtime.phase === 'stopped'} onClick={() => { setStopping(true); void act('kis/realtime/stop').catch(() => {}).finally(() => setStopping(false)); }}>실시간 수신 정지</button>
     </div> : <Link to="/paper">실시간 대조·모의 매매 화면</Link>}
   </div></section>;
 }

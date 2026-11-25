@@ -7,16 +7,17 @@ for (const path of ['/orders', '/alerts', '/data']) {
     const state = snapshot();
     state.realtime = { phase: 'disconnected', required: true, ordersAllowed: false, message: '실시간 연결끊김 · REST 대조 필요', code: '005930', lastQuoteAt: now.toISOString(), lastNoticeAt: null, reconciledAt: null, price: 70000, fresh: false };
     const posts: string[] = []; page.on('request', req => { if (req.method() === 'POST') posts.push(req.url()); });
-    await page.route('**/api/state', route => { const current = new Date().toISOString(); return route.fulfill({ json: { ...state, status: { ...state.status, observedAt: current, lastSuccessAt: current } } }); });
+    let elapsed = 0;
+    await page.route('**/api/state', route => { const current = new Date(now.getTime() + elapsed).toISOString(); return route.fulfill({ json: { ...state, status: { ...state.status, observedAt: current, lastSuccessAt: current } } }); });
     await page.goto(path);
     if (path === '/orders') await page.getByRole('button', { name: 'KIS 모의 원장', exact: true }).click();
     const panel = page.getByRole('region', { name: 'KIS 실시간 상태' });
     await expect(panel).toContainText('수신 중단'); await expect(panel).toContainText('REST 대조 필요');
     await expect(panel).toContainText('신규 주문 차단');
     state.realtime = { ...state.realtime, phase: 'ready', ordersAllowed: true, fresh: true, message: 'REST 대조 완료', reconciledAt: now.toISOString() };
-    const polled = page.waitForResponse('**/api/state'); await page.clock.fastForward(3000); await polled;
+    const polled = page.waitForResponse('**/api/state'); elapsed += 3000; await page.clock.fastForward(3000); await polled;
     await expect(panel).toContainText('신규 주문 허용');
-    await page.clock.fastForward(3000); await expect(panel).toContainText('신규 주문 차단');
+    elapsed += 3000; await page.clock.fastForward(3000); await expect(panel).toContainText('신규 주문 차단');
     await page.screenshot({ path: `/tmp/gon19-${path.slice(1)}-desktop.png`, fullPage: true, animations: 'disabled' });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: `/tmp/gon19-${path.slice(1)}-mobile.png`, fullPage: true, animations: 'disabled' });
@@ -55,4 +56,23 @@ test('실시간 차단과 다른 구독 종목은 모의 주문 확인을 비활
   state.realtime = { ...state.realtime, ordersAllowed: false, fresh: false };
   await expect(page.getByRole('button', { name: 'KIS 모의 주문 전송', exact: true })).toBeDisabled();
 
+});
+
+test('실시간 상태는 브라우저 시계 오차가 있어도 serverNow 기준으로 신선도를 판별한다', async ({ page }) => {
+  const serverTime = new Date('2026-11-16T01:00:00Z');
+  await page.clock.install({ time: new Date(serverTime.getTime() + 120_000) });
+  const state = snapshot();
+  state.realtime = {
+    phase: 'ready', required: true, ordersAllowed: true, message: 'REST 대조 완료',
+    code: '005930', lastQuoteAt: serverTime.toISOString(), lastNoticeAt: null,
+    reconciledAt: serverTime.toISOString(), price: 70000, fresh: true,
+  };
+  await page.route('**/api/state', route =>
+    route.fulfill({ json: { ...state, status: { ...state.status, observedAt: serverTime.toISOString(), lastSuccessAt: serverTime.toISOString() } } }),
+  );
+  await page.goto('/data');
+  const panel = page.getByRole('region', { name: 'KIS 실시간 상태' });
+  await expect(panel).toContainText('REST 대조 완료');
+  await expect(panel).toContainText('시세 신선');
+  await expect(panel).toContainText('신규 주문 허용');
 });

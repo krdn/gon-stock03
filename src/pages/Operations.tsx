@@ -40,6 +40,7 @@ export function Risk() {
   const loading = status.phase === 'loading';
   const unavailableValue = loading ? '확인 중' : '미확인';
   const halted = state.risk.halted;
+  const [halting, setHalting] = useState(false);
   const unresolved = paperRisk?.unresolvedCount ?? 0;
   const resumeBlocked = halted && (!paperRisk || unresolved > 0);
   const changes = state.events.filter(e => ['위험 한도 변경', '신규 주문 긴급정지', '신규 주문 허용', '위험관리 요청 차단', '주문 요청 차단', '전략 주문 차단'].includes(e.title)).slice(0, 5);
@@ -92,8 +93,11 @@ export function Risk() {
       {available && unresolved > 0 && <p className="risk-warning" role="alert">KIS 불명·전송 중 {unresolved}건 · {halted ? '대조 전 재개 금지' : '주문 상태 대조 필요'}</p>}
       {available && halted && !paperRisk && <p role="status">주문 원장 상태 미확인 · 새로고침 후 재개하세요.</p>}
       {available && halted && <p className="risk-resume" id="risk-resume">재개해도 손실 한도 검사가 적용되고 전략은 직접 시작해야 합니다.</p>}
-      <button className={`button ${halted ? 'secondary' : 'danger'}`} disabled={busy || !available || resumeBlocked}
-        aria-describedby={available && halted ? 'risk-impact risk-resume' : 'risk-impact'} onClick={() => void act('risk/halt', { halted: !halted }).catch(() => {})}>
+      <button className={`button ${halted ? 'secondary' : 'danger'}`} disabled={(!halted ? halting : busy || halting) || !available || resumeBlocked}
+        aria-describedby={available && halted ? 'risk-impact risk-resume' : 'risk-impact'} onClick={() => {
+          setHalting(true);
+          void act('risk/halt', { halted: !halted }).catch(() => {}).finally(() => setHalting(false));
+        }}>
         {halted ? <Check size={15} aria-hidden="true" /> : <Square size={15} aria-hidden="true" />}{!available ? '신규 주문 상태 ' + unavailableValue : halted ? '신규 주문 허용' : '신규 주문 긴급정지'}
       </button>
       <div className="risk-order-links"><Link to="/orders">DEMO 미체결 주문 확인</Link><Link to="/paper">KIS 주문 대조·불명 복구</Link></div>
@@ -342,7 +346,7 @@ export function Alerts() {
 export { DataStatus } from './DataInventory';
 const connectionRecovery: Record<ConnectionFailure['kind'], { label: string; action: string }> = {
   missing: { label: '필수 설정 미주입', action: '연결 설정 방법을 열어 Infisical에 모의 계좌 정보를 등록한 뒤 서버를 다시 실행하세요.' },
-  invalid: { label: '설정 형식 오류', action: 'Infisical에서 계좌번호 앞 8자리와 상품코드 2자리를 확인하고 서버를 다시 실행하세요.' },
+  invalid: { label: '설정 형식 오류', action: 'Infisical에서 키 앞뒤 공백·개행 여부와 계좌번호 앞 8자리, 상품코드 2자리를 확인하고 서버를 다시 실행하세요.' },
   expired: { label: '만료·갱신 필요', action: '인증 갱신 대기 시각 이후 다시 조회하세요. 토큰은 서버에서 갱신하며 잔고 응답까지 확인합니다.' },
   permission: { label: '인증·권한 거부', action: '모의투자 API 서비스 신청, 모의 전용 키와 계좌 권한을 확인하세요. 키를 바꿨다면 서버를 다시 실행하세요.' },
   'rate-limit': { label: '호출 제한', action: '연속 클릭을 멈추고 잠시 기다린 뒤 다시 조회하세요. 인증 발급은 1분 간격으로 제한합니다.' },
@@ -410,7 +414,15 @@ export function Settings() {
     }
     if (failure) {
       const recovery = connectionRecovery[failure.kind];
-      return { title: recovery.label, detail: balance ? `표시 금액은 이전 전체 조회 기준입니다. ${recovery.action}` : recovery.action, tone: 'warning' };
+      const action = failure.kind === 'expired' && retrySeconds === 0
+        ? '지금 다시 조회하면 서버에서 토큰을 갱신하고 전체 잔고를 확인합니다.'
+        : recovery.action;
+      const prefix = currentBalance
+        ? '아래 잔고는 최근 전체 조회 기준입니다. '
+        : balance
+          ? '표시 금액은 이전 전체 조회 기준입니다. '
+          : '';
+      return { title: recovery.label, detail: prefix + action, tone: 'warning' };
     }
     if (retrySeconds > 0) return { title: '인증 갱신을 기다리고 있습니다', detail: '대기 시간이 끝나면 모의 잔고를 다시 조회할 수 있습니다.', tone: 'neutral' };
     if (currentBalance) return { title: '모의 잔고를 확인했습니다', detail: '아래에서 예수금과 보유 종목을 확인할 수 있습니다.', tone: 'success' };
@@ -435,9 +447,9 @@ export function Settings() {
     setRefreshState('pending');
     try { await refresh(); } finally { setRefreshState('settled'); }
   }
-  const guideButton = <button key="guide" className={`button ${setupBlocked ? 'primary' : 'secondary'}`} aria-expanded={showGuide}
+  const guideButton = <button key="guide" type="button" className={`button ${setupBlocked ? 'primary' : 'secondary'}`} aria-expanded={showGuide}
     aria-controls="connection-guide" onClick={toggleGuide}>연결 설정 방법<ChevronDown size={15} aria-hidden="true" /></button>;
-  const checkButton = <button key="check" className={`button ${checkDisabled ? 'secondary' : 'primary'}`} disabled={checkDisabled}
+  const checkButton = <button key="check" type="button" className={`button ${checkDisabled ? 'secondary' : 'primary'}`} disabled={checkDisabled}
     aria-describedby={available && retrySeconds > 0 ? 'settings-retry' : 'settings-summary-detail'} onClick={() => void check()}><Wallet size={17} aria-hidden="true" />KIS 모의 잔고 조회</button>;
   return <div className="settings-page">
     <section className="settings-overview" aria-label="모의 계좌 연결">
@@ -451,7 +463,7 @@ export function Settings() {
         {available && retrySeconds > 0 && <p id="settings-retry">{retrySeconds}초 후 다시 조회할 수 있습니다.</p>}
         <div className="settings-actions">
           {setupBlocked ? guideButton : checkButton}
-          <button className={`button ${!available && !initialLoad ? 'primary' : 'secondary'}`} disabled={refreshState === 'pending'}
+          <button type="button" className={`button ${!available && !initialLoad ? 'primary' : 'secondary'}`} disabled={refreshState === 'pending'}
             aria-describedby="settings-refresh-effect" onClick={() => void refreshStatus()}>
             <RefreshCw size={15} aria-hidden="true" />로컬 서버 상태 새로고침</button>
           {setupBlocked ? checkButton : guideButton}
@@ -482,7 +494,7 @@ export function Settings() {
         <ol>
           <li>한국투자증권에서 모의투자 API를 신청하고 모의 전용 키와 계좌를 준비하세요.</li>
           <li>Infisical의 <code>dev /kis</code>에 {available && missingSettings && missingFields.length > 0
-            ? <>누락된 항목을 등록하세요. <code>{missingFields.join(', ')}</code></>
+            ? <>누락된 항목을 등록하세요. <code>{missingFields.join(', ')}</code>.</>
             : <>모의 계좌의 <code>KIS_APP_KEY</code>, <code>KIS_APP_SECRET</code>, <code>KIS_CANO</code>, <code>KIS_ACNT_PRDT_CD</code>를 등록하세요.</>}
             {' '}계좌번호는 앞 8자리, 상품코드는 2자리입니다.</li>
           <li>프로젝트 폴더에서 <code className="connection-command">npm run dev</code>로 서버를 다시 실행하세요. 로그인 오류가 있으면 터미널에서 Infisical에 다시 로그인하세요.</li>
@@ -497,7 +509,7 @@ export function Settings() {
         <h3>보유 종목 <span>{balance.positions.length}개</span></h3>
         <ul className="settings-holdings">{balance.positions.map(p =>
           <li key={p.code}><div className="settings-stock"><strong>{p.name}</strong><small>{p.code}</small></div>
-            <dl><div><dt>보유 수량</dt><dd>{p.qty}주</dd></div><div><dt>평균 매입가</dt><dd>{won(p.average)}원</dd></div><div><dt>현재가</dt><dd>{p.price === null ? '평가 불가' : `${won(p.price)}원`}</dd></div></dl>
+            <dl><div><dt>보유 수량</dt><dd>{p.qty.toLocaleString('ko-KR')}주</dd></div><div><dt>평균 매입가</dt><dd>{won(p.average)}원</dd></div><div><dt>현재가</dt><dd>{p.price === null ? '평가 불가' : `${won(p.price)}원`}</dd></div></dl>
           </li>)}</ul></> : <p className="settings-no-holdings">{currentBalance ? '보유 종목 없음' : '이전 조회 시 보유 종목 없음'}</p>}
     </Panel>}
     <details className="settings-technical">

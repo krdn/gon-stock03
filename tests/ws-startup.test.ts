@@ -83,7 +83,7 @@ function run(mode: string, overrides: NodeJS.ProcessEnv = {}) {
     const preload = join(dir, 'preload.mjs'); writeFileSync(preload, fixture);
     return spawnSync(process.execPath, ['--import', 'tsx', '--import', pathToFileURL(preload).href, 'scripts/dev.ts', ...(mode === 'default' ? [] : ['--realtime'])], {
       encoding: 'utf8', timeout: 10000,
-      env: { ...process.env, CASE: mode, LOOKUP_FIXTURE: '', INFISICAL_TOKEN: 'test-token', KIS_APP_KEY: 'fixture-app', KIS_APP_SECRET: 'fixture-secret', KIS_CANO: '12345678', KIS_ACNT_PRDT_CD: '01', KIS_STRATEGY_CONTRACT: undefined, KIS_HTS_ID: 'fixture-hts', KIS_WS_APPROVAL_KEY: 'stale-approval', KIS_WS_SESSION: '{"date":"2026-11-18","open":"09:00","close":"15:30","verified":true}', STOCK_DB: '/fixture/preserved.sqlite', KIS_PAPER_APPROVAL: 'preserved-approval', ...overrides },
+      env: { ...process.env, INFISICAL_AUTH_FILE: '', INFISICAL_CLIENT_ID: undefined, INFISICAL_CLIENT_SECRET: undefined, INFISICAL_PROJECT_ID: undefined, CASE: mode, LOOKUP_FIXTURE: '', INFISICAL_TOKEN: 'test-token', KIS_APP_KEY: 'fixture-app', KIS_APP_SECRET: 'fixture-secret', KIS_CANO: '12345678', KIS_ACNT_PRDT_CD: '01', KIS_STRATEGY_CONTRACT: undefined, KIS_HTS_ID: 'fixture-hts', KIS_WS_APPROVAL_KEY: 'stale-approval', KIS_WS_SESSION: '{"date":"2026-11-18","open":"09:00","close":"15:30","verified":true}', STOCK_DB: '/fixture/preserved.sqlite', KIS_PAPER_APPROVAL: 'preserved-approval', ...overrides },
     });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }

@@ -13,6 +13,7 @@ import { orderHistory } from '../server/order-history.ts';
 import { activeTerms, fixTradingDraft, readPreparedRun, saveTradingDraft } from '../server/trading-plans.ts';
 import type { StrategyContract } from '../server/strategy-contract.ts';
 import type { TradingTerms } from '../shared/trading-plan.ts';
+import { startTestServer } from './test-server.ts';
 
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'stock03-ui-plans-'));
@@ -157,13 +158,10 @@ test('review rejects unsupported and expired conditions before creating a ledger
 });
 test('approved HTTP server exposes a public copy and refuses trading settings writes', async () => {
   const f = fixture(),
-    port = 4382,
     approval = { date: '2099-01-05', requestId: randomUUID(), code: '005930' as const };
-  const server = makeServer(f.store, f.kis, [port], approval);
-  server.listen(port, '127.0.0.1');
-  await once(server, 'listening');
+  const srv = await startTestServer(f.store, f.kis, approval);
   try {
-    const base = 'http://127.0.0.1:' + port + '/api/';
+    const base = srv.url + '/api/';
     const view = await (await fetch(base + 'trading-settings')).json();
     assert.equal(view.active.kind, 'once');
     assert.equal(view.canFix, false);
@@ -186,7 +184,7 @@ test('approved HTTP server exposes a public copy and refuses trading settings wr
     assert.equal(f.store.tradingPlan('once'), undefined);
     assert.equal(f.store.paperOrders().length, 0);
   } finally {
-    await new Promise<void>((done) => server.close(() => done()));
+    await srv.close();
     f.close();
   }
 });
@@ -196,14 +194,14 @@ test('named manifests start an idle server only with the matching account and or
   const { renameSync } = await import('node:fs');
   const f = fixture();
   try {
-    for (const [i, terms] of [onceDraft, strategyDraft].entries()) {
+    for (const terms of [onceDraft, strategyDraft]) {
       const plan = saveTradingDraft(f.store, { expectedId: null, terms });
       const fixed = fixTradingDraft(f.store, f.kis, { kind: terms.kind, expectedId: plan.draft.id }).draft;
       const prefix = terms.kind === 'once' ? 'approval' : 'strategy';
       const manifest = join(f.dir, 'trading-runs', prefix + '-' + plan.draft.id, prefix + '-' + fixed.runId + '.json');
       const env: NodeJS.ProcessEnv = {
         ...process.env,
-        STOCK_PORT: String(4383 + i),
+        STOCK_PORT: '0',
         KIS_APP_KEY: 'fixture',
         KIS_APP_SECRET: 'fixture',
         KIS_CANO: '00000000',
@@ -224,12 +222,15 @@ test('named manifests start an idle server only with the matching account and or
       });
       const closed = once(child, 'exit');
       try {
-        await new Promise<void>((done, reject) => {
+        const baseUrl = await new Promise<string>((done, reject) => {
+          let out = '';
           const timer = setTimeout(() => reject(Error('server startup timed out')), 10000);
           child.stdout.on('data', (data) => {
-            if (String(data).includes('local server:')) {
+            out += String(data);
+            const match = /GON Stock local server: (http:\/\/127\.0\.0\.1:\d+)\r?\n/.exec(out);
+            if (match) {
               clearTimeout(timer);
-              done();
+              done(match[1]);
             }
           });
           child.once('exit', () => {
@@ -237,7 +238,7 @@ test('named manifests start an idle server only with the matching account and or
             reject(Error('server exited before ready'));
           });
         });
-        const base = 'http://127.0.0.1:' + env.STOCK_PORT + '/api/';
+        const base = baseUrl + '/api/';
         const settings = await (await fetch(base + 'trading-settings')).json();
         const ledger = await (await fetch(base + 'kis/ledger')).json();
         assert.equal(settings.active.kind, terms.kind);

@@ -1,3 +1,4 @@
+import type { AddressInfo } from 'node:net';
 import { readPreparedRun } from './trading-plans.ts';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
@@ -36,6 +37,22 @@ const playback = setInterval(() => {
   try { store.update(advanceTick); }
   catch { store.update(state => { halt(state, true); record(state, '데모 재생 실패', '상태를 확인한 뒤 재개하세요.', 'error'); }); }
 }, 3000);
-server.listen(port, '127.0.0.1', () => console.log(`GON Stock local server: http://127.0.0.1:${port}`));
-function stop() { clearInterval(playback); server.close(() => { store.close(); process.exit(0); }); }
+server.listen(port, '127.0.0.1', () => {
+  const actual = (server.address() as AddressInfo | null)?.port ?? port;
+  console.log(`GON Stock local server: http://127.0.0.1:${actual}`);
+});
+let stopping = false;
+function stop() {
+  if (stopping) {
+    server.closeAllConnections?.();
+    return;
+  }
+  stopping = true;
+  clearInterval(playback);
+  server.closeIdleConnections?.();
+  server.close(() => {
+    store.close();
+    process.exit(0);
+  });
+}
 process.on('SIGINT', stop); process.on('SIGTERM', stop);

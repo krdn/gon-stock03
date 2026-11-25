@@ -345,3 +345,81 @@ test('local refresh feedback stays accurate when the next poll loses the server'
   await expect(feedback).toContainText('로컬 서버 상태를 확인하지 못했습니다.');
   await expect(page.getByRole('button', { name: 'KIS 모의 잔고 조회' })).toBeDisabled();
 });
+
+test('emergency halt remains usable while a balance check is pending without unlocking busy early', async ({ page }) => {
+  const state = snapshot();
+  state.connection.configured = true;
+  state.connection.injection = { phase: 'present', missing: [] };
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.route('**/api/kis/check', async route => {
+    await gate;
+    const now = new Date().toISOString();
+    state.connection.status = { ...state.connection.status, phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now, pages: 1 };
+    state.connection.connected = true;
+    await route.fulfill({ json: { connection: state.connection, message: '전체 조회 확인' } });
+  });
+  await page.route('**/api/risk/halt', route => {
+    state.risk.halted = true;
+    state.revision++;
+    return route.fulfill({ json: {} });
+  });
+  await page.goto('/settings');
+  await page.getByRole('button', { name: 'KIS 모의 잔고 조회' }).click();
+  await expect(page.getByRole('button', { name: 'KIS 모의 잔고 조회' })).toBeDisabled();
+  await page.getByRole('navigation').getByRole('link', { name: '위험관리', exact: true }).click();
+  const haltButton = page.getByRole('button', { name: '신규 주문 긴급정지', exact: true });
+  await expect(haltButton).toBeEnabled();
+  await haltButton.click();
+  await expect(page.getByRole('button', { name: '신규 주문 허용', exact: true })).toBeVisible();
+  await page.getByRole('navigation').getByRole('link', { name: '연결·설정', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'KIS 모의 잔고 조회' })).toBeDisabled();
+  release();
+  await expect(page.getByRole('button', { name: 'KIS 모의 잔고 조회' })).toBeEnabled();
+});
+
+test('valid balance with naturally expired token avoids stale-balance contradiction and cooldown wording', async ({ page }) => {
+  const state = snapshot();
+  const now = new Date().toISOString();
+  state.connection.configured = true;
+  state.connection.injection = { phase: 'present', missing: [] };
+  state.connection.connected = true;
+  state.connection.status = { ...state.connection.status, phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now, pages: 1 };
+  state.connection.balance = { cash: 50000, totalEquity: 50000, positions: [] };
+  state.connection.authentication = { phase: 'expired', lastSuccessAt: now, validUntil: now, retryAt: null, failure: { kind: 'expired', message: '만료' } };
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.goto('/settings');
+  const recovery = page.getByLabel('연결 복구 안내');
+  await expect(recovery).toContainText('아래 잔고는 최근 전체 조회 기준입니다.');
+  await expect(recovery).toContainText('다시 조회');
+  await expect(recovery).not.toContainText('이전 전체 조회 기준');
+  await expect(recovery).not.toContainText('대기 시각');
+  await expect(page.getByText('조회 완료', { exact: true })).toBeVisible();
+});
+
+test('starting kis check clears prior page count and preserves server restart alert', async ({ page }) => {
+  const state = snapshot();
+  const now = new Date().toISOString();
+  state.connection.configured = true;
+  state.connection.injection = { phase: 'present', missing: [] };
+  state.connection.connected = true;
+  state.connection.checkStartedAt = now;
+  state.connection.status = { ...state.connection.status, phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now, pages: 3 };
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.route('**/api/kis/check', async route => {
+    await gate;
+    state.instanceId = 'restarted-after-check';
+    state.revision = 1;
+    await route.fulfill({ json: { connection: state.connection, message: 'KIS 모의 잔고 조회를 확인했습니다.' } });
+  });
+  await page.goto('/settings');
+  const accountStrip = page.getByRole('group', { name: 'KIS 계좌 상태', exact: true });
+  await expect(accountStrip).toContainText('3페이지');
+  await page.getByRole('button', { name: 'KIS 모의 잔고 조회' }).click();
+  await expect(accountStrip).toContainText('0페이지');
+  release();
+  await expect(page.getByRole('alert')).toContainText('서버가 다시 시작');
+});

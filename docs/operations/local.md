@@ -9,9 +9,9 @@ npm run dev
 
 주소: http://127.0.0.1:4303/dashboard · 설계: http://127.0.0.1:4303/design . 서버는 4304에서 실행하고 웹의 `/api`를 프록시한다. 두 포트가 사용 중이면 기존 앱을 임의 종료하지 말고 해당 앱의 소유자를 확인한다. `Ctrl+C`로 이 실행의 웹·API 프로세스를 종료한다.
 
-일반 개발 실행은 Infisical CLI의 현재 로그인으로 `dev /kis`를 조회하고 모의 계좌 설정 4개를 API 서버에 전달한다. 웹 개발 서버의 환경에서는 KIS·Infisical 변수를 제거한다. 필수 값이 모두 환경에 있으면 그대로 사용한다. 일부만 있으면 저장된 값과 일치할 때만 나머지를 채운다.
+일반 개발 실행(`npm run dev`)은 환경변수에 KIS 4개 키가 모두 있으면 그대로 사용하고, 없으면 **Infisical Machine Identity(Universal Auth)**(`.secrets/infisical-dev.json` 또는 `INFISICAL_*` 환경변수)를 우선 조회하며 미설정 시 기존 **Infisical CLI** 로그인으로 `dev /kis`를 조회해 API 서버에 전달한다. 웹 개발 서버의 환경에서는 `KIS_*`·`INFISICAL_*` 변수를 제거하며 API 서버에서도 `INFISICAL_*` 변수를 제거한다. 일부만 환경에 있으면 저장된 값과 일치할 때만 나머지를 채운다. 단계별 설정·검증·복구 절차는 [KIS 자동 주입 가이드](kis-auto-injection.md)를 참고한다.
 
-CLI 설치·로그인·권한이나 설정 충돌로 조회에 실패해도 로컬 데모는 열린다. 터미널 안내에 따라 복구한 뒤 개발 서버를 다시 시작하고 `/settings`에서 필수 설정 상태를 확인한다.
+인증 설정 오류·CLI 세션 만료·권한이나 설정 충돌로 조회에 실패해도 로컬 데모는 열린다. 터미널 안내에 따라 복구한 뒤 개발 서버를 다시 시작하고 `/settings`에서 필수 설정 상태를 확인한다.
 
 비밀 변수는 `KIS_APP_KEY`, `KIS_APP_SECRET`, `KIS_CANO`, `KIS_ACNT_PRDT_CD`다. `.env.example`은 이름만 문서화하며 앱은 평문 .env를 자동 로드하지 않는다. 실제 조회 검사만 별도로 실행하려면 아래 명령을 사용한다. 계좌 잔고 금액·키·토큰을 출력하지 않는다.
 

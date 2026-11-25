@@ -21,6 +21,7 @@ export class KisRejected extends KisFailure { constructor(message: string, kind:
 export class KisNotSent extends KisFailure { constructor(message: string, kind: ConnectionFailure['kind'] = 'rejected') { super(message, kind); } }
 export class KisDataError extends Error { constructor(readonly kind: 'request' | 'contract', message: string) { super(message); } }
 class KisAuthExpired extends KisRejected { constructor(message: string) { super(message, 'expired'); } }
+const validSecret = (value: string) => value.length > 0 && value === value.trim() && !/[\x00-\x1f\x7f]/.test(value);
 const safeFailure = (error: unknown): ConnectionFailure => error instanceof KisFailure ? { kind: error.kind, message: error.message } : { kind: 'upstream', message: 'KIS 모의 요청을 완료하지 못했습니다. 잠시 후 다시 확인하세요.' };
 async function within<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return promise;
@@ -63,7 +64,7 @@ export class KisClient {
     if (!this.configured()) throw new Error('전략 계약의 모의 계좌 설정을 확인하세요.');
     return createHash('sha256').update(this.credentials.account + ':' + this.credentials.product).digest('hex');
   }
-  configured() { const c = this.credentials; return Boolean(c.key.trim() && c.secret.trim() && /^\d{8}$/.test(c.account) && /^\d{2}$/.test(c.product)); }
+  configured() { const c = this.credentials; return Boolean(validSecret(c.key) && validSecret(c.secret) && /^\d{8}$/.test(c.account) && /^\d{2}$/.test(c.product)); }
   limitRequestsFor(ms: number) {
     this.requestDeadline = Math.min(this.requestDeadline, performance.now() + ms);
     this.requestWallDeadline = Math.min(this.requestWallDeadline, Date.now() + ms);
@@ -104,7 +105,7 @@ export class KisClient {
         response = await within(pendingResponse, signal);
       }
       catch { throw new KisFailure('KIS 모의 서버 통신 실패 또는 시간 초과입니다. 실전 서버로 대체하지 않습니다.', 'network'); }
-      if (response.status === 401 && init.method !== 'POST') throw new KisAuthExpired('KIS 모의 인증이 만료되거나 거부되었습니다.');
+      if (response.status === 401 && init.method !== 'POST' && !response.headers.get('content-type')?.includes('json')) throw new KisAuthExpired('KIS 모의 인증이 만료되거나 거부되었습니다.');
       let data: unknown;
       try { data = await within(response.json(), signal); }
       catch (error) {
@@ -114,8 +115,10 @@ export class KisClient {
       const body = data && typeof data === 'object' ? data : {};
       const code = 'msg_cd' in body ? body.msg_cd : 'error_code' in body ? body.error_code : undefined;
       const rateLimited = code === 'EGW00201' || code === 'EGW00133' || response.status === 429;
+      const authKeyDenied = ['EGW00103', 'EGW00105'].includes(typeof code === 'string' ? code : '');
       const denied = ['EGW00103', 'EGW00105', 'EGW00121', 'EGW00122'].includes(typeof code === 'string' ? code : '') || response.status === 401 || response.status === 403;
       if (code === 'EGW00123' && init.method !== 'POST') throw new KisAuthExpired('KIS 모의 인증이 만료되었습니다 (EGW00123).');
+      if (response.status === 401 && init.method !== 'POST' && !rateLimited && !authKeyDenied) throw new KisAuthExpired('KIS 모의 인증이 만료되거나 거부되었습니다.');
       if (!response.ok) throw new KisFailure(`KIS 모의 API가 HTTP ${response.status}로 거부했습니다. ${rateLimited ? '호출 제한 후 잠시 기다려 다시 확인하세요.' : denied ? '모의 키·서비스 권한을 확인하세요.' : '서비스 상태를 확인하고 다시 조회하세요.'}`, rateLimited ? 'rate-limit' : denied ? 'permission' : 'upstream');
       if (('rt_cd' in body && body.rt_cd !== '0') || ((init.method !== 'POST' || path === '/oauth2/tokenP') && 'error_code' in body)) {
         if (code === 'EGW00123') throw new KisAuthExpired('KIS 모의 인증이 만료되었습니다 (EGW00123).');
@@ -200,6 +203,39 @@ export class KisClient {
       return { date: date.data, open, high, low, close, volume };
     });
   }
+  async etfWeights(code: string) {
+    const { data } = await this.request(
+      '/uapi/etfetn/v1/quotations/inquire-component-stock-price',
+      'FHKST121600C0',
+      {
+        FID_COND_MRKT_DIV_CODE: 'J',
+        FID_INPUT_ISCD: code,
+        FID_COND_SCR_DIV_CODE: '11216',
+      },
+    );
+    const result = z
+      .object({
+        rt_cd: z.literal('0'),
+        output2: z
+          .array(
+            z.object({
+              stck_shrn_iscd: z.string().regex(/^[0-9A-Z]{6}$/),
+              etf_cnfg_issu_rlim: z.string().regex(/^\d+(?:\.\d+)?$/),
+            }),
+          )
+          .min(1),
+      })
+      .parse(data);
+    const weights = new Map<string, number>();
+    for (const row of result.output2) {
+      const weight = Number(row.etf_cnfg_issu_rlim) / 100;
+      if (weight <= 0 || weight > 1 || weights.has(row.stck_shrn_iscd)) throw new Error('ETF 구성비 확인 필요');
+      weights.set(row.stck_shrn_iscd, weight);
+    }
+    const total = [...weights.values()].reduce((v, w) => v + w, 0);
+    if (total < 0.995 || total > 1.005) throw new Error('ETF 구성비 합계 확인 필요');
+    return weights;
+  }
   async buyingPower(code: string, price: number) {
     const { data } = await this.request('/uapi/domestic-stock/v1/trading/inquire-psbl-order', 'VTTC8908R', { ...this.accountParams(), PDNO: code, ORD_UNPR: String(price), ORD_DVSN: '01', CMA_EVLU_AMT_ICLD_YN: 'N', OVRS_ICLD_YN: 'N' });
     const parsed = z.object({ rt_cd: z.literal('0'), output: z.object({ nrcvb_buy_qty: amount.refine(Number.isSafeInteger), nrcvb_buy_amt: amount, ord_psbl_cash: amount }) }).safeParse(data);
@@ -211,12 +247,12 @@ export class KisClient {
     let fk = '', nk = ''; const seen = new Set<string>(); const rows: BrokerOrder[] = [];
     for (let page = 0; page < 50; page++) {
       const { response, data } = await this.request('/uapi/domestic-stock/v1/trading/inquire-daily-ccld', 'VTTC0081R', { ...this.accountParams(), INQR_STRT_DT: date, INQR_END_DT: date, SLL_BUY_DVSN_CD: '00', PDNO: '', CCLD_DVSN: '00', INQR_DVSN: '00', INQR_DVSN_3: '00', ORD_GNO_BRNO: '', ODNO: '', INQR_DVSN_1: '', CTX_AREA_FK100: fk, CTX_AREA_NK100: nk, EXCG_ID_DVSN_CD: 'KRX' }, false, page ? 'N' : '');
-      const parsed = z.object({ rt_cd: z.literal('0'), output1: z.array(z.object({ odno: brokerId, ord_dt: marketDate, pdno: z.string().regex(/^\d{6}$/), prdt_name: z.string(), sll_buy_dvsn_cd: z.enum(['01', '02']), ord_qty: amount, ord_unpr: amount, ord_dvsn_cd: z.string().optional(), tot_ccld_qty: amount, rmn_qty: amount, cncl_yn: z.enum(['Y', 'N']), cncl_cfrm_qty: z.string().regex(/^\d+$/).transform(Number).pipe(z.int().nonnegative()).optional().catch(undefined), ord_gno_brno: organizationId })), ctx_area_fk100: z.string().optional(), ctx_area_nk100: z.string().optional() }).safeParse(data);
+      const parsed = z.object({ rt_cd: z.literal('0'), output1: z.array(z.object({ odno: brokerId, ord_dt: marketDate, pdno: z.string().regex(/^\d{6}$/), prdt_name: z.string(), sll_buy_dvsn_cd: z.enum(['01', '02']), ord_qty: amount, ord_unpr: amount, ord_dvsn_cd: z.string().optional(), tot_ccld_qty: amount, tot_ccld_amt:amount.refine(Number.isSafeInteger).optional().catch(undefined), rmn_qty: amount, cncl_yn: z.enum(['Y', 'N']), cncl_cfrm_qty: z.string().regex(/^\d+$/).transform(Number).pipe(z.int().nonnegative()).optional().catch(undefined), ord_gno_brno: organizationId })), ctx_area_fk100: z.string().optional(), ctx_area_nk100: z.string().optional() }).safeParse(data);
       if (!parsed.success) throw new Error('KIS 주문 조회 응답 계약이 일치하지 않습니다.');
       for (const o of parsed.data.output1) {
         if (![o.ord_qty, o.ord_unpr, o.tot_ccld_qty, o.rmn_qty].every(Number.isSafeInteger) || o.ord_qty <= 0 || o.tot_ccld_qty + o.rmn_qty > o.ord_qty) throw new Error('KIS 주문 조회 수량 계약이 일치하지 않습니다.');
         if (rows.some(row => row.date === o.ord_dt && row.organization.replace(/^0+(?=\d)/, '') === o.ord_gno_brno.replace(/^0+(?=\d)/, '') && row.brokerId.replace(/^0+(?=\d)/, '') === o.odno.replace(/^0+(?=\d)/, ''))) throw new Error('KIS 주문 조회에 중복 주문번호가 있습니다.');
-        rows.push({ ...(o.ord_dvsn_cd === '01' ? { orderType: 'market' as const } : {}), brokerId: o.odno, date: o.ord_dt, code: o.pdno, name: o.prdt_name, side: o.sll_buy_dvsn_cd === '02' ? 'buy' : 'sell', qty: o.ord_qty, price: o.ord_unpr, filled: o.tot_ccld_qty, remaining: o.rmn_qty, cancelled: o.cncl_yn === 'Y', confirmedCancelQty: o.cncl_cfrm_qty !== undefined && o.cncl_cfrm_qty <= o.ord_qty - o.tot_ccld_qty ? o.cncl_cfrm_qty : undefined, organization: o.ord_gno_brno });
+        rows.push({ ...(o.tot_ccld_amt!==undefined && {fillAmount:o.tot_ccld_amt}), ...(o.ord_dvsn_cd === '01' ? { orderType: 'market' as const } : {}), brokerId: o.odno, date: o.ord_dt, code: o.pdno, name: o.prdt_name, side: o.sll_buy_dvsn_cd === '02' ? 'buy' : 'sell', qty: o.ord_qty, price: o.ord_unpr, filled: o.tot_ccld_qty, remaining: o.rmn_qty, cancelled: o.cncl_yn === 'Y', confirmedCancelQty: o.cncl_cfrm_qty !== undefined && o.cncl_cfrm_qty <= o.ord_qty - o.tot_ccld_qty ? o.cncl_cfrm_qty : undefined, organization: o.ord_gno_brno });
       }
       if (!['M', 'F'].includes(response.headers.get('tr_cont') ?? '')) return rows;
       fk = parsed.data.ctx_area_fk100?.trim() ?? ''; nk = parsed.data.ctx_area_nk100?.trim() ?? '';
@@ -284,14 +320,16 @@ export class KisClient {
       this.accountState.checkStartedAt = new Date().toISOString();
       this.accountState.status = { ...this.accountState.status, phase: 'loading', complete: false, error: null, pages: 0 };
       this.accountState.failure = null;
-      this.balanceRequest = this.loadBalance(controller.signal);
-      try { return await this.balanceRequest; }
-      catch (error) {
+      const request = this.loadBalance(controller.signal).catch(error => {
         const failure = safeFailure(error); const message = failure.message;
         const previous = this.accountState.status;
         this.accountState = { ...this.accountState, connected: false, message, failure, status: { ...previous, phase: previous.pages > 0 ? 'partial' : this.configured() ? 'error' : 'disconnected', complete: false, observedAt: new Date().toISOString(), error: message } };
         throw error instanceof KisFailure ? error : new KisFailure(message, failure.kind);
-      } finally { this.balanceRequest = undefined; }
+      }).finally(() => {
+        if (this.balanceRequest === request) this.balanceRequest = undefined;
+      });
+      this.balanceRequest = request;
+      return await request;
     } finally { clearTimeout(timer); }
   }
   private async loadBalance(signal: AbortSignal): Promise<ConnectionState> {

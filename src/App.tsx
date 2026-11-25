@@ -56,7 +56,8 @@ export default function App() {
   const accountStatus = currentStatus(connectionState.status, trustedClock ? clock.current.account.until : -Infinity, tick);
   const connection = { ...connectionState, status: accountStatus, connected: connectionState.connected && accountStatus.phase === 'ready' };
   const available = status.phase === 'ready';
-  const [busy, setBusy] = useState(false);
+  const [pendingActions, setPendingActions] = useState(0);
+  const busy = pendingActions > 0;
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
   const [menu, setMenu] = useState(false);
   const location = useLocation();
@@ -71,7 +72,7 @@ export default function App() {
       error: waiting ? null : reason === 'regression' ? '저장 상태가 이전 버전으로 바뀌었습니다. 페이지를 새로고침해 다시 확인하세요.' : '로컬 상태를 확인하지 못했습니다. 연결과 서버 버전을 확인하세요.' }));
     setConnection(old => ({ ...old, connected: false, status: { ...old.status, phase: waiting ? 'loading' : old.status.lastSuccessAt ? 'stale' : 'disconnected', complete: false, error: waiting ? null : '로컬 상태를 신뢰할 수 없어 KIS 상태를 다시 확인해야 합니다.' } }));
   }, []);
-  const refresh = useCallback(async () => {
+  const refreshState = useCallback(async (): Promise<'ok' | 'restarted' | 'failed' | 'ignored'> => {
     const sentAt = performance.now();
     const sequence = ++requests.current.issued;
     const atStart = snapshot.current;
@@ -79,12 +80,12 @@ export default function App() {
       const response = await fetch('/api/state', { signal: AbortSignal.timeout(8000) });
       if (!response.ok) throw new Error('서버를 연결하지 못했습니다.');
       const result = stateSnapshotSchema.parse(await response.json());
-      if (sequence < requests.current.applied) return;
+      if (sequence < requests.current.applied) return 'ignored';
       requests.current.applied = sequence;
       const previous = snapshot.current;
       if (previous && previous.instanceId === result.instanceId && result.revision < previous.revision) {
-        if (atStart !== previous) return;
-        invalidate('regression'); return;
+        if (atStart !== previous) return 'ignored';
+        invalidate('regression'); return 'failed';
       }
       const restarted = previous !== null && previous.instanceId !== result.instanceId;
       const bodyTime = Date.parse(result.status.observedAt ?? '');
@@ -92,7 +93,7 @@ export default function App() {
       // HTTP Date is truncated to seconds. A body from after the response cannot establish time.
       const observedAt = bodyTime >= httpDate + 1000 ? NaN : bodyTime;
       const last = clock.current;
-      if (retiredServers.current.has(result.instanceId)) { invalidate(); return; }
+      if (retiredServers.current.has(result.instanceId)) { invalidate(); return 'failed'; }
       if (restarted) {
         retiredServers.current.add(previous.instanceId);
         setNotice({ text: '서버가 다시 시작되었습니다. 주문과 한도를 다시 확인하세요.', error: true });
@@ -100,7 +101,7 @@ export default function App() {
       const sameObservation = !restarted && observedAt === last.observedAt;
       const keepAnchor = sameObservation || (!restarted && !Number.isFinite(observedAt));
       const replayAfterFailure = sameObservation && last.needsObservation && result.status.phase === 'ready' && result.status.complete;
-      if ((!restarted && observedAt < last.observedAt) || replayAfterFailure) { invalidate(); return; }
+      if ((!restarted && observedAt < last.observedAt) || replayAfterFailure) { invalidate(); return 'failed'; }
       const receivedAt = performance.now();
       const serverAt = Math.max(observedAt, Number.isFinite(httpDate) ? httpDate : observedAt,
         sameObservation ? observedAt + Math.max(0, sentAt - last.receivedAt) : observedAt);
@@ -114,12 +115,15 @@ export default function App() {
         needsObservation: !Number.isFinite(observedAt) || result.status.phase !== 'ready' || !result.status.complete || !result.status.lastSuccessAt,
       };
       snapshot.current = result; setState(result); setLocalStatus(result.status); setConnection(result.connection);
+      return restarted ? 'restarted' : 'ok';
     } catch {
-      if (sequence < requests.current.applied) return;
+      if (sequence < requests.current.applied) return 'ignored';
       requests.current.applied = sequence;
       invalidate();
+      return 'failed';
     }
   }, [invalidate]);
+  const refresh = useCallback(async () => { await refreshState(); }, [refreshState]);
   useEffect(() => {
     void refresh();
     const timer = window.setInterval(() => void refresh(), 3000);
@@ -155,8 +159,8 @@ export default function App() {
       const message = '최신 로컬 상태를 확인한 뒤 다시 시도하세요.';
       setNotice({ text: message, error: true }); throw Object.assign(new Error(message), { definitive: true, notSent: true });
     }
-    setBusy(true);
-    if (path === 'kis/check' || path === 'kis/orders') setConnection(old => ({ ...old, connected: false, status: { ...old.status, phase: 'loading', complete: false, error: null } }));
+    setPendingActions(count => count + 1);
+    if (path === 'kis/check' || path === 'kis/orders') setConnection(old => ({ ...old, connected: false, checkStartedAt: null, status: { ...old.status, phase: 'loading', complete: false, error: null, pages: 0 } }));
     let message = '요청을 처리하지 못했습니다. 잠시 후 다시 확인하세요.';
     let definitive = false;
     const controller = path === 'kis/check' ? new AbortController() : undefined;
@@ -166,10 +170,12 @@ export default function App() {
       const result = await response.json();
       if (!result || typeof result !== 'object') throw new Error(message);
       if (!response.ok) { definitive = response.status >= 400 && response.status < 500; if ((response.status < 500 || result.error === storageErrorMessage) && typeof result.error === 'string') message = result.error; throw new Error(message); }
-      await refresh(); setNotice({ text: result.message ?? '변경 사항을 저장했습니다.', error: Boolean(result.warning) });
+      const synced = await refreshState();
+      if (synced === 'ok') setNotice({ text: result.message ?? '변경 사항을 저장했습니다.', error: Boolean(result.warning) });
+      else if (synced === 'failed') setNotice({ text: '요청 응답을 받았지만 최신 로컬 상태를 확인하지 못했습니다. 상태를 새로고침하세요.', error: true });
       return result as T;
-    } catch { if (controller?.signal.aborted) message = '응답 확인 지연: 브라우저 대기를 종료했습니다. 서버 취소를 보장하지 않습니다. 연결 상태를 새로고침하세요.'; setNotice({ text: message, error: true }); await refresh(); throw Object.assign(new Error(message), { definitive }); }
-    finally { window.clearTimeout(timer); setBusy(false); }
+    } catch { if (controller?.signal.aborted) message = '응답 확인 지연: 브라우저 대기를 종료했습니다. 서버 취소를 보장하지 않습니다. 연결 상태를 새로고침하세요.'; setNotice({ text: message, error: true }); await refreshState(); throw Object.assign(new Error(message), { definitive }); }
+    finally { window.clearTimeout(timer); setPendingActions(count => Math.max(0, count - 1)); }
   }
   const routes = [Dashboard, Market, WatchlistPage, Trade, Orders, Portfolio, Strategies, Backtest, Risk, Journal, Alerts, DataStatus, Settings, Design, Paper];
   const environmentStatus = <section className="status-strip" aria-label="환경과 데이터 상태"><DataStatusLine label="로컬 상태" status={status} /><DataStatusLine label="KIS 계좌 상태" status={connection.status} showPages /></section>;
@@ -191,7 +197,7 @@ export default function App() {
         로컬 {phaseLabels[status.phase]} · KIS 계좌 {phaseLabels[connection.status.phase]}
         {available && !state.risk.halted && ' · 긴급정지 꺼짐'}
       </summary>{environmentStatus}</details> : current.id !== 'settings' && environmentStatus}
-      {!available && <div className="notice warning" role="status">{status.lastSuccessAt ? '마지막 확인값입니다. 최신 상태 확인 전에는 새 작업을 진행할 수 없습니다.' : '화면 미리보기입니다. 로컬 서버가 연결되면 저장·주문·전략 기능을 사용할 수 있습니다.'} <button onClick={() => void refresh()}>다시 확인</button></div>}
+      {!available && <div className={`notice ${status.phase === 'loading' ? '' : 'warning'}`} role="status">{status.phase === 'loading' ? '로컬 서버 상태를 확인하고 있습니다.' : status.lastSuccessAt ? '마지막 확인값입니다. 최신 상태 확인 전에는 새 작업을 진행할 수 없습니다.' : '화면 미리보기입니다. 로컬 서버가 연결되면 저장·주문·전략 기능을 사용할 수 있습니다.'}{status.phase !== 'loading' && <> <button onClick={() => void refresh()}>다시 확인</button></>}</div>}
       {!deferHaltStatus && (!compactOrders || !available || state.risk.halted) && haltStatus}
       <Routes key={snapshot.current?.instanceId ?? 'preview'}><Route path="/" element={<Navigate replace to="/dashboard" />} />{screens.map((s, i) => { const Page = routes[i]; return <Route key={s.id} path={'/' + s.id} element={<Page />} />; })}<Route path="/settings/trading/*" element={<TradingSettings />} /><Route path="*" element={<div className="empty"><h2>페이지를 찾을 수 없습니다</h2><Link to="/dashboard">대시보드로 돌아가기</Link></div>} /></Routes>
       {deferHaltStatus && haltStatus}

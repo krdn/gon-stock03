@@ -7,18 +7,17 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { spawn } from 'node:child_process';
 import { Store } from '../server/store.ts';
-import { makeServer } from '../server/http.ts';
 import { KisClient } from '../server/kis.ts';
 import { storageErrorMessage } from '../shared/contracts.ts';
+import { startTestServer } from './test-server.ts';
 
 const headers = { 'Connection': 'close', 'Content-Type': 'application/json', 'X-Workbench': 'local' };
 
 test('journal API rejects blank/invalid input and rolls back a real SQLite write failure', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'stock03-journal-')), path = join(directory, 'state.sqlite');
   const store = new Store(path), db = new DatabaseSync(path);
-  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4334]);
-  server.listen(4334, '127.0.0.1'); await once(server, 'listening');
-  const post = (data: unknown) => fetch('http://127.0.0.1:4334/api/journal', { method: 'POST', headers, body: JSON.stringify(data) });
+  const { url, close } = await startTestServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }));
+  const post = (data: unknown) => fetch(`${url}/api/journal`, { method: 'POST', headers, body: JSON.stringify(data) });
   try {
     const before = store.read();
     for (const text of ['', ' \n\t ', 'x'.repeat(2001)]) assert.equal((await post({ code: '005930', text })).status, 400);
@@ -38,36 +37,41 @@ test('journal API rejects blank/invalid input and rolls back a real SQLite write
     assert.equal((await post({ code: '005930', text: '다시 저장' })).status, 200);
     assert.equal(store.read().journal.length, saved.journal.length + 1);
     assert.deepEqual(store.read().orders, before.orders);
-  } finally { server.closeAllConnections(); server.close(); await once(server, 'close'); db.close(); store.close(); rmSync(directory, { recursive: true }); }
+  } finally { await close(); db.close(); store.close(); rmSync(directory, { recursive: true }); }
 });
 
 test('journal survives a real server process restart with the same SQLite file', { timeout: 20000 }, async () => {
   const directory = mkdtempSync(join(tmpdir(), 'stock03-journal-restart-'));
-  const env = { ...process.env, STOCK_PORT: '4335', STOCK_DB: join(directory, 'state.sqlite'), KIS_APP_KEY: '', KIS_APP_SECRET: '', KIS_CANO: '', KIS_ACNT_PRDT_CD: '' };
+  const env = { ...process.env, STOCK_PORT: '0', STOCK_DB: join(directory, 'state.sqlite'), KIS_APP_KEY: '', KIS_APP_SECRET: '', KIS_CANO: '', KIS_ACNT_PRDT_CD: '' };
   const start = async () => {
     const child = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     try {
-      await new Promise<void>((resolve, reject) => {
+      const baseUrl = await new Promise<string>((resolve, reject) => {
+        let out = '';
         child.once('error', reject);
         child.once('exit', code => reject(new Error(`server exited before ready: ${code}`)));
-        child.stdout.on('data', bytes => { if (String(bytes).includes('GON Stock local server:')) resolve(); });
+        child.stdout.on('data', bytes => {
+          out += String(bytes);
+          const match = /GON Stock local server: (http:\/\/127\.0\.0\.1:\d+)\r?\n/.exec(out);
+          if (match) resolve(match[1]);
+        });
       });
-      return child;
+      return { child, baseUrl };
     } catch (error) { child.kill(); throw error; }
   };
-  const stop = async (child: Awaited<ReturnType<typeof start>>) => { const exited = once(child, 'exit'); child.kill('SIGTERM'); const [code] = await exited; assert.equal(code, 0); };
-  let child = await start();
+  const stop = async (child: Awaited<ReturnType<typeof start>>['child']) => { const exited = once(child, 'exit'); child.kill('SIGTERM'); const [code] = await exited; assert.equal(code, 0); };
+  let proc = await start();
   try {
     const text = '<script>not executable</script>\n재시작 보존';
-    const response = await fetch('http://127.0.0.1:4335/api/journal', { method: 'POST', headers, body: JSON.stringify({ code: '005930', text }) });
+    const response = await fetch(`${proc.baseUrl}/api/journal`, { method: 'POST', headers, body: JSON.stringify({ code: '005930', text }) });
     assert.equal(response.status, 200); await response.json();
-    const read = async () => (await fetch('http://127.0.0.1:4335/api/state', { headers })).json();
+    const read = async () => (await fetch(`${proc.baseUrl}/api/state`, { headers })).json();
     const before = await read();
     assert.equal(before.journal[0].text, text); assert.ok(before.journal[0].id); assert.ok(Number.isFinite(Date.parse(before.journal[0].date)));
-    await stop(child); child = await start();
+    await stop(proc.child); proc = await start();
     const after = await read();
     assert.notEqual(after.instanceId, before.instanceId);
     assert.deepEqual(after.journal, before.journal);
     assert.deepEqual(after.orders, before.orders);
-  } finally { if (child.exitCode === null) await stop(child); rmSync(directory, { recursive: true }); }
+  } finally { if (proc.child.exitCode === null) await stop(proc.child); rmSync(directory, { recursive: true }); }
 });
