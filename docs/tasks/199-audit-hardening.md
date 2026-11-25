@@ -2,12 +2,12 @@
 
 기준 이슈: https://github.com/krdn/gon-stock03/issues/199
 
-- 상태: 검증 대기 (PR 검토·원격 CI 확인)
+- 상태: 완료 (PR #200 머지 `78d4391`, 이슈 #199 종료)
 - 목표·완료 조건: 장전 스캔 DB 확장성 분리, 장전/이월/재연결 경계 결함 수정, RSS 엔티티 디코딩, 테스트 동적 포트 전환 및 우아한 종료, 프론트엔드 `serverNow` 기반 신뢰 시계 통일, 전체 로컬 검증(`typecheck`, 단위, `build`, E2E) 및 독립 재리뷰 PASS 후 PR 생성
 - 허용된 작업·제외 범위: 서버·프론트엔드·테스트 버그 수정과 회귀 테스트 추가 / 실·모의 KIS 원격 주문, `.local/`·`graphify-out/`·실행 중 로컬 서버(4303/4304/4328/4397) 변경, `TradingSettings.tsx` 분할·과거 Git 이력 정리는 제외
 - 선행 작업·의존관계: [#197 장전 포트폴리오 운용](197-morning.md)
-- 이슈 / PR: https://github.com/krdn/gon-stock03/issues/199
-- 작업 브랜치 / 마지막 확인 SHA: `fix/199-audit-hardening` (`aea3e67` 기준 작업 커밋 예정)
+- 이슈 / PR: https://github.com/krdn/gon-stock03/issues/199 / https://github.com/krdn/gon-stock03/pull/200
+- 작업 브랜치 / 마지막 확인 SHA: `fix/199-audit-hardening` → `main` 머지 완료 (`78d4391`, PR #200)
 
 ## 먼저 읽을 자료
 
@@ -45,7 +45,7 @@
 
 ## 다음 행동
 
-PR의 GitHub Actions CI 통과와 머지 여부를 확인하고, 필요 시 Optional 항목(`watch` 배열 검증 등) 후속 이슈를 분리한다.
+PR #200의 `main` 머지(`78d4391`) 및 이슈 #199 종료 완료. 필요 시 Optional 항목(`watch` 배열 검증 등) 후속 이슈를 분리한다.
 
 ## 새 세션 시작 문구
 

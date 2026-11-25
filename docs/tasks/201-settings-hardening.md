@@ -2,12 +2,12 @@
 
 기준 이슈: https://github.com/krdn/gon-stock03/issues/201
 
-- 상태: 검증 대기 (Claude Opus 5.5 재리뷰 PASS, PR·CI 확인)
+- 상태: 완료 (PR #202 머지 `e41fd23`, 이슈 #201 종료)
 - 목표·완료 조건: 연결·설정(`/settings`) 및 공통 `act()`/KIS 인증·주입 경로의 안전 제어 차단(`#1+N1`), 상태 모순(`#4`), 키/401/동시 예외 분류(`#2/#3/#6`), 개발 주입 진단(`#7`), 낙관적 상태·토스트 보호(`#5a/#5b/#8b`) 결함을 수정하고 회귀 테스트·빌드·독립 재리뷰(Claude Opus 5.5 `high`) PASS 후 커밋·PR·CI 완료
 - 허용된 작업·제외 범위: `src/App.tsx`, `src/pages/Operations.tsx`, `src/pages/Research.tsx`, `src/components/RealtimeStatus.tsx`, `server/kis.ts`, `scripts/dev.ts`, 관련 단위·E2E 회귀 테스트 추가 / `#8a`(20종목 초과 계좌 장중 `tot_evlu_amt` 페이지 간 비교 완화)·실/모의 KIS 원격 API 호출·실행 중 로컬 서버 변경 제외
 - 선행 작업·의존관계: [전체 점검·하드닝 #199](199-audit-hardening.md) · [연결·설정 UX #162](162-settings-ux.md)
-- 이슈 / PR: https://github.com/krdn/gon-stock03/issues/201
-- 작업 브랜치 / 마지막 확인 SHA: `fix/201-settings-hardening` (기준 `78d4391`)
+- 이슈 / PR: https://github.com/krdn/gon-stock03/issues/201 / https://github.com/krdn/gon-stock03/pull/202
+- 작업 브랜치 / 마지막 확인 SHA: `fix/201-settings-hardening` → `main` 머지 완료 (`e41fd23`, PR #202)
 
 ## 먼저 읽을 자료
 
@@ -42,7 +42,7 @@
 
 ## 다음 행동
 
-PR의 GitHub Actions CI 통과와 `main` 머지 여부를 확인하고, 필요 시 보류 항목(`#8a`, Optional 3건)을 후속 이슈로 분리한다.
+PR #202의 `main` 머지(`e41fd23`) 및 이슈 #201 종료 완료. 필요 시 보류 항목(`#8a`, Optional 3건)을 후속 이슈로 분리한다.
 
 ## 새 세션 시작 문구
 

@@ -3,12 +3,12 @@
 기준 이슈: https://github.com/krdn/gon-stock03/issues/205
 설계 문서: [A2UI 장전 브리핑 계획](../plans/a2ui-morning-briefing.md)
 
-- 상태: 검증 대기 (Claude Opus 5.5 + Codex Astra 6.2 재리뷰 PASS, PR·CI 확인)
+- 상태: 완료 (PR #206 머지 `63dbbf5`, 이슈 #205 종료; Step 1 A2UI는 조건부 후속 게이트)
 - 목표·완료 조건: 3자 협의(Codex Astra 6.2 · Claude Opus 5.5 · Gemini) 결과에 따라 장전 공개 원문 분석의 신뢰·UX 결함 6건을 고정 계약·UI(Step 0)로 해결하고, A2UI v1.0 최소 서브셋(Step 1)의 조건부 진입 게이트를 문서화한다.
 - 허용된 작업·제외 범위: `shared/morning.ts`, `server/morning-analysis.ts`, `server/morning.ts`, `server/realtime.ts`, `server/http.ts`, `src/components/MorningPortfolio.tsx`, `src/pages/portfolio.css`, `tests/morning.test.ts`, `tests/browser/morning.spec.ts`, 관련 `docs/`. 기존 15개 화면·매매 설정·주문/위험/승인 안전 경계 변경, `@a2ui/*` 공식 패키지 도입, Step 1 구현 제외.
 - 선행 작업·의존관계: [#197](https://github.com/krdn/gon-stock03/issues/197), [#199](https://github.com/krdn/gon-stock03/issues/199)
 - 이슈 / PR: [#205](https://github.com/krdn/gon-stock03/issues/205) / [#206](https://github.com/krdn/gon-stock03/pull/206)
-- 작업 브랜치 / 마지막 확인 SHA: `feat/205-morning-briefing-step0` (`11e5719`, 기준 `e41fd23`)
+- 작업 브랜치 / 마지막 확인 SHA: `feat/205-morning-briefing-step0` → `main` 머지 완료 (`63dbbf5`, PR #206)
 
 ## 먼저 읽을 자료
 
@@ -46,7 +46,7 @@
 
 ## 다음 행동
 
-PR의 GitHub Actions CI 통과와 `main` 머지 여부를 확인하고, 실제 장전 운용에서 Step 0 효과를 수용한 뒤 Step 1 진입 조건 충족 여부를 판단한다.
+PR #206의 `main` 머지(`63dbbf5`) 및 이슈 #205 종료 완료. 실제 장전 운용에서 Step 0 효과를 수용한 뒤 Step 1 진입 조건 충족 여부를 판단한다.
 
 ## 새 세션 시작 문구
 
