@@ -278,3 +278,235 @@ test('승인 후 감시 재개 차단·과거 보고서 경고 보존·전량 �
   await expect(pastCandidateEvidence).not.toContainText('반대 관점');
   await expect(page.getByRole('region', { name: '전체 공개 원문 분석 근거' })).toContainText('추가 관점 · 동일 출처');
 });
+
+// 장후 마감 경고·주말 400 차단 테스트용 기본 보고서 픽스처를 생성한다.
+function closeWarningFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'fixture-close-warning',
+    day: '2026-11-24',
+    createdAt: '2026-11-23T23:55:00Z',
+    cutoff: '2026-11-23T23:55:00Z',
+    cash: 1000000,
+    equity: 1000000,
+    holdings: [],
+    conclusion: '가격과 거래량을 확인했어.',
+    exposureComplete: true,
+    universe: 3000,
+    evaluated: 2000,
+    watch: [],
+    candidates: [
+      {
+        code: '005930',
+        name: '삼성전자',
+        held: 0,
+        closes: [69000, 70000],
+        asOf: '20261123',
+        reference: 70000,
+        exit: 65000,
+        limit: 80000,
+        relativeVolume: 1.5,
+      },
+    ],
+    retainedCash: 920000,
+    dailyLoss: 10000,
+    news: [],
+    gaps: [],
+    indicators: [],
+    approvedAt: '2026-11-23T23:56:00Z',
+    ...overrides,
+  };
+}
+
+test('주말 400 차단 시 오류 원문을 alert로 표시하고 10초 폴링 성공 후에도 유지한다', async ({ page }) => {
+  await page.clock.install();
+  const weekendMessage = '주말에는 장전 보고서를 생성하지 않습니다. 평일 공휴일은 현재 차단 대상이 아닙니다.';
+  let morningReads = 0;
+  await page.route('**/api/morning', (route) => {
+    morningReads++;
+    return route.fulfill({ json: { report: null, signals: [], closeWarning: null } });
+  });
+  await page.route('**/api/morning/generate', (route) =>
+    route.fulfill({ status: 400, json: { error: weekendMessage } }),
+  );
+
+  await page.goto('/portfolio');
+  const panel = page.locator('.panel', { has: page.getByRole('heading', { name: '오늘의 운용 계획' }) });
+  const generateButton = panel.getByRole('button', { name: '운용 계획 보기' });
+  await expect(generateButton).toBeEnabled();
+
+  await generateButton.click();
+  await expect(panel.getByRole('alert')).toContainText(weekendMessage);
+  await expect(panel).not.toContainText('보고서 상태 미확인');
+  await expect(panel).toContainText('저장된 계획이 없어. 장전 자료를 모아 보자.');
+
+  const readsBeforePoll = morningReads;
+  const pollResponse = page.waitForResponse(
+    (res) => res.url().includes('/api/morning') && res.request().method() === 'GET' && res.ok(),
+  );
+  await page.clock.fastForward(10500);
+  await pollResponse;
+  expect(morningReads).toBeGreaterThan(readsBeforePoll);
+
+  await expect(panel.getByRole('alert')).toContainText(weekendMessage);
+  await expect(panel).not.toContainText('보고서 상태 미확인');
+});
+
+test('MISSING_VERIFIED_SESSION 경고 시 자동 마감 호출 없이 장후 결과 확인 버튼을 비활성화한다', async ({
+  page,
+}) => {
+  let closeCalls = 0;
+  page.on('request', (req) => {
+    if (req.url().includes('/api/morning/close')) closeCalls++;
+  });
+  await page.route('**/api/morning', (route) =>
+    route.fulfill({
+      json: {
+        report: closeWarningFixture(),
+        close: null,
+        closeWarning: {
+          missing: true,
+          reason: 'missing',
+          canClose: false,
+          reasonCode: 'MISSING_VERIFIED_SESSION',
+          reasons: ['장후 마감 기록이 없습니다.', '당일 검증된 거래 세션이 없어 마감할 수 없습니다.'],
+        },
+        signals: [],
+      },
+    }),
+  );
+
+  await page.goto('/portfolio');
+  const warning = page.locator('.morning-close-warn');
+  await expect(warning).toBeVisible();
+  await expect(warning).toHaveAttribute('id', 'morning-close-warning');
+  await expect(warning).toHaveAttribute('role', 'status');
+  await expect(warning).toHaveAttribute('aria-label', '장후 마감 상태');
+  await expect(warning).not.toHaveClass(/portfolio-warning/);
+  await expect(warning).toContainText('장후 마감 누락');
+  await expect(warning).toContainText('수동 마감할 수 없습니다.');
+  await expect(warning).toContainText('당일 검증된 거래 세션이 없어 마감할 수 없습니다.');
+
+  const closeButton = page.getByRole('button', { name: '장후 결과 확인' });
+  await expect(closeButton).toBeVisible();
+  await expect(closeButton).toBeDisabled();
+  await expect(closeButton).toHaveAttribute('aria-describedby', 'morning-close-warning');
+  expect(closeCalls).toBe(0);
+});
+
+test('과거 승인일은 장후 마감 경고를 표시하고 미승인 비거래일(11-22)은 경고를 표시하지 않는다', async ({
+  page,
+}) => {
+  const days = ['2026-11-24', '2026-11-23', '2026-11-22'];
+  await page.route('**/api/morning**', (route) => {
+    const day = new URL(route.request().url()).searchParams.get('day');
+    if (day === '2026-11-23') {
+      return route.fulfill({
+        json: {
+          days,
+          report: closeWarningFixture({ id: 'fixture-past-approved', day: '2026-11-23' }),
+          close: null,
+          closeWarning: {
+            missing: true,
+            reason: 'missing',
+            canClose: false,
+            reasonCode: 'PAST_TRADING_DAY',
+            reasons: ['장후 마감 기록이 없습니다.', '해당 거래일의 수동 마감 기한이 지났습니다.'],
+          },
+          signals: [],
+        },
+      });
+    }
+    if (day === '2026-11-22') {
+      return route.fulfill({
+        json: {
+          days,
+          report: closeWarningFixture({ id: 'fixture-sunday-unapproved', day: '2026-11-22', approvedAt: null }),
+          close: null,
+          closeWarning: null,
+          signals: [],
+        },
+      });
+    }
+    return route.fulfill({
+      json: {
+        days,
+        report: closeWarningFixture({ id: 'fixture-today', day: '2026-11-24', approvedAt: null }),
+        close: null,
+        closeWarning: null,
+        signals: [],
+      },
+    });
+  });
+
+  await page.goto('/portfolio');
+  await page.getByLabel('보고서 날짜').selectOption('2026-11-23');
+  const warning = page.getByRole('status', { name: '장후 마감 상태' });
+  await expect(warning).toBeVisible();
+  await expect(warning).toHaveClass(/morning-close-warn/);
+  await expect(warning).toContainText('해당 거래일의 수동 마감 기한이 지났습니다.');
+
+  await page.getByLabel('보고서 날짜').selectOption('2026-11-22');
+  await expect(page.getByRole('heading', { name: '2026-11-22 운용 계획' })).toBeVisible();
+  await expect(page.locator('.morning-close-warn')).toHaveCount(0);
+});
+
+test('canClose가 true이면 수동 마감 후 경고가 해제되고 390px 모바일 가로 넘침과 키보드 포커스가 정상이다', async ({
+  page,
+}) => {
+  let closed = false;
+  await page.route('**/api/morning', (route) =>
+    route.fulfill({
+      json: {
+        report: closeWarningFixture({ id: 'fixture-manual-close', day: '2026-11-24' }),
+        close: closed
+          ? {
+              change: 12000,
+              contribution: { gross: 15000, estimatedCost: 3000, net: 12000, fills: 1 },
+              difference: 5000,
+              predictions: [{ code: '005930', reference: 70000, close: 72000 }],
+            }
+          : null,
+        closeWarning: closed
+          ? null
+          : {
+              missing: true,
+              reason: 'missing',
+              canClose: true,
+              reasonCode: 'MISSING_CLOSE',
+              reasons: ['장후 마감 기록이 없습니다.'],
+            },
+        signals: [],
+      },
+    }),
+  );
+  await page.route('**/api/morning/close', (route) => {
+    closed = true;
+    return route.fulfill({ json: { message: '장후 계좌와 보유 유지 결과를 기록했습니다.' } });
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/portfolio');
+
+  const warning = page.locator('.morning-close-warn');
+  await expect(warning).toBeVisible();
+  await expect(warning).toContainText('장후 마감이 필요합니다.');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(
+    true,
+  );
+
+  const closeButton = page.getByRole('button', { name: '장후 결과 확인' });
+  await expect(closeButton).toBeEnabled();
+  await expect(closeButton).toHaveAttribute('aria-describedby', 'morning-close-warning');
+
+  const summary = page.getByText('근거와 종목별 매매 조건 보기');
+  await summary.focus();
+  await page.keyboard.press('Tab');
+  await expect(closeButton).toBeFocused();
+  await page.keyboard.press('Enter');
+
+  await expect(page.getByText(/장후 계좌 변동 12,000원/)).toBeVisible();
+  await expect(page.locator('.morning-close-warn')).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(
+    true,
+  );
+});

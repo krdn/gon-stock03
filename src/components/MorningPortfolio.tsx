@@ -4,6 +4,7 @@ import {
   reportApprovalBlocked,
   resolveViewCandidateCodes,
   type MorningApprovalState,
+  type MorningCloseWarning,
   type MorningReport,
   type SourcedView,
 } from '../../shared/morning';
@@ -24,6 +25,7 @@ interface View {
     difference: number | null;
     predictions: { code: string; reference: number; close: number | null }[];
   } | null;
+  closeWarning?: MorningCloseWarning | null;
   scan?: { running: boolean; checked: number; total: number; message: string };
   additions?: { candidate: MorningReport['candidates'][number]; expires: number; approved: string | null }[];
   signals: { at: string; code: string; side: string; price: number; outcome: string }[];
@@ -88,7 +90,9 @@ export function MorningPortfolio({ hideEmpty = false }: { hideEmpty?: boolean })
   const { act, busy, available, server, serverNow } = useWorkbench();
   const [view, setView] = useState<View>({ report: null, signals: [] });
   const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState('');
+  // 조회 실패(loadError)와 사용자 액션 실패(actionError)를 분리해 10초 폴링 성공이 액션 오류를 지우지 않게 한다.
+  const [loadError, setLoadError] = useState('');
+  const [actionError, setActionError] = useState('');
   const [day, setDay] = useState('');
   const [version, setVersion] = useState(0);
   useEffect(() => {
@@ -101,11 +105,11 @@ export function MorningPortfolio({ hideEmpty = false }: { hideEmpty?: boolean })
           if (!controller.signal.aborted) {
             setView(data);
             setLoaded(true);
-            setError('');
+            setLoadError('');
           }
         })
         .catch(() => {
-          if (!controller.signal.aborted) setError('장전 계획을 읽지 못했습니다.');
+          if (!controller.signal.aborted) setLoadError('장전 계획을 읽지 못했습니다.');
         });
     const timer = available ? window.setTimeout(() => setVersion((v) => v + 1), 10000) : undefined;
     return () => {
@@ -114,11 +118,12 @@ export function MorningPortfolio({ hideEmpty = false }: { hideEmpty?: boolean })
     };
   }, [available, server?.instanceId, version, day]);
   async function action(path: string, body?: unknown) {
+    setActionError('');
     try {
       await act('morning/' + path, body);
       setVersion((v) => v + 1);
     } catch (e) {
-      setError(e instanceof Error ? e.message : '요청을 처리하지 못했습니다.');
+      setActionError(e instanceof Error ? e.message : '요청을 처리하지 못했습니다.');
     }
   }
   const r = view.report;
@@ -129,6 +134,9 @@ export function MorningPortfolio({ hideEmpty = false }: { hideEmpty?: boolean })
   const approvalBlockReasons = r ? (view.approval ? view.approval.reasons : reportBlock.reasons) : [];
   const needsResume = Boolean(!day && r?.approvedAt && view.run && view.run.buyId !== r.id);
   const showBlockNotice = Boolean(!day && r && approvalBlocked && approvalBlockReasons.length > 0 && (!r.approvedAt || needsResume));
+  const closeWarning = view.closeWarning ?? null;
+  // 서버가 수동 마감 불가(canClose: false)로 판정한 경우 자동 호출·수동 요청을 모두 막는다.
+  const closeBlocked = Boolean(closeWarning && !closeWarning.canClose);
   const displayedBlockReasons = showBlockNotice ? new Set(approvalBlockReasons) : new Set<string>();
   const detailGaps = r ? r.gaps.filter((g) => !displayedBlockReasons.has(g)) : [];
   const analysisCoverage = r ? (r.analysisCoverage ?? r.analysis?.coverage) : undefined;
@@ -165,6 +173,8 @@ export function MorningPortfolio({ hideEmpty = false }: { hideEmpty?: boolean })
             onChange={(e) => {
               setDay(e.target.value);
               setLoaded(false);
+              setLoadError('');
+              setActionError('');
               setView({ report: null, signals: [] });
             }}
           >
@@ -177,7 +187,7 @@ export function MorningPortfolio({ hideEmpty = false }: { hideEmpty?: boolean })
       )}
       {!r ? (
         <p>
-          {error
+          {loadError
             ? '보고서 상태 미확인'
             : !loaded
               ? '장전 계획을 확인하고 있어.'
@@ -204,6 +214,30 @@ export function MorningPortfolio({ hideEmpty = false }: { hideEmpty?: boolean })
                   <li key={reason}>{reason}</li>
                 ))}
               </ul>
+            </section>
+          )}
+          {closeWarning && (
+            <section
+              id="morning-close-warning"
+              className="morning-close-warn"
+              role="status"
+              aria-label="장후 마감 상태"
+            >
+              <header className="morning-card-meta">
+                <Badge tone="neutral">
+                  {closeWarning.reason === 'incomplete' ? '장후 마감 미완성' : '장후 마감 누락'}
+                </Badge>
+                <strong>
+                  {closeWarning.canClose ? '장후 마감이 필요합니다.' : '수동 마감할 수 없습니다.'}
+                </strong>
+              </header>
+              {closeWarning.reasons.length > 0 && (
+                <ul>
+                  {closeWarning.reasons.map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+              )}
             </section>
           )}
 
@@ -452,7 +486,16 @@ export function MorningPortfolio({ hideEmpty = false }: { hideEmpty?: boolean })
           ))}
         </details>
       )}
-      {error && <p role="alert">{error}</p>}
+      {loadError && (
+        <p className="morning-error-alert" role="alert">
+          {loadError}
+        </p>
+      )}
+      {actionError && (
+        <p className="morning-error-alert" role="alert">
+          {actionError}
+        </p>
+      )}
       {!day && (
         <div className="portfolio-toolbar">
           {!r?.approvedAt && (
@@ -490,8 +533,11 @@ export function MorningPortfolio({ hideEmpty = false }: { hideEmpty?: boolean })
           {r && (!view.close || view.close.difference === null) && (
             <button
               className="button secondary"
-              disabled={busy || !available}
-              onClick={() => void action('close', { id: r.id })}
+              disabled={busy || !available || closeBlocked}
+              aria-describedby={closeWarning ? 'morning-close-warning' : undefined}
+              onClick={() => {
+                if (!closeBlocked) void action('close', { id: r.id });
+              }}
             >
               장후 결과 확인
             </button>
