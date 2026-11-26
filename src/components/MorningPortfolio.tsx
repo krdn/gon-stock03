@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   isIndependentCounter,
   reportApprovalBlocked,
@@ -95,6 +95,7 @@ export function MorningPortfolio({ hideEmpty = false }: { hideEmpty?: boolean })
   const [actionError, setActionError] = useState('');
   const [day, setDay] = useState('');
   const [version, setVersion] = useState(0);
+  const prevReportIdRef = useRef<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     if (available)
@@ -103,9 +104,16 @@ export function MorningPortfolio({ hideEmpty = false }: { hideEmpty?: boolean })
           if (!r.ok) throw new Error();
           const data: View = await r.json();
           if (!controller.signal.aborted) {
+            const prevReportId = prevReportIdRef.current;
+            const nextReportId = data.report?.id ?? null;
+            prevReportIdRef.current = nextReportId;
             setView(data);
             setLoaded(true);
             setLoadError('');
+            // 빈 상태(!r)에서 새 보고서가 수신되거나 보고서가 바뀌면 이전 액션 오류를 초기화한다.
+            if (nextReportId && nextReportId !== prevReportId) {
+              setActionError('');
+            }
           }
         })
         .catch(() => {
@@ -175,6 +183,7 @@ export function MorningPortfolio({ hideEmpty = false }: { hideEmpty?: boolean })
               setLoaded(false);
               setLoadError('');
               setActionError('');
+              prevReportIdRef.current = null;
               setView({ report: null, signals: [] });
             }}
           >

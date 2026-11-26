@@ -317,13 +317,16 @@ function closeWarningFixture(overrides: Record<string, unknown> = {}) {
   };
 }
 
-test('주말 400 차단 시 오류 원문을 alert로 표시하고 10초 폴링 성공 후에도 유지한다', async ({ page }) => {
+test('주말 400 차단 시 오류 원문을 10초 폴링 후에도 유지하고 새 보고서 수신 시 자동 해제한다', async ({
+  page,
+}) => {
   await page.clock.install();
   const weekendMessage = '주말에는 장전 보고서를 생성하지 않습니다. 평일 공휴일은 현재 차단 대상이 아닙니다.';
   let morningReads = 0;
+  let currentReport: ReturnType<typeof closeWarningFixture> | null = null;
   await page.route('**/api/morning', (route) => {
     morningReads++;
-    return route.fulfill({ json: { report: null, signals: [], closeWarning: null } });
+    return route.fulfill({ json: { report: currentReport, signals: [], closeWarning: null } });
   });
   await page.route('**/api/morning/generate', (route) =>
     route.fulfill({ status: 400, json: { error: weekendMessage } }),
@@ -339,27 +342,42 @@ test('주말 400 차단 시 오류 원문을 alert로 표시하고 10초 폴링 
   await expect(panel).not.toContainText('보고서 상태 미확인');
   await expect(panel).toContainText('저장된 계획이 없어. 장전 자료를 모아 보자.');
 
-  const readsBeforePoll = morningReads;
-  const pollResponse = page.waitForResponse(
+  // 1) 빈 상태(!r)에서 10초 폴링이 성공해도 주말 400 actionError는 유지된다.
+  const readsBeforeEmptyPoll = morningReads;
+  const emptyPoll = page.waitForResponse(
     (res) => res.url().includes('/api/morning') && res.request().method() === 'GET' && res.ok(),
   );
   await page.clock.fastForward(10500);
-  await pollResponse;
-  expect(morningReads).toBeGreaterThan(readsBeforePoll);
-
+  await emptyPoll;
+  expect(morningReads).toBeGreaterThan(readsBeforeEmptyPoll);
   await expect(panel.getByRole('alert')).toContainText(weekendMessage);
   await expect(panel).not.toContainText('보고서 상태 미확인');
+
+  // 2) 화면을 열어 둔 채 새 보고서(r)가 정상 수신되면 이전 actionError가 자동 해제된다.
+  currentReport = closeWarningFixture({ id: 'fixture-next-weekday', day: '2026-11-23', approvedAt: null });
+  const readsBeforeReportPoll = morningReads;
+  const reportPoll = page.waitForResponse(
+    (res) => res.url().includes('/api/morning') && res.request().method() === 'GET' && res.ok(),
+  );
+  await page.clock.fastForward(10500);
+  await reportPoll;
+  expect(morningReads).toBeGreaterThan(readsBeforeReportPoll);
+  await expect(panel.getByRole('region', { name: '서버 규칙 판단' })).toBeVisible();
+  await expect(panel.getByRole('alert')).toHaveCount(0);
 });
 
 test('MISSING_VERIFIED_SESSION 경고 시 자동 마감 호출 없이 장후 결과 확인 버튼을 비활성화한다', async ({
   page,
 }) => {
+  await page.clock.install();
   let closeCalls = 0;
+  let morningReads = 0;
   page.on('request', (req) => {
     if (req.url().includes('/api/morning/close')) closeCalls++;
   });
-  await page.route('**/api/morning', (route) =>
-    route.fulfill({
+  await page.route('**/api/morning', (route) => {
+    morningReads++;
+    return route.fulfill({
       json: {
         report: closeWarningFixture(),
         close: null,
@@ -372,8 +390,8 @@ test('MISSING_VERIFIED_SESSION 경고 시 자동 마감 호출 없이 장후 결
         },
         signals: [],
       },
-    }),
-  );
+    });
+  });
 
   await page.goto('/portfolio');
   const warning = page.locator('.morning-close-warn');
@@ -390,6 +408,16 @@ test('MISSING_VERIFIED_SESSION 경고 시 자동 마감 호출 없이 장후 결
   await expect(closeButton).toBeVisible();
   await expect(closeButton).toBeDisabled();
   await expect(closeButton).toHaveAttribute('aria-describedby', 'morning-close-warning');
+
+  // 10초 폴링이 실제로 경과·재실행된 뒤에도 자동 마감 API 호출이 0건인지 결정론적으로 단언한다.
+  const readsBeforePoll = morningReads;
+  const pollResponse = page.waitForResponse(
+    (res) => res.url().includes('/api/morning') && res.request().method() === 'GET' && res.ok(),
+  );
+  await page.clock.fastForward(10500);
+  await pollResponse;
+  expect(morningReads).toBeGreaterThan(readsBeforePoll);
+  await expect(closeButton).toBeDisabled();
   expect(closeCalls).toBe(0);
 });
 
