@@ -1,11 +1,12 @@
 import { RealtimeStatus } from '../components/RealtimeStatus';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { z } from 'zod';
 import './DataInventory.css';
 import { Badge, Empty, Panel } from '../components/ui';
 import { useWorkbench } from '../context';
-import { addDays, masterDataSchema, type DailyRun, type MasterDataSnapshot, type StoredBar } from '../../shared/market-data';
-import { dailyDetailSchema, dailyRunsSchema } from '../../shared/data-inventory';
+import { addDays, marketDate, masterDataSchema, scopeNotice, type DailyRun, type MasterDataSnapshot, type StoredBar, type SyncRun } from '../../shared/market-data';
+import { dailyDetailSchema, dailyRunsSchema, type SyncInventory } from '../../shared/data-inventory';
 import { freshness } from '../../shared/status';
 
 const date = (value: string) => `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6)}`;
@@ -13,6 +14,104 @@ const kst = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', dateStyle
 const time = (value: string | null) => value ? <time dateTime={value}>{kst.format(new Date(value))} KST</time> : '없음';
 const policy = (run: DailyRun) => run.adjustment === 'adjusted' ? '수정주가' : '원주가';
 const qualityLabels = { pending: '대조 대기', unverified: '달력 미검증', passed: '입력 달력 대조 통과', failed: '입력 달력 불일치' };
+
+const syncRunSchema = z.object({
+  runId: z.string().min(1),
+  trigger: z.enum(['manual', 'post_close']),
+  source: z.string().optional(),
+  targetDate: marketDate,
+  sourceLabel: z.string(),
+  status: z.enum(['running', 'succeeded', 'partial', 'skipped', 'failed', 'interrupted']),
+  reasonCode: z.string().nullable(),
+  calendarSource: z.string(),
+  calendarVerified: z.boolean(),
+  scopeLimit: z.number().int().nonnegative(),
+  totalSymbols: z.number().int().nonnegative(),
+  succeededSymbols: z.number().int().nonnegative(),
+  failedSymbols: z.number().int().nonnegative(),
+  masterRefreshed: z.boolean(),
+  startedAt: z.iso.datetime(),
+  finishedAt: z.iso.datetime().nullable(),
+  summary: z.object({
+    scopeNotice: z.string(),
+    tier1: z.number().int().nonnegative(),
+    tier2: z.number().int().nonnegative(),
+    tier1Truncated: z.boolean(),
+    omitted: z.array(z.string()),
+    halted: z.array(z.string()),
+    mismatch: z.array(z.string()),
+    failures: z.array(z.object({ code: z.string(), reason: z.string() })),
+    message: z.string().optional(),
+  }),
+}) satisfies z.ZodType<SyncRun>;
+
+const syncInventorySchema = z.object({
+  active: syncRunSchema.nullable(),
+  latest: syncRunSchema.nullable(),
+  runs: z.array(syncRunSchema),
+  scopeNotice: z.string().min(1),
+  serverNow: z.iso.datetime(),
+}) satisfies z.ZodType<SyncInventory>;
+
+type SyncRunView = z.infer<typeof syncRunSchema>;
+type SyncInventoryView = z.infer<typeof syncInventorySchema>;
+
+const syncStatusLabels: Record<SyncRun['status'], string> = {
+  running: '동기화 중',
+  succeeded: '완료',
+  partial: '부분 완료',
+  skipped: '스킵',
+  interrupted: '중단',
+  failed: '실패',
+};
+
+const syncWarningStatuses = new Set<SyncRun['status']>(['skipped', 'partial', 'interrupted', 'failed']);
+
+const syncSourceMap: Record<string, '장후 동기화' | '장전 스캔' | '수동 실행'> = {
+  '장후 동기화': '장후 동기화',
+  post_close: '장후 동기화',
+  post_close_sync: '장후 동기화',
+  '장전 스캔': '장전 스캔',
+  morning_scan: '장전 스캔',
+  '수동 실행': '수동 실행',
+  manual: '수동 실행',
+  manual_sync: '수동 실행',
+};
+
+/**
+ * 시세 동기화 실행 레코드의 출처 라벨을 3종 표준 배지 문구로 매핑한다.
+ */
+function resolveSyncSource(run: Pick<SyncRunView, 'sourceLabel' | 'trigger' | 'source'>) {
+  const label = run.sourceLabel.trim();
+  if (label && label in syncSourceMap) return syncSourceMap[label];
+  if (run.source && run.source in syncSourceMap) return syncSourceMap[run.source];
+  if (run.trigger in syncSourceMap) return syncSourceMap[run.trigger];
+  return label || '수동 실행';
+}
+
+function syncSourceVariant(label: string) {
+  if (label === '장후 동기화') return 'post-close';
+  if (label === '장전 스캔') return 'morning-scan';
+  return 'manual';
+}
+
+/**
+ * 서버 기준 시각(sync.serverNow 또는 워크벤치 serverNow) 대비 경과 시간을 계산한다.
+ */
+function syncFreshness(timestamp: string | null, serverNowIso: string | undefined, fallbackServerNowMs: number) {
+  if (!timestamp) return null;
+  const targetMs = Date.parse(timestamp);
+  const refMs = serverNowIso ? Date.parse(serverNowIso) : fallbackServerNowMs;
+  if (!Number.isFinite(targetMs) || !Number.isFinite(refMs)) return null;
+  const diffMs = Math.max(0, refMs - targetMs);
+  const minutes = Math.floor(diffMs / 60_000);
+  const stale = diffMs >= 7 * 86_400_000;
+  if (minutes < 1) return { label: '방금 전', stale };
+  if (minutes < 60) return { label: `${minutes}분 전`, stale };
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return { label: `${hours}시간 전`, stale };
+  return { label: `${Math.floor(hours / 24)}일 전`, stale };
+}
 
 function DailyDetail({ id, revision, runs, onSettled }: {
   id: string; revision: number; runs: DailyRun[]; onSettled: (id: string | null) => void;
@@ -63,7 +162,7 @@ function DailyDetail({ id, revision, runs, onSettled }: {
         <div><dt>최근 수집 시도</dt><dd>{time(run.status.observedAt)}</dd></div>
         <div><dt>이번 기록 전체 성공</dt><dd>{time(run.status.lastSuccessAt)}</dd></div>
         <div><dt>동일 종목·정책 마지막 전체 성공</dt><dd data-testid="daily-last-success">{time(lastSuccess ?? null)}<small>다른 수집 ID·요청 기간의 성공일 수 있습니다.</small></dd></div>
-        <div><dt>출처·수집 기준일</dt><dd>KIS 모의 REST · {date(run.captureDate)}<small>현재 시세·PIT 인증 아님</small></dd></div>
+        <div><dt>출처·수집 기준일</dt><dd><span className="daily-source-row"><span className="sync-source-chip sync-source-chip--manual" data-testid="daily-source-badge">수동 실행</span><span>KIS 모의 REST · {date(run.captureDate)}</span></span><small data-testid="daily-scope-notice">{scopeNotice}</small><small>현재 시세·PIT 인증 아님</small></dd></div>
         <div><dt>수집 ID</dt><dd>{run.id}</dd></div>
       </dl></details>
       <details><summary>저장 거래일 펼치기</summary>{detail.bars.length ? <div className="table-scroll"><table><thead><tr><th>거래일</th><th>종가</th><th>거래량</th><th>수집 시각 (KST)</th></tr></thead><tbody>{detail.bars.map(bar => <tr key={bar.date}><td>{date(bar.date)}</td><td>{bar.close.toLocaleString('ko-KR')}</td><td>{bar.volume.toLocaleString('ko-KR')}</td><td>{time(bar.collectedAt)}</td></tr>)}</tbody></table></div> : <p>저장된 거래일이 없습니다. 합성 봉이나 0원으로 채우지 않습니다.</p>}</details>
@@ -74,15 +173,16 @@ function DailyDetail({ id, revision, runs, onSettled }: {
 }
 
 export function DataStatus() {
-  const { state, server, available, status } = useWorkbench();
+  const { state, server, available, status, serverNow } = useWorkbench();
   const { search, hash } = useLocation();
   const params = new URLSearchParams(search);
   const navigate = useNavigate();
   const [master, setMaster] = useState<MasterDataSnapshot | null>(null), [runs, setRuns] = useState<DailyRun[] | null>(null);
-  const [masterError, setMasterError] = useState(''), [runsError, setRunsError] = useState('');
+  const [sync, setSync] = useState<SyncInventoryView | null>(null);
+  const [masterError, setMasterError] = useState(''), [runsError, setRunsError] = useState(''), [syncError, setSyncError] = useState('');
   const [loading, setLoading] = useState(true), [revision, setRevision] = useState(0);
   useEffect(() => {
-    const controller = new AbortController(); setLoading(true); setMasterError(''); setRunsError('');
+    const controller = new AbortController(); setLoading(true); setMasterError(''); setRunsError(''); setSyncError('');
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]);
     void Promise.allSettled([
       (async () => {
@@ -92,6 +192,10 @@ export function DataStatus() {
       (async () => {
         try { const response = await fetch('/api/data/daily', { signal }); if (!response.ok) throw new Error(); const next = dailyRunsSchema.parse(await response.json()); if (!controller.signal.aborted) setRuns(next.runs); }
         catch { if (!controller.signal.aborted) setRunsError('일봉 목록 조회 실패'); }
+      })(),
+      (async () => {
+        try { const response = await fetch('/api/data/sync?limit=5', { signal }); if (!response.ok) throw new Error(); const next = syncInventorySchema.parse(await response.json()); if (!controller.signal.aborted) setSync(next); }
+        catch { if (!controller.signal.aborted) setSyncError('시세 동기화 조회 실패'); }
       })(),
     ]).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
@@ -104,7 +208,7 @@ export function DataStatus() {
   const alignedHash = useRef('');
   useEffect(() => {
     if (!hash) { alignedHash.current = ''; return; }
-    if (loading || waitingForDetail || alignedHash.current === hash || !['#inventory-master', '#inventory-daily', '#inventory-demo'].includes(hash)) return;
+    if (loading || waitingForDetail || alignedHash.current === hash || !['#inventory-sync', '#inventory-master', '#inventory-daily', '#inventory-demo'].includes(hash)) return;
     const target = document.getElementById(hash.slice(1));
     if (!target) return;
     const frame = requestAnimationFrame(() => {
@@ -122,11 +226,60 @@ export function DataStatus() {
     next.set('run', id);
     navigate({ search: next.toString(), hash });
   }
+  const displayRun = sync?.active ?? sync?.latest ?? null;
+  const displaySource = displayRun ? resolveSyncSource(displayRun) : null;
+  const displayWarning = displayRun !== null && syncWarningStatuses.has(displayRun.status);
+  const displayTimestamp = displayRun ? (displayRun.finishedAt ?? displayRun.startedAt) : null;
+  const displayFreshness = displayRun ? syncFreshness(displayTimestamp, sync?.serverNow, serverNow) : null;
+  const recentRuns = sync?.runs.slice(0, 5) ?? [];
   return <div className="data-inventory">
     <div className="inventory-tools"><nav aria-label="저장 자료 바로가기">
-      <a href="#inventory-master">마스터</a><a href="#inventory-daily">KIS 일봉</a><a href="#inventory-demo">DEMO 합성</a>
+      <a href="#inventory-sync">시세 동기화</a><a href="#inventory-master">마스터</a><a href="#inventory-daily">KIS 일봉</a><a href="#inventory-demo">DEMO 합성</a>
     </nav><button className="button secondary" disabled={loading} onClick={() => setRevision(value => value + 1)}>저장 상태 새로고침</button></div>
-    <p className="inventory-caption" role="status">{loading ? (master?.sources.length || runs?.length ? '저장 상태 조회 중 · 이전 표시는 최신 확인 전입니다.' : '저장 상태 조회 중') : '새로고침은 저장 자료만 다시 읽습니다.'}</p>
+    <p className="inventory-caption" role="status">{loading ? (master?.sources.length || runs?.length || sync ? '저장 상태 조회 중 · 이전 표시는 최신 확인 전입니다.' : '저장 상태 조회 중') : '새로고침은 저장 자료만 다시 읽습니다.'}</p>
+    <section id="inventory-sync" tabIndex={-1} aria-label="최근 시세 동기화" data-testid="sync-summary"><Panel title="최근 시세 동기화" eyebrow="4304 SINGLE API · KIS PAPER">
+      <p className="sync-scope-notice" data-testid="sync-scope-notice">{sync?.scopeNotice ?? scopeNotice}</p>
+      {!sync && loading && !syncError && <p role="status">시세 동기화 이력 확인 중</p>}
+      {syncError && <p role="alert" className="soft-note">{syncError}{sync ? ' · 이전 표시는 최신 확인값이 아닙니다.' : ' · 저장 상태 새로고침으로 다시 확인하세요.'}</p>}
+      {displayRun && displaySource && <>
+        <div className="sync-summary-head">
+          <span className={`sync-source-chip sync-source-chip--${syncSourceVariant(displaySource)}`} data-testid="sync-source-badge">{displaySource}</span>
+          <Badge tone={displayRun.status === 'succeeded' ? 'teal' : 'neutral'}>{syncStatusLabels[displayRun.status]}</Badge>
+          <span className="muted">기준일 {date(displayRun.targetDate)}</span>
+          {displayRun.masterRefreshed && <span className="muted">마스터 갱신</span>}
+        </div>
+        {displayWarning && displayTimestamp && <div className="sync-warning-badge" data-testid="sync-warning-badge" role="status">
+          <strong>{syncStatusLabels[displayRun.status]}</strong>
+          {displayRun.reasonCode && <code>{displayRun.reasonCode}</code>}
+          <span>발생 시각 <time dateTime={displayTimestamp} data-testid="sync-warning-time">{kst.format(new Date(displayTimestamp))} KST</time></span>
+          {displayRun.summary.message && <span className="sync-warning-message">{displayRun.summary.message}</span>}
+        </div>}
+        <dl className="data-facts sync-facts">
+          <div><dt>대상·통과 종목</dt><dd data-testid="sync-symbol-counts"><strong>{displayRun.totalSymbols}종목 중 {displayRun.succeededSymbols}종목 통과</strong><small>상한 {displayRun.scopeLimit}종목{displayRun.failedSymbols > 0 ? ` · 실패 ${displayRun.failedSymbols}종목` : ''}{displayRun.summary.tier1Truncated ? ` · Tier 1 제외 ${displayRun.summary.omitted.length}종목` : ''}</small></dd></div>
+          <div><dt>{displayRun.finishedAt ? '완료·기록 시각' : '시작 시각'}</dt><dd>{time(displayTimestamp)}{displayFreshness && <small>서버 기준 {displayFreshness.label}{displayFreshness.stale ? ' · 7일 신선도 초과' : ''}</small>}</dd></div>
+          <div><dt>달력 검증</dt><dd>{displayRun.calendarVerified ? '공식 달력 교차검증 통과' : '달력 미검증'}{displayRun.summary.mismatch.length > 0 && <small>불일치 {displayRun.summary.mismatch.length}일</small>}</dd></div>
+          <div><dt>수집 구성</dt><dd>Tier 1 {displayRun.summary.tier1}종목 · Tier 2 {displayRun.summary.tier2}종목<small>{displayRun.masterRefreshed ? '마스터 원자적 갱신 포함' : '마스터 미갱신'}</small></dd></div>
+        </dl>
+      </>}
+      {sync && !displayRun && !syncError && !loading && <Empty title="기록된 시세 동기화가 없습니다">4304 서버에서 수동 또는 장후 동기화를 실행하면 최근 실행 요약과 출처가 표시됩니다.</Empty>}
+      {recentRuns.length > 0 && <details className="sync-runs-details">
+        <summary>최근 동기화 이력 ({recentRuns.length}건)</summary>
+        <ul className="sync-runs-list" data-testid="sync-runs-list">
+          {recentRuns.map(item => {
+            const itemSource = resolveSyncSource(item);
+            const itemTime = item.finishedAt ?? item.startedAt;
+            return <li key={item.runId}>
+              <span className={`sync-source-chip sync-source-chip--${syncSourceVariant(itemSource)}`} data-testid="sync-run-source-badge">{itemSource}</span>
+              <strong>{syncStatusLabels[item.status]}</strong>
+              {item.reasonCode && <code>{item.reasonCode}</code>}
+              <span>기준일 {date(item.targetDate)}</span>
+              <span>{item.totalSymbols}종목 중 {item.succeededSymbols}종목 통과</span>
+              <span className="muted">{time(itemTime)}</span>
+            </li>;
+          })}
+        </ul>
+      </details>}
+    </Panel></section>
     <div className="inventory-layout">
       <section id="inventory-master" tabIndex={-1} aria-label="공개 마스터 상태"><Panel title="국내 주식·ETF 마스터" eyebrow="KIS PUBLIC MASTER">
         {!master && loading && !masterError && <p role="status">저장 마스터 확인 중</p>}
