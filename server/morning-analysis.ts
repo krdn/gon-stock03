@@ -134,8 +134,10 @@ export async function collectPublicDocuments(
 ): Promise<{ docs: PublicDocument[]; coverage: MorningAnalysisCoverage }> {
   const selected = new Map<string, MorningItem>();
   const seenUrls = new Set<string>();
-  const priority = (n: MorningItem) =>
-    Number(/earnings|financial results|projection|inflation|monetary policy|실적|전망|금리/i.test(n.title));
+  const priority = (n: MorningItem) => {
+    if (sourceInstitutionId(n) === 'www.bok.or.kr' && /통화정책방향|기준금리.{0,10}(?:결정|인상|인하|동결|유지)/.test(n.title)) return 2;
+    return Number(/earnings|financial results|projection|inflation|monetary policy|실적|전망|금리/i.test(n.title));
+  };
   for (const item of [...items].sort((a, b) => priority(b) - priority(a))) {
     let url: URL;
     try {
