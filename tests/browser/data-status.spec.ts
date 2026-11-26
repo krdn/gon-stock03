@@ -54,6 +54,15 @@ async function setup(page: Page, runs = [run()], sync: SyncInventory = syncInven
   });
 }
 
+/**
+ * 초기 /api/state 응답에 따른 Routes key 전환(리마운트)과 DataStatus 초기 조회 완료를 기다린다.
+ */
+async function waitForDataPageSettled(page: Page) {
+  await expect(page.getByRole('status', { name: '긴급정지 상태' })).toContainText('긴급정지 꺼짐');
+  await expect(page.getByRole('region', { name: 'DEMO 합성 데이터' })).toContainText('추가 재생 0회');
+  await expect(page.getByRole('button', { name: '저장 상태 새로고침', exact: true })).toBeEnabled();
+}
+
 test('data inventory separates sources and shows partial ranges, stored trading days and preserved success', async ({ page }, testInfo) => {
   const previous = run({ id: '96b3f123-f72e-4d77-9091-72a057ce26e4', nextDate: null, coverageComplete: true,
     status: { ...emptyStatus('kis-paper'), phase: 'ready', complete: true, pages: 2, lastSuccessAt: successAt, observedAt: successAt },
@@ -103,7 +112,8 @@ test('data quality distinguishes missing candidates, calendar mismatch and empty
 });
 
 test('data refresh failures preserve previous data and do not become empty or fresh', async ({ page }) => {
-  await setup(page); await page.goto('/data'); const detail = page.getByRole('region', { name: '일봉 수집 상세' }); await expect(detail).toContainText('저장 2봉');
+  await setup(page); await page.goto('/data'); await waitForDataPageSettled(page);
+  const detail = page.getByRole('region', { name: '일봉 수집 상세' }); await expect(detail).toContainText('저장 2봉');
   await page.route('**/api/data/**', route => route.fulfill({ status: 503, body: 'unavailable' }));
   await page.getByRole('button', { name: '저장 상태 새로고침', exact: true }).click();
   await expect(page.getByRole('alert').filter({ hasText: '일봉 목록 조회 실패' })).toContainText('이전 표시');
@@ -117,7 +127,7 @@ test('data refresh failures preserve previous data and do not become empty or fr
 });
 
 test('data empty store and malformed responses are explicit and do not crash the page', async ({ page }) => {
-  await setup(page, []); await page.goto('/data');
+  await setup(page, []); await page.goto('/data'); await waitForDataPageSettled(page);
   await expect(page.getByText('저장된 KIS 일봉이 없습니다', { exact: true })).toBeVisible();
   await page.route('**/api/data/daily', route => route.fulfill({ json: { runs: [{ id: 'bad' }] } }));
   await page.getByRole('button', { name: '저장 상태 새로고침', exact: true }).click();
@@ -142,7 +152,8 @@ test('data run selection ignores delayed detail from the previous selection', as
 });
 
 test('a successful detail refresh advances last success even when the run list refresh fails', async ({ page }) => {
-  await setup(page); await page.goto('/data'); const detail = page.getByRole('region', { name: '일봉 수집 상세' });
+  await setup(page); await page.goto('/data'); await waitForDataPageSettled(page);
+  const detail = page.getByRole('region', { name: '일봉 수집 상세' });
   await expect(detail).toContainText('저장 2봉');
   const completed = run({ nextDate: null, coverageComplete: true, status: { ...run().status, phase: 'ready', complete: true, error: null, lastSuccessAt: successAt }, quality: { ...run().quality, state: 'passed' } });
   await page.route('**/api/data/daily', route => route.fulfill({ status: 503, body: 'unavailable' }));
@@ -303,6 +314,7 @@ test('market data sync succeeded summary renders source badge, symbol counts, sc
   const posts: string[] = [];
   page.on('request', req => { if (req.method() === 'POST') posts.push(req.url()); });
   await page.goto('/data');
+  await waitForDataPageSettled(page);
   const summary = page.getByTestId('sync-summary');
   await expect(summary.getByTestId('sync-source-badge')).toHaveText('장후 동기화');
   await expect(summary.getByTestId('sync-symbol-counts')).toContainText('30종목 중 30종목 통과');
@@ -377,6 +389,7 @@ test('sync warning badge covers skipped/partial/interrupted/failed and maps all 
 
   await setup(page, [run()], syncInventory({ latest: skipped, runs: [skipped, partial, interrupted, failed] }));
   await page.goto('/data');
+  await waitForDataPageSettled(page);
   const summary = page.getByTestId('sync-summary');
   await expect(summary.getByTestId('sync-scope-notice')).toHaveText(scopeNotice);
   await expect(summary.getByTestId('sync-source-badge')).toHaveText('장후 동기화');
@@ -419,6 +432,7 @@ test('sync handles 503 fallback, malformed JSON, empty history, mobile 390px lay
   const succeeded = syncRun({ totalSymbols: 30, succeededSymbols: 30 });
   await setup(page, [run()], syncInventory({ latest: succeeded, runs: [succeeded] }));
   await page.goto('/data');
+  await waitForDataPageSettled(page);
   const summary = page.getByTestId('sync-summary');
   await expect(summary.getByTestId('sync-symbol-counts')).toContainText('30종목 중 30종목 통과');
 
@@ -447,4 +461,180 @@ test('sync handles 503 fallback, malformed JSON, empty history, mobile 390px lay
   await jump.focus();
   await jump.press('Enter');
   await expect(page.getByRole('region', { name: '최근 시세 동기화', exact: true })).toBeFocused();
+});
+
+test('DailyDetail renders triggerSource badges for post_close_sync, manual_sync, manual and omitted', async ({ page }) => {
+  const postCloseRun = run({
+    id: '10000000-0000-4000-8000-000000000001',
+    code: '005930',
+    triggerSource: 'post_close_sync',
+    syncRunId: '11111111-1111-4111-8111-111111111111',
+  });
+  const manualSyncRun = run({
+    id: '10000000-0000-4000-8000-000000000002',
+    code: '000660',
+    triggerSource: 'manual_sync',
+    syncRunId: '22222222-2222-4222-8222-222222222222',
+  });
+  const manualRun = run({
+    id: '10000000-0000-4000-8000-000000000003',
+    code: '035420',
+    triggerSource: 'manual',
+  });
+  const legacyRun = run({
+    id: '10000000-0000-4000-8000-000000000004',
+    code: '069500',
+  });
+
+  await setup(page, [postCloseRun, manualSyncRun, manualRun, legacyRun]);
+  await page.goto('/data');
+  await waitForDataPageSettled(page);
+  const detail = page.getByRole('region', { name: '일봉 수집 상세' });
+  const picker = page.getByRole('combobox', { name: '일봉 수집 기록' });
+
+  const cases = [
+    { id: postCloseRun.id, label: '장후 동기화', cls: /sync-source-chip--post-close/ },
+    { id: manualSyncRun.id, label: '수동 실행', cls: /sync-source-chip--manual/ },
+    { id: manualRun.id, label: '수동 실행', cls: /sync-source-chip--manual/ },
+    { id: legacyRun.id, label: '수동 실행', cls: /sync-source-chip--manual/ },
+  ];
+
+  for (const item of cases) {
+    await picker.selectOption(item.id);
+    await expect(detail.locator('.toolbar .badge')).toHaveCount(3);
+    await detail.getByText('수집 시각·출처·기록 ID', { exact: true }).click();
+    const badge = detail.getByTestId('daily-source-badge');
+    await expect(badge).toHaveText(item.label);
+    await expect(badge).toHaveClass(item.cls);
+    await expect(detail.getByTestId('daily-scope-notice')).toHaveText(scopeNotice);
+  }
+});
+
+test('morningScan summary renders with badge, targetDate, counts, KST time and stays visible when displayRun is absent', async ({ page }) => {
+  const succeeded = syncRun({ totalSymbols: 30, succeededSymbols: 30 });
+  const scanWithIncomplete = {
+    source: 'morning_scan' as const,
+    targetDate: '20261112',
+    checkedAt: '2026-11-12T23:35:00.000Z',
+    targetCount: 30,
+    passedCount: 27,
+    incompleteCount: 3,
+  };
+  await setup(page, [run()], syncInventory({ morningScan: scanWithIncomplete, latest: succeeded, runs: [succeeded] }));
+  await page.goto('/data');
+  await waitForDataPageSettled(page);
+
+  const summary = page.getByTestId('sync-summary');
+  const scanBox = summary.getByTestId('morning-scan-summary');
+  await expect(scanBox).toBeVisible();
+  const scanBadge = scanBox.getByTestId('morning-scan-source-badge');
+  await expect(scanBadge).toHaveText('장전 스캔');
+  await expect(scanBadge).toHaveClass(/sync-source-chip--morning-scan/);
+  await expect(scanBox).toContainText('기준일 2026-11-12');
+  await expect(scanBox).toContainText('30종목 중 27종목 통과');
+  await expect(scanBox).toContainText('미완료 3종목');
+  await expect(scanBox.locator('time')).toHaveAttribute('datetime', '2026-11-12T23:35:00.000Z');
+  await expect(scanBox.locator('time')).toHaveText('2026-11-13 08:35:00 KST');
+
+  const scanAllPassed = {
+    source: 'morning_scan' as const,
+    targetDate: '20261113',
+    checkedAt: '2026-11-13T00:05:00.000Z',
+    targetCount: 20,
+    passedCount: 20,
+    incompleteCount: 0,
+  };
+  await page.route('**/api/data/sync*', route => route.fulfill({
+    json: syncInventory({ morningScan: scanAllPassed, active: null, latest: null, runs: [] }),
+  }));
+  await page.getByRole('button', { name: '저장 상태 새로고침', exact: true }).click();
+  await expect(scanBox).toBeVisible();
+  await expect(scanBadge).toHaveText('장전 스캔');
+  await expect(scanBox).toContainText('기준일 2026-11-13');
+  await expect(scanBox).toContainText('20종목 중 20종목 통과');
+  await expect(scanBox).not.toContainText('미완료');
+  await expect(scanBox.locator('time')).toHaveText('2026-11-13 09:05:00 KST');
+  await expect(summary).toContainText('기록된 시세 동기화가 없습니다');
+});
+
+test('running active sync coexists with previous warning block without false active failure and stays overflow-free on 390px mobile', async ({ page }, testInfo) => {
+  const running = syncRun({
+    runId: '66666666-6666-4666-8666-666666666666',
+    trigger: 'manual',
+    sourceLabel: '수동 실행',
+    status: 'running',
+    reasonCode: null,
+    totalSymbols: 30,
+    succeededSymbols: 5,
+    finishedAt: null,
+  });
+  const failedLatest = syncRun({
+    runId: '55555555-5555-4555-8555-555555555555',
+    trigger: 'post_close',
+    sourceLabel: '장후 동기화',
+    status: 'failed',
+    reasonCode: 'REFERENCE_UNAVAILABLE_LONG_REASON_CODE',
+    totalSymbols: 30,
+    succeededSymbols: 0,
+    failedSymbols: 30,
+    startedAt: '2026-11-13T06:05:00.000Z',
+    finishedAt: '2026-11-13T06:10:00.000Z',
+    summary: { ...syncRun().summary, message: '기준 종목 069500 일봉 조회에 실패했습니다.' },
+  });
+  const morningScan = {
+    source: 'morning_scan' as const,
+    targetDate: '20261113',
+    checkedAt: '2026-11-12T23:35:00.000Z',
+    targetCount: 30,
+    passedCount: 28,
+    incompleteCount: 2,
+  };
+  await setup(page, [run({ triggerSource: 'post_close_sync' })], syncInventory({
+    morningScan,
+    active: running,
+    latest: failedLatest,
+    runs: [running, failedLatest],
+  }));
+  await page.goto('/data');
+  await waitForDataPageSettled(page);
+
+  const summary = page.getByTestId('sync-summary');
+  await expect(summary.getByTestId('sync-source-badge')).toHaveText('수동 실행');
+  await expect(summary).toContainText('동기화 중');
+  await expect(summary.getByTestId('sync-warning-badge')).toHaveCount(0);
+
+  const prevWarning = summary.getByTestId('sync-previous-warning');
+  await expect(prevWarning).toBeVisible();
+  await expect(prevWarning).toContainText('직전 실행');
+  await expect(prevWarning).toContainText('실패');
+  await expect(prevWarning).toContainText('REFERENCE_UNAVAILABLE_LONG_REASON_CODE');
+  await expect(prevWarning.locator('time')).toHaveAttribute('datetime', '2026-11-13T06:10:00.000Z');
+  await expect(prevWarning.locator('time')).toHaveText('2026-11-13 15:10:00 KST');
+  await expect(prevWarning).toContainText('기준 종목 069500 일봉 조회에 실패했습니다.');
+
+  const detail = page.getByRole('region', { name: '일봉 수집 상세' });
+  await detail.getByText('수집 시각·출처·기록 ID', { exact: true }).click();
+  await expect(detail.getByTestId('daily-source-badge')).toHaveText('장후 동기화');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('sync-issue-221-desktop.png'), fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+  const jump = page.getByRole('link', { name: '시세 동기화', exact: true });
+  await jump.focus();
+  await jump.press('Enter');
+  await expect(page.getByRole('region', { name: '최근 시세 동기화', exact: true })).toBeFocused();
+  await page.screenshot({ path: testInfo.outputPath('sync-issue-221-mobile.png'), fullPage: true });
+
+  const succeededLatest = syncRun({
+    runId: '77777777-7777-4777-8777-777777777777',
+    status: 'succeeded',
+    reasonCode: null,
+  });
+  await page.route('**/api/data/sync*', route => route.fulfill({
+    json: syncInventory({ active: running, latest: succeededLatest, runs: [running, succeededLatest] }),
+  }));
+  await page.getByRole('button', { name: '저장 상태 새로고침', exact: true }).click();
+  await expect(summary.getByTestId('sync-previous-warning')).toHaveCount(0);
+  await expect(summary.getByTestId('sync-warning-badge')).toHaveCount(0);
 });
