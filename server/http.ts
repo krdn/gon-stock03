@@ -1,3 +1,5 @@
+import { MarketDataSync } from './market-sync.ts';
+import { scopeNotice } from '../shared/market-data.ts';
 import { analyzeCollectedDocuments, collectPublicDocuments } from './morning-analysis.ts';
 import {
   AFTER_OPEN_BLOCK_REASON,
@@ -46,9 +48,10 @@ function json(res: ServerResponse, status: number, data: unknown) {
 export function makeServer(store: Store, kis = KisClient.fromEnvironment(), ports = [4303, 4304], approval?: PaperApproval, realtimeOptions?: { config?: RealtimeConfig; connect?: SocketFactory; now?: () => number }, contract?: StrategyContract, checkInstrument?: () => void) {
   const paper = new PaperBroker(store, kis, approval, contract, checkInstrument);
   const realtime = new Realtime(store, paper, realtimeOptions?.config ?? Realtime.configuration(paper.timingPolicy?.exchangeNotice), realtimeOptions?.connect, realtimeOptions?.now);
-  const market = new MarketData(store, kis);
+  const market: MarketData = new MarketData(store, kis, fetch, (): boolean => sync.running);
   const account = () => (kis.configured() ? kis.accountFingerprint() : 'unconfigured');
   const scan = new MorningScan(store, kis, market);
+  const sync = new MarketDataSync(store,kis,market,()=>scan.state.running);
   const morningNow = realtimeOptions?.now ?? (() => Date.now());
   let generating = false;
   async function resolveCarryPrevious(day: string) {
@@ -243,6 +246,10 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         json(res, 200, { audit: store.paperAudit(id) }); return;
       }
       if (path === '/api/data/master' && req.method === 'GET') { json(res, 200, store.masterData()); return; }
+      if (path === '/api/data/sync' && req.method === 'GET') {
+        const limit = z.coerce.number().int().min(1).max(100).parse(new URL(req.url!, 'http://localhost').searchParams.get('limit') ?? 10);
+        json(res,200,sync.inventory(limit)); return;
+      }
       if (path === '/api/data/daily' && req.method === 'GET') {
         const rawLimit = new URL(req.url!, 'http://127.0.0.1').searchParams.get('limit');
         const limit = rawLimit === null ? undefined : z.string().regex(/^\d+$/).transform(Number).pipe(z.int().min(1).max(500)).parse(rawLimit);
@@ -262,6 +269,14 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         if (req.method !== 'POST') { json(res, 405, { error: '허용하지 않는 요청 방식입니다.' }); return; }
         if (req.headers['x-workbench'] !== 'local' || !req.headers['content-type']?.startsWith('application/json')) { json(res, 403, { error: '워크스페이스 요청 검증에 실패했습니다.' }); return; }
         const input = await body(req, path === '/api/events/read' ? 128000 : path === '/api/data/daily' ? 65536 : 16384);
+        if (path === '/api/data/sync') {
+          if (approval || contract) { json(res,409,{reasonCode:'DEDICATED_RUN_ACTIVE',error:'전용 실행 중에는 동기화할 수 없습니다.',scopeNotice}); return; }
+          const result = sync.start(input);
+          json(res,result.code,result.body); return;
+        }
+        if (sync.running && ['/api/morning/scan','/api/data/master/refresh','/api/data/daily/step'].includes(path)) {
+          json(res,409,{reasonCode:'COLLECTION_ACTIVE',error:'장후 시세 동기화가 진행 중입니다.',scopeNotice}); return;
+        }
         const eventId = z.uuid().safeParse((input as { requestId?: unknown; id?: unknown } | null)?.requestId ?? (input as { id?: unknown } | null)?.id);
         if (eventId.success) eventRequestId = eventId.data;
         if ((approval || contract) && (path === '/api/risk' || path === '/api/kis/quantity-setting')) {
@@ -477,6 +492,9 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       const type = ({ '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' } as Record<string, string>)[extname(file)] ?? 'application/octet-stream';
       res.writeHead(200, { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' }); res.end(req.method === 'HEAD' ? undefined : bytes);
     } catch (error) {
+      if (path === '/api/data/sync' && error instanceof Error && 'code' in error && !(error instanceof ZodError)) {
+        json(res,503,{error:'동기화 저장소를 확인하세요.'}); return;
+      }
       if (path.startsWith('/api/trading-settings') && error instanceof Error && 'code' in error && !(error instanceof ZodError)) {
         json(res, 500, { error: '매매 설정 원장이나 고정 파일을 처리하지 못했습니다. 저장 상태를 다시 확인하세요.' }); return;
       }

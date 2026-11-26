@@ -1,3 +1,5 @@
+import { krxSessionNotice } from '../shared/krx-calendar.ts';
+import { afterCloseBuffer, exchangeNotice } from '../shared/trading-policy.ts';
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -71,11 +73,29 @@ function quality(run: DailyRun, dates: string[]): DailyRun['quality'] {
   return { ...run.quality, state: 'unverified', candidateMissingDates };
 }
 
+function configuredExchangeNotice() {
+  const raw = process.env.KRX_EXCHANGE_NOTICE;
+  if (raw === undefined) return undefined;
+  try { return exchangeNotice.parse(JSON.parse(raw)); }
+  catch { throw Error('KRX_EXCHANGE_NOTICE의 날짜·세션 시각·공식 출처를 확인하세요.'); }
+}
+
 export class MarketData {
   private stepping = false;
   private refreshing?: Promise<ReturnType<Store['masterData']>>;
-  constructor(private store: Store, private kis: KisClient, private transport: typeof fetch = fetch) {}
+  constructor(private store: Store, private kis: KisClient, private transport: typeof fetch = fetch, private syncRunning = () => false) {}
+  readonly notice = configuredExchangeNotice();
+  noticeFor(day: string) {
+    return this.notice?.date === day ? this.notice : krxSessionNotice(day);
+  }
+  get busy() { return this.stepping || !!this.refreshing; }
+  async syncMastersAtomic(syncId?:string) {
+    const snapshots: MasterSnapshot[] = [];
+    for (const exchange of ['KOSPI','KOSDAQ'] as const) snapshots.push(await downloadMaster(exchange,this.transport));
+    this.store.saveMasters(snapshots,syncId);
+  }
   refreshMaster() {
+    if (this.syncRunning()) throw Error('장후 시세를 동기화하고 있습니다.');
     if (this.refreshing) return this.refreshing;
     this.refreshing = this.loadMasters().finally(() => { this.refreshing = undefined; });
     return this.refreshing;
@@ -88,9 +108,7 @@ export class MarketData {
     });
     this.store.saveMasterStates(states);
     try {
-      const snapshots: MasterSnapshot[] = [];
-      for (const exchange of ['KOSPI', 'KOSDAQ'] as const) snapshots.push(await downloadMaster(exchange, this.transport));
-      this.store.saveMasters(snapshots);
+      await this.syncMastersAtomic();
     } catch {
       this.store.saveMasterStates(states.map(state => ({ ...state, phase: 'error', observedAt: new Date().toISOString(), error: '두 시장의 마스터 수집·검증·저장에 실패해 전체 교체를 보류했습니다. 이전 성공 자료를 보존했습니다. 다시 수집하세요.' })));
     }
@@ -98,7 +116,8 @@ export class MarketData {
   }
   start(input: unknown) {
     const config = dailyInput.parse(input);
-    if (config.to >= koreaDate()) throw new Error('일봉 수집 종료일은 서울 기준 오늘보다 이전이어야 합니다.');
+    const today = koreaDate();
+    if (config.to > today || (config.to === today && !afterCloseBuffer(today,Date.now(),this.notice))) throw new Error('일봉 수집 종료일은 서울 기준 오늘 마감 허용 시각 이후에만 수집할 수 있습니다.');
     if (config.calendar) config.calendar.dates.sort();
     const previous = this.store.dailyRun(config.id);
     if (previous) {
@@ -111,7 +130,11 @@ export class MarketData {
       quality: { state: 'pending', missingDates: [], unexpectedDates: [], candidateMissingDates: [], duplicates: 0, emptyWindows: [] } };
     this.store.saveDaily(run); return run;
   }
-  async step(id: string) {
+  async step(id: string, sync?: {
+    syncId:string;
+    source: 'post_close_sync'|'manual_sync';
+    calendar: (page: DailyPrice[]) => DailyInput['calendar'];
+  }) {
     const run = this.store.dailyRun(id);
     if (!run) throw new Error('수집 ID를 찾지 못했습니다.');
     if (this.stepping) throw new Error('다른 일봉 구간을 수집 중입니다. 완료 후 재개하세요.');
@@ -135,10 +158,11 @@ export class MarketData {
       const bars = [...unique.values()].sort((a, b) => a.date.localeCompare(b.date)).map(row => ({ ...row, code: run.code, adjustment: run.adjustment, source: 'kis-rest' as const, collectedAt: now }));
       const next: DailyRun = { ...run, nextDate: to === run.to ? null : addDays(to, 1), coverageComplete: to === run.to,
         quality: { ...run.quality, duplicates: run.quality.duplicates + duplicates, emptyWindows: bars.length ? run.quality.emptyWindows : [...run.quality.emptyWindows, { from, to }] } };
+      if (sync) next.calendar = sync.calendar([...unique.values()]);
       next.quality = quality(next, [...this.store.dailyBars(id).map(bar => bar.date), ...bars.map(bar => bar.date)]);
       const complete = next.coverageComplete && next.quality.state === 'passed';
       next.status = { ...run.status, phase: complete ? 'ready' : 'partial', complete, observedAt: now, lastSuccessAt: complete ? now : null, error: null, pages: run.status.pages + 1 };
-      this.store.saveDaily(next, bars); return next;
+      this.store.saveDaily(next, bars, sync && next.calendar ? {syncId:sync.syncId,source:sync.source,hash:createHash('sha256').update(next.calendar.dates.join(',')).digest('hex')} : undefined); return next;
     } catch (error) {
       const message = error instanceof KisDataError ? `${error.message} ${error.kind === 'contract' ? '원천 데이터·수집 날짜를 확인하세요. 반복 재개로 품질 오류를 해소하지 않습니다.' : '연결·인증·제한 상태를 확인한 뒤 마지막 저장 구간부터 재개하세요.'}` : '일봉 저장에 실패했습니다. 저장소 상태를 확인한 뒤 재개하세요.';
       const failed: DailyRun = { ...run, status: { ...run.status, phase: run.status.pages ? 'partial' : 'error', complete: false, observedAt: new Date().toISOString(), error: message } };

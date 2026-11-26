@@ -13,3 +13,11 @@ export const dailyDetailSchema = z.object({ run: dailyRunSchema, bars: z.array(z
   date: marketDate, code: masterCodeSchema, adjustment: z.enum(['adjusted', 'raw']), source: z.literal('kis-rest'), collectedAt: z.iso.datetime(),
   open: z.number().nonnegative(), high: z.number().nonnegative(), low: z.number().nonnegative(), close: z.number().positive(), volume: z.number().int().nonnegative(),
 })) });
+
+export interface SyncInventory {
+  active: import('./market-data.ts').SyncRun | null;
+  latest: import('./market-data.ts').SyncRun | null;
+  runs: import('./market-data.ts').SyncRun[];
+  scopeNotice: string;
+  serverNow: string;
+}
