@@ -45,7 +45,17 @@ const syncRunSchema = z.object({
   }),
 }) satisfies z.ZodType<SyncRun>;
 
+const morningScanSchema = z.object({
+  source: z.literal('morning_scan'),
+  targetDate: marketDate,
+  checkedAt: z.iso.datetime(),
+  targetCount: z.number().int().nonnegative(),
+  passedCount: z.number().int().nonnegative(),
+  incompleteCount: z.number().int().nonnegative(),
+});
+
 const syncInventorySchema = z.object({
+  morningScan: morningScanSchema.nullable().optional(),
   active: syncRunSchema.nullable(),
   latest: syncRunSchema.nullable(),
   runs: z.array(syncRunSchema),
@@ -96,6 +106,14 @@ function syncSourceVariant(label: string) {
 }
 
 /**
+ * 일봉 수집 기록의 triggerSource 값을 출처 배지 라벨로 매핑한다.
+ */
+function resolveDailySource(triggerSource: DailyRun['triggerSource']): '장후 동기화' | '수동 실행' {
+  if (triggerSource === 'post_close_sync') return '장후 동기화';
+  return '수동 실행';
+}
+
+/**
  * 서버 기준 시각(sync.serverNow 또는 워크벤치 serverNow) 대비 경과 시간을 계산한다.
  */
 function syncFreshness(timestamp: string | null, serverNowIso: string | undefined, fallbackServerNowMs: number) {
@@ -134,6 +152,7 @@ function DailyDetail({ id, revision, runs, onSettled }: {
     return () => controller.abort();
   }, [id, revision, onSettled]);
   const run = detail?.run;
+  const dailySource = resolveDailySource(run?.triggerSource);
   const lastSuccess = run && [...runs, run].filter(row => row.code === run.code && row.adjustment === run.adjustment && row.status.lastSuccessAt).map(row => row.status.lastSuccessAt!).sort().at(-1);
   return <section aria-label="일봉 수집 상세" className="top-gap data-detail" aria-busy={loading}>
     {loading && <p role="status">상세 조회 중{detail && ' · 이전 표시를 확인 중입니다.'}</p>}
@@ -162,7 +181,7 @@ function DailyDetail({ id, revision, runs, onSettled }: {
         <div><dt>최근 수집 시도</dt><dd>{time(run.status.observedAt)}</dd></div>
         <div><dt>이번 기록 전체 성공</dt><dd>{time(run.status.lastSuccessAt)}</dd></div>
         <div><dt>동일 종목·정책 마지막 전체 성공</dt><dd data-testid="daily-last-success">{time(lastSuccess ?? null)}<small>다른 수집 ID·요청 기간의 성공일 수 있습니다.</small></dd></div>
-        <div><dt>출처·수집 기준일</dt><dd><span className="daily-source-row"><span className="sync-source-chip sync-source-chip--manual" data-testid="daily-source-badge">수동 실행</span><span>KIS 모의 REST · {date(run.captureDate)}</span></span><small data-testid="daily-scope-notice">{scopeNotice}</small><small>현재 시세·PIT 인증 아님</small></dd></div>
+        <div><dt>출처·수집 기준일</dt><dd><span className="daily-source-row"><span className={`sync-source-chip sync-source-chip--${syncSourceVariant(dailySource)}`} data-testid="daily-source-badge">{dailySource}</span><span>KIS 모의 REST · {date(run.captureDate)}</span></span><small data-testid="daily-scope-notice">{scopeNotice}</small><small>현재 시세·PIT 인증 아님</small></dd></div>
         <div><dt>수집 ID</dt><dd>{run.id}</dd></div>
       </dl></details>
       <details><summary>저장 거래일 펼치기</summary>{detail.bars.length ? <div className="table-scroll"><table><thead><tr><th>거래일</th><th>종가</th><th>거래량</th><th>수집 시각 (KST)</th></tr></thead><tbody>{detail.bars.map(bar => <tr key={bar.date}><td>{date(bar.date)}</td><td>{bar.close.toLocaleString('ko-KR')}</td><td>{bar.volume.toLocaleString('ko-KR')}</td><td>{time(bar.collectedAt)}</td></tr>)}</tbody></table></div> : <p>저장된 거래일이 없습니다. 합성 봉이나 0원으로 채우지 않습니다.</p>}</details>
@@ -231,6 +250,15 @@ export function DataStatus() {
   const displayWarning = displayRun !== null && syncWarningStatuses.has(displayRun.status);
   const displayTimestamp = displayRun ? (displayRun.finishedAt ?? displayRun.startedAt) : null;
   const displayFreshness = displayRun ? syncFreshness(displayTimestamp, sync?.serverNow, serverNow) : null;
+  const previousWarningRun =
+    sync?.active?.status === 'running' &&
+    sync.latest !== null &&
+    sync.latest.runId !== sync.active.runId &&
+    syncWarningStatuses.has(sync.latest.status)
+      ? sync.latest
+      : null;
+  const previousWarningTimestamp = previousWarningRun ? (previousWarningRun.finishedAt ?? previousWarningRun.startedAt) : null;
+  const morningScan = sync?.morningScan ?? null;
   const recentRuns = sync?.runs.slice(0, 5) ?? [];
   return <div className="data-inventory">
     <div className="inventory-tools"><nav aria-label="저장 자료 바로가기">
@@ -254,6 +282,13 @@ export function DataStatus() {
           <span>발생 시각 <time dateTime={displayTimestamp} data-testid="sync-warning-time">{kst.format(new Date(displayTimestamp))} KST</time></span>
           {displayRun.summary.message && <span className="sync-warning-message">{displayRun.summary.message}</span>}
         </div>}
+        {previousWarningRun && previousWarningTimestamp && <div className="sync-previous-warning" data-testid="sync-previous-warning" role="status">
+          <span className="sync-previous-label">직전 실행</span>
+          <strong>{syncStatusLabels[previousWarningRun.status]}</strong>
+          {previousWarningRun.reasonCode && <code>{previousWarningRun.reasonCode}</code>}
+          <span>발생 시각 {time(previousWarningTimestamp)}</span>
+          {previousWarningRun.summary.message && <span className="sync-warning-message">{previousWarningRun.summary.message}</span>}
+        </div>}
         <dl className="data-facts sync-facts">
           <div><dt>대상·통과 종목</dt><dd data-testid="sync-symbol-counts"><strong>{displayRun.totalSymbols}종목 중 {displayRun.succeededSymbols}종목 통과</strong><small>상한 {displayRun.scopeLimit}종목{displayRun.failedSymbols > 0 ? ` · 실패 ${displayRun.failedSymbols}종목` : ''}{displayRun.summary.tier1Truncated ? ` · Tier 1 제외 ${displayRun.summary.omitted.length}종목` : ''}</small></dd></div>
           <div><dt>{displayRun.finishedAt ? '완료·기록 시각' : '시작 시각'}</dt><dd>{time(displayTimestamp)}{displayFreshness && <small>서버 기준 {displayFreshness.label}{displayFreshness.stale ? ' · 7일 신선도 초과' : ''}</small>}</dd></div>
@@ -261,7 +296,22 @@ export function DataStatus() {
           <div><dt>수집 구성</dt><dd>Tier 1 {displayRun.summary.tier1}종목 · Tier 2 {displayRun.summary.tier2}종목<small>{displayRun.masterRefreshed ? '마스터 원자적 갱신 포함' : '마스터 미갱신'}</small></dd></div>
         </dl>
       </>}
-      {sync && !displayRun && !syncError && !loading && <Empty title="기록된 시세 동기화가 없습니다">4304 서버에서 수동 또는 장후 동기화를 실행하면 최근 실행 요약과 출처가 표시됩니다.</Empty>}
+      {morningScan && <div className="morning-scan-summary" data-testid="morning-scan-summary">
+        <div className="morning-scan-head">
+          <span className="sync-source-chip sync-source-chip--morning-scan" data-testid="morning-scan-source-badge">장전 스캔</span>
+          <span className="muted">기준일 {date(morningScan.targetDate)}</span>
+        </div>
+        <div className="morning-scan-meta">
+          <strong>{morningScan.targetCount}종목 중 {morningScan.passedCount}종목 통과</strong>
+          {morningScan.incompleteCount > 0 && <span className="morning-scan-incomplete">미완료 {morningScan.incompleteCount}종목</span>}
+          <span className="muted">확인 시각 {time(morningScan.checkedAt)}</span>
+        </div>
+      </div>}
+      {sync && !displayRun && !syncError && !loading && (
+        morningScan
+          ? <p className="sync-empty-note" role="status">기록된 시세 동기화가 없습니다. 수동 또는 장후 동기화를 실행하면 최근 실행 요약이 함께 표시됩니다.</p>
+          : <Empty title="기록된 시세 동기화가 없습니다">4304 서버에서 수동 또는 장후 동기화를 실행하면 최근 실행 요약과 출처가 표시됩니다.</Empty>
+      )}
       {recentRuns.length > 0 && <details className="sync-runs-details">
         <summary>최근 동기화 이력 ({recentRuns.length}건)</summary>
         <ul className="sync-runs-list" data-testid="sync-runs-list">
