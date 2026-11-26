@@ -3,6 +3,8 @@ import { dataStatusSchema } from './contracts.ts';
 import { dailyInput, marketDate, masterCodeSchema, type DailyRun } from './market-data.ts';
 
 export const dailyRunSchema = dailyInput.safeExtend({
+  triggerSource: z.enum(['manual', 'post_close_sync', 'manual_sync']).optional(),
+  syncRunId: z.uuid().optional(),
   source: z.literal('kis-rest'), exchange: z.literal('KRX'), endpoint: z.string(), startedAt: z.iso.datetime(), captureDate: marketDate,
   nextDate: marketDate.nullable(), coverageComplete: z.boolean(),
   status: dataStatusSchema.extend({ environment: z.literal('kis-paper'), source: z.literal('kis-rest') }),
@@ -15,6 +17,10 @@ export const dailyDetailSchema = z.object({ run: dailyRunSchema, bars: z.array(z
 })) });
 
 export interface SyncInventory {
+  morningScan?: {
+    source: 'morning_scan'; targetDate: string; checkedAt: string;
+    targetCount: number; passedCount: number; incompleteCount: number;
+  } | null;
   active: import('./market-data.ts').SyncRun | null;
   latest: import('./market-data.ts').SyncRun | null;
   runs: import('./market-data.ts').SyncRun[];

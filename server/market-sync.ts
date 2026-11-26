@@ -28,6 +28,7 @@ export class MarketDataSync {
   inventory(limit: number): SyncInventory {
     this.persistFinished();
     return {
+      morningScan: this.store.latestMorningScan(),
       active: this.active,
       latest: this.store.syncRuns(1, true)[0] ?? null,
       runs: this.store.syncRuns(limit),
@@ -156,10 +157,12 @@ export class MarketDataSync {
       from = addDays(to, -60);
     let calendar: DailyInput['calendar'];
     for (const code of symbols) {
-      const daily = this.market.start({ id: randomUUID(), code, from, to, adjustment: 'raw' });
+      const source = run.trigger === 'manual' ? 'manual_sync' : 'post_close_sync';
+      const daily = this.market.start({ id: randomUUID(), code, from, to, adjustment: 'raw' },
+        { triggerSource: source, syncRunId: run.runId });
       const result = await this.market.step(daily.id, {
         syncId: run.runId,
-        source: run.trigger === 'manual' ? 'manual_sync' : 'post_close_sync',
+        source,
         calendar: (page) => {
           if (code === '069500') {
             const check = verifyCalendar(from, to, page, (day) => this.market.noticeFor(day));

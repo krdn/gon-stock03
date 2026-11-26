@@ -27,6 +27,8 @@ export type DailyInput = z.infer<typeof dailyInput>;
 export interface DailyPrice { date: string; open: number; high: number; low: number; close: number; volume: number }
 export interface StoredBar extends DailyPrice { code: string; adjustment: DailyInput['adjustment']; source: 'kis-rest'; collectedAt: string }
 export interface DailyRun extends DailyInput {
+  triggerSource?: 'manual' | 'post_close_sync' | 'manual_sync';
+  syncRunId?: string;
   source: 'kis-rest'; exchange: 'KRX'; endpoint: string; startedAt: string; captureDate: string;
   nextDate: string | null; coverageComplete: boolean; status: DataStatus;
   quality: { state: 'pending' | 'unverified' | 'passed' | 'failed'; missingDates: string[]; unexpectedDates: string[]; candidateMissingDates: string[]; duplicates: number; emptyWindows: { from: string; to: string }[] };
