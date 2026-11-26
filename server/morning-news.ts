@@ -1,10 +1,12 @@
-import type { MorningItem } from '../shared/morning.ts';
+import { canonicalSourceUrl, type MorningItem } from '../shared/morning.ts';
 
 const feeds = [
   { publisher: '삼성전자 뉴스룸', url: 'https://news.samsung.com/kr/feed' },
   { publisher: '엔비디아 뉴스룸', url: 'https://nvidianews.nvidia.com/releases.xml' },
   { publisher: '금융감독원 DART', url: 'https://dart.fss.or.kr/api/todayRSS.xml' },
-  { publisher: '한국은행', url: 'https://www.bok.or.kr/portal/bbs/B0000502/news.rss?menuNo=201265' },
+  // allSettled 결과는 피드 순서이므로 중복 원문은 통화정책 채널 표기를 보존한다.
+  { publisher: '한국은행 통화정책', url: 'https://www.bok.or.kr/portal/bbs/P0000559/news.rss?menuNo=200690' },
+  { publisher: '한국은행 기타 보도자료', url: 'https://www.bok.or.kr/portal/bbs/B0000502/news.rss?menuNo=201265' },
   { publisher: '미 연준 연구진', url: 'https://www.federalreserve.gov/feeds/feds_notes.xml' },
   { publisher: '미국 연준', url: 'https://www.federalreserve.gov/feeds/press_all.xml' },
   { publisher: '유럽중앙은행', url: 'https://www.ecb.europa.eu/rss/press.html' },
@@ -78,7 +80,17 @@ export async function collectNews(cutoff: number, transport = fetch) {
       gaps.push(feeds[i].publisher + ' · 현재 피드에서 기준 시각에 해당하는 항목 없음');
     if (r.status === 'rejected') gaps.push(feeds[i].publisher + ' 자료 수집 실패');
   });
-  return { news: news.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt)), gaps };
+  const seenBok = new Set<string>();
+  const unique = news.filter((item) => {
+    const url = new URL(item.url);
+    if (url.origin !== 'https://www.bok.or.kr') return true;
+    url.searchParams.sort();
+    const key = canonicalSourceUrl(url.href);
+    if (seenBok.has(key)) return false;
+    seenBok.add(key);
+    return true;
+  });
+  return { news: unique.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt)), gaps };
 }
 
 const series = [

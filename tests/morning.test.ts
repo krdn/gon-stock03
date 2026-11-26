@@ -2,7 +2,7 @@ import { request as httpRequest } from 'node:http';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Store } from '../server/store.ts';
-import { parseNews } from '../server/morning-news.ts';
+import { collectNews, parseNews } from '../server/morning-news.ts';
 import { buildMorning } from '../server/morning.ts';
 import { MorningScan } from '../server/morning-scan.ts';
 import { MarketData } from '../server/market-data.ts';
@@ -73,6 +73,55 @@ test('장전 보고서는 공식 마스터·당시 저장한 일봉으로 산출
     store.close();
   }
 });
+const bokPolicyFeed = 'https://www.bok.or.kr/portal/bbs/P0000559/news.rss?menuNo=200690';
+const bokOtherFeed = 'https://www.bok.or.kr/portal/bbs/B0000502/news.rss?menuNo=201265';
+const bokCutoff = Date.parse('2026-11-26T17:00:00+09:00');
+const bokArticle = 'https://www.bok.or.kr/portal/bbs/P0000559/view.do';
+
+function bokItem(title: string, url: string, date: string) {
+  return `<item><title>${title}</title><link><![CDATA[${url}]]></link><pubDate>${date}</pubDate>
+    <description><![CDATA[&lt;p&gt;금융통화위원회 기준금리 결정&lt;/p&gt;]]></description></item>`;
+}
+
+function collectBok(policy: string, other: string | null) {
+  return collectNews(bokCutoff, async (input) => {
+    const items = String(input) === bokPolicyFeed ? policy : String(input) === bokOtherFeed ? other : '';
+    return items === null ? new Response(null, { status: 503 }) : new Response(`<rss><channel>${items}</channel></rss>`);
+  });
+}
+
+test('collectNews는 한국은행 결정문을 한 번 수집하고 일반 자료보다 먼저 원문 분석에 선택한다', async () => {
+  const decision = bokArticle + '?nttId=101&menuNo=200690';
+  const date = 'Thu, 26 Nov 2026 10:30:00 +0900';
+  const { news } = await collectBok(
+    bokItem('통화정책방향(2026.11.26)', decision, date),
+    bokItem('경제전망', bokArticle + '?nttId=102', 'Thu, 26 Nov 2026 17:00:00 +0900') +
+      bokItem('중복 보도자료', bokArticle + '/?menuNo=200690&nttId=101#article', date),
+  );
+  assert.equal(news.length, 2);
+  const policy = news.find((item) => item.url === decision);
+  assert.deepEqual(policy, {
+    publisher: '한국은행 통화정책', title: '통화정책방향(2026.11.26)', url: decision,
+    publishedAt: '2026-11-26T01:30:00.000Z', summary: '금융통화위원회 기준금리 결정',
+  });
+  const { collectPublicDocuments } = await import('../server/morning-analysis.ts');
+  const { docs } = await collectPublicDocuments(news, async (item) => ({ item, text: item.title }));
+  assert.deepEqual(docs.map((doc) => doc.item.url), [decision]);
+});
+
+test('collectNews는 한국은행 피드별 빈 결과와 수집 실패를 구분한다', async () => {
+  const { gaps } = await collectBok('', null);
+  assert.ok(gaps.includes('한국은행 통화정책 · 현재 피드에서 기준 시각에 해당하는 항목 없음'));
+  assert.ok(gaps.includes('한국은행 기타 보도자료 자료 수집 실패'));
+});
+
+test('collectNews는 기준 시각과 정확히 7일 전을 포함하고 범위 밖 항목을 제외한다', async () => {
+  const dates = [-7 * 86400000 - 1000, -7 * 86400000, 0, 1000];
+  const xml = dates.map((ms, i) => bokItem(String(i), bokArticle + '?nttId=' + i, new Date(bokCutoff + ms).toUTCString())).join('');
+  const { news } = await collectBok(xml, '');
+  assert.deepEqual(news.map((item) => item.title), ['2', '1']);
+});
+
 test('공개 시각과 출처가 맞는 뉴스만 사용', () => {
   const xml =
     '<rss>' +
