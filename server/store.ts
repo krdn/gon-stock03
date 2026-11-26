@@ -1,3 +1,4 @@
+import type { SyncRun } from '../shared/market-data.ts';
 import type { MorningReport } from '../shared/morning.ts';
 import { approvalBinding, type OncePolicy } from '../shared/trading-policy.ts';
 import type { PaperKrxSession } from './paper.ts';
@@ -67,6 +68,28 @@ export class Store {
       CREATE TABLE IF NOT EXISTS morning_daily_bars (code TEXT NOT NULL, date TEXT NOT NULL, body TEXT NOT NULL, collected_at TEXT NOT NULL, PRIMARY KEY(code,date));
       CREATE INDEX IF NOT EXISTS morning_daily_bars_date ON morning_daily_bars(date);
       CREATE TABLE IF NOT EXISTS morning_scan_meta (code TEXT PRIMARY KEY, to_date TEXT NOT NULL, calendar_hash TEXT NOT NULL, status TEXT NOT NULL, checked_at TEXT NOT NULL);`);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS market_sync_runs (
+        id TEXT PRIMARY KEY,
+        trigger TEXT NOT NULL CHECK(trigger IN ('post_close', 'manual')),
+        source_label TEXT NOT NULL CHECK(source_label IN ('장후 동기화', '수동 실행')),
+        target_date TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('running', 'succeeded', 'partial', 'skipped', 'failed', 'interrupted')),
+        reason_code TEXT,
+        calendar_source TEXT,
+        calendar_verified INTEGER NOT NULL DEFAULT 0 CHECK(calendar_verified IN (0, 1)),
+        scope_limit INTEGER NOT NULL CHECK(scope_limit BETWEEN 1 AND 50),
+        total_symbols INTEGER NOT NULL DEFAULT 0,
+        succeeded_symbols INTEGER NOT NULL DEFAULT 0,
+        failed_symbols INTEGER NOT NULL DEFAULT 0,
+        master_refreshed INTEGER NOT NULL DEFAULT 0 CHECK(master_refreshed IN (0, 1)),
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        summary_json TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS market_sync_runs_started ON market_sync_runs(started_at DESC);
+      CREATE INDEX IF NOT EXISTS market_sync_runs_target ON market_sync_runs(target_date, started_at DESC);`);
+    if (!this.db.prepare('PRAGMA table_info(morning_scan_meta)').all().some(row => row.name === 'source'))
+      this.db.exec("ALTER TABLE morning_scan_meta ADD COLUMN source TEXT NOT NULL DEFAULT 'morning_scan' CHECK(source IN ('morning_scan','post_close_sync','manual_sync'))");
     this.db.exec('CREATE TABLE IF NOT EXISTS backtest_experiments (id TEXT PRIMARY KEY, body TEXT NOT NULL);');
     this.db.exec('CREATE TABLE IF NOT EXISTS market_removed (code TEXT PRIMARY KEY, body TEXT NOT NULL);');
     this.db.prepare('INSERT OR IGNORE INTO workspace VALUES (1, 1, ?)').run(JSON.stringify(initialState()));
@@ -83,6 +106,35 @@ export class Store {
     this.db.exec("UPDATE morning_signals SET outcome=COALESCE((SELECT json_extract(body,'$.status') FROM paper_orders WHERE request_id=morning_signals.request),'서버 중단 · 원장 재확인') WHERE outcome='검사 중'");
     for (const run of this.dailyRuns()) if (run.status.phase === 'loading') this.saveDaily({ ...run, status: { ...run.status, phase: 'partial', complete: false, error: '수집 중 서버가 재시작되었습니다. 마지막 저장 구간부터 재개하세요.' } });
     this.saveMasterStates(this.masterData().sources.filter(state => state.phase === 'loading').map(state => ({ ...state, phase: 'error', error: '마스터 수집 중 서버가 재시작되었습니다. 다시 수집하세요.' })));
+    this.db.prepare(`UPDATE market_sync_runs SET status=CASE WHEN succeeded_symbols>0 OR master_refreshed=1 THEN 'partial' ELSE 'interrupted' END,
+      reason_code='SERVER_RESTART', finished_at=?, summary_json=json_set(summary_json,'$.message','동기화 중 서버가 재시작됐습니다. 완료 종목만 보존했습니다.') WHERE status='running'`).run(new Date().toISOString());
+  }
+  saveSync(r: SyncRun) {
+    this.db.prepare(`INSERT INTO market_sync_runs
+      (id,trigger,source_label,target_date,status,reason_code,calendar_source,calendar_verified,scope_limit,total_symbols,
+       succeeded_symbols,failed_symbols,master_refreshed,started_at,finished_at,summary_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET status=excluded.status,reason_code=excluded.reason_code,calendar_verified=excluded.calendar_verified,
+       total_symbols=excluded.total_symbols,succeeded_symbols=excluded.succeeded_symbols,failed_symbols=excluded.failed_symbols,
+       master_refreshed=excluded.master_refreshed,finished_at=excluded.finished_at,summary_json=excluded.summary_json`)
+      .run(r.runId,r.trigger,r.sourceLabel,r.targetDate,r.status,r.reasonCode,r.calendarSource,+r.calendarVerified,r.scopeLimit,
+        r.totalSymbols,r.succeededSymbols,r.failedSymbols,+r.masterRefreshed,r.startedAt,r.finishedAt,JSON.stringify(r.summary));
+  }
+  syncRuns(limit:number, finishedOnly=false): SyncRun[] {
+    return this.db.prepare(`SELECT * FROM market_sync_runs WHERE (?=0 OR status!='running') ORDER BY started_at DESC,rowid DESC LIMIT ?`)
+      .all(+finishedOnly,limit).map(r => ({
+        runId:String(r.id),trigger:r.trigger as SyncRun['trigger'],sourceLabel:String(r.source_label),targetDate:String(r.target_date),
+        status:r.status as SyncRun['status'],reasonCode:r.reason_code as string|null,calendarSource:String(r.calendar_source),
+        calendarVerified:!!r.calendar_verified,scopeLimit:Number(r.scope_limit),totalSymbols:Number(r.total_symbols),
+        succeededSymbols:Number(r.succeeded_symbols),failedSymbols:Number(r.failed_symbols),masterRefreshed:!!r.master_refreshed,
+        startedAt:String(r.started_at),finishedAt:r.finished_at as string|null,summary:JSON.parse(String(r.summary_json)),
+      }));
+  }
+  syncCandidateCodes(account: string, days: string[]): string[] {
+    return this.db.prepare(`SELECT DISTINCT json_extract(candidate.value,'$.code') AS code
+      FROM morning_reports r, json_each(r.body,'$.candidates') candidate
+      WHERE r.account=? AND r.day IN (SELECT value FROM json_each(?))
+      ORDER BY r.day DESC,r.rowid DESC,CAST(candidate.key AS INTEGER)`)
+      .all(account, JSON.stringify(days)).map(row => String(row.code));
   }
   saveMorning(account: string, report: MorningReport) {
     this.db
@@ -322,18 +374,21 @@ export class Store {
   saveMorningScanSymbol(code: string, toDate: string, calendarHash: string, status: 'passed' | 'incomplete', bars: StoredBar[]) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      this.db.prepare('DELETE FROM morning_daily_bars WHERE code=?').run(code);
-      if (status === 'passed') {
-        const insert = this.db.prepare('INSERT INTO morning_daily_bars (code,date,body,collected_at) VALUES (?,?,?,?)');
-        for (const bar of bars) insert.run(code, bar.date, JSON.stringify(bar), bar.collectedAt);
-      }
-      this.db.prepare('INSERT OR REPLACE INTO morning_scan_meta (code,to_date,calendar_hash,status,checked_at) VALUES (?,?,?,?,?)')
-        .run(code, toDate, calendarHash, status, new Date().toISOString());
+      this.writeMorningBars(code,toDate,calendarHash,status,bars,'morning_scan');
       this.db.exec('COMMIT');
     } catch (error) {
       this.db.exec('ROLLBACK');
       throw error;
     }
+  }
+  private writeMorningBars(code:string,toDate:string,calendarHash:string,status:'passed'|'incomplete',bars:StoredBar[],source:'morning_scan'|'manual_sync'|'post_close_sync') {
+    this.db.prepare('DELETE FROM morning_daily_bars WHERE code=?').run(code);
+    if (status === 'passed') {
+      const insert = this.db.prepare('INSERT INTO morning_daily_bars (code,date,body,collected_at) VALUES (?,?,?,?)');
+      for (const bar of bars) insert.run(code, bar.date, JSON.stringify(bar), bar.collectedAt);
+    }
+    this.db.prepare('INSERT OR REPLACE INTO morning_scan_meta (code,to_date,calendar_hash,status,checked_at,source) VALUES (?,?,?,?,?,?)')
+      .run(code, toDate, calendarHash, status, new Date().toISOString(), source);
   }
   morningScannedCodes(toDate: string, calendarHash: string): Set<string> {
     return new Set(
@@ -393,7 +448,7 @@ export class Store {
       removed: this.db.prepare('SELECT body FROM market_removed ORDER BY code').all().map(row => JSON.parse(row.body as string) as RemovedInstrument),
     };
   }
-  saveMasters(snapshots: MasterSnapshot[]) {
+  saveMasters(snapshots: MasterSnapshot[], syncId?:string) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const nextCodes = new Set(snapshots.flatMap(snapshot => snapshot.rows.map(row => row.code)));
@@ -407,6 +462,7 @@ export class Store {
         const state: MasterState = { exchange: snapshot.exchange, source: snapshot.source, phase: 'ready', observedAt: snapshot.collectedAt, lastSuccessAt: snapshot.collectedAt, error: null, sha256: snapshot.sha256, count: snapshot.rows.length };
         this.db.prepare('INSERT INTO market_master VALUES (?,?) ON CONFLICT(exchange) DO UPDATE SET body=excluded.body').run(state.exchange, JSON.stringify(state));
       }
+      if (syncId) this.db.prepare('UPDATE market_sync_runs SET master_refreshed=1 WHERE id=?').run(syncId);
       this.db.exec('COMMIT');
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
@@ -426,12 +482,17 @@ export class Store {
   }
   dailyRun(id: string): DailyRun | undefined { const row = this.db.prepare('SELECT body FROM daily_runs WHERE id=?').get(id); return row ? JSON.parse(row.body as string) as DailyRun : undefined; }
   dailyBars(id: string): StoredBar[] { return this.db.prepare('SELECT body FROM daily_bars WHERE run_id=? ORDER BY date').all(id).map(row => JSON.parse(row.body as string) as StoredBar); }
-  saveDaily(run: DailyRun, bars: StoredBar[] = []) {
+  saveDaily(run: DailyRun, bars: StoredBar[] = [], projection?: {syncId:string;source:"manual_sync"|"post_close_sync";hash:string}) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const insert = this.db.prepare('INSERT INTO daily_bars VALUES (?,?,?)');
       for (const bar of bars) insert.run(run.id, bar.date, JSON.stringify(bar));
       this.db.prepare('INSERT INTO daily_runs VALUES (?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body').run(run.id, JSON.stringify(run));
+      if (projection && run.quality.state === 'passed') {
+        this.db.prepare('UPDATE market_sync_runs SET succeeded_symbols=succeeded_symbols+1 WHERE id=?').run(projection.syncId);
+        const existing = this.db.prepare('SELECT to_date FROM morning_scan_meta WHERE code=?').get(run.code);
+        if (!existing || String(existing.to_date) <= run.to) this.writeMorningBars(run.code,run.to,projection.hash,'passed',bars,projection.source);
+      }
       this.db.exec('COMMIT');
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }

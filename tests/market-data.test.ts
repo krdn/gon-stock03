@@ -245,3 +245,21 @@ test('a request crossing Seoul midnight cannot append a different adjustment vin
     assert.deepEqual(store.dailyBars(input.id), []);
   } finally { store.close(); }
 });
+
+test('today opens after close plus ten minutes only on verified trading days', t => {
+  t.mock.timers.enable({ apis: ['Date'] });
+  const store = new Store(':memory:');
+  const market = new MarketData(store, clientFor([]));
+  try {
+    for (const [date, time, allowed] of [
+      ['2026-11-18','15:39:59',false], ['2026-11-18','15:40:00',true],
+      ['2026-11-19','16:39:59',false], ['2026-11-19','16:40:00',true],
+      ['2026-11-15','18:00:00',false], ['2026-10-09','18:00:00',false],
+    ] as const) {
+      t.mock.timers.setTime(Date.parse(date + 'T' + time + '+09:00'));
+      const day = date.replaceAll('-', '');
+      const start = () => market.start(config({ from: day, to: day }));
+      if (allowed) assert.doesNotThrow(start); else assert.throws(start, /오늘/);
+    }
+  } finally { store.close(); }
+});

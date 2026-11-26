@@ -37,3 +37,35 @@ test('inventory GET contracts preserve an earlier successful collection after a 
     assert.equal((await fetch(`${url}/api/data/daily?limit=999`)).status, 400);
   } finally { await close(); store.close(); }
 });
+
+test('sync inventory stores unconfigured skips and validates local POST and limits', async t => {
+  t.mock.timers.enable({apis:['Date'],now:new Date('2026-11-26T10:00:00+09:00')});
+  const realFetch = globalThis.fetch;
+  let externalCalls = 0;
+  t.mock.method(globalThis, 'fetch', (url: string, init?: RequestInit) => {
+    if (new URL(url).hostname !== '127.0.0.1') { externalCalls++; throw Error('unexpected network'); }
+    return realFetch(url,init);
+  });
+  const store = new Store(':memory:');
+  const server = await startTestServer(store, new KisClient({key:'',secret:'',account:'',product:''}, async () => { throw Error('unexpected transport'); }));
+  const url = server.url + '/api/data/sync';
+  const post = (limit: number, header = 'local') => fetch(url, {method:'POST', headers:{'content-type':'application/json','x-workbench':header}, body:JSON.stringify({targetDate:'20261102',limit})});
+  try {
+    assert.equal((await post(1,'other')).status,403);
+    assert.equal((await post(51)).status,400);
+    const response = await post(1);
+    assert.equal(response.status,200);
+    assert.equal((await response.json()).reasonCode,'KIS_UNCONFIGURED');
+    assert.equal((await fetch(url+'?limit=101')).status,400);
+    const data = await (await fetch(url)).json();
+    assert.equal(data.runs.length,1);
+    assert.equal(data.active,null);
+    assert.equal(data.latest.status,'skipped');
+    assert.equal(data.latest.masterRefreshed,false);
+    assert.equal(data.scopeNotice,'우선 범위 수집 기준(범위 밖 미검증)');
+    const early = await fetch(url,{method:'POST',headers:{'x-workbench':'local','content-type':'application/json'},body:'{}'});
+    assert.equal(early.status,200);
+    assert.equal((await early.json()).reasonCode,'BEFORE_CLOSE_BUFFER');
+    assert.equal(externalCalls,0);
+  } finally { await server.close(); store.close(); }
+});

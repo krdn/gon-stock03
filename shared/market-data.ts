@@ -53,3 +53,18 @@ export const masterDataSchema = z.object({
 export type MasterDataSnapshot = z.infer<typeof masterDataSchema>;
 export const marketQuoteInput = z.object({ code: masterCodeSchema }).strict();
 export const marketQuoteSchema = z.object({ code: masterCodeSchema, price: z.number().positive(), change: z.number(), upper: z.number().nonnegative(), lower: z.number().nonnegative(), tickSize: z.number().nonnegative(), stopped: z.boolean(), receivedAt: z.iso.datetime(), volume: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(), sector: z.string().optional(), liquidation: z.boolean().optional() }) satisfies z.ZodType<KisQuote>;
+
+export const DEFAULT_SYNC_SYMBOL_LIMIT = 30;
+export const MAX_SYNC_SYMBOL_LIMIT = 50;
+export const scopeNotice = '우선 범위 수집 기준(범위 밖 미검증)';
+export const syncInput = z.object({
+  trigger:z.enum(['post_close','manual']).default('post_close'), targetDate:marketDate.optional(),
+  limit:z.int().min(1).max(MAX_SYNC_SYMBOL_LIMIT).default(DEFAULT_SYNC_SYMBOL_LIMIT), includeMaster:z.boolean().default(true),
+}).strict();
+export type SyncRun = {
+  runId:string; trigger:'manual'|'post_close'; targetDate:string; sourceLabel:string;
+  status:'running'|'succeeded'|'partial'|'skipped'|'failed'|'interrupted'; reasonCode:string|null;
+  calendarSource:string; calendarVerified:boolean; scopeLimit:number; totalSymbols:number; succeededSymbols:number;
+  failedSymbols:number; masterRefreshed:boolean; startedAt:string; finishedAt:string|null;
+  summary:{scopeNotice:string; tier1:number; tier2:number; tier1Truncated:boolean; omitted:string[]; halted:string[]; mismatch:string[]; failures:{code:string;reason:string}[]; message?:string};
+};

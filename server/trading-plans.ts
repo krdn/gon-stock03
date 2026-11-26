@@ -370,6 +370,7 @@ function inspectPreparedRun(file: string, kind: PlanKind, db: string | undefined
       ? () => {
           const db = new DatabaseSync(bundle.sourceLedger, { readOnly: true });
           try {
+            db.exec('PRAGMA busy_timeout = 5000; BEGIN');
             const record = db.prepare('SELECT body FROM market_instruments WHERE code=?').get(config.code!);
             const row: MasterInstrument | undefined = record && JSON.parse(String(record.body));
             const market = db.prepare('SELECT body FROM market_master WHERE exchange=?').get(row?.exchange ?? 'KOSPI');

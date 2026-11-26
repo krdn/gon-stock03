@@ -1,12 +1,14 @@
 import { z } from 'zod';
 
+import { isoDay, isKrxTradingDay, krxSessionNotice, needsSessionNotice } from './krx-calendar.ts';
+
 const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, '시각은 HH:MM으로 입력하세요.');
 export const sessionWindow = z
   .object({ open: clock, close: clock })
   .strict()
   .refine((s) => s.open < s.close, '시작 시각은 종료보다 빨라야 합니다.');
 const seconds = z.int().min(1).max(600);
-const exchangeNotice = sessionWindow
+export const exchangeNotice = sessionWindow
   .safeExtend({
     date: z.iso.date(),
     source: z.url({
@@ -62,8 +64,13 @@ export type StrategyPolicy = z.infer<typeof strategyPolicy>;
 // Normal session unless an exchange notice specifies a different session for that date.
 // The operator still confirms that the selected date is a trading day.
 export function krxHours(date: string, notice?: ExchangeNotice) {
-  if (notice?.date === date) return { open: notice.open, close: notice.close };
-  return date === '2026-11-19' ? { open: '10:00', close: '16:30' } : { open: '09:00', close: '15:30' };
+  const session = notice?.date === date ? notice : krxSessionNotice(date);
+  return session ? { open: session.open, close: session.close } : { open: '09:00', close: '15:30' };
+}
+export function afterCloseBuffer(day: string, now: number, notice?: ExchangeNotice) {
+  const iso = isoDay(day);
+  if (needsSessionNotice(iso) && notice?.date !== iso && !krxSessionNotice(iso)) return false;
+  return isKrxTradingDay(iso) && now >= Date.parse(iso + 'T' + krxHours(iso, notice).close + ':00+09:00') + 600000;
 }
 // 1단계에서는 KST 주말만 차단하며 평일 공휴일은 차단하지 않는다.
 export function isKstWeekend(date: string) {
