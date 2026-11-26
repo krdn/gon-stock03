@@ -9,7 +9,7 @@
 - **문서 범위**: `krdn/gon-stock03#212`(PR 3) 구현 전 합의용 선행 설계이며, 이 PR에서는 앱 코드를 수정하지 않는다.
 - **설계 핵심 4축**:
   1. **4304 단일 경유와 영속 메타**: HTTP 직렬 큐와 single-flight로 동시 실행을 막고 `market_sync_runs` 테이블에 실행·스킵 이력을 영속 저장한다.
-  2. **우선 범위 상한과 직렬 수집**: Tier 1·Tier 2 합집합을 기본 30종목(설정 상한 50종목)으로 제한하고, `await` 직렬 루프로 60달력일 `raw` 1페이지를 수집한다.
+  2. **우선 범위 상한과 직렬 수집**: Tier 1·Tier 2 합집합을 기본 30종목(설정 상한 50종목)으로 제한하고, `await` 직렬 루프로 `addDays(to, -60)` 구간 `raw` 1페이지를 수집한다.
   3. **당일 허용 버퍼와 공식 달력 검증**: `krxHours(day, notice).close + 버퍼` 이후 당일(`to === koreaDate()`) 수집을 열고, KRX 공식 스냅샷과 `069500` 교차검증 실패 시 `unverified`로 강등한다.
   4. **미기동·미주입 운영 정책**: 4종 스킵 사유 코드로 누락을 기록·보고하며, 익일 08:30 KST 장전 점검(`gon-stock03-ops`)에 누락 사실을 재표시한다.
 - **소유자 확정 대기 파라미터 2건(총괄 Item 18 연계)**:
@@ -81,17 +81,18 @@
 - `trigger`: 기본값 `'post_close'`. UI 수동 버튼은 `'manual'`을 보낸다.
 - `targetDate`: 생략 시 `koreaDate()`(오늘 KST). 미래일은 `400`으로 거부한다.
 - `limit`: 정수 `1-50`, 기본값 `30`. `50` 초과 요청은 Zod 검증에서 `400`으로 즉시 거부한다.
-- `includeMaster`: 기본값 `true`. (소유자 확정 항목 B가 `B=대안`이면 `KIS_UNCONFIGURED`에서도 마스터만 갱신 가능.)
+- `includeMaster`: 기본값 `true`. 항목 B 대안 선택 시 `KIS_UNCONFIGURED`에서도 공개 마스터만 분리 갱신할 수 있다.
 
 #### `POST /api/data/sync` 상태 코드와 응답 규칙
 
-- **`409 Conflict` (`DEDICATED_RUN_ACTIVE`)**: `approval || contract` 전용 실행이 활성인 4304 인스턴스에서는 동기화를 즉시 차단한다. 기존 `server/http.ts:262-264, 360-361`의 409 패턴과 통일한다. 후속 구현 시 `server/http.ts:310`(`/api/morning/scan`) 및 `:366-368`(`/api/data/master/refresh`, `/api/data/daily`, `/api/data/daily/step`)에도 전용 실행 보호 정합성을 함께 검토한다.
-- **`200 OK` (스킵 기록 반환, `status: 'skipped'`)**:
-  - `reasonCode: 'BEFORE_CLOSE_BUFFER'`: `targetDate === koreaDate()`인데 비거래일이거나 현재 KST 시각이 `krxHours(day, notice).close + 버퍼` 미만일 때.
-  - `reasonCode: 'KIS_UNCONFIGURED'`: `kis.configured() === false`(`injection.phase !== 'present'`)일 때(항목 B 기본 정책 기준).
+- **`409 Conflict` (`DEDICATED_RUN_ACTIVE`)**: `approval || contract` 전용 실행이 활성인 4304 인스턴스에서는 동기화를 즉시 차단한다. 전용 원장 보호를 위해 `market_sync_runs`에는 기록하지 않는다. 기존 `server/http.ts:262-264, 360-361`의 409 패턴과 통일한다. 후속 구현 시 `server/http.ts:310`(`/api/morning/scan`) 및 `:366-368`(`/api/data/master/refresh`, `/api/data/daily`, `/api/data/daily/step`)에도 전용 실행 보호 정합성을 함께 검토한다.
+- **`200 OK` (스킵 기록 반환, `status: 'skipped'`, `masterRefreshed: false`)**:
+  - `reasonCode: 'BEFORE_CLOSE_BUFFER'`: `targetDate === koreaDate()`인데 비거래일이거나 현재 KST 시각이 `krxHours(day, notice).close + 버퍼` 미만일 때(`master_refreshed = 0`).
+  - `reasonCode: 'KIS_UNCONFIGURED'` (항목 B 기본 권장): `kis.configured() === false`(`injection.phase !== 'present'`)일 때 마스터·일봉을 모두 건너뛴다(`status = 'skipped'`, `master_refreshed = 0`).
   - 스킵 사실도 `market_sync_runs`에 1건 기록해 익일 장전 점검과 UI에서 원인을 추적할 수 있게 한다.
 - **`202 Accepted` (비동기 직렬 큐 접수 또는 single-flight 합류)**:
   - 정상 접수 시 `runId`, `status: 'running'`, `deduplicated: false`, `scopeNotice: '우선 범위 수집 기준(범위 밖 미검증)'`을 반환한다.
+  - **항목 B 대안(`KIS_UNCONFIGURED` 시 공개 마스터 분리 갱신)**: `includeMaster: true` 요청을 접수해 `syncMastersAtomic()`만 수행하고 KIS 일봉은 스킵한다. 마스터 갱신 성공 시 `status = 'partial'`, `reason_code = 'KIS_UNCONFIGURED'`, `master_refreshed = 1`로 기록한다. 마스터 갱신 자체가 실패하면 `status = 'failed'`, `reason_code = 'KIS_UNCONFIGURED'`, `master_refreshed = 0`으로 기록한다.
   - **single-flight 동작**: 이미 `running` 상태의 동기화 작업이 진행 중이면 새 작업을 만들지 않는다. `202 Accepted`와 함께 `deduplicated: true`, 진행 중인 `run` 요약을 그대로 반환한다.
 - **`503 Service Unavailable`**: 저장소(`SQLite`) 쓰기 불가 등 서버 내부 준비 실패 시 반환한다.
 - **서버 내부 직렬 큐**: `MarketDataSync` 서비스가 단일 Promise 체인으로 실행을 직렬화한다. `MorningScan.state.running === true`이거나 `MarketData.stepping === true`(`server/market-data.ts:75, 117`)이면 큐에서 대기하거나 충돌을 방지해 `KisClient` 요청 큐(`server/kis.ts:85`)의 과적재를 막는다.
@@ -140,11 +141,12 @@ CREATE INDEX IF NOT EXISTS market_sync_runs_target ON market_sync_runs(target_da
 ```
 
 - **상태 전이**:
-  - `running` → `succeeded` (마스터·달력·전 대상 종목 완료)
-  - `running` → `partial` (일부 종목 저장 완료 후 일부 실패 또는 재시작 중단)
-  - `running` → `failed` (마스터·기준 ETF 실패 또는 전체 실패)
-  - `running` → `interrupted` (1건도 저장하지 못한 상태에서 서버 재시작 복구)
-  - 즉시 차단(스킵 조건 충족) → `skipped` (`reason_code`: `KIS_UNCONFIGURED`, `BEFORE_CLOSE_BUFFER`, `DEDICATED_RUN_ACTIVE`)
+  - `running` → `succeeded`: 마스터·달력·전 대상 종목 완료.
+  - `running` → `partial`: 일부 종목 저장 후 일부 실패나 재시작 중단으로 종료한다. 항목 B 대안에서 마스터 갱신 성공·일봉 스킵 시에도 `partial`로 기록한다(`reason_code='KIS_UNCONFIGURED'`, `master_refreshed=1`).
+  - `running` → `failed`: 마스터·기준 ETF 실패나 전체 실패로 종료한다. 항목 B 대안에서 마스터 갱신이 실패해도 `failed`로 기록한다(`reason_code='KIS_UNCONFIGURED'`, `master_refreshed=0`).
+  - `running` → `interrupted`: 1건도 저장하지 못한 상태에서 서버 재시작 복구(`reason_code = 'SERVER_RESTART'`).
+  - 즉시 스킵 → `skipped`: 스킵 조건 충족(`reason_code`: `BEFORE_CLOSE_BUFFER`, 항목 B 기본 권장의 `KIS_UNCONFIGURED`, `master_refreshed = 0`).
+  - **`DEDICATED_RUN_ACTIVE` 예외(DB 미기록)**: `approval || contract` 전용 실행 활성 시 HTTP `409 Conflict`로 즉시 차단한다. 전용 원장 보호를 위해 `market_sync_runs`에는 기록하지 않는다.
 - `summary_json`에는 Tier 1/Tier 2 구성 종목 수, 실패 종목 코드·오류 요약(비밀값 제외), `scopeNotice`를 저장한다.
 
 #### 보완 설계 2: `morning_scan_meta` 출처 컬럼 확장
@@ -171,14 +173,17 @@ CREATE INDEX IF NOT EXISTS market_sync_runs_target ON market_sync_runs(target_da
 3. `server/trading-plans.ts:59`: `assetKind()`는 `source.phase !== 'ready'`이면 예외를 발생시켜 신규 주문을 차단한다(`KisNotSent`).
 4. 따라서 일반 4304 서버가 `refreshMaster()`를 수행하는 1-30초 사이에 별도 전용 실행 프로세스가 주문을 검증하면 정상 마스터가 있어도 일시 차단되는 경합이 발생한다.
 
-#### 2중 방어 설계 (기존 테스트 보존 포함)
+#### 2중 방어 설계 (기존 테스트 보존·코드 실측 포함)
 
-- **방어 1 (호출 시점 격리)**: `POST /api/data/sync`는 `krxHours(day, notice).close + 버퍼` 이후에만 마스터를 갱신한다. 전용 실행의 `sessionBounds`(`shared/trading-policy.ts:68-75`)는 `close`에 종료되므로 정규 장중 전용 실행과 겹치지 않는다.
-- **방어 2 (원자적 교체 전용 경로)**:
+- **방어 1 (호출 시점 격리 — `post_close` 기본 당일 호출 한정)**: `POST /api/data/sync`의 `post_close` 기본(당일) 경로는 `krxHours(day, notice).close + 버퍼` 이후에만 마스터를 갱신한다. 전용 실행의 `sessionBounds`(`shared/trading-policy.ts:68-75`)는 `close`에 종료되므로 이 경로는 정규 장중 전용 실행과 겹치지 않는다. 단, 과거 `targetDate` 지정 호출이나 `manual` 장중 실행은 방어 1만으로 전용 실행과 격리되지 않는다.
+- **방어 2 (원자적 교체 전용 경로 — 전 경로 보장)**:
   - 기존 수동 엔드포인트 `POST /api/data/master/refresh`(`MarketData.refreshMaster()`)는 `tests/market-data.test.ts:117-134`의 `phase='loading'` 영속 및 재시작 `'error'` 복구 계약을 그대로 유지한다.
-  - 반면 `POST /api/data/sync`가 호출하는 `MarketData.syncMastersAtomic()`은 두 거래소 ZIP 다운로드·CP949 파싱·해시 검증을 메모리에서 모두 완료한 뒤 `store.saveMasters(snapshots)`(`server/store.ts:396-412`, `BEGIN IMMEDIATE`) 단일 트랜잭션으로 `phase='ready'` 상태를 원자적 교체한다.
-  - 다운로드 진행 중 상태(`running`)와 비정상 종료 복구(`interrupted`/`partial`)는 `market_sync_runs`에 기록한다.
-  - 결과적으로 수동 `manual` 동기화가 장중에 실행되더라도 `market_master.phase`가 `'loading'`으로 내려가지 않으므로 별도 전용 실행의 `checkInstrument()`를 차단하지 않는다.
+  - 과거 `targetDate` 지정 호출과 `manual` 장중 실행을 포함한 전 경로 보장은 `MarketData.syncMastersAtomic()`이 담당한다. 두 거래소 ZIP 다운로드·CP949 파싱·해시 검증을 메모리에서 모두 완료한 뒤 `store.saveMasters(snapshots)`(`server/store.ts:396-412`, `BEGIN IMMEDIATE`) 단일 트랜잭션으로 `phase='ready'` 상태를 원자적 교체한다.
+  - 다운로드 진행 중 상태(`running`)와 비정상 종료 복구(`interrupted`/`partial`)는 `market_sync_runs`에 기록하므로 `market_master.phase`가 `'loading'`으로 내려가지 않는다.
+- **SQLite WAL·`busy_timeout` 코드 실측과 구현 단계 검증 항목**:
+  - `Store` 생성자(`server/store.ts:50`)에는 `PRAGMA journal_mode = WAL`과 `PRAGMA busy_timeout = 5000`이 실제 설정돼 있다. 따라서 WAL 동시 읽기와 `Store` 쓰기 대기(5,000ms)가 활성화돼 있다.
+  - 반면 `checkInstrument()`가 여는 별도 읽기 전용 연결(`server/trading-plans.ts:371`, `new DatabaseSync(bundle.sourceLedger, { readOnly: true })`)에는 `PRAGMA busy_timeout`이 미설정 상태다. `busy_timeout`은 연결별 설정이므로 PR 3 구현 단계에서 읽기·쓰기 경합 방어용 설정을 검토·검증한다.
+  - 이 동시성 무충돌 보장은 설계 목표이며 현재 검증 완료 상태가 아니다. PR 3 구현 단계 검증 항목(§7.2)에서 실측 통과 후 확정한다.
 
 ### 3.6 `DataInventory.tsx` UI 계약
 
@@ -190,7 +195,7 @@ CREATE INDEX IF NOT EXISTS market_sync_runs_target ON market_sync_runs(target_da
   - `장전 스캔` (`morning_scan`)
   - `수동 실행` (`manual_sync` 및 기존 `/api/data/daily` 수동 수집)
 - **범위 고지 의무**: 동기화 요약과 상세 영역(`src/pages/DataInventory.tsx:66` 부근 포함)에 **`우선 범위 수집 기준(범위 밖 미검증)`** 문구와 대상 종목 수(예: `30종목 중 30종목 통과`)를 고정 표시한다.
-- **스킵·중단 표시**: 최근 실행이 `skipped`, `partial`, `interrupted`, `failed`이면 사유 코드(`4304_DOWN` 제외 서버 기록 코드)와 발생 시각(KST)을 경고 배지로 노출한다.
+- **스킵·중단 표시**: 최근 실행이 `skipped`, `partial`, `interrupted`, `failed`이면 사유 코드(`4304_DOWN`·`DEDICATED_RUN_ACTIVE` 제외 서버 기록 코드)와 발생 시각(KST)을 경고 배지로 노출한다.
 
 ---
 
@@ -222,9 +227,9 @@ CREATE INDEX IF NOT EXISTS market_sync_runs_target ON market_sync_runs(target_da
 
 ### 4.3 수집 기간과 실측 소요 시간
 
-- **수집 기간**: 종료일 `to`(당일 또는 지정일)로부터 **60달력일**(`from = addDays(to, -59)` 또는 `-60`) `adjustment: 'raw'` 1페이지 조회(`server/kis.ts:185-205` `dailyPage()`).
-  - 60달력일은 최대 **44-45거래일**이므로 KIS 일봉 API 1페이지 상한(`output2.max(100)`, `server/kis.ts:194`) 안에 여유 있게 들어온다.
-  - `buildMorning()`의 60일 조회 범위(`server/morning.ts:114`)와 `evaluateBars()`의 최소 21봉 요구량(`server/morning.ts:34`)을 모두 충족한다.
+- **수집 기간**: `buildMorning()`의 60일 산식(`server/morning.ts:114`, `addDays(..., -60)`)과 일치하게 **`from = addDays(to, -60)`**으로 단일 고정한다. `adjustment: 'raw'` 1페이지 조회(`server/kis.ts:185-205` `dailyPage()`)를 사용한다.
+  - `from = addDays(to, -60)`부터 `to`까지는 양 끝일 포함 61달력일이며 최대 **44-45거래일**(`<= 100`)이다. KIS 일봉 API 1페이지 상한(`output2.max(100)`, `server/kis.ts:194`) 안에 여유 있게 들어온다.
+  - `buildMorning()`의 조회 범위(`server/morning.ts:114`)와 `evaluateBars()`의 최소 21봉 요구량(`server/morning.ts:34`)을 모두 충족한다.
 - **소요 시간 실측 근거**(`server/kis.ts:51` 기본 간격 `1100`ms 기준):
   - 전 종목 3,966개 순회: 최소 **73분 이상**(장후 동기화 및 장전 스캔으로 비현실적).
   - 우선 범위 실측: 5종목 **4.4초**, 10종목 **9.9초**, 30종목 **31.9초**.
@@ -257,7 +262,7 @@ CREATE INDEX IF NOT EXISTS market_sync_runs_target ON market_sync_runs(target_da
 - **KIS 실전 API 금지**: KIS 국내휴장일조회 `CTCA0903R`은 실전 전용이므로 **사용을 영구 금지**한다(모의 서버 미지원, 실전 전환 금지 원칙).
 - **2중 공식 원천 구조**:
   1. **1차 원천(저장소 공식 스냅샷)**: KRX 공식 연간 휴장일·특별세션(예: 수능일 `2026-11-19`, 연말 휴장일, 임시공휴일) 공지를 연도별 정적 데이터 모듈(예: `shared/krx-calendar.ts`)에 출처 URL·갱신일·유효 연도와 함께 보관한다.
-  2. **2차 교차검증(기준 ETF `069500`)**: 동기화 실행 시 `069500`(KODEX 200)의 동일 60달력일 일봉을 먼저 조회한다. 거래량(`volume > 0`)이 있는 관측 거래일 집합을 1차 스냅샷이 산출한 기대 거래일 집합과 대조한다.
+  2. **2차 교차검증(기준 ETF `069500`)**: 동기화 실행 시 `069500`(KODEX 200)의 동일 구간(`from = addDays(to, -60)`부터 `to`까지) 일봉을 먼저 조회한다. 거래량(`volume > 0`)이 있는 관측 거래일 집합을 1차 스냅샷이 산출한 기대 거래일 집합과 대조한다.
 - **안전 강등(fail-closed) 3조건**: 아래 중 하나라도 해당하면 `calendar` 검증을 `passed`로 승격하지 않고 즉시 `quality.state = 'unverified'`로 강등한다.
   1. **스냅샷 연도 만료**: `from` 또는 `to` 연도가 스냅샷 지원 연도 범위를 벗어남.
   2. **`notice` 미확보**: 해당 날짜가 특별세션(또는 공지 검증 필요일)인데 유효한 `exchangeNotice` 또는 스냅샷 공식 항목이 없음.
@@ -305,9 +310,9 @@ CREATE INDEX IF NOT EXISTS market_sync_runs_target ON market_sync_runs(target_da
 | 사유 코드 | 발생 주체 | 정확한 판별 기준 | 기록 위치 |
 | --- | --- | --- | --- |
 | `4304_DOWN` | 호출자 | `GET http://127.0.0.1:4304/api/state` (`server/http.ts:205-209`) 연결 거부(`ECONNREFUSED`) 또는 타임아웃 | 호출자 로그·누락 보고(4304 미기동이므로 SQLite 미접근) |
-| `KIS_UNCONFIGURED` | 4304 서버 / 호출자 | **`connection.configured === false`** (`injection.phase !== 'present'`, `server/kis.ts:67, 72-77, 307-311`) | `market_sync_runs` (`status='skipped'`) + 누락 보고 |
-| `DEDICATED_RUN_ACTIVE` | 4304 서버 | `approval || contract` 활성 상태(`POST /api/data/sync` `409 Conflict`) | `market_sync_runs` 미기록(전용 원장 보호) + 누락 보고 |
-| `BEFORE_CLOSE_BUFFER` | 4304 서버 | 비거래일이거나 현재 KST < `krxHours(day, notice).close + 버퍼` | `market_sync_runs` (`status='skipped'`) + 누락 보고 |
+| `KIS_UNCONFIGURED` | 4304 서버 / 호출자 | **`connection.configured === false`** (`injection.phase !== 'present'`, `server/kis.ts:67, 72-77, 307-311`) | 기본 권장: `market_sync_runs`(`status='skipped'`, `master_refreshed=0`) + 누락 보고 / 항목 B 대안: 마스터 성공 시 `status='partial'`(`master_refreshed=1`), 마스터 실패 시 `status='failed'`(`master_refreshed=0`) + 누락 보고 |
+| `DEDICATED_RUN_ACTIVE` | 4304 서버 | `approval || contract` 활성 상태(`POST /api/data/sync` `409 Conflict`) | HTTP `409 Conflict` 즉시 차단, `market_sync_runs` 미기록(전용 원장 보호) + 누락 보고 |
+| `BEFORE_CLOSE_BUFFER` | 4304 서버 | 비거래일이거나 현재 KST < `krxHours(day, notice).close + 버퍼` | `market_sync_runs` (`status='skipped'`, `master_refreshed=0`) + 누락 보고 |
 
 #### `KIS_UNCONFIGURED` 오판 금지 규칙 (핵심 안전 조건)
 
@@ -363,10 +368,10 @@ CREATE INDEX IF NOT EXISTS market_sync_runs_target ON market_sync_runs(target_da
 - **안전 강등(fail-closed) 테스트**: 스냅샷 연도 만료, `notice` 미확보, `069500` 거래일 불일치 시 `quality.state === 'unverified'` 및 `calendar_verified === 0` 강등 확인.
 - **4304 단일 경유·동시성 테스트**:
   - `POST /api/data/sync` 동시 2회 요청 시 single-flight(`202`, `deduplicated: true`) 및 KIS 중복 호출 0건.
-  - `approval` 또는 `contract` 활성 시 `409 Conflict` (`DEDICATED_RUN_ACTIVE`) 반환.
+  - `approval` 또는 `contract` 활성 시 `409 Conflict` (`DEDICATED_RUN_ACTIVE`) 반환 및 `market_sync_runs` 미기록 확인.
   - `limit > 50` 입력 시 `400` 거부, 직렬 `await` 호출 시 `KisClient.pending <= 1` 유지 확인.
 - **재시작 복구 테스트**: `market_sync_runs`가 `running` 상태에서 `new Store(path)` 재기동 시 진척 0건은 `interrupted`, 1건 이상은 `partial`로 복구 확인.
-- **`checkInstrument()` 무충돌 테스트**: `syncMastersAtomic()` 다운로드 진행 중에 별도 `DatabaseSync(path, { readOnly: true })`로 `checkInstrument()`를 호출해도 `market_master.phase === 'ready'`가 유지돼 차단되지 않음 확인.
+- **`checkInstrument()` 무충돌·WAL·`busy_timeout` 테스트**: `syncMastersAtomic()` 다운로드와 `saveMasters()`(`server/store.ts:396-412`, `BEGIN IMMEDIATE`) 교체 중 별도 `readOnly` `checkInstrument()`가 차단되지 않음을 확인한다. `Store`의 WAL·`busy_timeout=5000`(`server/store.ts:50`)과 `checkInstrument()` 연결(`server/trading-plans.ts:371`)의 `busy_timeout` 보완 전제를 함께 검증한다.
 - **`KIS_UNCONFIGURED` 판별 테스트**: `configured: true` 상태에서 잔고 60초 경과(`status.phase === 'stale'`, `connected === false`) 시 정상 진행을 확인한다. `configured: false`(`injection.phase === 'missing' | 'invalid'`)일 때만 `KIS_UNCONFIGURED`로 판정한다.
 - **UI·회귀 검증**: `npm test`, `npm run build`, `DataInventory` 출처 라벨·범위 고지 표시 확인.
 
@@ -379,7 +384,7 @@ CREATE INDEX IF NOT EXISTS market_sync_runs_target ON market_sync_runs(target_da
 | 항목 | 결정 내용 | 기본 권장 | 대안 | 영향 범위 |
 | --- | --- | --- | --- | --- |
 | **A. 당일 허용 버퍼** | `MarketData.start()`와 `POST /api/data/sync`의 당일 허용 시작 시각 | **`close+10분`** (정규장 `15:40`, 수능일 `16:40`) | `close+15분` (정규장 `15:45`, 수능일 `16:45`) | `server/market-data.ts`, `server/market-sync.ts`, 경계 테스트 |
-| **B. `KIS_UNCONFIGURED` 처리 정책** | 4304는 기동됐으나 `connection.configured === false`일 때의 동작 | **전체 스킵** (마스터·일봉 모두 건너뛰고 `KIS_UNCONFIGURED` 기록·보고) | 공개 마스터(`syncMastersAtomic`)만 분리 갱신하고 KIS 일봉만 스킵 | `server/market-sync.ts`, `market_sync_runs.master_refreshed`, 운영 보고 |
+| **B. `KIS_UNCONFIGURED` 처리 정책** | 4304는 기동됐으나 `connection.configured === false`일 때의 동작 | **전체 스킵** (`status='skipped'`, `reason_code='KIS_UNCONFIGURED'`, `master_refreshed=0` 기록·보고) | 공개 마스터(`syncMastersAtomic`)만 분리 갱신하고 KIS 일봉 스킵 (마스터 성공 시 `status='partial'`·`master_refreshed=1`, 실패 시 `status='failed'`·`master_refreshed=0`, `reason_code='KIS_UNCONFIGURED'`) | `server/market-sync.ts`, `market_sync_runs`(`status`, `master_refreshed`), 운영 보고 |
 
 - **판단 근거**:
   - **항목 A**: KRX 정규장 마감(15:30) 후 KIS 모의 일봉 반영 지연을 감안하면 10분 버퍼(`15:40`, 수능일 `16:40`)가 실용적이다. 장 마감 지연에 더 보수적으로 대비하려면 15분(`15:45`, 수능일 `16:45`)을 택한다.
