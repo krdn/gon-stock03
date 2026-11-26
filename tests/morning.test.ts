@@ -228,8 +228,7 @@ test('새 ETF의 구성 조회 실패는 해당 ETF만 보류하고, 기존 보�
 });
 test('장후 다시 작성해도 승인 가능한 장전 원본을 보존한다', async () => {
   const { KisClient } = await import('../server/kis.ts');
-  const now = new Date();
-  const day = new Date(now.getTime() + 9 * 3600000).toISOString().slice(0, 10);
+  const day = '2026-11-23';
   const key = 'unconfigured',
     store = new Store(':memory:');
   const report = buildMorning(store, disconnectedConnection(false), Date.parse(day + 'T08:00:00+09:00'), [], []);
@@ -239,6 +238,7 @@ test('장후 다시 작성해도 승인 가능한 장전 원본을 보존한다'
     new KisClient({ key: '', secret: '', account: '', product: '' }),
     undefined,
     {
+      now: () => Date.parse(day + 'T16:00:00+09:00'),
       config: {
         approvalKey: '',
         htsId: '',
@@ -488,6 +488,7 @@ test('/api/morning 저장소 오류는 장전 포트폴리오 전용 500 메시�
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const { KisClient } = await import('../server/kis.ts');
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-23T16:00:00+09:00') });
   const dir = mkdtempSync(join(tmpdir(), 'morning-err-'));
   const path = join(dir, 'state.sqlite');
   const store = new Store(path);
@@ -1322,6 +1323,109 @@ test('buildMorning 경계(정확한 개장 시각·equity=null/0)와 GET/POST �
       body: JSON.stringify({ id: valid.id }),
     });
     assert.equal(resumeApprove.status, 200);
+  } finally {
+    await srv.close();
+    store.close();
+  }
+});
+
+test('주말에는 기존 일요일 보고서를 열람할 수 있지만 생성은 저장 전에 차단한다', async (t) => {
+  const { KisClient } = await import('../server/kis.ts');
+  const { DatabaseSync } = await import('node:sqlite');
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const day = '2026-11-22';
+  const now = Date.parse(day + 'T16:00:00+09:00');
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const dir = mkdtempSync(join(tmpdir(), 'morning-weekend-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, 'fixture.sqlite');
+  const store = new Store(path);
+  const db = new DatabaseSync(path, { readOnly: true });
+  const count = () => db.prepare('SELECT COUNT(*) AS n FROM morning_reports').get()!.n;
+  const report = buildMorning(store, disconnectedConnection(false), now, [], []);
+  store.saveMorning('unconfigured', report);
+  store.approveMorning('unconfigured', day, report.id, report.createdAt);
+  const before = count();
+  const save = t.mock.method(store, 'saveMorning');
+  const srv = await startTestServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), undefined, { now: () => now });
+  try {
+    const res = await fetch(srv.url + '/api/morning/generate', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-workbench': 'local' }, body: '{}',
+    });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /평일 공휴일.*차단 대상이 아닙니다/);
+    assert.equal(save.mock.callCount(), 0);
+    assert.equal(count(), before);
+    const get = await fetch(srv.url + '/api/morning?day=' + day);
+    assert.equal(get.status, 200);
+    const result = await get.json();
+    assert.equal(result.report.id, report.id);
+    assert.equal(result.closeWarning, null);
+  } finally {
+    await srv.close();
+    db.close();
+    store.close();
+  }
+});
+
+test('장후 마감 경고는 승인과 마감 시각·세션·결과에 따라 조회만 한다', async (t) => {
+  const { KisClient } = await import('../server/kis.ts');
+  const day = '2026-11-23';
+  const at = (time: string) => Date.parse(day + 'T' + time + ':00+09:00');
+  let now = at('15:59');
+  const store = new Store(':memory:');
+  const report = buildMorning(store, disconnectedConnection(false), at('08:00'), [], []);
+  report.cash = report.equity = 100;
+  const kis = new KisClient({ key: 'fixture', secret: 'fixture', account: '12345678', product: '01' });
+  const account = kis.accountFingerprint();
+  const srv = await startTestServer(store, kis, undefined, {
+    now: () => now,
+    config: { approvalKey: '', htsId: '', session: { date: day, open: '09:00', close: '16:00', verified: true } },
+  });
+  const get = async (date = day) => {
+    const response = await fetch(srv.url + '/api/morning?day=' + date);
+    assert.equal(response.status, 200);
+    return (await response.json()).closeWarning;
+  };
+  const save = t.mock.method(store, 'saveMorningClose');
+  try {
+    assert.equal(await get(), null);
+    store.saveMorning(account, report);
+    now = at('16:00');
+    assert.equal(await get(), null);
+    store.approveMorning(account, day, report.id, report.createdAt);
+    now = at('15:59');
+    assert.equal(await get(), null);
+    now = at('16:00');
+    assert.deepEqual(await get(), {
+      missing: true, reason: 'missing', canClose: true, reasonCode: 'MISSING_CLOSE',
+      reasons: ['장후 마감 기록이 없습니다.'],
+    });
+    now += 86400000;
+    assert.deepEqual(await get(), {
+      missing: true, reason: 'missing', canClose: false, reasonCode: 'PAST_TRADING_DAY',
+      reasons: ['장후 마감 기록이 없습니다.', '해당 거래일의 수동 마감 기한이 지났습니다.'],
+    });
+    const next = buildMorning(store, disconnectedConnection(false), now, [], []);
+    store.saveMorning(account, next);
+    store.approveMorning(account, next.day, next.id, next.createdAt);
+    assert.deepEqual(await get(next.day), {
+      missing: true, reason: 'missing', canClose: false, reasonCode: 'MISSING_VERIFIED_SESSION',
+      reasons: ['장후 마감 기록이 없습니다.', '당일 검증된 거래 세션이 없어 마감할 수 없습니다.'],
+    });
+    assert.equal(save.mock.callCount(), 0);
+    now = at('16:00');
+    const result = { at: new Date(now).toISOString(), equity: 100, change: 0, positions: [], predictions: [], difference: null, contribution: null };
+    store.saveMorningClose(report.id, { ...result, hold: null });
+    assert.deepEqual(await get(), {
+      missing: true, reason: 'incomplete', canClose: true, reasonCode: 'MISSING_CLOSE',
+      reasons: ['보유 유지 평가액이 없어 장후 마감이 미완성입니다.'],
+    });
+    store.saveMorningClose(report.id, { ...result, hold: 0 });
+    assert.equal(await get(), null);
+    assert.equal(save.mock.callCount(), 2);
   } finally {
     await srv.close();
     store.close();

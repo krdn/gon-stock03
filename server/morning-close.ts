@@ -1,8 +1,30 @@
 import type { BrokerOrder, PaperOrder } from '../shared/model.ts';
 import { randomUUID } from 'node:crypto';
 import type { KisClient } from './kis.ts';
-import type { MorningReport } from '../shared/morning.ts';
+import { isKstWeekend, krxHours } from '../shared/trading-policy.ts';
+import type { MorningCloseWarning, MorningReport } from '../shared/morning.ts';
 import { seoulDay } from './morning.ts';
+
+export function morningCloseWarning(
+  report: MorningReport | null, close: MorningClose | null, now: number,
+  verifiedClose: string | null, dedicatedRun: boolean, configured: boolean,
+): MorningCloseWarning | null {
+  if (!report || report.approvedAt === null || isKstWeekend(report.day) || close?.hold != null) return null;
+  const day = report.day;
+  const today = seoulDay(now);
+  const closeAt = Date.parse(day + 'T' + (verifiedClose ?? krxHours(day).close) + ':00+09:00');
+  if (day > today || (day === today && now < closeAt)) return null;
+  const reason = close ? 'incomplete' : 'missing';
+  const reasons = [close ? '보유 유지 평가액이 없어 장후 마감이 미완성입니다.' : '장후 마감 기록이 없습니다.'];
+  const blocked = (reasonCode: MorningCloseWarning['reasonCode'], message: string): MorningCloseWarning =>
+    ({ missing: true, reason, canClose: false, reasonCode, reasons: [...reasons, message] });
+  if (day < today) return blocked('PAST_TRADING_DAY', '해당 거래일의 수동 마감 기한이 지났습니다.');
+  if (!verifiedClose) return blocked('MISSING_VERIFIED_SESSION', '당일 검증된 거래 세션이 없어 마감할 수 없습니다.');
+  if (dedicatedRun) return blocked('RESTRICTED_MODE', '일반 실행 모드에서만 마감할 수 있습니다.');
+  if (!configured) return blocked('UNCONFIGURED_ACCOUNT', 'KIS 모의 계좌 설정이 필요합니다.');
+  if (report.cash === null || report.equity === null) return blocked('MISSING_BALANCE', '장전 잔고가 없어 마감할 수 없습니다.');
+  return { missing: true, reason, canClose: true, reasonCode: 'MISSING_CLOSE', reasons };
+}
 
 export function tradingContribution(
   local: PaperOrder[],
@@ -40,8 +62,8 @@ export function tradingContribution(
   }
   return { gross, estimatedCost: fees || !fills ? cost : null, net: fees || !fills ? gross - cost : null, fills };
 }
-export async function closeMorning(report: MorningReport, kis: KisClient, close: string, local: PaperOrder[]) {
-  const start = Date.now(),
+export async function closeMorning(report: MorningReport, kis: KisClient, close: string, local: PaperOrder[], now = Date.now) {
+  const start = now(),
     date = report.day.replaceAll('-', '');
   if (
     seoulDay(start) !== report.day ||
@@ -66,14 +88,14 @@ export async function closeMorning(report: MorningReport, kis: KisClient, close:
     report.costBps,
   );
   const balance = (await kis.balance(true)).balance;
-  if (!balance || seoulDay(Date.now()) !== report.day) throw new Error('당일 마감 잔고를 확인하지 못했습니다.');
+  if (!balance || seoulDay(now()) !== report.day) throw new Error('당일 마감 잔고를 확인하지 못했습니다.');
   const benchmark = report.holdings.every((h) => prices.has(h.code))
     ? report.holdings.reduce((v, h) => v + h.qty * prices.get(h.code)!, report.cash)
     : null;
   return {
     contribution,
     positions: balance.positions.map((p) => ({ code: p.code, qty: p.qty })),
-    at: new Date().toISOString(),
+    at: new Date(now()).toISOString(),
     equity: balance.totalEquity,
     change: balance.totalEquity - report.equity,
     hold: benchmark,
