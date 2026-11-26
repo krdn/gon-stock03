@@ -37,6 +37,41 @@ infisical secrets-manager run --env dev --path /kis -- npm start
 5. KIS 모의 매매에서는 먼저 시세·일봉과 계좌·주문을 조회한다. 로컬 데모 주문과 구분한다.
 6. KIS 지정가 주문은 별도 확인창에서 모의 서버 전송을 확인한다. 실제 체결은 계좌·주문 조회로 대조한다. 정정·취소는 현재 KIS 모의 앱에서 처리한다.
 
+## 장후 시세 동기화
+
+평일 거래일 장후 마스터와 우선 종목 일봉을 모을 때는 실행 중인 4304의 단일 API를 사용한다. 먼저 `GET http://127.0.0.1:4304/api/state`로 API 응답을 확인한다.
+
+```bash
+curl -fsS --max-time 5 -o /dev/null http://127.0.0.1:4304/api/state &&
+curl -sS -i -X POST http://127.0.0.1:4304/api/data/sync \
+  -H 'X-Workbench: local' \
+  -H 'Content-Type: application/json' \
+  --data '{"trigger":"post_close","limit":30,"includeMaster":true}'
+```
+
+상태 조회가 성공한 뒤 POST를 실행한다. 수동 동기화는 본문의 `"trigger":"manual"`을 사용한다. 두 방식 모두 `targetDate`를 생략하면 오늘(KST)이 대상이다. 당일 수집은 거래일 마감 10분 뒤부터 허용한다. 정규장은 **15:40 KST**, 수능일은 **16:40 KST**부터다. 특별 세션에 필요한 공지를 확인할 수 없으면 당일 수집을 건너뛴다.
+
+`202 Accepted`를 받으면 `runId`를 기록하고 아래 GET의 `active`와 `runs`에서 완료를 확인한다. `deduplicated: true`는 이미 진행 중인 동기화에 합류한 경우다. `200 OK`와 `status: skipped`를 받으면 `reasonCode`를 확인한다. 결과를 공유할 때는 **우선 범위 수집 기준(범위 밖 미검증)**을 함께 표시한다.
+
+```bash
+curl -fsS 'http://127.0.0.1:4304/api/data/sync?limit=5'
+```
+
+| 사유 코드 | 판별과 대응 |
+| --- | --- |
+| `4304_DOWN` | `GET /api/state`가 연결 거부 또는 타임아웃이면 호출자가 동기화를 건너뛰고 누락을 보고한다. 4304를 자동 기동하거나 재시작하지 않는다. 별도 프로세스에서 `.local/workspace.sqlite`를 직접 열지 않는다. |
+| `KIS_UNCONFIGURED` | `connection.configured === false`일 때만 미주입으로 판정한다. 마스터와 일봉을 모두 건너뛰고 `market_sync_runs`에 `status='skipped'`, `master_refreshed=0`으로 기록한다. 잔고 조회 후 60초가 지나 `connected === false` 또는 `status.phase === 'stale'`이 되어도 `configured`로 주입 여부를 확인한다. [KIS 자동 주입 가이드](kis-auto-injection.md) |
+| `DEDICATED_RUN_ACTIVE` | `approval \|\| contract` 전용 실행이 활성 상태면 `409 Conflict`로 차단한다. 전용 원장 보호를 위해 `market_sync_runs`에 기록하지 않는다. 다른 수집 실행과 충돌하면 `409 COLLECTION_ACTIVE`를 반환하므로 기존 작업 종료 후 다시 확인한다. |
+| `BEFORE_CLOSE_BUFFER` | 오늘이 비거래일이거나 마감 후 10분이 지나기 전에 당일 수집을 요청하면 `status='skipped'`, `master_refreshed=0`으로 기록한다. 특별 세션 공지 미확인도 같은 코드로 기록한다. 거래일의 허용 시각부터 호출한다. |
+
+스킵 또는 실패를 보고할 때는 대상일(KST), 사유 코드, 확인 내용과 다음 행동을 남긴다. 비밀값·계좌번호·잔고 금액은 출력하지 않는다. 조회는 KIS 모의 환경을 유지한다. 평일 장후 자동 실행 등록은 수동 1회 실증 후 별도 소유자 승인을 받는다. [설계와 운영 정책](../plans/212-market-data-sync.md)
+
+### 익일 08:30 KST 장전 점검
+
+1. `GET /api/data/sync?limit=5`의 `runs`에서 `targetDate`가 직전 KRX 거래일이고 `trigger`가 `post_close`인 최근 기록을 찾는다.
+2. `succeeded`면 수집 성공을 기록하고 달력 검증 여부도 확인한다. 이력이 없으면 장후 기록 미확인으로 보고하고, 호출자 로그를 대조해 미실행이나 차단 사유를 확인한다. `skipped`·`partial`·`interrupted`·`failed`는 장전 브리핑 상단에 상태와 `reasonCode`를 보고한다. `running`은 진행 중으로 기록한다.
+3. 장전 보고에는 **우선 범위 수집 기준(범위 밖 미검증)**을 함께 표시한다.
+
 ## 저장·중지·복구
 
 DB는 `.local/workspace.sqlite`다. 주문·관심목록·전략·일지·한도와 KIS 주문 원장을 보관한다. 백업은 앱을 정상 종료한 후 `.local` 전체를 별도 안전한 위치에 복사한다. 실행 중 SQLite 파일 하나만 복사하면 WAL의 최신 변경을 놓칠 수 있다. 저장된 개인정보·거래 기록을 Git에 추가하지 않는다.
