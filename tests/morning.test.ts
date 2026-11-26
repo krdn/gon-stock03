@@ -1431,3 +1431,138 @@ test('장후 마감 경고는 승인과 마감 시각·세션·결과에 따라 
     store.close();
   }
 });
+
+test('장후 수동 마감 차단 코드는 실행 모드·계좌 설정·장전 잔고의 이유를 반환한다', async () => {
+  const { morningCloseWarning } = await import('../server/morning-close.ts');
+  const store = new Store(':memory:');
+  try {
+    const now = Date.parse('2026-11-23T16:00:00+09:00');
+    const report = buildMorning(store, disconnectedConnection(false), now, [], []);
+    report.approvedAt = report.createdAt;
+    for (const [dedicated, configured, cash, equity, code, message] of [
+      [true, true, 100, 100, 'RESTRICTED_MODE', '일반 실행 모드에서만 마감할 수 있습니다.'],
+      [false, false, 100, 100, 'UNCONFIGURED_ACCOUNT', 'KIS 모의 계좌 설정이 필요합니다.'],
+      [false, true, null, 100, 'MISSING_BALANCE', '장전 잔고가 없어 마감할 수 없습니다.'],
+      [false, true, 100, null, 'MISSING_BALANCE', '장전 잔고가 없어 마감할 수 없습니다.'],
+    ] as const) {
+      assert.deepEqual(morningCloseWarning({ ...report, cash, equity }, null, now, '16:00', dedicated, configured), {
+        missing: true, reason: 'missing', canClose: false, reasonCode: code,
+        reasons: ['장후 마감 기록이 없습니다.', message],
+      });
+    }
+  } finally {
+    store.close();
+  }
+});
+
+test('UTC 금요일이어도 KST 토요일이면 POST 보고서 생성은 저장 전에 400을 반환한다', async (t) => {
+  const { KisClient } = await import('../server/kis.ts');
+  const store = new Store(':memory:');
+  const now = Date.parse('2026-11-20T15:00:00Z');
+  const save = t.mock.method(store, 'saveMorning');
+  const kis = new KisClient({ key: '', secret: '', account: '', product: '' }, async () => { throw Error('fixture'); });
+  const srv = await startTestServer(store, kis, undefined, { now: () => now });
+  try {
+    const response = await fetch(srv.url + '/api/morning/generate', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-workbench': 'local' }, body: '{}',
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /주말에는 장전 보고서를 생성하지 않습니다/);
+    assert.equal(save.mock.callCount(), 0);
+  } finally {
+    await srv.close();
+    store.close();
+  }
+});
+
+function schedulerGate() {
+  let resolve!: () => void;
+  const promise = new Promise<void>(done => { resolve = done; });
+  return { promise, resolve };
+}
+
+for (const scenario of ['clock', 'sync', 'master', 'daily', 'expired'] as const) {
+  test('장전 자동 스캔 창과 중복 수집 방지 · ' + scenario, async (t) => {
+    const { KisClient } = await import('../server/kis.ts');
+    const { MarketDataSync } = await import('../server/market-sync.ts');
+    const day = '2026-11-23';
+    const opening = Date.parse(day + 'T09:00:00+09:00');
+    const minute = 60_000;
+    let now = opening - 240 * minute;
+    t.mock.timers.enable({ apis: ['Date', 'setInterval'], now });
+    const previous = process.env.STOCK_MORNING_REPORT;
+    process.env.STOCK_MORNING_REPORT = '1';
+    t.after(() => {
+      if (previous === undefined) delete process.env.STOCK_MORNING_REPORT;
+      else process.env.STOCK_MORNING_REPORT = previous;
+    });
+    const store = new Store(':memory:');
+    const kis = new KisClient({ key: 'fixture', secret: 'fixture', account: '12345678', product: '01' },
+      async () => { throw Error('unexpected fixture request'); });
+    // An approved report keeps the separate ten-minute reporting job idle at the boundary.
+    const report = buildMorning(store, disconnectedConnection(false), now, [], []);
+    store.saveMorning(kis.accountFingerprint(), report);
+    store.approveMorning(kis.accountFingerprint(), day, report.id, report.createdAt);
+    const scanGate = schedulerGate();
+    const collect = t.mock.method(MorningScan.prototype, 'collect', () => scanGate.promise);
+    let syncRunning = scenario === 'sync' || scenario === 'expired';
+    t.mock.getter(MarketDataSync.prototype, 'running', () => syncRunning);
+    const transportEntered = schedulerGate();
+    const transportGate = schedulerGate();
+    const httpFetch = fetch;
+    t.mock.method(globalThis, 'fetch', async () => {
+      transportEntered.resolve();
+      await transportGate.promise;
+      return new Response(null, { status: 503 });
+    });
+    t.mock.method(kis, 'dailyPage', async () => {
+      transportEntered.resolve();
+      await transportGate.promise;
+      return [];
+    });
+    const srv = await startTestServer(store, kis, undefined, {
+      now: () => now, config: { approvalKey: '', htsId: '', session: { date: day, open: '09:00', close: '15:30', verified: true } },
+    });
+    const tick = (minutes: number) => {
+      now = opening - minutes * minute;
+      t.mock.timers.tick(minute);
+    };
+    try {
+      let pending: Promise<Response> | undefined;
+      if (scenario === 'master' || scenario === 'daily') {
+        const { run } = dailyFixture();
+        store.saveDaily({ ...run, nextDate: run.from, captureDate: '20261123', coverageComplete: false });
+        const path = scenario === 'master' ? 'master/refresh' : 'daily/step';
+        pending = httpFetch(srv.url + '/api/data/' + path, {
+          method: 'POST', headers: { 'content-type': 'application/json', 'x-workbench': 'local' },
+          body: JSON.stringify({ id: run.id }),
+        });
+        await Promise.race([transportEntered.promise, pending.then(() => { throw Error('fixture transport was not reached'); })]);
+      }
+      if (scenario === 'clock') tick(241);
+      else tick(240);
+      assert.equal(collect.mock.callCount(), 0, '창 밖이거나 수집 중인 틱');
+      syncRunning = false;
+      transportGate.resolve();
+      if (pending) assert.equal((await pending).status, 200);
+      if (scenario === 'expired') {
+        tick(10);
+        tick(0);
+        assert.equal(collect.mock.callCount(), 0);
+        return;
+      }
+      tick(scenario === 'clock' ? 240 : 11);
+      assert.equal(collect.mock.callCount(), 1, '첫 허용 틱');
+      tick(10.5);
+      scanGate.resolve();
+      await new Promise<void>(resolve => setImmediate(resolve));
+      tick(10.25);
+      assert.equal(collect.mock.callCount(), 1, '진행 중과 완료 후에도 당일 한 번');
+    } finally {
+      transportGate.resolve();
+      scanGate.resolve();
+      await srv.close();
+      store.close();
+    }
+  });
+}

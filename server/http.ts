@@ -526,13 +526,13 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
   const scheduler =
     process.env.STOCK_MORNING_REPORT === '1' && !approval && !contract
       ? setInterval(() => {
-          const now = Date.now(),
+          const now = morningNow(),
             day = seoulDay(now);
           if (!kis.configured() || !realtime.canApproveMorning(day)) return;
           const minutes = (Date.parse(day + 'T' + realtime.morningOpenTime(day) + ':00+09:00') - now) / 60000;
-          if (minutes > 0 && minutes <= 240 && minutes > 10 && scanDay !== day) {
-            scanDay = day;
+          if (minutes <= 240 && minutes > 10 && scanDay !== day && !sync.running && !market.busy) {
             scan.start(realtime.morningOpenTime(day));
+            scanDay = day;
           }
           if (
             minutes <= 10 &&
