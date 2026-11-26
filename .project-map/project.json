@@ -3,37 +3,43 @@
   "project": {
     "id": "gon-stock03",
     "title": "GON Stock · 개발 지도",
-    "description": "국내 주식·ETF 개인 트레이딩 웹앱의 조사 → 화면 → 기능 → KIS 검증 과정",
-    "basis": "2026-11-14 · feat/trading-workbench · 실제 커밋/CI는 연결 이슈와 docs/STATE.md 참조",
-    "source_label": "사용자 요구·공식 KIS 자료·로컬 실행 증거",
-    "initial_node": "screens"
+    "description": "국내 주식·ETF 개인 트레이딩 웹앱의 조사 → 화면 → 기능 → KIS 실증 → 2차 UI/UX → 장전 운용·하드닝 과정",
+    "basis": "2026-11-26 · main 443f6ca · 상세 이력은 docs/STATE.md 및 연결 이슈·PR 참조",
+    "source_label": "사용자 요구·공식 KIS 자료·로컬 실행 및 GitHub PR/CI 근거",
+    "initial_node": "ops-hardening"
   },
   "nodes": [
     {
       "id": "requirements",
       "step": "1",
       "title": "목표와 사용 환경",
-      "short": "확정한 세 가지 선택",
-      "state": "사용자 답변 확인",
-      "summary": "개인 PC에서 국내 주식·ETF를 모의로 수동 주문하고 전략 자동매매를 검증한다.",
+      "short": "확정한 세 가지 선택과 1차 모의 수용",
+      "state": "1차 모의 버전 수용(예외 1건)",
+      "summary": "개인 PC에서 국내 주식·ETF를 모의로 수동 주문하고 전략 자동매매를 검증한다. 2026-11-20 현행 모의 버전(#25 → #3 → #2 → #1)을 예외 1건 포함으로 수용했다.",
       "quote": "사용자 요구 요약: 충분한 공식 조사 후 전체 화면을 먼저 만들고 상세 기능을 2차로 연결한다. 설계 시각화에서 단계별로 이해할 수 있어야 한다.",
-      "decision": "해외·선물옵션·실전·다중 사용자는 현재 범위 밖.",
+      "decision": "해외·선물옵션·실전·다중 사용자는 현재 범위 밖. 1차 모의 수용 시 실제 부분체결 직후 잔량 취소 미관측 1건을 예외로 명시했다.",
       "before": "프로젝트 구성만 존재했다.",
-      "after": "사용자 답변과 이슈 #1에 실행 범위를 기록했다.",
+      "after": "이슈 #1 실행 범위를 고정하고 docs/verification/2026-11-20-paper-acceptance.md에 최종 수용 판정을 기록했다.",
       "points": [
-        "2026-11-14: 국내 주식·ETF 우선",
+        "2026-11-14: 국내 주식·ETF 우선, 개인 PC 단독 사용, gon-web-engineering 적용",
         "모의 수동 주문과 전략 자동매매 함께 검증",
-        "개인 PC 단독 사용, gon-web-engineering 명시 적용"
+        "2026-11-20: #25 → #3 → #2 → #1 현행 모의 버전 수용(기준 a1dcfee)"
       ],
       "limits": [
-        "전체 제품 결과 수용은 아직 받지 않았다."
+        "실제 KIS 모의계좌에서 같은 원주문의 부분체결 직후 잔량 취소 결말은 미관측(예외 수용).",
+        "실전 계좌 전환·해외주식·다중 사용자는 범위 밖."
       ],
       "cost": [],
       "sources": [
         [
-          "상위 이슈",
+          "상위 이슈 #1",
           "https://github.com/krdn/gon-stock03/issues/1",
           "요구와 진행 기준"
+        ],
+        [
+          "장중 수용 #25",
+          "https://github.com/krdn/gon-stock03/issues/25",
+          "1차 모의 버전 수용 판정"
         ]
       ]
     },
@@ -41,20 +47,21 @@
       "id": "research",
       "step": "2",
       "title": "공식 API 조사",
-      "short": "제약을 화면 설계로 연결",
+      "short": "제약을 화면·서버 설계로 연결",
       "state": "근거 기록·준비 검사 통과",
-      "summary": "현재가·주문·잔고·연속조회·일봉·분봉·인증·매수 가능량의 공식 계약을 확인했다.",
+      "summary": "현재가·주문·잔고·연속조회·일봉·분봉·인증·매수 가능량·정정취소·Infisical 주입 계약을 공식 자료로 확인했다.",
       "quote": "사용자 요구 요약: 충분한 공식 조사 후 전체 화면을 먼저 만들고 상세 기능을 2차로 연결한다. 설계 시각화에서 단계별로 이해할 수 있어야 한다.",
-      "decision": "수신 시각과 거래일, 접수와 체결, 합성과 KIS 모의를 분리한다.",
+      "decision": "수신 시각과 거래일, 접수와 체결, 합성과 KIS 모의를 분리한다. 정정취소 가능수량 조회는 모의 TR 미지원 제약을 반영해 한정 취소 경계를 유지한다.",
       "before": "화면과 데이터 요구가 정의되지 않았다.",
-      "after": "src/specs.ts와 docs/research/kis-2026-11.md에 사실·판단·미확정을 연결했다.",
+      "after": "src/specs.ts, docs/research/kis-2026-11.md, docs/INFISICAL.md에 사실·판단·미확정을 연결했다.",
       "points": [
-        "모의 잔고20건 이후 연속조회",
-        "일봉100개, 당일분봉30개·전일 미제공",
-        "KIS 호출량은 계정별 미확정: 직렬화1.1초는 자체 보수적 설정"
+        "모의 잔고 20건 이후 연속조회, 일봉 100개, 당일 분봉 30개·전일 미제공",
+        "KIS 호출량은 계정별 미확정: 직렬화 1.1초는 보수적 자체 설정(#48/#50)",
+        "정정취소 가능수량 조회(inquire-psbl-rvsecncl) 모의 TR 미지원 확인(#25)"
       ],
       "limits": [
-        "정확한 계정 한도·수수료·모의 정정취소 가능수량 계약은 추가 확인 필요"
+        "정확한 계정별 호출 한도·수수료 체계는 계좌·시기별 변동 가능.",
+        "장기 분봉 데이터 확보는 별도 과제."
       ],
       "cost": [],
       "sources": [
@@ -64,7 +71,7 @@
           "인증·조회·주문 샘플"
         ],
         [
-          "이용안내",
+          "KIS 이용안내",
           "https://apiportal.koreainvestment.com/about-howto",
           "신청·토큰"
         ]
@@ -74,92 +81,229 @@
       "id": "screens",
       "step": "3",
       "title": "전체 화면과 상세 설계실",
-      "short": "15개 화면·6개 설계 주제",
-      "state": "구현·브라우저 검증",
-      "summary": "대시보드부터 KIS 모의 매매까지 각 화면의 목적·행동·데이터·실패·완료 조건을 시각화했다.",
+      "short": "15개 기본 메뉴 + 매매 설정 16개 화면",
+      "state": "1차 화면 수용 완료",
+      "summary": "대시보드부터 KIS 모의 매매·매매 설정까지 16개 화면의 목적·행동·데이터·실패·완료 조건을 구현하고 1차 화면 수용을 완료했다.",
       "quote": "사용자 요구 요약: 충분한 공식 조사 후 전체 화면을 먼저 만들고 상세 기능을 2차로 연결한다. 설계 시각화에서 단계별로 이해할 수 있어야 한다.",
-      "decision": "한 화면에서 설계 보기로 이동하고 설계에서 다시 해당 화면을 연다.",
+      "decision": "한 화면에서 설계 보기로 이동하고 설계에서 해당 화면과 의견 이슈를 연다. AI 실행은 미연결 상태를 유지한다.",
       "before": "앱 코드가 없었다.",
-      "after": "15개 화면과 화면 지도·구조·주문 흐름·로드맵·공식 근거 탐색을 제공한다.",
+      "after": "15개 기본 화면(#3)과 매매 설정(/settings/trading, #120·#122·#123), 1차 안내 지도(#143, docs/v1-guide.archify.md)를 제공했다.",
       "points": [
-        "1440×1050, 390×844에서 전체 화면 탐색·가로 넘침 검사",
-        "화면별 입력·데이터·예외·검증 계약",
+        "1440×1050·1440×900 및 390×844에서 전체 화면 탐색·가로 넘침 검사",
+        "#12 트레이딩·#20 관심종목 등 15개 화면 1차 수용 완료(2026-11-19 closeout)",
         "AI 실행 미연결: 이 지도 요청 버튼은 초안 저장·복사만 수행"
       ],
       "limits": [
-        "사용자 디자인 피드백·결과 수용은 아직 미확인"
+        "1차 화면 수용은 제시된 초기/DEMO·실시세 배치에 한정하며 후속 UX는 2차(#149)에서 보강했다."
       ],
       "cost": [],
       "sources": [
         [
-          "1차 이슈",
+          "1차 이슈 #3",
           "https://github.com/krdn/gon-stock03/issues/3",
-          "화면과 설계 수용 기준"
+          "15개 화면과 설계 수용 기준"
+        ],
+        [
+          "1차 안내 지도 #143",
+          "https://github.com/krdn/gon-stock03/issues/143",
+          "16개 화면 이해와 2차 의견 수집"
         ]
       ]
     },
     {
       "id": "local-features",
       "step": "4",
-      "title": "로컬 기능 구현",
-      "short": "수동·전략 주문을 실행",
-      "state": "핵심 검사·브라우저 통과",
-      "summary": "SQLite에 상태를 보존하며 데모 주문·취소·전략 자동재생·비용 포함 백테스트·위험관리·일지·관심목록을 연결했다.",
+      "title": "로컬 기능·데이터·백테스트 구현",
+      "short": "SQLite 원장·DEMO·저장 일봉 백테스트",
+      "state": "통합·회귀 검증 통과",
+      "summary": "SQLite WAL 저장소 위에 DEMO 주문·취소·전략 자동재생·종목 마스터·KIS 저장 일봉 수집·고정 입력 백테스트 재현·위험관리·알림·매매일지·관심목록을 통합했다.",
       "quote": "사용자 요구 요약: 충분한 공식 조사 후 전체 화면을 먼저 만들고 상세 기능을 2차로 연결한다. 설계 시각화에서 단계별로 이해할 수 있어야 한다.",
-      "decision": "실제 금융 거래와 분리된 합성 환경에서 규칙을 먼저 검사한다.",
-      "before": "화면만 있는 단계였다.",
-      "after": "접수·다음봉 체결·잔고 반영과 3초 자동재생을 브라우저에서 확인했다.",
+      "decision": "실제 금융 거래와 분리된 합성 환경(DEMO) 및 고정 스냅샷 실험(backtest_experiments)으로 규칙과 재현성을 먼저 검증한다.",
+      "before": "화면과 초기 합성 엔진만 존재했다.",
+      "after": "공통 데이터 신선도(#6), 마스터·일봉 수집(#7/#15), 포트폴리오(#16), 관심종목(#20), 저장 일봉 백테스트(#21), 매매일지(#23), 알림(#17), 설계실(#24)을 main에 통합했다.",
       "points": [
-        "미체결 자원 예약·중복 ID 방지·입력 검증",
-        "긴급정지와 재시작 후 전략 정지",
-        "백테스트는 이전봉 신호→다음봉 체결",
-        "독립 리뷰 지적 재현·수정: 단위/계약/저장 23개, 브라우저 9개 통과"
+        "미체결 자원 예약·중복 ID 방지·긴급정지·재시작 후 전략 정지",
+        "저장 일봉 품질 검사(누락·중복·수정주가) 및 실험 해시 재현(#15/#21)",
+        "PR #86(#85)으로 초기 브랜치 29개 이력을 main에 통합·정리"
       ],
       "limits": [
-        "실제 가격·체결 유동성·수수료·세금·부분체결을 재현하지 않는다."
+        "DEMO 합성은 실제 가격·체결 유동성·부분체결을 재현하지 않는다."
       ],
       "cost": [],
       "sources": [
         [
-          "2차 이슈",
+          "2차 공통 이슈 #2",
           "https://github.com/krdn/gon-stock03/issues/2",
-          "기능과 후속 검증"
+          "기능과 후속 검증 기준"
+        ],
+        [
+          "브랜치 통합 #85",
+          "https://github.com/krdn/gon-stock03/issues/85",
+          "초기 기능 브랜치 이력 통합"
         ]
       ]
     },
     {
       "id": "kis-integration",
       "step": "5",
-      "title": "KIS 모의 연결",
-      "short": "실제 조회와 주문 코드를 구분",
-      "state": "실조회 확인·주문 실증 전",
-      "summary": "Infisical 주입으로 실제 KIS 모의 인증·잔고·현재가·일봉100개·당일 주문 조회를 확인했다.",
+      "title": "KIS 모의 연결·장중 실증",
+      "short": "실주문·복구·실시간 WS·매매 설정·주문 원장",
+      "state": "장중 실증 및 모의 버전 수용(예외 1건)",
+      "summary": "Infisical 주입으로 KIS 모의 REST·WebSocket·장중 실제 모의 주문·응답 유실 복구·전략 신호·매매 정책 설정·주문 원장 읽기를 구현하고 장중 실증을 마쳤다.",
       "quote": "사용자 요구 요약: 충분한 공식 조사 후 전체 화면을 먼저 만들고 상세 기능을 2차로 연결한다. 설계 시각화에서 단계별로 이해할 수 있어야 한다.",
-      "decision": "실전 URL 대체는 없으며 주문 응답 불명은 재전송하지 않는다.",
-      "before": "키 연결 위치가 미확정이었다.",
-      "after": "사용자가 제공한 dev /kis에서 값을 노출하지 않고 서버에 주입했다.",
+      "decision": "실전 URL 대체 금지, 전송 전 원장 기록, 응답 불명 시 자동 재전송 금지·명시적 복구, 일반 한도와 전용 실행 계약(trading_plans) 분리를 유지한다.",
+      "before": "KIS 실조회만 확인되고 주문·복구·실시간 경로는 미실증 상태였다.",
+      "after": "11월 16~20일 장중 모의 주문·취소·응답 유실 복구·전략 신호·KODEX 200 체결을 확인하고 docs/verification/2026-11-20-paper-acceptance.md로 수용했다.",
       "points": [
-        "2026-11-14T14:35Z 전후 실제 조회",
-        "일봉100개: 20260619~20261113",
-        "KIS 전송 전 원장 기록·접수번호 대조·미수 없는 매수량·위험 한도",
-        "총평가금액 기반 손실 검사·초기 원장 표시·부분체결 잔량0 종결 보완"
+        "#75(11/18): 삼성전자 1주 모의 시장가 전량 체결·보유 증가 실증",
+        "#92(PR #93): WebSocket 실시간 구독 승인·체결가·REST 대조 및 재시도 복구",
+        "#25(11/18~20): 응답 유실 복구, 전략 신호 관측, KODEX 200 2주 전량 체결(155,465원)",
+        "#120·#122·#123 매매 설정·정책 계약 및 #145·#147 주문 원장·지난 실행 기록 UX 통합"
       ],
       "limits": [
-        "실제 KIS 주문 전송·체결·웹 정정취소·WebSocket 연속 자동매매는 미검증/미구현 항목이 남았다.",
-        "응답번호 없는 불명 주문의 수동 복구 UI는 후속이다.",
-        "GitHub PR·CI와 사용자 검토 기록은 작업 문서에서 확인한다."
+        "실제 KIS 모의계좌에서 같은 원주문의 부분체결 직후 잔량 취소 결말은 미관측(격리 테스트 3종으로 대체 검증, #25 예외 수용).",
+        "웹 일반 정정취소 API는 409 차단 유지."
       ],
       "cost": [],
       "sources": [
         [
-          "2차 이슈",
-          "https://github.com/krdn/gon-stock03/issues/2",
-          "남은 구현·실증 경계"
+          "장중 실증 #25",
+          "https://github.com/krdn/gon-stock03/issues/25",
+          "모의 주문·복구·수용 기록"
         ],
         [
-          "주문 공식 샘플",
-          "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/order_cash/order_cash.py",
-          "모의 TR·입력 계약"
+          "실시간 WS #92",
+          "https://github.com/krdn/gon-stock03/pull/93",
+          "실시간 구독·REST 대조 통합"
+        ],
+        [
+          "주문 원장 UX #147",
+          "https://github.com/krdn/gon-stock03/pull/148",
+          "지난 실행 기록과 KIS 확인 시각"
+        ]
+      ]
+    },
+    {
+      "id": "ui-ux-v2",
+      "step": "6",
+      "title": "2차 UI/UX 통합과 수용",
+      "short": "16개 화면·제품 PR 18개 통합 및 위임 수용",
+      "state": "main 병합·위임 수용 완료",
+      "summary": "16개 화면(15개 메뉴 + 매매 설정)의 2차 UI/UX 개선 PR 18개를 통합(#187)하고, 시장 마스터 출처 구분(#194)까지 반영해 2026-11-21 위임 최종 수용(#195)을 완료했다.",
+      "quote": "사용자 위임 요약: 이슈별 최종 판단을 총괄 세션에 위임하여 16개 화면·20건 순차 점검의 UX 범위를 수용한다.",
+      "decision": "화면별 환경 전달·URL/뒤로가기 복원·KST 기준 시각·출처 구분(공개 마스터 vs 합성 예시)을 전 화면 공통 UX 기준으로 고정했다.",
+      "before": "1차 화면은 환경 전환 누락·모바일 탐색 거리·브라우저 시계 편차·출처 혼동이 남아 있었다.",
+      "after": "PR #187(e2266c3), PR #194(eb86b6d), PR #195(7f8623d)를 main에 병합하고 docs/verification/2026-11-20-ux-v2.md에 화면별 검토표를 남겼다.",
+      "points": [
+        "제품 PR 18개(#155~#186) 통합: 로컬·GitHub CI 단위/API 276건·Chromium 300건 통과",
+        "시장 탐색(#161/#194): KIS 공개 종목 마스터와 합성 예시 목록 출처 명시",
+        "1차 안내 지도 PR #144(docs/v1-guide.archify.md) 16개 카드에 2차 PR·의견 이슈 연결"
+      ],
+      "limits": [
+        "사용자 본인의 직접 화면 평가는 미확인(총괄 세션 위임 수용).",
+        "UX 점검에 한정하며 실제 KIS 주문·전략 실행·장중 체결은 검증 범위 밖."
+      ],
+      "cost": [],
+      "sources": [
+        [
+          "2차 UI/UX #149",
+          "https://github.com/krdn/gon-stock03/issues/149",
+          "전체 16개 화면 진행 및 위임 수용"
+        ],
+        [
+          "통합 PR #187",
+          "https://github.com/krdn/gon-stock03/pull/187",
+          "16개 화면·제품 PR 18개 통합"
+        ],
+        [
+          "시장 출처 PR #194",
+          "https://github.com/krdn/gon-stock03/pull/194",
+          "공개·합성 마스터 출처 구분"
+        ]
+      ]
+    },
+    {
+      "id": "morning-portfolio",
+      "step": "7",
+      "title": "장전 포트폴리오 운용·브리핑",
+      "short": "시장 스캔·승인 기반 운용·Step 0 신뢰/UX·A2UI 게이트",
+      "state": "main 병합·장중 운용 수용 대기",
+      "summary": "KOSPI·KOSDAQ 일봉 스캔과 공개 원문 분석으로 장전 운용 계획을 만들고 승인 기반 모의 매매·장후 비용 차감 대조를 구현했다(#197). 이어 장전 브리핑 신뢰·UX 결함 6건을 고정 계약·UI(Step 0)로 해결하고 A2UI v1.0 조건부 게이트를 정의했다(#205).",
+      "quote": "작업 기준(#197·#205): 당일 승인 없는 매수를 보류하고, AI 원문 요약과 서버 규칙 판단을 분리하며, 반대 근거와 수집 실패 집계를 승인 전 노출한다.",
+      "decision": "매수 한도·승인 차단은 서버 고정 규칙으로 계산하고, 공개 원문 LLM 분석은 원문 인용 대조·기관(hostname) 독립성 검사를 통과한 결과만 표시한다. A2UI v1.0 Step 1은 진입 조건 충족 후 별도 착수한다.",
+      "before": "단일 종목 수동·전략 매매만 지원했고 시장 전체 장전 스캔·공개 원문 브리핑·이월 매도 흐름이 없었다.",
+      "after": "PR #198(aea3e67)과 PR #206(63dbbf5)을 main에 병합하고 docs/tasks/197-morning.md, docs/tasks/205-morning-briefing.md, docs/plans/a2ui-morning-briefing.md를 기록했다.",
+      "points": [
+        "#197(PR #198): server/morning*.ts, shared/morning.ts, MorningPortfolio.tsx, scripts/morning-replay.ts 구현",
+        "#205(PR #206): 반대 근거 2열 대비 카드, hostname/정규 URL 독립성 검사, analysisCoverage 독립 보존, 승인 사전검사 단일화, 후보–근거 결정론 매칭",
+        "#205 검증: typecheck 오류 0, npm test 305/305, build 성공, Opus 5.5 재리뷰 전체 Playwright 309/309 및 Astra 6.2 최종 PASS"
+      ],
+      "limits": [
+        "실제 장중 연속 운용, 새 주문의 실제 KIS 접수·체결, 통계적 최적 매수 중단값과 순수익은 미측정(장중 운용 수용 대기).",
+        "Step 0의 Claude CLI 원문 분석·KIS 원격 API 호출은 격리 모의 검증이며 Step 1(A2UI)은 조건부 보류."
+      ],
+      "cost": [],
+      "sources": [
+        [
+          "장전 포트폴리오 #197",
+          "https://github.com/krdn/gon-stock03/pull/198",
+          "장전 운용 계획·승인 기반 모의매매"
+        ],
+        [
+          "장전 브리핑 Step 0 #205",
+          "https://github.com/krdn/gon-stock03/pull/206",
+          "신뢰·UX 6건 해결 및 A2UI 게이트"
+        ]
+      ]
+    },
+    {
+      "id": "ops-hardening",
+      "step": "8",
+      "title": "전체 점검·설정 하드닝·무인 인증",
+      "short": "DB 분리·신뢰 시계·안전 정지·Infisical Universal Auth",
+      "state": "main 병합 완료(443f6ca)",
+      "summary": "장전 스캔 DB 분리·경계 수정·동적 포트·serverNow 통일(#199), 연결·설정 안전 정지 예외·키/401/진단 하드닝(#201), npm run dev Infisical Machine Identity 무인 인증(#203·#207), 상태 동기화(#209)와 CI 의존성 갱신(#196)을 main에 반영했다.",
+      "quote": "작업 기준(#199·#201·#203·#207·#209): 저장소 오염·클라이언트 시계 오차·장기 조회 중 안전 정지 차단을 제거하고, 사람 세션 만료 없는 로컬 Infisical 자동 주입과 상태 문서 정합성을 유지한다.",
+      "decision": "장전 스캔 바는 morning_daily_bars/morning_scan_meta로 분리하고, 긴급정지·실시간 정지·전략 정지는 전역 busy와 독립 실행한다. Vite server.fs.deny로 .secrets/**·.local/** HTTP 403 차단을 강제한다.",
+      "before": "장전 스캔이 daily_runs를 공유했고, 일부 화면이 브라우저 Date.now()를 썼으며, 장기 조회 중 정지 버튼이 막히고 Infisical CLI 세션 만료 시 수동 로그인이 필요했다.",
+      "after": "PR #200(78d4391), #202(e41fd23), #204(2e64669), #208(c64bcfc), #209(370764d), #196(443f6ca)을 main에 병합했다.",
+      "points": [
+        "#199(PR #200): morning_daily_bars/morning_scan_meta 분리, 개장·이월·재연결 경계 수정, 동적 포트, serverNow 통일(npm test 299/299, E2E 304/304, Opus 5.5·Codex PASS)",
+        "#201(PR #202): pendingActions 카운터 및 안전 정지 예외, KIS 키 공백/제어문자 차단·JSON 401 분류·동시 balance() 정제(npm test 301/301, Opus 5.5 PASS)",
+        "#203·#207(PR #204·#208): scripts/infisical-dev.ts Universal Auth 자동 인증, Vite .secrets/.local 403 차단, KIS 자동 주입 가이드(npm test 307/307, Opus 5.5 PASS)",
+        "#209(370764d)·#196(443f6ca): docs/STATE.md 및 작업 기록 동기화, actions/setup-node 7.1.0 갱신"
+      ],
+      "limits": [
+        "실제 Infisical Cloud Machine Identity 자격증명 발급·원격 연동 실측은 사용자 설정 후 필요.",
+        "로컬 환경에 graphify CLI 미설치로 graphify-out/GRAPH_REPORT.md는 2026-11-21(e36b185) 기준 유지.",
+        "보류 Optional 항목(#201 #8a 20종목 초과 페이지 비교 완화, #199 watch 배열 스키마 검사 등)은 후속 이슈 대상."
+      ],
+      "cost": [],
+      "sources": [
+        [
+          "전체 점검·하드닝 #199",
+          "https://github.com/krdn/gon-stock03/pull/200",
+          "장전 스캔 분리·동적 포트·serverNow"
+        ],
+        [
+          "설정 하드닝 #201",
+          "https://github.com/krdn/gon-stock03/pull/202",
+          "안전 정지 예외·키/401/진단 보강"
+        ],
+        [
+          "Infisical 무인 인증 #203",
+          "https://github.com/krdn/gon-stock03/pull/204",
+          "Universal Auth 및 Vite 403 차단"
+        ],
+        [
+          "KIS 자동 주입 가이드 #207",
+          "https://github.com/krdn/gon-stock03/pull/208",
+          "운영 문서 정리"
+        ],
+        [
+          "상태 동기화 #209",
+          "https://github.com/krdn/gon-stock03/pull/209",
+          "docs/STATE.md·작업 기록 최신화"
         ]
       ]
     }
