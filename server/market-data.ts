@@ -114,7 +114,7 @@ export class MarketData {
     }
     return this.store.masterData();
   }
-  start(input: unknown) {
+  start(input: unknown, sync?: { triggerSource: 'post_close_sync' | 'manual_sync'; syncRunId: string }) {
     const config = dailyInput.parse(input);
     const today = koreaDate();
     if (config.to > today || (config.to === today && !afterCloseBuffer(today,Date.now(),this.notice))) throw new Error('일봉 수집 종료일은 서울 기준 오늘 마감 허용 시각 이후에만 수집할 수 있습니다.');
@@ -125,7 +125,7 @@ export class MarketData {
       if (JSON.stringify(config) !== JSON.stringify(previousConfig)) throw new Error('이미 사용한 수집 ID의 조건을 변경할 수 없습니다.');
       return previous;
     }
-    const run: DailyRun = { ...config, source: 'kis-rest', exchange: 'KRX', endpoint, startedAt: new Date().toISOString(), captureDate: koreaDate(), nextDate: config.from, coverageComplete: false,
+    const run: DailyRun = { ...config, triggerSource: 'manual', ...sync, source: 'kis-rest', exchange: 'KRX', endpoint, startedAt: new Date().toISOString(), captureDate: koreaDate(), nextDate: config.from, coverageComplete: false,
       status: { ...emptyStatus('kis-paper'), phase: 'partial', staleAfterMs: 86400000 },
       quality: { state: 'pending', missingDates: [], unexpectedDates: [], candidateMissingDates: [], duplicates: 0, emptyWindows: [] } };
     this.store.saveDaily(run); return run;

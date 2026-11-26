@@ -8,6 +8,8 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { dailyRunSchema } from '../shared/data-inventory.ts';
+import type { DailyRun } from '../shared/market-data.ts';
 import { Store } from '../server/store.ts';
 import { MarketDataSync } from '../server/market-sync.ts';
 import { MarketData } from '../server/market-data.ts';
@@ -107,11 +109,11 @@ test('concurrent HTTP calls share one serial run with stale configured credentia
   });
   const server = await startTestServer(store, kis);
   const url = server.url + '/api/data/sync';
-  const start = () =>
+  const start = (trigger = 'post_close') =>
     fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ targetDate: '20261126', includeMaster: false }),
+      body: JSON.stringify({ trigger, targetDate: '20261126', includeMaster: false }),
     });
   const finished = async () => {
     for (let n = 0; n < 200; n++) {
@@ -122,6 +124,22 @@ test('concurrent HTTP calls share one serial run with stale configured credentia
     throw Error('sync timeout');
   };
   try {
+    assert.equal((await (await fetch(url)).json()).morningScan, null);
+    store.saveMorningScanSymbol('000001', '20261120', 'old', 'incomplete', []);
+    store.saveMorningScanSymbol('000002', '20261125', 'a', 'passed', []);
+    store.saveMorningScanSymbol('069500', '20261125', 'a', 'passed', []);
+    t.mock.timers.tick(1000);
+    const lastMorningCheck = new Date().toISOString();
+    store.saveMorningScanSymbol('000003', '20261125', 'b', 'incomplete', []);
+    assert.equal((await (await fetch(url)).json()).morningScan.targetCount, 3);
+    t.mock.timers.tick(1000);
+    const direct = await fetch(server.url + '/api/data/daily', {
+      method: 'POST', headers, body: JSON.stringify({ id: randomUUID(), code: '000001',
+        from: '20261125', to: '20261125', adjustment: 'raw' }),
+    });
+    const manual = dailyRunSchema.parse((await direct.json()).run);
+    assert.equal(manual.triggerSource, 'manual');
+    assert.equal(manual.syncRunId, undefined);
     const [a,b] = await Promise.all([start(),start()]);
     assert.equal(a.status, 202);
     assert.equal(b.status, 202);
@@ -131,6 +149,8 @@ test('concurrent HTTP calls share one serial run with stale configured credentia
     assert.deepEqual([first.deduplicated,second.deduplicated].sort(), [false,true]);
     const busy = await fetch(server.url+'/api/data/master/refresh',{method:'POST',headers,body:'{}'});
     assert.equal(busy.status,409);
+    assert.equal(dailyRunSchema.parse(store.dailyRuns()[0]).triggerSource, 'post_close_sync');
+    assert.equal(store.dailyRuns()[0].syncRunId, first.runId);
     release();
     const result = await finished();
     assert.equal(result.status, 'succeeded');
@@ -138,11 +158,16 @@ test('concurrent HTTP calls share one serial run with stale configured credentia
     assert.equal(peak, 1);
     assert.deepEqual(codes, ['069500', '229200', '005930']);
     assert.ok(store.morningRecentBars('20260927', '20261127', '2100-01-01').size === 3);
+    assert.deepEqual((await (await fetch(url)).json()).morningScan, {
+      source: 'morning_scan', targetDate: '20261125', checkedAt: lastMorningCheck,
+      targetCount: 2, passedCount: 1, incompleteCount: 1,
+    });
     failSymbol=true;
-    assert.equal((await start()).status,202);
+    assert.equal((await start('manual')).status,202);
     const partial = await finished();
     assert.equal(partial.status,'partial');
     assert.equal(partial.succeededSymbols,2);
+    assert.equal(store.dailyRuns().filter(r => r.syncRunId === partial.runId && r.triggerSource === 'manual_sync').length, 3);
     assert.deepEqual(partial.summary.failures,[{code:'229200',reason:'DAILY_FAILED'}]);
     failSymbol=false;
     mismatch = true;
@@ -290,5 +315,56 @@ test('prepared checkInstrument reads committed ready master during download and 
     writer.close();
     store.close();
     rmSync(directory, { recursive: true });
+  }
+});
+
+test('completed sync retention preserves usable bars, resumable runs, snapshot references and other groups', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'sync-retention-'));
+  const store = new Store(join(directory, 'test.db'));
+  const db = new DatabaseSync(store.path);
+  try {
+    const market = new MarketData(store, new KisClient(creds, async () => { throw Error('unexpected fetch'); }));
+    const manual = market.start({ id: randomUUID(), code: '005930', from: '20261101', to: '20261120', adjustment: 'raw' });
+    const template: DailyRun = { ...manual, triggerSource: 'manual_sync', syncRunId: randomUUID(), nextDate: null,
+      coverageComplete: true, quality: { ...manual.quality, state: 'passed' },
+      status: { ...manual.status, phase: 'ready', complete: true } };
+    const save = (overrides: Partial<DailyRun> = {}) => {
+      const run = { ...template, id: randomUUID(), ...overrides };
+      store.saveDaily(run, [{ date: run.to, code: run.code, adjustment: run.adjustment, source: 'kis-rest',
+        collectedAt: run.startedAt, open: 1, low: 1, high: 1, close: 1, volume: 1 }]);
+      return run.id;
+    };
+    const pinned = [randomUUID(), randomUUID()];
+    db.prepare('INSERT INTO backtest_experiments VALUES (?,?)').run('fixture',
+      JSON.stringify({ snapshot: { input: { runId: pinned[0] }, collection: { id: pinned[1] } } }));
+    const protectedIds = [
+      save({ id: manual.id, triggerSource: 'manual', syncRunId: undefined }),
+      save({ triggerSource: undefined, syncRunId: undefined }),
+      save({ nextDate: template.to, coverageComplete: false }),
+      save({ status: { ...template.status, phase: 'loading' } }),
+      save({ code: '000001' }), save({ adjustment: 'adjusted' }),
+      ...pinned.map(id => save({ id })),
+    ];
+    const obsolete = Array.from({ length: 15 }, () => save());
+    const freshest = save({ triggerSource: 'post_close_sync' });
+    const historical = save({ to: '20261115' });
+    const last = save({ quality: { ...template.quality, state: 'failed' }, status: { ...template.status, phase:'partial', complete:false } });
+    assert.equal(store.dailyRuns().length, protectedIds.length + 2);
+    for (const id of [...protectedIds, freshest, last]) {
+      assert.ok(store.dailyRun(id));
+      assert.equal(store.dailyBars(id).length, 1);
+    }
+    for (const id of [...obsolete, historical]) {
+      assert.equal(store.dailyRun(id), undefined);
+      assert.deepEqual(store.dailyBars(id), []);
+    }
+    // Force failure after the linked bars have been deleted.
+    db.exec("CREATE TRIGGER fail_prune BEFORE DELETE ON daily_runs BEGIN SELECT RAISE(ABORT,'fixture rollback'); END");
+    assert.throws(() => save(), /fixture rollback/);
+    assert.equal(store.dailyRuns().length, protectedIds.length + 2);
+    assert.equal(store.dailyBars(last).length, 1);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM daily_bars').get()?.n, protectedIds.length + 2);
+  } finally {
+    db.close(); store.close(); rmSync(directory, { recursive: true });
   }
 });

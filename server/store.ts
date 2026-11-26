@@ -91,6 +91,11 @@ export class Store {
     if (!this.db.prepare('PRAGMA table_info(morning_scan_meta)').all().some(row => row.name === 'source'))
       this.db.exec("ALTER TABLE morning_scan_meta ADD COLUMN source TEXT NOT NULL DEFAULT 'morning_scan' CHECK(source IN ('morning_scan','post_close_sync','manual_sync'))");
     this.db.exec('CREATE TABLE IF NOT EXISTS backtest_experiments (id TEXT PRIMARY KEY, body TEXT NOT NULL);');
+    this.db.exec(`CREATE INDEX IF NOT EXISTS daily_sync_group
+      ON daily_runs(body->>'$.code', body->>'$.adjustment')
+      WHERE body->>'$.triggerSource' IN ('manual_sync','post_close_sync');
+      CREATE INDEX IF NOT EXISTS experiment_input_run ON backtest_experiments(body->>'$.snapshot.input.runId');
+      CREATE INDEX IF NOT EXISTS experiment_collection_run ON backtest_experiments(body->>'$.snapshot.collection.id');`);
     this.db.exec('CREATE TABLE IF NOT EXISTS market_removed (code TEXT PRIMARY KEY, body TEXT NOT NULL);');
     this.db.prepare('INSERT OR IGNORE INTO workspace VALUES (1, 1, ?)').run(JSON.stringify(initialState()));
     const row = this.db.prepare('SELECT schema_version FROM workspace WHERE id=1').get();
@@ -390,6 +395,16 @@ export class Store {
     this.db.prepare('INSERT OR REPLACE INTO morning_scan_meta (code,to_date,calendar_hash,status,checked_at,source) VALUES (?,?,?,?,?,?)')
       .run(code, toDate, calendarHash, status, new Date().toISOString(), source);
   }
+  latestMorningScan() {
+    const row = this.db.prepare(`SELECT to_date, MAX(checked_at) AS checked_at, COUNT(*) AS total,
+        SUM(status='passed') AS passed, SUM(status='incomplete') AS incomplete
+      FROM morning_scan_meta WHERE source='morning_scan'
+      GROUP BY to_date ORDER BY to_date DESC LIMIT 1`).get();
+    return row ? {
+      source: 'morning_scan' as const, targetDate: String(row.to_date), checkedAt: String(row.checked_at),
+      targetCount: Number(row.total), passedCount: Number(row.passed), incompleteCount: Number(row.incomplete),
+    } : null;
+  }
   morningScannedCodes(toDate: string, calendarHash: string): Set<string> {
     return new Set(
       this.db
@@ -482,12 +497,40 @@ export class Store {
   }
   dailyRun(id: string): DailyRun | undefined { const row = this.db.prepare('SELECT body FROM daily_runs WHERE id=?').get(id); return row ? JSON.parse(row.body as string) as DailyRun : undefined; }
   dailyBars(id: string): StoredBar[] { return this.db.prepare('SELECT body FROM daily_bars WHERE run_id=? ORDER BY date').all(id).map(row => JSON.parse(row.body as string) as StoredBar); }
+  private pruneCompletedSyncDaily(run: DailyRun) {
+    // Keep the latest attempt and the freshest usable data, including on historical reruns.
+    const obsolete = this.db.prepare(`WITH completed AS (
+      SELECT id, ROW_NUMBER() OVER (ORDER BY body->>'$.startedAt' DESC, rowid DESC) AS recency,
+        ROW_NUMBER() OVER (ORDER BY
+          CASE WHEN EXISTS (SELECT 1 FROM daily_bars WHERE run_id=daily_runs.id)
+            THEN CASE body->>'$.quality.state' WHEN 'passed' THEN 2 WHEN 'unverified' THEN 1 ELSE 0 END
+            ELSE 0 END DESC,
+          body->>'$.to' DESC, body->>'$.startedAt' DESC, rowid DESC) AS usability
+      FROM daily_runs WHERE body->>'$.triggerSource' IN ('manual_sync','post_close_sync')
+        AND body->>'$.code'=? AND body->>'$.adjustment'=?
+        AND body->>'$.coverageComplete'=1 AND body->>'$.nextDate' IS NULL
+        AND body->>'$.status.phase'!='loading'
+    ) SELECT id FROM completed WHERE recency>1 AND usability>1
+      AND NOT EXISTS (SELECT 1 FROM backtest_experiments
+        WHERE body->>'$.snapshot.input.runId'=completed.id OR body->>'$.snapshot.collection.id'=completed.id)`)
+      .all(run.code, run.adjustment);
+    const removeBars = this.db.prepare('DELETE FROM daily_bars WHERE run_id=?');
+    const removeRun = this.db.prepare('DELETE FROM daily_runs WHERE id=?');
+    for (const { id } of obsolete) {
+      removeBars.run(id);
+      removeRun.run(id);
+    }
+  }
   saveDaily(run: DailyRun, bars: StoredBar[] = [], projection?: {syncId:string;source:"manual_sync"|"post_close_sync";hash:string}) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const insert = this.db.prepare('INSERT INTO daily_bars VALUES (?,?,?)');
       for (const bar of bars) insert.run(run.id, bar.date, JSON.stringify(bar));
       this.db.prepare('INSERT INTO daily_runs VALUES (?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body').run(run.id, JSON.stringify(run));
+      if ((run.triggerSource === 'post_close_sync' || run.triggerSource === 'manual_sync') &&
+          run.coverageComplete && run.nextDate === null && run.status.phase !== 'loading') {
+        this.pruneCompletedSyncDaily(run);
+      }
       if (projection && run.quality.state === 'passed') {
         this.db.prepare('UPDATE market_sync_runs SET succeeded_symbols=succeeded_symbols+1 WHERE id=?').run(projection.syncId);
         const existing = this.db.prepare('SELECT to_date FROM morning_scan_meta WHERE code=?').get(run.code);
