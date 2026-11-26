@@ -1,6 +1,6 @@
 # 1차 화면 함께 보기 {#workbench-guide}
 
-궁금한 일을 고르면 1차 화면 캡처와 `main`(`443f6ca`)에 병합된 2차 UI/UX·장전 운용·하드닝 변경을 함께 볼 수 있습니다. 2차 UI/UX 16개 화면·제품 PR 18개는 [#187](https://github.com/krdn/gon-stock03/pull/187)·[#194](https://github.com/krdn/gon-stock03/pull/194)로 병합되어 [#195](https://github.com/krdn/gon-stock03/pull/195) 위임 수용을 마쳤고, 이후 장전 포트폴리오 운용([#197](https://github.com/krdn/gon-stock03/issues/197)·[#205](https://github.com/krdn/gon-stock03/issues/205)), 전체 점검·설정 하드닝([#199](https://github.com/krdn/gon-stock03/issues/199)·[#201](https://github.com/krdn/gon-stock03/issues/201)), Infisical 무인 자동 인증([#203](https://github.com/krdn/gon-stock03/issues/203)·[#207](https://github.com/krdn/gon-stock03/issues/207))이 추가됐습니다. 각 카드의 캡처 이미지는 2026년 11월 17~20일 기준 기록을 유지하며, 로컬 예시 링크(`127.0.0.1:4486`)는 검토 서버가 실행 중인 PC에서만 열립니다.
+궁금한 일을 고르면 1차 화면 캡처와 `main`(`443f6ca`)에 병합된 2차 UI/UX·장전 운용·하드닝 변경을 함께 볼 수 있습니다. 2차 UI/UX 16개 화면·제품 PR 18개는 [#187](https://github.com/krdn/gon-stock03/pull/187)·[#194](https://github.com/krdn/gon-stock03/pull/194)로 병합되어 [#195](https://github.com/krdn/gon-stock03/pull/195) 위임 수용을 마쳤고, 이후 장전 포트폴리오 운용([#197](https://github.com/krdn/gon-stock03/issues/197)·[#205](https://github.com/krdn/gon-stock03/issues/205)), 전체 점검·설정 하드닝([#199](https://github.com/krdn/gon-stock03/issues/199)·[#201](https://github.com/krdn/gon-stock03/issues/201)), Infisical 무인 자동 인증([#203](https://github.com/krdn/gon-stock03/issues/203)·[#207](https://github.com/krdn/gon-stock03/issues/207))이 추가됐습니다. 각 카드의 캡처 이미지는 2026년 11월 17~20일 기준 기록을 유지하며, 로컬 예시 링크(`127.0.0.1:4486`)는 검토 서버가 실행 중인 PC에서만 열립니다. 주문·메모·시세는 모두 합성 예시입니다.
 
 - [전체 화면 목차](block:contents)
 - [화면 뒤에서 일하는 곳](block:system)
@@ -12,7 +12,7 @@
 @source local-save title="종목 메모 저장" path=server/http.ts lines=448:453
 @source watch-save title="관심 종목 저장" path=server/http.ts lines=415:419
 @source http title="화면 요청을 받는 로컬 서버" path=server/http.ts lines=200:209
-@source reconcile title="KIS 모의 주문과 주문 대조" path=server/http.ts lines=377:385
+@source reconcile title="KIS 모의 주문과 주문 대조" path=server/http.ts lines=384:397
 @source db title="PC에 주문을 저장하는 SQLite 원장" path=server/store.ts lines=50:71
 @source acceptance title="1차 수용과 실제 주문 대조" path=docs/verification/2026-11-20-paper-acceptance.md lines=3:11
 @source plan title="다음 실행 조건의 초안과 고정" path=server/trading-plans.ts lines=155:190
