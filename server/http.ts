@@ -8,7 +8,8 @@ import {
   type MorningReport,
 } from '../shared/morning.ts';
 import { researchDecision } from './morning-replay.ts';
-import { closeMorning } from './morning-close.ts';
+import { isKstWeekend } from '../shared/trading-policy.ts';
+import { closeMorning, morningCloseWarning } from './morning-close.ts';
 import { applyExposure } from './morning-exposure.ts';
 import { MorningScan } from './morning-scan.ts';
 import { buildMorning, seoulDay } from './morning.ts';
@@ -48,6 +49,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
   const market = new MarketData(store, kis);
   const account = () => (kis.configured() ? kis.accountFingerprint() : 'unconfigured');
   const scan = new MorningScan(store, kis, market);
+  const morningNow = realtimeOptions?.now ?? (() => Date.now());
   let generating = false;
   async function resolveCarryPrevious(day: string) {
     if (!store.pendingCarry(account()) || !realtime.canApproveMorning(day)) return null;
@@ -70,33 +72,34 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
     if (previousDay) store.bindNextSession(account(), previousDay, day);
   }
   async function generateMorning() {
+    const day = seoulDay(morningNow());
+    if (isKstWeekend(day)) throw new Error('주말에는 장전 보고서를 생성하지 않습니다. 평일 공휴일은 현재 차단 대상이 아닙니다.');
     if (generating) throw new Error('보고서를 작성 중입니다.');
-    const day = seoulDay(Date.now()),
-      key = account();
+    const key = account();
     const prior = store.morning(key, day);
     const opening = Date.parse(day + 'T' + realtime.morningOpenTime(day) + ':00+09:00');
-    if (prior && Date.now() >= opening) return prior;
+    if (prior && morningNow() >= opening) return prior;
     if (prior?.approvedAt) throw new Error('이미 승인한 오늘 계획입니다.');
     generating = true;
     try {
-      const cutoff = Math.min(Date.now(), Date.parse(day + 'T' + realtime.morningOpenTime(day) + ':00+09:00'));
+      const cutoff = Math.min(morningNow(), opening);
       const [{ news, gaps }, indicators] = await Promise.all([
         collectNews(cutoff),
-        Date.now() <= Date.parse(day + 'T' + realtime.morningOpenTime(day) + ':00+09:00')
-          ? collectIndicators(Date.now())
+        morningNow() <= opening
+          ? collectIndicators(morningNow())
           : Promise.resolve([]),
       ]);
       const connection =
         kis.configured() &&
         !approval &&
         !contract &&
-        Date.now() < Date.parse(day + 'T' + realtime.morningOpenTime(day) + ':00+09:00')
+        morningNow() < opening
           ? await kis.balance(true)
           : kis.connection();
       const report = buildMorning(
         store,
         connection,
-        Date.now(),
+        morningNow(),
         news,
         gaps,
         indicators,
@@ -104,7 +107,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
       );
       if (
         report.cash !== null &&
-        Date.now() < Date.parse(day + 'T' + realtime.morningOpenTime(day) + ':00+09:00')
+        morningNow() < opening
       ) {
         try{await bindCarry(day);}catch{report.gaps.push('직전 거래일 미확인 · 이월 매도 감시 보류');}
         const monitored = new Set(store.carry(key, day).map((p) => p.code));
@@ -117,9 +120,9 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
           return true;
         });
         await applyExposure(report, store, kis);
-        report.createdAt = new Date().toISOString();
+        report.createdAt = new Date(morningNow()).toISOString();
       }
-      if (process.env.STOCK_MORNING_ANALYST_MODEL && Date.now() < opening) {
+      if (process.env.STOCK_MORNING_ANALYST_MODEL && morningNow() < opening) {
         try {
           const { docs, coverage } = await collectPublicDocuments(report.news);
           if (coverage.attempted > 0) report.analysisCoverage = coverage;
@@ -132,7 +135,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         } catch {
           report.gaps.push('전문가 원문 분석 미확인');
         }
-        report.createdAt = new Date().toISOString();
+        report.createdAt = new Date(morningNow()).toISOString();
       }
       if(process.env.STOCK_MORNING_COST_BPS){
         try{report.costBps=z.object({buy:z.number().min(0).lt(1000),sell:z.number().min(0).lt(1000)}).strict().parse(JSON.parse(process.env.STOCK_MORNING_COST_BPS));}
@@ -151,9 +154,9 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
           report.gaps.push('과거 검증 자료 부족 또는 형식 오류 · 손실 기준 미측정');
         }
       }
-      if (Date.now() >= opening && prior) return prior;
-      if (Date.now() >= opening) {
-        report.createdAt = new Date().toISOString();
+      if (morningNow() >= opening && prior) return prior;
+      if (morningNow() >= opening) {
+        report.createdAt = new Date(morningNow()).toISOString();
         report.approvalBlocked = true;
         report.approvalBlockReasons = [...new Set([...(report.approvalBlockReasons ?? []), AFTER_OPEN_BLOCK_REASON])];
         if (!report.gaps.some((g) => g.includes(APPROVAL_BLOCK_TEXT))) {
@@ -208,15 +211,17 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         json(res, 200, snapshot); return;
       }
       if (path === '/api/morning' && req.method === 'GET') {
-        const now = Date.now();
+        const now = morningNow();
         const day = z.iso.date().parse(new URL(req.url!, 'http://127.0.0.1').searchParams.get('day') ?? seoulDay(now));
         const report = store.morning(account(), day);
+        const close = report && store.morningClose(report.id);
         json(res, 200, {
           run: realtime.morningRun(),
           pendingCarry: store.pendingCarry(account()),
           carry: store.carry(account(), seoulDay(now)).map((p) => ({ code: p.code, remaining: p.remaining })),
           days: store.morningDays(account()),
-          close: report && store.morningClose(report.id),
+          close,
+          closeWarning: morningCloseWarning(report, close, now, realtime.morningCloseTime(day), !!(approval || contract), kis.configured()),
           scan: scan.state,
           approval: report ? evaluateMorningApproval(report, day, now) : { allowed: false, reasons: [] },
           report: report && { ...report, watch: [] },
@@ -297,12 +302,12 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         }
         if (path === '/api/morning/close') {
           const { id } = idInput.parse(input),
-            day = seoulDay(Date.now());
+            day = seoulDay(morningNow());
           const report = store.morning(account(), day),
             close = realtime.morningCloseTime(day);
           if (!report || report.id !== id || !close || approval || contract)
             throw new Error('당일 계획과 공식 거래시간을 확인하세요.');
-          if (store.morningClose(id)?.hold == null) store.saveMorningClose(id, await closeMorning(report, kis, close,store.morningOrders(account(),day)));
+          if (store.morningClose(id)?.hold == null) store.saveMorningClose(id, await closeMorning(report, kis, close, store.morningOrders(account(), day), morningNow));
           json(res, 200, { message: '장후 계좌와 보유 유지 결과를 기록했습니다.' });
           return;
         }

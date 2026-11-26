@@ -65,12 +65,16 @@ export function krxHours(date: string, notice?: ExchangeNotice) {
   if (notice?.date === date) return { open: notice.open, close: notice.close };
   return date === '2026-11-19' ? { open: '10:00', close: '16:30' } : { open: '09:00', close: '15:30' };
 }
+// 1단계에서는 KST 주말만 차단하며 평일 공휴일은 차단하지 않는다.
+export function isKstWeekend(date: string) {
+  const day = new Date(date + 'T12:00:00+09:00').getUTCDay();
+  return day === 0 || day === 6;
+}
 export function sessionBounds(date: string, window: { open: string; close: string }, notice?: ExchangeNotice) {
   const official = krxHours(date, notice);
-  const day = new Date(date + 'T12:00:00+09:00').getUTCDay();
   const open = window.open > official.open ? window.open : official.open;
   const close = window.close < official.close ? window.close : official.close;
-  if (day === 0 || day === 6 || open >= close) return null;
+  if (isKstWeekend(date) || open >= close) return null;
   return { start: Date.parse(date + 'T' + open + ':00+09:00'), end: Date.parse(date + 'T' + close + ':00+09:00') };
 }
 export function defaultOncePolicy(date: string): OncePolicy {
