@@ -233,3 +233,16 @@ export function resolveViewCandidateCodes(
   ].join('\n');
   return matchCandidateCodesInText(combined, candidates);
 }
+
+/** 승인된 평일 보고서의 장후 마감 경고. GET 응답의 closeWarning은 경고가 없으면 null이다. */
+export interface MorningCloseWarning {
+  /** 경고가 있을 때만 객체를 내려준다. */
+  missing: true;
+  /** 마감 기록 부재(missing) 또는 보유 유지 평가액 부재(incomplete). */
+  reason: 'missing' | 'incomplete';
+  /** 현재 서버가 아는 조건에서 수동 마감을 요청할 수 있는지 표시한다. */
+  canClose: boolean;
+  reasonCode: 'MISSING_CLOSE' | 'PAST_TRADING_DAY' | 'MISSING_VERIFIED_SESSION' | 'RESTRICTED_MODE' | 'MISSING_BALANCE' | 'UNCONFIGURED_ACCOUNT';
+  /** 경고 및 수동 마감 불가 사유를 표시할 한국어 문구. */
+  reasons: string[];
+}
