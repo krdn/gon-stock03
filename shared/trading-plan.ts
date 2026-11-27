@@ -1,3 +1,4 @@
+import type { StrategyRule, ExitOverlay } from './strategy-rules.ts';
 import { oncePolicy, strategyPolicy, validOncePolicy } from './trading-policy.ts';
 import { z } from 'zod';
 import type { State } from './model.ts';
@@ -65,6 +66,8 @@ export interface PlanVersion {
   fixed: boolean;
   limits: ReturnType<typeof planLimits>;
   runId?: string;
+  rule?: StrategyRule;
+  overlay?: ExitOverlay;
   symbol?: string;
   fast?: number;
   slow?: number;

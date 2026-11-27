@@ -521,13 +521,13 @@ export class Store {
       removeRun.run(id);
     }
   }
-  saveDaily(run: DailyRun, bars: StoredBar[] = [], projection?: {syncId:string;source:"manual_sync"|"post_close_sync";hash:string}) {
+  saveDaily(run: DailyRun, bars: StoredBar[] = [], projection?: {syncId:string;source:"manual_sync"|"post_close_sync";hash:string}, options?: { preserveHistory: true }) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const insert = this.db.prepare('INSERT INTO daily_bars VALUES (?,?,?)');
       for (const bar of bars) insert.run(run.id, bar.date, JSON.stringify(bar));
       this.db.prepare('INSERT INTO daily_runs VALUES (?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body').run(run.id, JSON.stringify(run));
-      if ((run.triggerSource === 'post_close_sync' || run.triggerSource === 'manual_sync') &&
+      if (!options?.preserveHistory && (run.triggerSource === 'post_close_sync' || run.triggerSource === 'manual_sync') &&
           run.coverageComplete && run.nextDate === null && run.status.phase !== 'loading') {
         this.pruneCompletedSyncDaily(run);
       }

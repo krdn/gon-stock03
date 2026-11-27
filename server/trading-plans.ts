@@ -1,3 +1,4 @@
+import { assertRealtimeRule } from '../shared/strategy-rules.ts';
 import { DatabaseSync } from 'node:sqlite';
 import {
   existsSync,
@@ -29,7 +30,7 @@ import { DEFAULT_PAPER_MAX_QTY } from '../shared/contracts.ts';
 import type { State } from '../shared/model.ts';
 import { Store } from './store.ts';
 import { preparedApprovalSchema, type PaperApproval } from './paper.ts';
-import { assertStrategyIdentity, strategyContractSchema, type StrategyContract } from './strategy-contract.ts';
+import { eligibleDailyRun, sameStrategyConditions, assertStrategyIdentity, strategyContractSchema, type StrategyContract } from './strategy-contract.ts';
 import { koreaDate, type KisClient } from './kis.ts';
 
 const kindSchema = z.enum(['once', 'strategy']);
@@ -42,6 +43,7 @@ function selectedStrategy(state: State, terms: Extract<TradingTerms, { kind: 'st
     throw new Error('저장 전략 revision이 달라졌습니다. 대상을 다시 선택하세요.');
   if (!terms.policy && !state.instruments.some((row) => row.code === strategy.code))
     throw new Error('확장 종목은 매매설정의 새 전략 정책을 고정해야 합니다.');
+  assertRealtimeRule(strategy.rule, strategy.overlay, strategy.slow);
   return strategy;
 }
 function assetKind(
@@ -159,7 +161,7 @@ export function saveTradingDraft(store: Store, raw: unknown) {
       limits = planLimits(state);
     const strategy = terms.kind === 'strategy' ? selectedStrategy(state, terms) : undefined;
     if (
-      old &&
+      old && (!strategy || (strategy.code === old.draft.symbol && strategy.qty === old.draft.qty && strategy.fast === old.draft.fast && strategy.slow === old.draft.slow && sameStrategyConditions(strategy, old.draft))) &&
       JSON.stringify(old.draft.terms) === JSON.stringify(terms) &&
       JSON.stringify(old.draft.limits) === JSON.stringify(limits)
     )
@@ -169,6 +171,8 @@ export function saveTradingDraft(store: Store, raw: unknown) {
       terms,
       fixed: false,
       limits,
+      ...(strategy?.rule && { rule: strategy.rule }),
+      ...(strategy?.overlay && { overlay: strategy.overlay }),
       ...(strategy && { symbol: strategy.code, fast: strategy.fast, slow: strategy.slow, qty: strategy.qty }),
     };
     return { draft, previous: old?.draft.fixed ? old.draft : old?.previous };
@@ -193,7 +197,7 @@ export function fixTradingDraft(store: Store, kis: KisClient, raw: unknown) {
       (strategy.code !== draft.symbol ||
         strategy.fast !== draft.fast ||
         strategy.slow !== draft.slow ||
-        strategy.qty !== draft.qty)
+        strategy.qty !== draft.qty || !sameStrategyConditions(strategy, draft))
     )
       throw new Error('저장 전략 조건을 다시 확인하세요.');
     let instrumentKind: 'stock' | 'etf' | undefined;
@@ -251,6 +255,8 @@ export function fixTradingDraft(store: Store, kis: KisClient, raw: unknown) {
             fast: strategy!.fast,
             slow: strategy!.slow,
             qty: strategy!.qty,
+            ...(draft.rule && { rule: draft.rule }),
+            ...(draft.overlay && { overlay: draft.overlay }),
           });
     const contents =
       JSON.stringify({ version: 1, draftId: draft.id, sourceLedger: realpathSync(store.path), config }) + '\n';
@@ -282,7 +288,11 @@ export function fixTradingDraft(store: Store, kis: KisClient, raw: unknown) {
               ];
           });
           if ('requestId' in config) seed.configurePaperRun(config);
-          else seed.bindStrategyContract(config);
+          else {
+            for (const run of store.dailyRuns().reverse())
+              if (eligibleDailyRun(run, config.code)) seed.saveDaily(run, store.dailyBars(run.id), undefined, { preserveHistory: true });
+            seed.bindStrategyContract(config);
+          }
         } finally {
           seed.close();
         }

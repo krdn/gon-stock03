@@ -1,3 +1,5 @@
+import { evaluateClose } from '../shared/strategy-rules.ts';
+import { dailyFixture } from './backtest-fixture.ts';
 import { test } from 'node:test';
 import { defaultStrategyPolicy } from '../shared/trading-policy.ts';
 import assert from 'node:assert/strict';
@@ -30,7 +32,7 @@ test('실시간은 재시작 시 미연결이며 GET 상태는 비밀값이나 �
 import { EventEmitter } from 'node:events';
 import { Worker } from 'node:worker_threads';
 import { createCipheriv, randomUUID } from 'node:crypto';
-import { Realtime, type SocketFactory } from '../server/realtime.ts';
+import { Realtime, dailyHolding, type SocketFactory } from '../server/realtime.ts';
 import { PaperBroker, type PaperApproval } from '../server/paper.ts';
 import { KisClient, koreaDate } from '../server/kis.ts';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -1021,5 +1023,128 @@ test('재연결 대기(retry) 중 prepareMorning은 수동 소켓이나 새 종�
     assert.throws(() => f.realtime.prepareMorning(report), /정지한 뒤/);
   } finally {
     f.close();
+  }
+});
+
+for (const side of ['buy','sell'] as const) test('확정 종가 '+side+'는 당일 봉·미검증 수집을 제외하고 같은 날 한 번만 전송한다', async t => {
+  t.mock.timers.enable({apis:['Date'],now:base});
+  const rule = {kind:'ma_crossover',maType:'ema',fast:2,slow:3} as const;
+  const f = fixture(':memory:',undefined,{rule});
+  try {
+    if (side === 'sell') f.response.positions=[{pdno:'005930',prdt_name:'검증',hldg_qty:'1',ord_psbl_qty:'1',pchs_avg_pric:'69000',prpr:'70000'}];
+    const socket = f.start();
+    await f.realtime.reconcile();
+    const id = savedStrategy(f);
+    f.store.update(s => { s.strategies.at(-1)!.rule = rule; });
+    socket.frame(priceFrame(1));
+    assert.equal((await evaluated(f,id)).reason,'확정 일봉 준비 봉 부족');
+    const {run,bars} = dailyFixture();
+    run.code = '005930';
+    const prior = (side === 'buy' ? [10,10,9,15] : [10,10,11,5]).map((close,i)=>({...bars[i],date:['20261110','20261111','20261112','20261113'][i],code:run.code,close}));
+    run.from = prior[0].date; run.to = '20261116'; run.calendar = undefined;
+    f.store.saveDaily(run,[...prior,{...prior[3],close:side === 'buy' ? 1 : 200,date:'20261116'}]);
+    f.store.saveDaily({...run,id:randomUUID(),startedAt:'2026-11-15T00:00:00Z',coverageComplete:false},[]);
+    socket.frame(priceFrame(2));
+    socket.frame(priceFrame(3));
+    for (let i=0; i<1000 && !f.store.paperOrders().some(o=>o.status==='accepted'); i++) await new Promise<void>(r=>setImmediate(r));
+    socket.frame(priceFrame(4));
+    const latest = await evaluated(f,id);
+    assert.equal(latest.reason,'당일 확정 일봉 신호 이미 집행됨');
+    assert.equal(f.sentOrders.length,1);
+    const [order] = f.store.paperOrders();
+    assert.deepEqual([order.strategy?.event,order.side,order.price,order.qty],['20261116:daily',side,70000,1]);
+    assert.equal(order.strategy?.signalBarDate,'20261113');
+    assert.equal(f.store.strategyUsage().attempts,1);
+  } finally { f.close(); }
+});
+
+test('부분매도·추가 매수·전량 청산 후 재진입의 체결원가와 샹들리에 래칫을 복원한다', () => {
+  const store = new Store(':memory:');
+  const {bars} = dailyFixture();
+  const overlay = {chandelier:{atrPeriod:7,atrMultiplier:2}};
+  const rule = {kind:'ma_crossover',maType:'sma',fast:2,slow:3} as const;
+  const recordFill = (day: number, side: 'buy'|'sell', filled: number, amount: number) => {
+    const date = bars[day].date;
+    const id = randomUUID();
+    const order = {requestId:id,brokerId:id,qty:filled,code:'005930',side,filled,createdAt:date,tradeDate:date,
+      price:0,orderType:'market' as const,status:'filled' as const,message:'fixture',remaining:0};
+    store.savePaper(order,{action:'reconcile',actor:'system',before:'accepted',evidence:{
+      tradeDate:date,observedAt:date,balance:{cash:0,totalEquity:0,positions:[]},
+      orders:[{...order,name:'fixture',date,organization:'001',cancelled:false,fillAmount:amount}]}});
+  };
+  const holding = () => dailyHolding(store,store.paperOrders(),bars,7,overlay);
+  try {
+    recordFill(0,'buy',4,40); recordFill(1,'sell',2,30); recordFill(2,'buy',2,60);
+    assert.equal(holding()?.entryPrice,20);
+    recordFill(3,'sell',4,100);
+    assert.equal(holding(),undefined);
+    recordFill(7,'buy',3,90);
+    bars[8].high=80;
+    bars[11].low=0; bars[11].high=105;
+    let stop: number | undefined;
+    for (let i=7;i<bars.length;i++) {
+      stop=evaluateClose(bars.slice(0,i+1),rule,{barsHeld:i-6,entryPrice:30,trailStop:stop},overlay).trailStop;
+    }
+    assert.deepEqual(holding(),{entryPrice:30,barsHeld:bars.length-7,trailStop:stop});
+  } finally { store.close(); }
+});
+
+test('당일 raw event의 UNIQUE claim은 재개 후에도 남고 다른 전략·revision의 전용 원장은 독립이다', () => {
+  const dir=mkdtempSync(join(tmpdir(),'daily-claims-'));
+  try {
+    for (const [id,revision] of [['first',1],['first',2],['second',1]] as const) {
+      const path=join(dir,id+revision+'.sqlite');
+      const f=fixture(path,undefined,{strategyId:id,revision});
+      const contract=JSON.parse(String(f.store.strategyContract())) as StrategyContract;
+      const order={...makeClaimOrder(),strategy:{id,revision,event:'20261116:daily',signal:'buy' as const}};
+      try {
+        f.store.savePaper(order,{actor:'system',action:'sending',before:null},contract);
+        f.store.savePaper({...order,status:'accepted'});
+      } finally { f.close(); }
+      const reopened=new Store(path,{contract});
+      try {
+        assert.throws(()=>reopened.savePaper({...order,requestId:randomUUID()},{actor:'system',action:'sending',before:null},contract),/UNIQUE/);
+        assert.equal(reopened.strategyUsage().attempts,1);
+        assert.equal(reopened.paperOrders().length,1);
+      } finally { reopened.close(); }
+    }
+  } finally { rmSync(dir,{recursive:true}); }
+});
+function makeClaimOrder() {
+  return {...order(),status:'sending' as const,tradeDate:'20261116',createdAt:new Date(base).toISOString(),filled:0,remaining:1,message:'fixture'};
+}
+
+test('직전 개장일·중간 개장일·달력 연도 미입증 및 과거 원장의 동일 일봉은 전송 0건', async t => {
+  t.mock.timers.enable({apis:['Date'],now:base});
+  const rule = {kind:'ma_crossover',maType:'ema',fast:2,slow:3} as const;
+  for (const dates of [
+    ['20261109','20261110','20261111','20261112'],
+    ['20261109','20261111','20261112','20261113'],
+    ['20251230','20261111','20261112','20261113'],
+    ['20261110','20261111','20261112','20261113'],
+  ]) {
+    const duplicate = dates[0] === '20261110';
+    const dir = mkdtempSync(join(tmpdir(),'signal-bar-'));
+    const path = join(dir,'strategy.sqlite');
+    if (duplicate) {
+      const first = fixture(path,undefined,{rule});
+      try {
+        const strategy={id:'kis-strategy',revision:1,event:'20261113:daily',signal:'buy' as const,signalBarDate:'20261113'};
+        first.store.savePaper({...makeClaimOrder(),tradeDate:'20261113',status:'accepted',strategy});
+      } finally { first.close(); }
+    }
+    const f = fixture(path,undefined,{rule});
+    try {
+      const socket=f.start(); await f.realtime.reconcile(); const id=savedStrategy(f);
+      f.store.update(s=>{ s.strategies.at(-1)!.rule=rule; });
+      const {run,bars}=dailyFixture();
+      run.code='005930'; run.from=dates[0]; run.to=dates[3];
+      f.store.saveDaily(run,[10,10,9,15].map((close,i)=>({...bars[i],code:run.code,date:dates[i],close})));
+      if (duplicate) assert.equal(f.store.paperOrders()[0].strategy?.signalBarDate,'20261113');
+      socket.frame(priceFrame(1));
+      assert.equal((await evaluated(f,id)).reason,duplicate?'동일 확정 일봉 신호 이미 집행됨':'직전 거래일 확정 일봉 미확인');
+      assert.equal(f.sentOrders.length,0);
+      assert.equal(f.store.strategyUsage().attempts,0);
+    } finally { f.close(); rmSync(dir,{recursive:true}); }
   }
 });

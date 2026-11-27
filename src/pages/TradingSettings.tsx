@@ -11,7 +11,7 @@ import {
   type TradingTerms,
 } from '../../shared/trading-plan';
 import { won, type Strategy } from '../../shared/model';
-import { STRATEGY_CATALOG, assertRealtimeRule } from '../../shared/strategy-rules';
+import { STRATEGY_CATALOG, assertRealtimeRule, isBasicRealtimeSma } from '../../shared/strategy-rules';
 import { Panel } from '../components/ui';
 import { PaperQuantitySetting } from '../components/PaperQuantitySetting';
 import { RiskLimitSettings } from '../components/RiskLimitSettings';
@@ -27,26 +27,25 @@ const titles = { general: '일반 주문·위험', once: '다음 한정 실행',
 /** KIS 모의 실시간 시작 계약(`assertRealtimeRule` + 기본 SMA 장기 100 이하) 지원 여부. */
 function isKisContractSupported(strategy: Strategy): boolean {
   try {
-    assertRealtimeRule(strategy.rule, strategy.overlay);
+    assertRealtimeRule(strategy.rule, strategy.overlay, strategy.slow);
   } catch {
     return false;
   }
-  const slow = strategy.rule?.kind === 'ma_crossover' ? strategy.rule.slow : strategy.slow;
-  return slow <= 100;
+  return true;
 }
 
 /** 저장 전략의 실제 규칙·필터·오버레이 요약을 반환한다(다중 규칙을 5/20 교차로 오표시하지 않음). */
-function formatTradingStrategyRule(strategy: Strategy): string {
+function formatTradingStrategyRule(strategy: Pick<Strategy, 'rule' | 'overlay' | 'fast' | 'slow'>): string {
   const { rule, overlay } = strategy;
   const parts: string[] = [];
   if (!rule) {
     parts.push(
-      isKisContractSupported(strategy)
+      isBasicRealtimeSma(rule, overlay, strategy.slow)
         ? `${strategy.fast}/${strategy.slow} 교차`
         : `${STRATEGY_CATALOG.ma_crossover.title} (SMA ${strategy.fast}/${strategy.slow})`,
     );
   } else if (rule.kind === 'ma_crossover') {
-    const basic = isKisContractSupported(strategy);
+    const basic = isBasicRealtimeSma(rule, overlay, strategy.slow);
     if (basic) {
       parts.push(`${rule.fast}/${rule.slow} 교차`);
     } else {
@@ -303,6 +302,9 @@ function Editor({
   const selectedUnsupported = Boolean(selected && !isKisContractSupported(selected));
   const savedStrategyId = initial?.terms.kind === 'strategy' ? initial.terms.strategyId : undefined;
   const savedStrategy = savedStrategyId ? strategies.find((s) => s.id === savedStrategyId) : undefined;
+  const savedConditions = initial?.fast && initial.slow && (initial.rule || initial.overlay)
+    ? { rule: initial.rule, overlay: initial.overlay, fast: initial.fast, slow: initial.slow }
+    : savedStrategy;
   const studioDraftState = selected
     ? {
         backtestDraft: {
@@ -443,6 +445,9 @@ function Editor({
       <form onSubmit={advance}>
         <fieldset className="plan-fields" disabled={locked}>
           {step > 1 && mismatch && <p role="alert">저장 전략을 확인할 수 없거나 revision이 변경됐습니다. 대상·기간에서 다시 선택하세요.</p>}
+          {step === 2 && selected && !selectedUnsupported && !isBasicRealtimeSma(selected.rule, selected.overlay, selected.slow) && (
+            <p>{selected.name} · {formatTradingStrategyRule(selected)}</p>
+          )}
           {step > 1 && selectedUnsupported && selected && (
             <div role="alert" className="plan-phase">
               <p>
@@ -555,7 +560,7 @@ function Editor({
                   onChange={(e) => {
                     const s = strategies.find((v) => v.id === e.target.value);
                     if (s) {
-                      if (!isKisContractSupported(s)) setNewStrategy(null);
+                      if (!isBasicRealtimeSma(s.rule, s.overlay, s.slow)) setNewStrategy(null);
                       edit({ ...terms, strategyId: s.id, revision: s.revision ?? 1 });
                     }
                   }}
@@ -597,7 +602,7 @@ function Editor({
                   )}
                 </p>
               )}
-              {selectedUnsupported ? (
+              {selected && !isBasicRealtimeSma(selected.rule, selected.overlay, selected.slow) ? (
                 <p className="muted">
                   다중 규칙·오버레이 전략은 기본 SMA 빠른 복사 대상이 아닙니다.{' '}
                   <Link to="/strategies?environment=kis-paper#strategy-editor" state={studioDraftState}>
@@ -867,8 +872,8 @@ function Editor({
               {saved && initial?.symbol && (
                 <p>
                   저장 대상 {initial.symbol} ·{' '}
-                  {savedStrategy && !isKisContractSupported(savedStrategy)
-                    ? formatTradingStrategyRule(savedStrategy)
+                  {savedConditions && !isBasicRealtimeSma(savedConditions.rule, savedConditions.overlay, savedConditions.slow)
+                    ? formatTradingStrategyRule(savedConditions)
                     : `${initial.fast}/${initial.slow}`}{' '}
                   · {initial.qty}주
                 </p>

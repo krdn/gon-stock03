@@ -57,9 +57,27 @@ export function assertCloseOnly(rule?: StrategyRule, overlay?: ExitOverlay) {
   if (overlay?.volatilityParity || overlay?.chandelier || (rule && STRATEGY_CATALOG[rule.kind].environments.demo === false) || (rule?.kind === 'ma_crossover' && rule.minRelativeVolume))
     throw new Error('DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙은 저장 일봉 백테스트에서 사용하세요.');
 }
-export function assertRealtimeRule(rule?: StrategyRule, overlay?: ExitOverlay) {
-  if (overlay?.volatilityParity || overlay?.chandelier || (rule && (rule.kind !== 'ma_crossover' || rule.maType !== 'sma' || rule.regimePeriod || rule.minRelativeVolume)))
-    throw new Error('신규 다중 전략 규칙의 KIS 장중 실시간 평가는 장전 레벨 트리거 계약 연결 후 활성화됩니다.');
+function unfilteredSma(rule?: StrategyRule) {
+  return !rule || (rule.kind === 'ma_crossover' && rule.maType === 'sma' && !rule.regimePeriod && !rule.minRelativeVolume);
+}
+
+export function isBasicRealtimeSma(rule?: StrategyRule, overlay?: ExitOverlay, slow?: number) {
+  return !overlay?.chandelier && !overlay?.volatilityParity && unfilteredSma(rule)
+    && (rule?.kind === 'ma_crossover' ? rule.slow : slow ?? 0) <= 100;
+}
+
+export function assertRealtimeRule(rule?: StrategyRule, overlay?: ExitOverlay, slow?: number) {
+  if (rule?.kind === 'volatility_breakout' || overlay?.volatilityParity)
+    throw new Error('윌리엄스 변동성 돌파와 변동성 패리티 수량 조절은 저장 일봉 백테스트 전용입니다.');
+  if (unfilteredSma(rule) && !overlay?.chandelier && !isBasicRealtimeSma(rule, overlay, slow))
+    throw new Error('실시간 체결가 기본 SMA의 장기 기간은 100 이하여야 합니다.');
+}
+
+export function normalizeRule(rule: StrategyRule | undefined, fast: number, slow: number): StrategyRule {
+  if (!rule) return { kind: 'ma_crossover', maType: 'sma', fast, slow };
+  if (rule.kind === 'ma_crossover' && unfilteredSma(rule))
+    return { kind: rule.kind, maType: 'sma', fast: rule.fast, slow: rule.slow };
+  return rule;
 }
 function required(bar: RuleBar, field: 'open'|'high'|'low'|'volume') {
   const value = bar[field];
@@ -212,14 +230,14 @@ export const STRATEGY_CATALOG = {
     fields:['open','high','low','close'], environments:{daily:true,demo:false,kisPaper:false},
     presets:{conservative:breakout(0.6,true,20,60,1), basic:breakout(0.5,false,20,20,1), aggressive:breakout(0.4,false,10,5,2)}},
   ma_crossover:{title:'이동평균 교차',buyWhen:'단기선이 장기선을 위로 넘을 때 사요.', sellWhen:'단기선이 장기선 아래로 내려가면 팔아요.', cautionRegime:'횡보장에서는 교차가 자주 반복돼요.',
-    fields:['close'],optionalFields:['volume'], environments:{daily:true,demo:'거래량 필터 끔',kisPaper:'필터 없는 SMA'}, presets:{conservative:maPreset(20,60),basic:maPreset(5,20),aggressive:maPreset(3,10)}},
+    fields:['close'],optionalFields:['volume'], environments:{daily:true,demo:'거래량 필터 끔',kisPaper:'필터 없는 SMA(장기 100 이하)는 실시간 체결가, 필터·EMA·오버레이는 확정 일봉 기반'}, presets:{conservative:maPreset(20,60),basic:maPreset(5,20),aggressive:maPreset(3,10)}},
   donchian_breakout:{title:'돈키안 돌파',buyWhen:'거래량이 늘면서 이전 고점에 도달하면 사요.',sellWhen:'종가가 최근 저점까지 내려오면 팔아요.',cautionRegime:'횡보장에서는 돌파 직후 되밀릴 수 있어요.',
-    fields:['close','high','low','volume'],environments:{daily:true,demo:false,kisPaper:false},presets:{conservative:channel(55,20,1.5),basic:channel(20,10,1),aggressive:channel(10,5,0.8)}},
+    fields:['close','high','low','volume'],environments:{daily:true,demo:false,kisPaper:'확정 일봉 기반'},presets:{conservative:channel(55,20,1.5),basic:channel(20,10,1),aggressive:channel(10,5,0.8)}},
   rsi2_pullback:{title:'RSI 단기 눌림목',buyWhen:'장기 상승 추세에서 단기 과매도가 나타나면 사요.',sellWhen:'단기 평균이나 RSI가 회복되거나 보유 기한이 되면 팔아요.',cautionRegime:'추세가 꺾이면 과매도가 오래 이어질 수 있어요.',
-    fields:['close'],environments:{daily:true,demo:true,kisPaper:false},presets:{conservative:pullback(5,200),basic:pullback(10,200),aggressive:pullback(20,60)}},
+    fields:['close'],environments:{daily:true,demo:true,kisPaper:'확정 일봉 기반'},presets:{conservative:pullback(5,200),basic:pullback(10,200),aggressive:pullback(20,60)}},
   macd_momentum: {
     title:'MACD 히스토그램', buyWhen:'히스토그램이 양수로 전환하고 설정한 제로선 조건을 충족하면 사요.', sellWhen:'히스토그램이 음수로 전환하면 팔아요.', cautionRegime:'횡보장에서는 잦은 교차가 나타나요.',
-    fields:['close'], environments:{daily:true, demo:true, kisPaper:false},
+    fields:['close'], environments:{daily:true, demo:true, kisPaper:'확정 일봉 기반'},
     presets:{
       conservative: {kind:'macd_momentum', fastPeriod:12, slowPeriod:26, signalPeriod:9, requireZeroLineAbove:true},
       basic: {kind:'macd_momentum', fastPeriod:12, slowPeriod:26, signalPeriod:9, requireZeroLineAbove:false},
@@ -228,7 +246,7 @@ export const STRATEGY_CATALOG = {
   },
   adx_dmi_trend: {
     title:'ADX·DMI 추세', buyWhen:'+DI가 우세하고 상승 중인 ADX가 기준 이상이면 사요.', sellWhen:'-DI가 +DI보다 높으면 팔아요.', cautionRegime:'추세가 형성된 뒤 신호가 나올 수 있어요.',
-    fields:['close', 'high', 'low'], environments:{daily:true, demo:false, kisPaper:false},
+    fields:['close', 'high', 'low'], environments:{daily:true, demo:false, kisPaper:'확정 일봉 기반'},
     presets:{
       conservative: {kind:'adx_dmi_trend', diPeriod:14, adxThreshold:30},
       basic: {kind:'adx_dmi_trend', diPeriod:14, adxThreshold:25},
@@ -237,7 +255,7 @@ export const STRATEGY_CATALOG = {
   },
   bollinger_squeeze: {
     title:'볼린저 스퀴즈', buyWhen:'최근 밴드 수축 후 거래량이 늘며 상단을 돌파하면 사요.', sellWhen:'종가가 중심선 아래면 팔아요.', cautionRegime:'거래량이 동반된 돌파도 되밀릴 수 있어요.',
-    fields:['close', 'volume'], environments:{daily:true, demo:false, kisPaper:false},
+    fields:['close', 'volume'], environments:{daily:true, demo:false, kisPaper:'확정 일봉 기반'},
     presets:{
       conservative: {kind:'bollinger_squeeze', period:20, stdDevMultiplier:2, squeezeLookback:60, squeezePercentile:20},
       basic: {kind:'bollinger_squeeze', period:20, stdDevMultiplier:2, squeezeLookback:60, squeezePercentile:25},
@@ -246,7 +264,7 @@ export const STRATEGY_CATALOG = {
   },
   ttm_squeeze: {
     title:'TTM 스퀴즈', buyWhen:'수축이 풀리며 양의 모멘텀이 커지면 사요.', sellWhen:'모멘텀이 음수이거나 양수에서 두 봉 연속 둔화하면 팔아요.', cautionRegime:'변동성 확대가 계속될지는 알 수 없어요.',
-    fields:['close', 'high', 'low'], environments:{daily:true, demo:false, kisPaper:false},
+    fields:['close', 'high', 'low'], environments:{daily:true, demo:false, kisPaper:'확정 일봉 기반'},
     presets:{
       conservative: {kind:'ttm_squeeze', period:20, bbMult:2, kcMult:1.5},
       basic: {kind:'ttm_squeeze', period:20, bbMult:2, kcMult:1.5},
@@ -255,7 +273,7 @@ export const STRATEGY_CATALOG = {
   },
   bollinger_percent_b: {
     title:'볼린저 %B 반등', buyWhen:'하단 과매도 이후 종가와 %B가 상승하고 RSI가 낮으면 사요.', sellWhen:'%B가 목표 수준 이상이면 팔아요.', cautionRegime:'하락 추세에서는 과매도가 이어질 수 있어요.',
-    fields:['close'], environments:{daily:true, demo:true, kisPaper:false},
+    fields:['close'], environments:{daily:true, demo:true, kisPaper:'확정 일봉 기반'},
     presets:{
       conservative: {kind:'bollinger_percent_b', bbPeriod:20, bbStdDev:2.2, rsiPeriod:14, rsiOversold:30, exitPercentB:0.5},
       basic: {kind:'bollinger_percent_b', bbPeriod:20, bbStdDev:2, rsiPeriod:14, rsiOversold:35, exitPercentB:0.55},
@@ -264,7 +282,7 @@ export const STRATEGY_CATALOG = {
   },
   low_volume_pullback: {
     title:'거래량 고갈 눌림목', buyWhen:'상승 추세에서 거래량이 줄어든 눌림 뒤 양봉이 직전 고가를 넘으면 사요.', sellWhen:'종가가 단기선 아래이거나 직전 눌림 기간의 최저가 이하면 팔아요.', cautionRegime:'유동성이 적으면 거래량 감소를 해석하기 어려워요.',
-    fields:['open', 'high', 'low', 'close', 'volume'], environments:{daily:true, demo:false, kisPaper:false},
+    fields:['open', 'high', 'low', 'close', 'volume'], environments:{daily:true, demo:false, kisPaper:'확정 일봉 기반'},
     presets:{
       conservative: {kind:'low_volume_pullback', pullbackDays:4, maxVolumeRatio:0.55, trendFastMa:20, trendSlowMa:60},
       basic: {kind:'low_volume_pullback', pullbackDays:3, maxVolumeRatio:0.65, trendFastMa:20, trendSlowMa:60},
@@ -273,7 +291,7 @@ export const STRATEGY_CATALOG = {
   },
   disparity_reversion: {
     title:'이격도 복원', buyWhen:'이격도가 낮고 종가가 봉 범위의 40% 이상에서 마감하면 사요.', sellWhen:'목표 이격도를 회복하거나 진입가 대비 손절 기준에 닿으면 팔아요.', cautionRegime:'다음 봉 시가가 손절 기준보다 낮을 수 있어요.',
-    fields:['close', 'high', 'low'], environments:{daily:true, demo:false, kisPaper:false},
+    fields:['close', 'high', 'low'], environments:{daily:true, demo:false, kisPaper:'확정 일봉 기반'},
     presets:{
       conservative: {kind:'disparity_reversion', maPeriod:20, buyDisparity:91, sellDisparity:99, stopLossPct:4},
       basic: {kind:'disparity_reversion', maPeriod:20, buyDisparity:93, sellDisparity:99.5, stopLossPct:5},
