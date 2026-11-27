@@ -6,8 +6,8 @@ import {createExperiment, replayExperiment} from '../server/backtest.ts';
 import {initialState} from '../shared/fixtures.ts';
 import {advanceTick,backtestRules} from '../server/engine.ts';
 import {legacyExperimentListSchema, legacyExperiment} from '../shared/backtest.ts';
-import {evaluateClose, strategyRuleSchema, exitOverlaySchema, STRATEGY_CATALOG} from '../shared/strategy-rules.ts';
-import {sma,ema,wilder,atr,rsi} from '../shared/indicators.ts';
+import {assertCloseOnly, assertRealtimeRule, warmup, evaluateClose, strategyRuleSchema, exitOverlaySchema, STRATEGY_CATALOG} from '../shared/strategy-rules.ts';
+import {dmi,sma,ema,wilder,atr,rsi} from '../shared/indicators.ts';
 import {KisClient} from '../server/kis.ts';
 import {startTestServer} from './test-server.ts';
 
@@ -104,11 +104,17 @@ test('DEMO 종가 전략 저장·계산 및 OHLCV 거부, KIS 시작 게이트�
     const base = {name:'테스트',code:'005930',qty:1,fast:2,slow:4};
     assert.equal((await post('strategies',{...base,rule})).status,200);
     assert.equal((await post('backtest',{code:base.code,...costs,rule})).status,200);
-    for (const spec of [{rule:channel},{rule:{...rule,minRelativeVolume:1}},{rule,overlay}]) {
+    for (const kind of ['macd_momentum','bollinger_percent_b'] as const) {
+      const spec = {rule:STRATEGY_CATALOG[kind].presets.basic};
+      assert.equal((await post('strategies',{...base,...spec})).status,200);
+      assert.equal((await post('backtest',{code:base.code,...costs,...spec})).status,200);
+    }
+    const newRules = phaseTwo.map(kind => ({rule:STRATEGY_CATALOG[kind].presets.basic}));
+    for (const spec of [...newRules.filter(({rule})=>!STRATEGY_CATALOG[rule.kind].environments.demo),{rule:channel},{rule:{...rule,minRelativeVolume:1}},{rule,overlay}]) {
       assert.match((await post('strategies',{...base,...spec})).data.error,/종가만/);
       assert.match((await post('backtest',{code:base.code,...costs,...spec})).data.error,/종가만/);
     }
-    for (const spec of [{rule:channel},{rule:{...rule,maType:'ema'}},{rule:{...rule,regimePeriod:20}},{rule:{...rule,minRelativeVolume:1}},{rule,overlay}]) {
+    for (const spec of [...newRules,{rule:channel},{rule:{...rule,maType:'ema'}},{rule:{...rule,regimePeriod:20}},{rule:{...rule,minRelativeVolume:1}},{rule,overlay}]) {
       const saved = await post('strategies',{...base,...spec,environment:'kis-paper'});
       assert.equal(saved.status,200);
       const id = store.read().strategies.at(-1)!.id;
@@ -149,4 +155,78 @@ test('돈키안·RSI·샹들리에 시뮬레이션에서 이후 가격이 이전
     assert.deepEqual(mutated.trades.filter(t=>t.bar<75),trades);
     assert.deepEqual(mutated.equity.slice(0,75),original.equity.slice(0,75));
   }
+});
+
+const phaseTwo = ['macd_momentum', 'adx_dmi_trend', 'bollinger_squeeze', 'ttm_squeeze',
+  'bollinger_percent_b', 'low_volume_pullback', 'disparity_reversion'] as const;
+
+for (const kind of phaseTwo) {
+  test(`${kind} 최소 봉 매수·매도, 입력·환경 경계와 다음 시가 체결`, () => {
+    const catalog = STRATEGY_CATALOG[kind], rule = catalog.presets.basic;
+    const count = warmup(rule);
+    const bar = (close:number) => ({open:close-1, high:close+1, low:close-1, close, volume:100});
+    const history = Array.from({length:count-1}, () => bar(100));
+    let buy = bar(120), sell = bar(80);
+    switch (kind) {
+      case 'adx_dmi_trend':
+        for (let i = 0; i < 5; i++) history[count-6+i] = bar(101+i);
+        break;
+      case 'bollinger_squeeze':
+        buy.volume = 121;
+        assert.equal(evaluateClose([...history,{...buy,volume:120}],rule).signal,'hold');
+        break;
+      case 'bollinger_percent_b':
+        history[count-2] = bar(70);
+        buy = bar(72); sell = bar(120);
+        break;
+      case 'low_volume_pullback':
+        history.forEach((_, i) => { history[i] = bar(50+i); });
+        for (let i = 1; i <= 3; i++) history[count-1-i] = {...bar(101),volume:40};
+        break;
+      case 'disparity_reversion':
+        buy = bar(80); sell = bar(101);
+        break;
+    }
+    const input = [...history,buy];
+    assert.equal(evaluateClose(history,rule).reason,'준비 봉 부족');
+    assert.equal(evaluateClose(input,rule).signal,'buy');
+    assert.equal(evaluateClose([...history,sell],rule,{barsHeld:1}).signal,'sell');
+    assert.equal(strategyRuleSchema.safeParse({...rule,extra:0}).success,false);
+    assert.throws(()=>assertRealtimeRule(rule),/장중/);
+    if (kind === 'macd_momentum' || kind === 'bollinger_percent_b') {
+      assert.doesNotThrow(()=>assertCloseOnly(rule));
+      assert.equal(evaluateClose(input.map(({close})=>({close})),rule).signal,'buy');
+    } else assert.throws(()=>assertCloseOnly(rule),/종가만/);
+    const simulate = (tail:number) => {
+      const bars = [...input, bar(111), bar(tail)];
+      return backtestRules(bars,bars.map(b=>b.open),{...costs,slippageBps:0,rule},'daily');
+    };
+    const original = simulate(70), changed = simulate(170);
+    assert.equal(original.trades[0].bar,count);
+    assert.equal(original.trades[0].price,110);
+    assert.deepEqual(original.trades.filter(t=>t.bar<=count),changed.trades.filter(t=>t.bar<=count));
+    assert.deepEqual(original.equity.slice(0,count+1),changed.equity.slice(0,count+1));
+  });
+}
+
+test('이격도 손절은 다음 시가의 실제 진입 체결가를 사용한다', () => {
+  const rule = STRATEGY_CATALOG.disparity_reversion.presets.basic;
+  const bars = [...Array<number>(19).fill(100),80,90,88].map(close=>({open:close,close,high:close+1,low:close-1}));
+  bars[20].open = 98;
+  const {trades} = backtestRules(bars,bars.map(b=>b.open),{...costs,rule},'daily');
+  assert.deepEqual(trades.map(t=>[t.side,t.bar]),[['buy',20],['sell',21]]);
+});
+
+test('Wilder 방향 지표는 정확히 2n봉에서 첫 ADX와 그 직후 값을 비교한다', () => {
+  const period = 7;
+  // The first n bars are flat. Starting with bar n+1 every DX equals 100.
+  const bars = Array.from({length:2*period}, (_,i) => {
+    const close = 100 + Math.max(0,i-period+1);
+    return {close, high:close+1, low:close-1};
+  });
+  const {adx,prev,plusDI,minusDI} = dmi(bars,period);
+  const seed = 100*(period-1)/period;
+  assert.ok(Math.abs(prev.adx-seed)<1e-10);
+  assert.ok(Math.abs(adx-(seed+(100-seed)/period))<1e-10);
+  assert.ok(plusDI > prev.plusDI && minusDI === 0 && prev.minusDI === 0);
 });

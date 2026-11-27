@@ -89,9 +89,10 @@ export function advanceTick(state: State) {
     if (strategy.environment === 'kis-paper' || !strategy.active || strategy.lastTick === state.tick || state.risk.halted) continue;
     strategy.lastTick = state.tick;
     const instrument = state.instruments.find(i => i.code === strategy.code)!;
-    const positionQty = state.positions.find(p => p.code === strategy.code)?.qty ?? 0;
+    const position = state.positions.find(p => p.code === strategy.code);
+    const positionQty = position?.qty ?? 0;
     if (!positionQty && strategy.entryTick !== undefined) delete strategy.entryTick;
-    const holding = strategy.entryTick === undefined ? undefined : {barsHeld:state.tick - strategy.entryTick + 1};
+    const holding = strategy.entryTick === undefined ? undefined : {entryPrice:position?.average, barsHeld:state.tick - strategy.entryTick + 1};
     strategy.lastSignal = strategy.rule ? evaluateClose(instrument.history.map(close => ({close})), strategy.rule, holding).signal
       : signal(instrument.history, strategy.fast, strategy.slow);
     if (strategy.lastSignal === 'hold') continue;
@@ -156,10 +157,11 @@ export function backtestRules(bars: RuleBar[], executions: number[], input: Rule
   const benchCash = input.capital - (benchQty * benchPrice + fee(benchQty * benchPrice,input.feeBps));
   let benchPeak = input.capital, benchDrawdown = 0, benchValue = input.capital;
   let cash = input.capital, qty = 0, fees = 0, slippageCost = 0, peak = cash, maxDrawdown = 0, entry = 0;
+  let entryPrice: number | undefined;
   let trailStop: number | undefined;
   const equity:number[] = [], trades:(BacktestResult['trades'][number] & {reason:string})[] = [];
   for (let i = 0; i < bars.length; i++) {
-    const holding = qty ? {barsHeld:i-entry, trailStop} : undefined;
+    const holding = qty ? {barsHeld:i-entry, entryPrice, trailStop} : undefined;
     const decision = evaluateClose(bars.slice(0,i),input.rule,holding,input.overlay);
     trailStop = decision.trailStop;
     const {signal:side, reason} = decision;
@@ -168,7 +170,7 @@ export function backtestRules(bars: RuleBar[], executions: number[], input: Rule
       const units = side === 'buy' ? unitsAt(cash,price) : qty;
       if (units > 0) {
         const cost = fee(units * price,input.feeBps);
-        if (side === 'buy') {cash -= units * price + cost; qty = units; entry = i;}
+        if (side === 'buy') {cash -= units * price + cost; qty = units; entry = i; entryPrice = price;}
         else {cash += units * price - cost; qty = 0;}
         trailStop = undefined;
         fees += cost; slippageCost += Math.abs(price-executions[i]) * units;

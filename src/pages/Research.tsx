@@ -81,7 +81,8 @@ interface RuleFormState {
   atrMultiplier: string;
 }
 
-const RULE_KINDS: RuleKind[] = ['ma_crossover', 'donchian_breakout', 'rsi2_pullback'];
+const RULE_KINDS = ['ma_crossover', 'donchian_breakout', 'rsi2_pullback'] as const;
+const editableRule = (kind: RuleKind): kind is typeof RULE_KINDS[number] => RULE_KINDS.some(value => value === kind);
 const PRESET_ENTRIES: { key: PresetKey; label: string }[] = [
   { key: 'conservative', label: '보수적' },
   { key: 'basic', label: '기본' },
@@ -104,7 +105,7 @@ const HELP_TABS: { id: HelpTabId; label: string }[] = [
 ];
 
 /** 규칙별 입력 항목 상세 안내 (상단 도움말 사전과 `RuleConfigSection` 문맥 가이드가 공유). */
-const RULE_FIELD_HELP: Record<RuleKind, { summary: string; basicPreset: string; fields: FieldHelpItem[] }> = {
+const RULE_FIELD_HELP: Record<typeof RULE_KINDS[number], { summary: string; basicPreset: string; fields: FieldHelpItem[] }> = {
   ma_crossover: {
     summary: '단기 이동평균과 장기 이동평균의 교차(골든·데드크로스)로 추세 전환을 포착합니다.',
     basicPreset: 'SMA, 단기 5 / 장기 20 (추세·거래량 필터 꺼짐)',
@@ -633,6 +634,7 @@ function badNumberMessage(input: HTMLInputElement): string {
 function buildRuleAndOverlay(
   form: RuleFormState,
 ): { ok: true; rule: StrategyRule; overlay?: ExitOverlay } | { ok: false; error: string; focusName?: string } {
+  if (!editableRule(form.kind)) return {ok:false, error:'이 규칙의 편집 화면은 준비 중입니다.'};
   let rawRule: unknown;
   if (form.kind === 'ma_crossover') {
     const fast = Number(form.fast);
@@ -826,10 +828,12 @@ function formatRuleSummary(rule: StrategyRule, overlay?: ExitOverlay): string {
     parts.push(
       `${STRATEGY_CATALOG.donchian_breakout.title} (진입 ${rule.entryLookback} / 청산 ${rule.exitLookback} · 거래량 ${rule.volumeMultiplier}배 초과)`,
     );
-  } else {
+  } else if (rule.kind === 'rsi2_pullback') {
     parts.push(
       `${STRATEGY_CATALOG.rsi2_pullback.title} (RSI${rule.rsiPeriod} ≤ ${rule.oversoldThreshold} · 장기 ${rule.longTrendMa} · 청산 ${rule.exitShortMa} · 최대 ${rule.maxHoldingDays}봉)`,
     );
+  } else {
+    parts.push(STRATEGY_CATALOG[rule.kind].title);
   }
   if (overlay?.chandelier) {
     parts.push(`샹들리에 ATR(${overlay.chandelier.atrPeriod})×${overlay.chandelier.atrMultiplier}`);
@@ -868,6 +872,7 @@ function RuleConfigSection({
   periodError?: boolean;
   periodErrorId?: string;
 }) {
+  if (!editableRule(form.kind)) return <p>{STRATEGY_CATALOG[form.kind].title} · 이 규칙의 편집 화면은 준비 중입니다.</p>;
   const catalog = STRATEGY_CATALOG[form.kind];
   const activePreset = matchedPreset(form);
   const fastLabel = mode === 'strategy' ? `단기 평균 (${unit})` : '단기 (봉)';
@@ -1561,7 +1566,7 @@ function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: boolean }
               거래량 <b>{rule.volumeMultiplier}배 초과</b>
             </span>
           </>
-        ) : (
+        ) : rule.kind === 'rsi2_pullback' ? (
           <>
             <span>
               RSI({rule.rsiPeriod}) <b>≤ {rule.oversoldThreshold}</b>
@@ -1576,7 +1581,7 @@ function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: boolean }
               최대보유 <b>{rule.maxHoldingDays}봉</b>
             </span>
           </>
-        )}
+        ) : null}
         {s.overlay?.chandelier && (
           <span>
             샹들리에 <b>ATR({s.overlay.chandelier.atrPeriod})×{s.overlay.chandelier.atrMultiplier}</b>
