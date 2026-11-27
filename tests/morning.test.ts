@@ -1566,3 +1566,129 @@ for (const scenario of ['clock', 'sync', 'master', 'daily', 'expired'] as const)
     }
   });
 }
+
+const dartCutoff = Date.parse('2026-11-26T15:01:00Z');
+const dartDay = '20261127';
+const dartKey = 'fixture-key';
+const dartRow = {
+  rcept_no: '20261127000001', rcept_dt: dartDay, stock_code: ' 005930 ', corp_name: '삼성전자',
+  report_nm: '[삼성전자] 정기공시', flr_nm: '담당자', rm: '유',
+};
+const dartEmpty = '금융감독원 DART · 현재 피드에서 기준 시각에 해당하는 항목 없음';
+const dartFallback = '금융감독원 DART · OpenDART 폴백(todayRSS 최근 50건 제한)';
+function dartPage(list: unknown[], total_page = 1) {
+  return Response.json({ status: '000', total_page, list });
+}
+
+async function runDart(list: (url: URL, signal: AbortSignal) => Response | Promise<Response>,
+  rss = () => new Response('<rss></rss>'), key = dartKey) {
+  const pages: number[] = [], signals: AbortSignal[] = [];
+  let rssCalls = 0;
+  const { news, gaps } = await collectNews(dartCutoff, async (input, init) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'opendart.fss.or.kr') {
+      assert.equal(url.pathname, '/api/list.json');
+      assert.deepEqual(Object.fromEntries(url.searchParams), {
+        crtfc_key: dartKey, bgn_de: dartDay, end_de: dartDay, page_count: '100', page_no: String(pages.length + 1),
+      });
+      pages.push(Number(url.searchParams.get('page_no')));
+      signals.push(init!.signal!);
+      return list(url, init!.signal!);
+    }
+    if (url.href === 'https://dart.fss.or.kr/api/todayRSS.xml') {
+      rssCalls++;
+      signals.push(init!.signal!);
+      return rss();
+    }
+    return new Response('<rss></rss>');
+  }, key);
+  return { news, gaps: gaps.filter(g => g.startsWith('금융감독원')), pages, rssCalls, signals };
+}
+
+test('OpenDART는 KST 기준일의 상장사 유효 행만 수집하고 페이지 간 접수번호를 중복 제거한다', async () => {
+  const result = await runDart(url => url.searchParams.get('page_no') === '1'
+    ? dartPage([dartRow, ...[{ rcept_dt: '20261126' }, { stock_code: 'A05930' }, { rcept_no: '1' },
+      { report_nm: '  ' }, { corp_name: null }].map(fields => ({ ...dartRow, rcept_no: '20261127000002', ...fields }))], 2)
+    : dartPage([dartRow, { ...dartRow, rcept_no: '20261127000003', report_nm: '삼성전자 ' + '가'.repeat(600) }], 2));
+  assert.deepEqual(result.pages, [1, 2]);
+  assert.equal(result.rssCalls, 0);
+  assert.deepEqual(result.gaps, []);
+  assert.equal(result.news.length, 2);
+  assert.deepEqual(result.news[0], {
+    publisher: '금융감독원 DART', publishedAt: new Date(dartCutoff).toISOString(),
+    title: '[삼성전자] 정기공시', summary: '삼성전자(005930) · [삼성전자] 정기공시 · 제출인 담당자 · 유',
+    url: 'https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20261127000001',
+  });
+  assert.equal(result.news[1].title, ('[삼성전자] ' + '가'.repeat(600)).slice(0, 500));
+  assert.equal(result.news[1].summary?.length, 420);
+});
+
+test('OpenDART 013은 RSS 호출 없이 정상 빈 결과, 빈 키와 공백 키는 기존 RSS 한 번', async () => {
+  const empty = await runDart(() => Response.json({ status: '013' }));
+  assert.deepEqual([empty.pages, empty.rssCalls, empty.gaps], [[1], 0, [dartEmpty]]);
+  for (const key of ['', '  ']) {
+    const rss = await runDart(() => { throw new Error(); }, undefined, key);
+    assert.deepEqual([rss.pages, rss.rssCalls, rss.gaps], [[], 1, [dartEmpty]]);
+  }
+});
+
+test('OpenDART 페이지 상한에 도달하면 5페이지 결과와 절단 사유를 보존한다', async () => {
+  const result = await runDart(url => dartPage([{ ...dartRow, rcept_no: '2026112700000' + url.searchParams.get('page_no') }], 6));
+  assert.deepEqual(result.pages, [1, 2, 3, 4, 5]);
+  assert.equal(result.news.length, 5);
+  assert.deepEqual(result.gaps, ['금융감독원 DART · OpenDART 페이지 상한 도달로 일부 공시 절단']);
+  assert.equal(result.rssCalls, 0);
+});
+
+test('OpenDART 후속 장애 시 RSS와 기수집 행을 접수번호로 합치고 최초 요청의 예산을 공유한다', async () => {
+  const rssItem = (receipt: string) => bokItem('RSS', 'https://dart.fss.or.kr/test?rcpNo=' + receipt, new Date(dartCutoff).toUTCString());
+  const result = await runDart(url => url.searchParams.get('page_no') === '1'
+    ? dartPage([dartRow], 2) : Response.json({ status: '020' }),
+    () => new Response('<rss>' + rssItem(dartRow.rcept_no) + rssItem('20261127000002') + '</rss>'));
+  assert.deepEqual(result.news.map(item => item.title), ['[삼성전자] 정기공시', 'RSS']);
+  assert.deepEqual(result.gaps, [dartFallback]);
+  assert.deepEqual(result.pages, [1, 2]);
+  assert.equal(result.rssCalls, 1);
+  assert.equal(new Set(result.signals).size, 1);
+});
+
+test('OpenDART 스트림이 1MiB를 초과하면 취소하고 RSS까지 실패해도 키와 요청 URL을 노출하지 않는다', async () => {
+  let cancelled = 0;
+  function oversized() {
+    return new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(1024 * 1024));
+        controller.enqueue(new Uint8Array(1));
+      },
+      cancel() { cancelled++; },
+    }));
+  }
+  for (const list of [oversized, () => new Response('{'), () => new Response(null, { status: 503 }),
+    (url: URL) => { throw new Error(url.href); }]) {
+    const result = await runDart(list, oversized);
+    assert.deepEqual(result.pages, [1]);
+    assert.equal(result.rssCalls, 1);
+    assert.deepEqual(result.news, []);
+    assert.deepEqual(result.gaps, ['금융감독원 DART 자료 수집 실패']);
+    assert.doesNotMatch(JSON.stringify(result), /fixture-key|crtfc_key|list\.json/);
+  }
+  assert.equal(cancelled, 5);
+});
+
+test('OpenDART 후속 스트림이 멈추면 7000ms 단일 신호로 취소하고 기수집 행을 보존한다', async t => {
+  const controller = new AbortController();
+  t.mock.method(AbortSignal, 'timeout', (ms: number) => {
+    assert.equal(ms, 7000);
+    return controller.signal;
+  });
+  let cancelled = false;
+  const result = await runDart(url => url.searchParams.get('page_no') === '1' ? dartPage([dartRow], 2) :
+    new Response(new ReadableStream({
+      pull() { setImmediate(() => controller.abort()); },
+      cancel() { cancelled = true; },
+    })));
+  assert.ok(cancelled);
+  assert.equal(result.news.length, 1);
+  assert.equal(result.rssCalls, 0);
+  assert.deepEqual(result.gaps, ['금융감독원 DART · OpenDART 시간 제한 도달로 일부 공시 절단']);
+});
