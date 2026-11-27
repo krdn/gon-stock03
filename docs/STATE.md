@@ -1,5 +1,6 @@
 # 작업 인수인계
 
+- **확정 일봉 전략 7종** [#235와 PR 2A 작업](tasks/235-strategy-rules.md)
 - **전략 스튜디오 일봉 규칙** [#231](https://github.com/krdn/gon-stock03/issues/231) · [PR 1A·PR 1B 작업과 계약](tasks/231-strategy-rules.md)
 - **장전 브리핑 하드닝** [#211](https://github.com/krdn/gon-stock03/issues/211)의 주말 리포트 생성 400 차단과 승인 보고서 장후 마감 누락 경고를 병합했다. 백엔드 [PR #215](https://github.com/krdn/gon-stock03/pull/215) · UI [PR #217](https://github.com/krdn/gon-stock03/pull/217). 한국은행 통화정책 RSS와 기준금리 결정문 우선 수집도 반영했다. [PR #214](https://github.com/krdn/gon-stock03/pull/214)
 - **장후 시세 동기화** [#212](https://github.com/krdn/gon-stock03/issues/212)의 [설계](plans/212-market-data-sync.md), 4304 단일 API·수집 이력·거래일 검증, 데이터 인벤토리 요약·출처 배지·범위 고지를 병합했다. [운영·08:30 점검](operations/local.md#장후-시세-동기화) · [PR #216](https://github.com/krdn/gon-stock03/pull/216) · [PR #219](https://github.com/krdn/gon-stock03/pull/219) · [PR #220](https://github.com/krdn/gon-stock03/pull/220)
