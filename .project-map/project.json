@@ -4,7 +4,7 @@
     "id": "gon-stock03",
     "title": "GON Stock · 개발 지도",
     "description": "국내 주식·ETF 개인 트레이딩 웹앱의 조사 → 화면 → 기능 → KIS 실증 → 2차 UI/UX → 장전 운용·하드닝 과정",
-    "basis": "2026-11-26 · main 443f6ca · 상세 이력은 docs/STATE.md 및 연결 이슈·PR 참조",
+    "basis": "2026-11-27 · main c1fb7fb · 상세 이력은 docs/STATE.md 및 연결 이슈·PR 참조",
     "source_label": "사용자 요구·공식 KIS 자료·로컬 실행 및 GitHub PR/CI 근거",
     "initial_node": "ops-hardening"
   },
@@ -226,21 +226,26 @@
       "id": "morning-portfolio",
       "step": "7",
       "title": "장전 포트폴리오 운용·브리핑",
-      "short": "시장 스캔·승인 기반 운용·Step 0 신뢰/UX·A2UI 게이트",
+      "short": "승인 기반 장전 운용·마감 경고·한국은행 RSS·OpenDART",
       "state": "main 병합·장중 운용 수용 대기",
-      "summary": "KOSPI·KOSDAQ 일봉 스캔과 공개 원문 분석으로 장전 운용 계획을 만들고 승인 기반 모의 매매·장후 비용 차감 대조를 구현했다(#197). 이어 장전 브리핑 신뢰·UX 결함 6건을 고정 계약·UI(Step 0)로 해결하고 A2UI v1.0 조건부 게이트를 정의했다(#205).",
+      "summary": "KOSPI·KOSDAQ 일봉 스캔, 승인 기반 모의 운용·장후 비용 차감 대조(#197), 장전 브리핑 Step 0 신뢰·UX와 A2UI 게이트(#205)에 이어 한국은행 통화정책 RSS, 주말 생성 차단과 장후 마감 경고, OpenDART 공시 수집을 main에 반영했다.",
       "quote": "작업 기준(#197·#205): 당일 승인 없는 매수를 보류하고, AI 원문 요약과 서버 규칙 판단을 분리하며, 반대 근거와 수집 실패 집계를 승인 전 노출한다.",
-      "decision": "매수 한도·승인 차단은 서버 고정 규칙으로 계산하고, 공개 원문 LLM 분석은 원문 인용 대조·기관(hostname) 독립성 검사를 통과한 결과만 표시한다. A2UI v1.0 Step 1은 진입 조건 충족 후 별도 착수한다.",
-      "before": "단일 종목 수동·전략 매매만 지원했고 시장 전체 장전 스캔·공개 원문 브리핑·이월 매도 흐름이 없었다.",
-      "after": "PR #198(aea3e67)과 PR #206(63dbbf5)을 main에 병합하고 docs/tasks/197-morning.md, docs/tasks/205-morning-briefing.md, docs/plans/a2ui-morning-briefing.md를 기록했다.",
+      "decision": "매수 한도·승인 차단은 서버 고정 규칙으로 계산하고, 공개 원문 LLM 분석은 원문 인용·기관 독립성 검사를 거친다. 한국은행 기준금리 결정문을 우선하며, 마감 경고는 수동 요청의 가능 여부와 사유만 표시한다. OpenDART는 선택적 로컬 키를 사용하며 Infisical dev /kis 읽기 권한을 유지한다. A2UI v1.0 Step 1은 진입 조건 충족 후 별도 착수한다.",
+      "before": "초기에는 단일 종목 수동·전략 매매만 지원했다. 기존 장전 브리핑에서는 기타 보도자료 피드에 기준금리 결정문이 없었고, 주말 생성과 승인 보고서 마감 누락을 화면에서 걸러내기 어려웠다. 공시는 최근 50건 RSS에 의존했다.",
+      "after": "PR #198·#206으로 장전 운용과 Step 0을 도입했다. PR #214, #215·#217, #227·#228로 통화정책 결정문 우선 수집, 주말 생성 400·마감 경고, 당일 상장사 공시 페이징과 운영 기록을 반영했다. 기존 주말 보고서 조회는 유지한다.",
       "points": [
         "#197(PR #198): server/morning*.ts, shared/morning.ts, MorningPortfolio.tsx, scripts/morning-replay.ts 구현",
         "#205(PR #206): 반대 근거 2열 대비 카드, hostname/정규 URL 독립성 검사, analysisCoverage 독립 보존, 승인 사전검사 단일화, 후보–근거 결정론 매칭",
-        "#205 검증: typecheck 오류 0, npm test 305/305, build 성공, Opus 5.5 재리뷰 전체 Playwright 309/309 및 Astra 6.2 최종 PASS"
+        "#205 검증: typecheck 오류 0, npm test 305/305, build 성공, Opus 5.5 재리뷰 전체 Playwright 309/309 및 Astra 6.2 최종 PASS",
+        "PR #214: 한국은행 통화정책 RSS를 추가하고 정규화된 중복 링크는 통화정책 원문을 보존한다. 원문 분석에서 통화정책방향·기준금리 결정문을 일반 전망보다 우선한다.",
+        "#211(PR #215·#217): KST 토·일의 보고서 생성 요청은 저장 전에 HTTP 400으로 차단한다. GET /api/morning의 closeWarning은 승인된 평일 보고서의 장후 마감 누락·미완성과 수동 마감 차단 사유를 표시한다.",
+        "#213(PR #227·#228): 로컬 OPENDART_API_KEY로 KST 당일 상장사 공시를 list.json에서 최대 5페이지 조회하고 오류의 키를 마스킹한다. 미설정 시 todayRSS.xml을 사용하며 요청 실패 시 남은 예산으로 같은 RSS에 폴백한다. 페이지·폴백은 7초 예산을 공유하고 응답당 1MiB로 제한한다."
       ],
       "limits": [
         "실제 장중 연속 운용, 새 주문의 실제 KIS 접수·체결, 통계적 최적 매수 중단값과 순수익은 미측정(장중 운용 수용 대기).",
-        "Step 0의 Claude CLI 원문 분석·KIS 원격 API 호출은 격리 모의 검증이며 Step 1(A2UI)은 조건부 보류."
+        "Step 0의 Claude CLI 원문 분석·KIS 원격 API 호출은 격리 모의 검증이며 Step 1(A2UI)은 조건부 보류.",
+        "생성 400의 적용 범위는 KST 주말이다. 평일 공휴일은 생성 차단 범위 밖이며, 마감 경고는 실제 종가·KIS 접수·체결을 보장하지 않는다.",
+        "OpenDART 실키 라이브 호출과 실환경 수집 범위는 미검증이다. RSS 폴백의 최근 50건 제한은 남아 있다."
       ],
       "cost": [],
       "sources": [
@@ -253,6 +258,41 @@
           "장전 브리핑 Step 0 #205",
           "https://github.com/krdn/gon-stock03/pull/206",
           "신뢰·UX 6건 해결 및 A2UI 게이트"
+        ],
+        [
+          "PR #214 한국은행 통화정책 RSS",
+          "https://github.com/krdn/gon-stock03/pull/214",
+          "공식 RSS 관측·결정문 우선·중복 처리"
+        ],
+        [
+          "이슈 #211 장전 보고서 가드",
+          "https://github.com/krdn/gon-stock03/issues/211",
+          "생성 400과 승인 보고서 장후 마감 경고"
+        ],
+        [
+          "PR #215 장전 보고서 API",
+          "https://github.com/krdn/gon-stock03/pull/215",
+          "주말 생성 400과 closeWarning 계약"
+        ],
+        [
+          "PR #217 장전 보고서 UI",
+          "https://github.com/krdn/gon-stock03/pull/217",
+          "생성 액션 오류와 장후 마감 경고 표시"
+        ],
+        [
+          "이슈 #213 장전 공시",
+          "https://github.com/krdn/gon-stock03/issues/213",
+          "OpenDART 페이징 범위와 설정"
+        ],
+        [
+          "PR #227 OpenDART 수집",
+          "https://github.com/krdn/gon-stock03/pull/227",
+          "당일 상장사 공시·시간/응답 제한·RSS 폴백"
+        ],
+        [
+          "PR #228 OpenDART 운영 기록",
+          "https://github.com/krdn/gon-stock03/pull/228",
+          "선택적 로컬 키·권한 경계·실키 미검증"
         ]
       ]
     },
@@ -260,23 +300,29 @@
       "id": "ops-hardening",
       "step": "8",
       "title": "전체 점검·설정 하드닝·무인 인증",
-      "short": "DB 분리·신뢰 시계·안전 정지·Infisical Universal Auth",
-      "state": "main 병합 완료(443f6ca)",
-      "summary": "장전 스캔 DB 분리·경계 수정·동적 포트·serverNow 통일(#199), 연결·설정 안전 정지 예외·키/401/진단 하드닝(#201), npm run dev Infisical Machine Identity 무인 인증(#203·#207), 상태 동기화(#209)와 CI 의존성 갱신(#196)을 main에 반영했다.",
+      "short": "시계·안전 정지·무인 인증·시세 동기화·데이터 인벤토리",
+      "state": "main 병합 완료(c1fb7fb)",
+      "summary": "DB 분리·serverNow 통일(#199), 안전 정지와 설정 하드닝(#201), Infisical Machine Identity 무인 인증(#203·#207), 상태/CI 정비(#209·#196)에 이어 4304 장후 시세 동기화(#212), 장전 자동 스캔 충돌 재시도(#218), 일봉 보존·데이터 인벤토리 출처 정합(#221)을 병합했다.",
       "quote": "작업 기준(#199·#201·#203·#207·#209): 저장소 오염·클라이언트 시계 오차·장기 조회 중 안전 정지 차단을 제거하고, 사람 세션 만료 없는 로컬 Infisical 자동 주입과 상태 문서 정합성을 유지한다.",
-      "decision": "장전 스캔 바는 morning_daily_bars/morning_scan_meta로 분리하고, 긴급정지·실시간 정지·전략 정지는 전역 busy와 독립 실행한다. Vite server.fs.deny로 .secrets/**·.local/** HTTP 403 차단을 강제한다.",
-      "before": "장전 스캔이 daily_runs를 공유했고, 일부 화면이 브라우저 Date.now()를 썼으며, 장기 조회 중 정지 버튼이 막히고 Infisical CLI 세션 만료 시 수동 로그인이 필요했다.",
-      "after": "PR #200(78d4391), #202(e41fd23), #204(2e64669), #208(c64bcfc), #209(370764d), #196(443f6ca)을 main에 병합했다.",
+      "decision": "장전 스캔은 분리된 저장소를 사용하고 긴급·실시간·전략 정지는 전역 busy와 독립 실행한다. 장후 수집은 4304 단일 API를 경유하고 장전 스케줄러는 동기화·수집이 끝난 뒤 허용 시간창 안에서 재확인한다. 완료된 동기화 일봉은 최신 시도와 사용 가능한 최신 자료를 보존한다.",
+      "before": "장전과 수동 일봉이 같은 저장소를 썼고, 일부 화면은 브라우저 시계에 의존했으며, 장기 조회 중 정지와 세션 만료 뒤 인증에 제약이 있었다. 이후에도 장후 당일 일봉 수집 경로와 이력이 없었고, 장전 스케줄러 시계와 수집 충돌, 일봉 출처 오표시가 남아 있었다.",
+      "after": "PR #200·#202·#204·#208·#209·#196으로 기존 하드닝을 반영했다. PR #216·#219·#220·#223으로 장후 동기화 설계·API·인벤토리·운영 절차를, PR #222로 스캔 재시도를, PR #224·#225·#226으로 일봉 보존·출처·장전 요약과 인계 기록을 반영했다.",
       "points": [
         "#199(PR #200): morning_daily_bars/morning_scan_meta 분리, 개장·이월·재연결 경계 수정, 동적 포트, serverNow 통일(npm test 299/299, E2E 304/304, Opus 5.5·Codex PASS)",
         "#201(PR #202): pendingActions 카운터 및 안전 정지 예외, KIS 키 공백/제어문자 차단·JSON 401 분류·동시 balance() 정제(npm test 301/301, Opus 5.5 PASS)",
         "#203·#207(PR #204·#208): scripts/infisical-dev.ts Universal Auth 자동 인증, Vite .secrets/.local 403 차단, KIS 자동 주입 가이드(npm test 307/307, Opus 5.5 PASS)",
-        "#209(370764d)·#196(443f6ca): docs/STATE.md 및 작업 기록 동기화, actions/setup-node 7.1.0 갱신"
+        "#209(370764d)·#196(443f6ca): docs/STATE.md 및 작업 기록 동기화, actions/setup-node 7.1.0 갱신",
+        "#212(PR #216·#219): 4304 POST/GET /api/data/sync와 market_sync_runs 실행 이력을 도입했다. 2026년 KRX 거래일 달력을 대조하고 당일 수집은 마감 10분 뒤부터 허용한다. KIS 미설정이면 KIS_UNCONFIGURED로 마스터와 일봉을 모두 건너뛴다.",
+        "#212(PR #220·#223): DataInventory는 읽기 전용 요약과 장후 동기화·장전 스캔·수동 실행 배지, ‘우선 범위 수집 기준(범위 밖 미검증)’ 고지를 표시한다. docs/operations/local.md에 스킵·차단 사유와 익일 08:30 KST 점검을 기록했다.",
+        "#218(PR #222): 스케줄러는 morningNow를 사용한다. 개장 10분 초과~240분 이하에 !sync.running && !market.busy일 때 시작하며, 충돌 중이면 다음 허용 틱에서 재시도한다. RESTRICTED_MODE·UNCONFIGURED_ACCOUNT·MISSING_BALANCE 경고 차단과 KST 토요일 생성 400을 회귀 테스트했다.",
+        "#221(PR #224·#225·#226): DailyRun.triggerSource로 출처를 구분한다. pruneCompletedSyncDaily는 종목·조정별 완료 동기화 일봉 중 최신 시도·사용 가능한 최신 자료를 남기고 수동·미완료·백테스트 참조 이력을 보존한다. DailyDetail 출처 배지, morningScan 요약, 진행 중 직전 실행 경고를 정합화했다."
       ],
       "limits": [
         "실제 Infisical Cloud Machine Identity 자격증명 발급·원격 연동 실측은 사용자 설정 후 필요.",
         "로컬 환경에 graphify CLI 미설치로 graphify-out/GRAPH_REPORT.md는 2026-11-21(e36b185) 기준 유지.",
-        "보류 Optional 항목(#201 #8a 20종목 초과 페이지 비교 완화, #199 watch 배열 스키마 검사 등)은 후속 이슈 대상."
+        "보류 Optional 항목(#201 #8a 20종목 초과 페이지 비교 완화, #199 watch 배열 스키마 검사 등)은 후속 이슈 대상.",
+        "동기화는 우선 종목 범위에 한정한다. 이 지도 갱신에서 운영 4304의 장후 수집이나 익일 점검은 실측하지 않았다.",
+        "morningScan은 현재 남아 있는 최신 장전 출처 메타데이터를 집계한다. 장후 동기화가 같은 종목을 덮어쓰면 장전 요약 건수가 줄 수 있다."
       ],
       "cost": [],
       "sources": [
@@ -304,6 +350,61 @@
           "상태 동기화 #209",
           "https://github.com/krdn/gon-stock03/pull/209",
           "docs/STATE.md·작업 기록 최신화"
+        ],
+        [
+          "이슈 #212 장후 시세 동기화",
+          "https://github.com/krdn/gon-stock03/issues/212",
+          "4304 단일 API와 거래일 검증 요구"
+        ],
+        [
+          "PR #216 장후 동기화 설계",
+          "https://github.com/krdn/gon-stock03/pull/216",
+          "실행 이력·직렬 수집·전용 실행 차단"
+        ],
+        [
+          "PR #219 장후 동기화 API",
+          "https://github.com/krdn/gon-stock03/pull/219",
+          "market_sync_runs·KRX 달력·마감 버퍼·KIS 스킵"
+        ],
+        [
+          "PR #220 DataInventory 동기화 요약",
+          "https://github.com/krdn/gon-stock03/pull/220",
+          "3종 출처 배지·범위 고지"
+        ],
+        [
+          "PR #223 장후 동기화 운영",
+          "https://github.com/krdn/gon-stock03/pull/223",
+          "스킵·차단과 익일 08:30 점검"
+        ],
+        [
+          "이슈 #218 장전 스캔 회귀",
+          "https://github.com/krdn/gon-stock03/issues/218",
+          "시계 통일·마감 경고 분기·토요일 검증"
+        ],
+        [
+          "PR #222 장전 자동 스캔 재시도",
+          "https://github.com/krdn/gon-stock03/pull/222",
+          "주입 시계와 수집 충돌 회귀"
+        ],
+        [
+          "이슈 #221 데이터 인벤토리 정합화",
+          "https://github.com/krdn/gon-stock03/issues/221",
+          "일봉 출처·이력 보존·장전 스캔 요약"
+        ],
+        [
+          "PR #224 일봉 보존과 장전 요약 API",
+          "https://github.com/krdn/gon-stock03/pull/224",
+          "DailyRun 출처·동기화 보존 정책·morningScan"
+        ],
+        [
+          "PR #225 데이터 인벤토리 UI",
+          "https://github.com/krdn/gon-stock03/pull/225",
+          "DailyDetail 출처·장전 요약·직전 실행 경고"
+        ],
+        [
+          "PR #226 데이터 인벤토리 인계",
+          "https://github.com/krdn/gon-stock03/pull/226",
+          "이슈 #221 병합 기록"
         ]
       ]
     }
