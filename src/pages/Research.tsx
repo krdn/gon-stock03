@@ -104,9 +104,10 @@ const HELP_TABS: { id: HelpTabId; label: string }[] = [
 ];
 
 /** 규칙별 입력 항목 상세 안내 (상단 도움말 사전과 `RuleConfigSection` 문맥 가이드가 공유). */
-const RULE_FIELD_HELP: Record<RuleKind, { summary: string; fields: FieldHelpItem[] }> = {
+const RULE_FIELD_HELP: Record<RuleKind, { summary: string; basicPreset: string; fields: FieldHelpItem[] }> = {
   ma_crossover: {
     summary: '단기 이동평균과 장기 이동평균의 교차(골든·데드크로스)로 추세 전환을 포착합니다.',
+    basicPreset: 'SMA, 단기 5 / 장기 20 (추세·거래량 필터 꺼짐)',
     fields: [
       {
         term: '단기 / 장기 평균',
@@ -136,27 +137,31 @@ const RULE_FIELD_HELP: Record<RuleKind, { summary: string; fields: FieldHelpItem
   },
   donchian_breakout: {
     summary: '가격 채널 돌파와 거래량 확인을 결합한 터틀 트레이딩 방식입니다.',
+    basicPreset: '진입 고가 20봉 / 청산 저가 10봉 / 최소 거래량 1배 초과',
     fields: [
       {
         term: '진입 고가 기간',
         range: '10-120봉',
-        description: '직전 N일 최고가를 종가로 돌파할 때 매수합니다(터틀 트레이딩 방식).',
+        description:
+          '종가가 직전 N일 최고가 이상(>=)으로 마감하고 거래량 조건을 충족할 때 매수합니다(터틀 트레이딩 방식).',
       },
       {
         term: '청산 저가 기간',
         range: '3-60봉 (진입 기간 미만)',
-        description: '직전 M일 최저가 아래로 내려가면 매도합니다. 진입 기간보다 짧게 설정해 이익을 지킵니다.',
+        description:
+          '종가가 직전 M일 최저가 이하(<=)로 내려가 마감하면 매도합니다. 진입 기간보다 짧게 설정해 이익을 지킵니다.',
       },
       {
         term: '최소 거래량 배수',
-        range: '0.5-5배 초과',
+        range: '입력 허용 범위 0.5-5 (양끝 포함) · 판정 기준: 직전 20봉 평균 × 배수 초과(>)',
         description:
-          '돌파 당일 거래량이 직전 20일 평균 거래량 × 배수를 초과해야만 매수해 거래량 없는 가짜 돌파를 거릅니다.',
+          '입력값은 0.5-5 범위로 설정하며, 실제 진입 판정은 돌파 당일 거래량이 직전 20봉 평균 거래량 × 배수를 초과(>)할 때만 매수해 거래량 없는 가짜 돌파를 거릅니다.',
       },
     ],
   },
   rsi2_pullback: {
     summary: '장기 상승 추세 종목이 단기 과매도로 눌렸을 때 반등을 노립니다.',
+    basicPreset: 'RSI 기간 2봉 / 과매도 기준 10 이하 / 장기 추세선 200봉 / 청산 단기선 5봉 / 최대 보유 10봉',
     fields: [
       {
         term: '장기 추세선',
@@ -173,19 +178,20 @@ const RULE_FIELD_HELP: Record<RuleKind, { summary: string; fields: FieldHelpItem
         term: '청산 단기선 & 최대 보유 기간',
         range: '청산선 3-10봉 · 보유 3-20봉',
         description:
-          '주가가 단기 평균(예: 5일선)을 회복하거나 RSI가 70 이상으로 반등하면 즉시 익절하고, 반등이 늦어져도 최대 보유 기간이 되면 자동 매도합니다.',
+          '주가가 단기 평균(예: 5일선)을 회복하거나 RSI가 70 이상이 되거나 최대 보유 기간에 도달하면 매도/청산 신호를 냅니다(현재 수익 여부를 검사하지 않으므로 수익 미보장).',
       },
     ],
   },
 };
 
-/** 샹들리에 ATR 청산 오버레이 입력 항목 안내. */
+/** 샹들리에 ATR 청산 오버레이 기본 초기값 및 입력 항목 안내. */
+const CHANDELIER_BASIC_PRESET = '기본 꺼짐 (활성화 시 초기값: ATR 기간 14봉 / ATR 배수 3배)';
 const CHANDELIER_FIELD_HELP: FieldHelpItem[] = [
   {
     term: '추적 손절 원리',
     range: '선택 오버레이 (고저가 필요)',
     description:
-      '매수 후 도달한 최고가에서 하루 평균 변동폭(ATR) × 배수만큼 떨어지면 전략 매도 신호보다 먼저 팔아 큰 손실을 막습니다. 한 번 올라간 손절선은 내려가지 않습니다.',
+      '매수 후 도달한 최고가에서 하루 평균 변동폭(ATR) × 배수만큼 낮춘 추적 손절선을 계산합니다(한 번 올라간 손절선은 내려가지 않음). 장중 저가 터치가 아니라 봉의 종가가 추적 손절선 이하(<=)로 마감할 때 전략 매도 신호보다 먼저 매도 신호를 내고, 다음 봉에 체결(저장 일봉은 다음 봉 시가, DEMO는 다음 봉 종가 가정)합니다.',
   },
   {
     term: 'ATR 기간 & ATR 배수',
@@ -275,84 +281,77 @@ function ResearchHelpPanel({
       </div>
 
       <div
-        id={`${panelId}-panel-${activeTab}`}
+        id={`${panelId}-panel-workflow`}
         role="tabpanel"
-        aria-labelledby={`${panelId}-tab-${activeTab}`}
-        tabIndex={0}
+        aria-labelledby={`${panelId}-tab-workflow`}
+        tabIndex={activeTab === 'workflow' ? 0 : undefined}
+        hidden={activeTab !== 'workflow'}
         className="research-help-body"
       >
-        {activeTab === 'workflow' && (
-          <ol className="research-help-steps">
-            <li>
-              <span className="research-help-step-no">1단계</span>
-              <h3>데이터 준비</h3>
-              <p>
-                과거 일봉 실험을 위해{' '}
-                <Link className="text-link" to="/data#inventory-daily">
-                  데이터 상태 (/data)
-                </Link>
-                에서 종목의 KIS 일봉 수집과 달력 대조(<code>passed</code>)가 완료되어 있는지 확인합니다. 합성 봉 연습은
-                수집 없이 바로 가능합니다.
-              </p>
-            </li>
-            <li>
-              <span className="research-help-step-no">2단계</span>
-              <h3>규칙과 프리셋 선택</h3>
-              <p>
-                전략 스튜디오나 백테스트에서 전략 규칙(<code>이동평균 교차</code>, <code>돈키안 돌파</code>,{' '}
-                <code>RSI 단기 눌림목</code>)을 고르고 <strong>[보수적 / 기본 / 공격적]</strong> 프리셋 버튼으로 시작값을
-                채운 뒤 필요하면 <code>샹들리에 ATR 청산</code>을 켭니다.
-              </p>
-            </li>
-            <li>
-              <span className="research-help-step-no">3단계</span>
-              <h3>저장 전 백테스트 검증</h3>
-              <p>
-                바로 저장하지 않고 <strong>이 설정으로 백테스트</strong> 버튼을 눌러 과거 구간 수익률·최대낙폭(MDD)·체결
-                횟수를 <strong>단순 보유(가만히 들고 있었을 때)</strong>와 비교합니다.
-              </p>
-            </li>
-            <li>
-              <span className="research-help-step-no">4단계</span>
-              <h3>검증 배지 저장 및 실행</h3>
-              <p>
-                백테스트 결과 화면의 <strong>이 설정으로 전략 만들기</strong> 버튼을 눌러 돌아오면{' '}
-                <strong>검증 실험 연결</strong> 배지가 자동으로 붙습니다. 이름을 정해 저장한 뒤 DEMO 재생 또는 KIS 모의
-                계약 연결로 실행합니다.
-              </p>
-            </li>
-          </ol>
-        )}
+        <ol className="research-help-steps">
+          <li>
+            <span className="research-help-step-no">1단계</span>
+            <h3>데이터 준비</h3>
+            <p>
+              과거 일봉 실험을 위해{' '}
+              <Link className="text-link" to="/data#inventory-daily">
+                데이터 상태 (/data)
+              </Link>
+              에서 종목의 KIS 일봉 수집과 달력 대조(<code>passed</code>)가 완료되어 있는지 확인합니다. 합성 봉 연습은
+              수집 없이 바로 가능합니다.
+            </p>
+          </li>
+          <li>
+            <span className="research-help-step-no">2단계</span>
+            <h3>규칙과 프리셋 선택</h3>
+            <p>
+              전략 스튜디오나 백테스트에서 전략 규칙(<code>이동평균 교차</code>, <code>돈키안 돌파</code>,{' '}
+              <code>RSI 단기 눌림목</code>)을 고르고 <strong>[보수적 / 기본 / 공격적]</strong> 프리셋 버튼으로 시작값을
+              채운 뒤 필요하면 <code>샹들리에 ATR 청산</code>을 켭니다.
+            </p>
+          </li>
+          <li>
+            <span className="research-help-step-no">3단계</span>
+            <h3>저장 전 백테스트 검증</h3>
+            <p>
+              바로 저장하지 않고 <strong>이 설정으로 백테스트</strong> 버튼을 눌러 과거 구간 수익률·최대낙폭(MDD)·체결
+              횟수를 확인합니다. 다중 전략·EMA·필터·오버레이·장기 101-120(<code>v2</code>) 실행 시에는{' '}
+              <strong>단순 보유(저장 일봉은 첫 봉 시가, DEMO는 첫 합성 봉 종가 매수 기준)</strong>와의 비교도 함께
+              표시됩니다.
+            </p>
+          </li>
+          <li>
+            <span className="research-help-step-no">4단계</span>
+            <h3>검증 배지 저장 및 실행</h3>
+            <p>
+              <strong>KIS 저장 일봉 실험</strong> 결과 화면의 <strong>이 설정으로 전략 만들기</strong> 버튼을 눌러
+              돌아오면 <strong>검증 실험 연결</strong> 배지가 자동으로 붙습니다(DEMO 합성 백테스트는 기능 검증 전용으로
+              전략 연결·재현 검증 미제공). 이름을 정해 저장한 뒤 DEMO 재생 또는 KIS 모의 계약 연결로 실행합니다.
+            </p>
+          </li>
+        </ol>
+      </div>
 
-        {activeTab === 'dictionary' && (
-          <div className="research-help-grid">
-            {RULE_KINDS.map(kind => (
-              <article key={kind} className="research-help-card">
-                <h3>
-                  {STRATEGY_CATALOG[kind].title} <code>{kind}</code>
-                </h3>
-                <p className="research-help-card-note">{RULE_FIELD_HELP[kind].summary}</p>
-                <dl className="research-help-dl">
-                  {RULE_FIELD_HELP[kind].fields.map(item => (
-                    <div key={item.term}>
-                      <dt>
-                        {item.term} <small>{item.range}</small>
-                      </dt>
-                      <dd>{item.description}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </article>
-            ))}
-            <article className="research-help-card">
+      <div
+        id={`${panelId}-panel-dictionary`}
+        role="tabpanel"
+        aria-labelledby={`${panelId}-tab-dictionary`}
+        tabIndex={activeTab === 'dictionary' ? 0 : undefined}
+        hidden={activeTab !== 'dictionary'}
+        className="research-help-body"
+      >
+        <div className="research-help-grid">
+          {RULE_KINDS.map(kind => (
+            <article key={kind} className="research-help-card">
               <h3>
-                샹들리에 ATR 청산 오버레이 <code>chandelier</code>
+                {STRATEGY_CATALOG[kind].title} <code>{kind}</code>
               </h3>
-              <p className="research-help-card-note">
-                전략 기본 매도 신호와 별개로 변동성 기반 추적 손절선을 함께 적용하는 보호 장치입니다.
+              <p className="research-help-card-note">{RULE_FIELD_HELP[kind].summary}</p>
+              <p className="research-help-preset">
+                <strong>기본 프리셋 초기값:</strong> {RULE_FIELD_HELP[kind].basicPreset}
               </p>
               <dl className="research-help-dl">
-                {CHANDELIER_FIELD_HELP.map(item => (
+                {RULE_FIELD_HELP[kind].fields.map(item => (
                   <div key={item.term}>
                     <dt>
                       {item.term} <small>{item.range}</small>
@@ -362,67 +361,109 @@ function ResearchHelpPanel({
                 ))}
               </dl>
             </article>
-          </div>
-        )}
+          ))}
+          <article className="research-help-card">
+            <h3>
+              샹들리에 ATR 청산 오버레이 <code>chandelier</code>
+            </h3>
+            <p className="research-help-card-note">
+              전략 기본 매도 신호와 별개로 변동성 기반 추적 손절선을 함께 적용하는 보호 장치입니다.
+            </p>
+            <p className="research-help-preset">
+              <strong>초기값:</strong> {CHANDELIER_BASIC_PRESET}
+            </p>
+            <dl className="research-help-dl">
+              {CHANDELIER_FIELD_HELP.map(item => (
+                <div key={item.term}>
+                  <dt>
+                    {item.term} <small>{item.range}</small>
+                  </dt>
+                  <dd>{item.description}</dd>
+                </div>
+              ))}
+            </dl>
+          </article>
+        </div>
+      </div>
 
-        {activeTab === 'results' && (
-          <div className="research-help-grid">
-            <article className="research-help-card">
-              <h3>전략 vs 단순 보유(벤치마크) 비교 · 초과 수익률(%p)</h3>
-              <p>
-                첫날 시가에 사서 끝날까지 가만히 보유했을 때보다 전략이 몇 %p 더 벌었는지(또는 손실을 줄였는지) 보여줍니다.
-                전략 수익률이 양수여도 단순 보유보다 낮으면 초과 수익률이 음수로 표시됩니다.
-              </p>
-            </article>
-            <article className="research-help-card">
-              <h3>최대 낙폭 (MDD)</h3>
-              <p>
-                실험 기간 중 최고 평가자산 대비 가장 많이 하락했던 폭(%)입니다. 수익률이 비슷하다면 최대 낙폭이 낮은 전략이
-                손실 압박이 적어 더 안정적입니다.
-              </p>
-            </article>
-            <article className="research-help-card">
-              <h3>수수료(bp)와 슬리피지(bp)</h3>
-              <p>
-                <code>1bp = 0.01%</code>입니다. 슬리피지는 주문 시 호가 차이로 조금 더 비싸게 사고 싸게 팔리는 현실적
-                불리함을 반영합니다. 세금·배당·기업행사는 계산에 포함하지 않습니다.
-              </p>
-            </article>
-            <article className="research-help-card">
-              <h3>고정 입력 재현 검증 (SHA256)</h3>
-              <p>
-                저장된 실험의 데이터와 규칙이 위변조되지 않고 같은 결과를 내는지 암호 해시(SHA256)로 다시 계산해 확인합니다.
-                결과 화면의 재현 검증 버튼으로 언제든 일치 여부를 점검할 수 있습니다.
-              </p>
-            </article>
-          </div>
-        )}
+      <div
+        id={`${panelId}-panel-results`}
+        role="tabpanel"
+        aria-labelledby={`${panelId}-tab-results`}
+        tabIndex={activeTab === 'results' ? 0 : undefined}
+        hidden={activeTab !== 'results'}
+        className="research-help-body"
+      >
+        <div className="research-help-grid">
+          <article className="research-help-card">
+            <h3>전략 vs 단순 보유(벤치마크) 비교 · 초과 수익률(%p)</h3>
+            <p>
+              <code>v2</code> 규칙·EMA·필터·오버레이 또는 장기 101-120 실행 시에만 표시됩니다(필터·오버레이가 없는 기본
+              SMA 장기 100 이하는 <code>v1</code> 경로라 단순 보유 비교 미표시). 단순 보유 기준가는{' '}
+              <strong>KIS 저장 일봉은 첫 봉 시가, DEMO 합성은 첫 합성 봉 종가</strong>이며, 가만히 보유했을 때 대비
+              전략의 초과 수익률(%p)을 보여줍니다.
+            </p>
+          </article>
+          <article className="research-help-card">
+            <h3>최대 낙폭 (MDD)</h3>
+            <p>
+              실험 기간 중 최고 평가자산 대비 가장 많이 하락했던 폭(%)입니다. 수익률이 비슷하다면 최대 낙폭이 낮은 전략이
+              손실 압박이 적어 더 안정적입니다.
+            </p>
+          </article>
+          <article className="research-help-card">
+            <h3>수수료(bp)와 슬리피지(bp)</h3>
+            <p>
+              <code>1bp = 0.01%</code>입니다. 슬리피지는 주문 시 호가 차이로 조금 더 비싸게 사고 싸게 팔리는 현실적
+              불리함을 반영합니다. 세금·배당·기업행사는 계산에 포함하지 않습니다.
+            </p>
+          </article>
+          <article className="research-help-card">
+            <h3>고정 입력 재현 검증 (KIS 저장 일봉 전용)</h3>
+            <p>
+              <strong>KIS 저장 일봉 실험</strong>에서만 제공됩니다(DEMO 합성 백테스트 미제공).{' '}
+              <strong>SHA256</strong>은 저장된 입력 스냅샷의 해시를 대조해 입력 위변조 여부를 확인하고,{' '}
+              <strong>결과 일치</strong>는 저장된 스냅샷으로 엔진을 다시 실행한 뒤 기존 저장 결과와 동등성을 별도로
+              비교해 검증합니다.
+            </p>
+          </article>
+        </div>
+      </div>
 
-        {activeTab === 'faq' && (
-          <div className="research-help-faq">
-            <article className="research-help-card">
-              <h3>Q. 왜 돈키안 돌파나 샹들리에 청산은 DEMO에서 저장/실행이 안 되나요?</h3>
-              <p>
-                DEMO 합성 봉은 종가 하나만 생성합니다. 고가·저가·거래량이 꼭 필요한 전략과 샹들리에 청산은 실제 일봉
-                데이터가 있는 <strong>KIS 저장 일봉 백테스트</strong>에서만 정확히 계산할 수 있어 DEMO 저장을 차단합니다.
-              </p>
-            </article>
-            <article className="research-help-card">
-              <h3>Q. 왜 새로 만든 다중 전략이 KIS 모의에서 저장은 되는데 전략 시작 버튼이 잠겨 있나요?</h3>
-              <p>
-                KIS 모의 계좌에 실제 주문을 내보내는 실시간 장중 평가는 현재 기본 SMA(장기 100 이하)만 열려 있습니다.
-                다중 전략은 백테스트로 충분히 검증한 뒤 후속 장전 레벨 트리거 계약 단계에서 안전하게 열립니다.
-              </p>
-            </article>
-            <article className="research-help-card">
-              <h3>Q. 검증 실험 연결 배지가 왜 사라졌나요?</h3>
-              <p>
-                백테스트에서 넘어온 뒤 종목이나 규칙 숫자를 하나라도 바꾸면 검증받았던 원래 설정과 달라집니다. 허위 검증
-                표시를 막기 위해 설정이 바뀌는 즉시 배지가 자동 해제됩니다.
-              </p>
-            </article>
-          </div>
-        )}
+      <div
+        id={`${panelId}-panel-faq`}
+        role="tabpanel"
+        aria-labelledby={`${panelId}-tab-faq`}
+        tabIndex={activeTab === 'faq' ? 0 : undefined}
+        hidden={activeTab !== 'faq'}
+        className="research-help-body"
+      >
+        <div className="research-help-faq">
+          <article className="research-help-card">
+            <h3>Q. 왜 돈키안 돌파나 샹들리에 청산은 DEMO에서 저장/실행이 안 되나요?</h3>
+            <p>
+              DEMO 합성 봉은 종가 하나만 생성합니다. 고가·저가·거래량이 꼭 필요한 전략과 샹들리에 청산은 실제 일봉
+              데이터가 있는 <strong>KIS 저장 일봉 백테스트</strong>에서만 정확히 계산할 수 있어 DEMO 저장을 차단합니다.
+            </p>
+          </article>
+          <article className="research-help-card">
+            <h3>Q. 왜 새로 만든 다중 전략이나 장기 101-120 SMA가 KIS 모의에서 전략 시작이 잠겨 있나요?</h3>
+            <p>
+              KIS 모의 계좌에 실제 주문을 내보내는 실시간 장중 평가는 현재 필터·오버레이가 없는 기본 SMA(장기 100 이하)만
+              열려 있습니다. 필터·오버레이가 없는 기본 SMA라도 장기 기간이 <code>101-120</code>이면 KIS 모의에서{' '}
+              <strong>정지 상태(active=false) 저장과 저장 일봉 백테스트는 가능하지만</strong>, KIS 실시간 시작 계약
+              상한(100 이하)에 따라 <strong>전략 시작</strong>은 차단됩니다. 다중 전략·오버레이 역시 백테스트로 검증한 뒤
+              후속 장전 레벨 트리거 계약 단계에서 안전하게 열립니다.
+            </p>
+          </article>
+          <article className="research-help-card">
+            <h3>Q. 검증 실험 연결 배지가 왜 사라졌나요?</h3>
+            <p>
+              백테스트에서 넘어온 뒤 종목이나 규칙 숫자를 하나라도 바꾸면 검증받았던 원래 설정과 달라집니다. 허위 검증
+              표시를 막기 위해 설정이 바뀌는 즉시 배지가 자동 해제됩니다.
+            </p>
+          </article>
+        </div>
       </div>
     </section>
   );
@@ -1133,6 +1174,9 @@ function RuleConfigSection({
         <summary>현재 선택한 규칙({catalog.title}) 입력 항목 설명 보기</summary>
         <div className="rule-field-help-content">
           <p className="rule-field-help-summary">{RULE_FIELD_HELP[form.kind].summary}</p>
+          <p className="rule-field-help-preset">
+            <strong>기본 프리셋 초기값:</strong> {RULE_FIELD_HELP[form.kind].basicPreset}
+          </p>
           <dl className="rule-field-help-list">
             {RULE_FIELD_HELP[form.kind].fields.map(item => (
               <div key={item.term}>
@@ -1144,7 +1188,7 @@ function RuleConfigSection({
             ))}
           </dl>
           <p className="rule-field-help-overlay-title">
-            샹들리에 ATR 청산 오버레이 ({form.useChandelier ? '사용 중' : '선택 사항'})
+            샹들리에 ATR 청산 오버레이 ({form.useChandelier ? '사용 중' : '선택 사항'}) · {CHANDELIER_BASIC_PRESET}
           </p>
           <dl className="rule-field-help-list">
             {CHANDELIER_FIELD_HELP.map(item => (

@@ -17,7 +17,9 @@
 .bt-page .research-help .research-help-sub { margin: 4px 0 0; }
 .bt-page .research-help :is(.research-help-steps p, .research-help-card p) { margin: 0; }
 .bt-page .research-help .research-help-card-note { margin: 0 0 8px; }
-.bt-page .rule-field-help .rule-field-help-summary { margin: 0 0 8px; }
+.bt-page .research-help .research-help-preset { margin: 0 0 8px; }
+.bt-page .rule-field-help .rule-field-help-summary { margin: 0 0 6px; }
+.bt-page .rule-field-help .rule-field-help-preset { margin: 0 0 8px; }
 .bt-page .rule-field-help .rule-field-help-overlay-title { margin: 10px 0 6px; }
 .bt-page .bt-note { color: var(--muted); font-size: 13px; }
 .bt-warning { padding: 9px 12px; border-left: 3px solid #ba7212; background: #fff4da; color: #593900; }

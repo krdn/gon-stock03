@@ -81,7 +81,11 @@
 .rule-field-help-content {
   margin-top: 8px; padding-top: 8px; border-top: 1px solid #e2ebe8;
 }
-.rule-field-help-summary { margin: 0 0 8px; color: #3d515c; font-size: 12px; }
+.rule-field-help-summary { margin: 0 0 6px; color: #3d515c; font-size: 12px; }
+.rule-field-help-preset {
+  margin: 0 0 8px; padding: 5px 8px; border-radius: 4px;
+  background: #edf5f2; color: #195e55; font-size: 11px; line-height: 1.5;
+}
 .rule-field-help-overlay-title {
   margin: 10px 0 6px; padding-top: 8px; border-top: 1px dashed #d6e2de;
   font-size: 12px; font-weight: 600; color: #195e55;
@@ -119,6 +123,7 @@
 .research-help-tab:focus-visible,
 .research-help-body:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; border-radius: 6px; }
 .research-help-body { min-width: 0; font-size: 13px; line-height: 1.6; color: #293b46; }
+.research-help-body[hidden] { display: none; }
 .research-help-steps {
   list-style: none; margin: 0; padding: 0;
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
@@ -146,6 +151,10 @@
   background: #eaf1ef; color: #145b52; font-size: 11px; font-weight: 500;
 }
 .research-help .research-help-card-note { margin: 0 0 8px; color: #4c5f6b; }
+.research-help .research-help-preset {
+  margin: 0 0 8px; padding: 5px 8px; border-radius: 4px;
+  background: #edf5f2; color: #195e55; font-size: 11px; line-height: 1.5;
+}
 .research-help-dl { margin: 0; display: grid; gap: 8px; }
 .research-help-dl > div { min-width: 0; }
 .research-help-dl dt { font-size: 12px; font-weight: 600; color: #20333e; }

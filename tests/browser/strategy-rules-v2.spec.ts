@@ -576,34 +576,85 @@ test('전략 스튜디오와 백테스트 상단 사용방법 도움말 패널�
     const tabs = tablist.getByRole('tab');
     await expect(tabs).toHaveCount(4);
 
-    // 1번 탭(처음부터 따라하기) 기본 선택 및 /data#inventory-daily 내부 링크 확인
+    // Major 1: 4개 탭 모든 aria-controls 대상 tabpanel이 DOM에 존재하고 aria-labelledby 역참조가 일치하며 비활성 3개는 hidden
+    const allTabPanels = helpRegion.locator('[role="tabpanel"]');
+    await expect(allTabPanels).toHaveCount(4);
+    for (let i = 0; i < 4; i++) {
+      const tab = tabs.nth(i);
+      const tabId = await tab.getAttribute('id');
+      const controlsId = await tab.getAttribute('aria-controls');
+      expect(tabId).toBeTruthy();
+      expect(controlsId).toBeTruthy();
+      const controlled = helpRegion.locator(`[id="${controlsId}"]`);
+      await expect(controlled).toHaveCount(1);
+      await expect(controlled).toHaveAttribute('role', 'tabpanel');
+      await expect(controlled).toHaveAttribute('aria-labelledby', tabId!);
+      if (i === 0) {
+        await expect(controlled).toBeVisible();
+        await expect(controlled).not.toHaveAttribute('hidden', '');
+      } else {
+        await expect(controlled).toBeHidden();
+        await expect(controlled).toHaveAttribute('hidden', '');
+      }
+    }
+
+    // 1번 탭(처음부터 따라하기) 기본 선택, /data#inventory-daily 링크 및 KIS 저장 일봉·v2 기준가 구분 문구 확인
     await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
-    await expect(helpRegion.getByRole('tabpanel')).toContainText('1단계');
+    const activePanel = helpRegion.getByRole('tabpanel');
+    await expect(activePanel).toHaveCount(1);
+    await expect(activePanel).toContainText('1단계');
+    await expect(activePanel).toContainText('저장 일봉은 첫 봉 시가, DEMO는 첫 합성 봉 종가');
+    await expect(activePanel).toContainText('KIS 저장 일봉 실험');
+    await expect(activePanel).toContainText('DEMO 합성 백테스트는 기능 검증 전용으로 전략 연결·재현 검증 미제공');
     await expect(helpRegion.getByRole('link', { name: '데이터 상태 (/data)' })).toHaveAttribute(
       'href',
       '/data#inventory-daily',
     );
 
-    // 키보드 화살표(ArrowRight / ArrowLeft / End / Home)로 4개 탭 전환 확인
+    // 키보드 화살표(ArrowRight / ArrowLeft / End / Home)로 4개 탭 전환 및 보완 문구 확인
     await tabs.nth(0).focus();
     await page.keyboard.press('ArrowRight');
     await expect(tabs.nth(1)).toBeFocused();
     await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
-    await expect(helpRegion.getByRole('tabpanel')).toContainText('ma_crossover');
-    await expect(helpRegion.getByRole('tabpanel')).toContainText('donchian_breakout');
-    await expect(helpRegion.getByRole('tabpanel')).toContainText('rsi2_pullback');
-    await expect(helpRegion.getByRole('tabpanel')).toContainText('chandelier');
+    await expect(allTabPanels.nth(0)).toBeHidden();
+    await expect(allTabPanels.nth(1)).toBeVisible();
+    await expect(activePanel).toContainText('ma_crossover');
+    await expect(activePanel).toContainText('SMA, 단기 5 / 장기 20 (추세·거래량 필터 꺼짐)');
+    await expect(activePanel).toContainText('donchian_breakout');
+    await expect(activePanel).toContainText('진입 고가 20봉 / 청산 저가 10봉 / 최소 거래량 1배 초과');
+    await expect(activePanel).toContainText('이상(>=)');
+    await expect(activePanel).toContainText('이하(<=)');
+    await expect(activePanel).toContainText('입력 허용 범위 0.5-5 (양끝 포함)');
+    await expect(activePanel).toContainText('rsi2_pullback');
+    await expect(activePanel).toContainText('RSI 기간 2봉 / 과매도 기준 10 이하 / 장기 추세선 200봉 / 청산 단기선 5봉 / 최대 보유 10봉');
+    await expect(activePanel).toContainText('수익 미보장');
+    await expect(activePanel).not.toContainText('즉시 익절');
+    await expect(activePanel).toContainText('chandelier');
+    await expect(activePanel).toContainText('기본 꺼짐 (활성화 시 초기값: ATR 기간 14봉 / ATR 배수 3배)');
+    await expect(activePanel).toContainText('봉의 종가가 추적 손절선 이하(<=)로 마감할 때');
+    await expect(activePanel).toContainText('다음 봉에 체결(저장 일봉은 다음 봉 시가, DEMO는 다음 봉 종가 가정)');
 
     await page.keyboard.press('ArrowRight');
     await expect(tabs.nth(2)).toBeFocused();
     await expect(tabs.nth(2)).toHaveAttribute('aria-selected', 'true');
-    await expect(helpRegion.getByRole('tabpanel')).toContainText('최대 낙폭 (MDD)');
-    await expect(helpRegion.getByRole('tabpanel')).toContainText('SHA256');
+    await expect(allTabPanels.nth(1)).toBeHidden();
+    await expect(allTabPanels.nth(2)).toBeVisible();
+    await expect(activePanel).toContainText('v1 경로라 단순 보유 비교 미표시');
+    await expect(activePanel).toContainText('KIS 저장 일봉은 첫 봉 시가, DEMO 합성은 첫 합성 봉 종가');
+    await expect(activePanel).toContainText('최대 낙폭 (MDD)');
+    await expect(activePanel).toContainText('KIS 저장 일봉 실험에서만 제공됩니다');
+    await expect(activePanel).toContainText('SHA256은 저장된 입력 스냅샷의 해시를 대조');
+    await expect(activePanel).toContainText('엔진을 다시 실행한 뒤 기존 저장 결과와 동등성을 별도로 비교');
 
     await page.keyboard.press('ArrowRight');
     await expect(tabs.nth(3)).toBeFocused();
     await expect(tabs.nth(3)).toHaveAttribute('aria-selected', 'true');
-    await expect(helpRegion.getByRole('tabpanel')).toContainText('검증 실험 연결 배지가 왜 사라졌나요?');
+    await expect(allTabPanels.nth(2)).toBeHidden();
+    await expect(allTabPanels.nth(3)).toBeVisible();
+    await expect(activePanel).toContainText('101-120');
+    await expect(activePanel).toContainText('정지 상태(active=false) 저장과 저장 일봉 백테스트는 가능하지만');
+    await expect(activePanel).toContainText('KIS 실시간 시작 계약 상한(100 이하)에 따라 전략 시작은 차단');
+    await expect(activePanel).toContainText('검증 실험 연결 배지가 왜 사라졌나요?');
 
     await page.keyboard.press('Home');
     await expect(tabs.nth(0)).toBeFocused();
@@ -636,28 +687,32 @@ test('RuleConfigSection 문맥별 입력 항목 설명이 선택 규칙 변경�
     await expect(helpDetails).toBeVisible();
     await expect(helpDetails.locator('summary')).toHaveText('현재 선택한 규칙(이동평균 교차) 입력 항목 설명 보기');
 
-    // 접이식 가이드 열기 및 이동평균 교차 항목 설명 확인
+    // 접이식 가이드 열기 및 이동평균 교차 항목 설명·기본 프리셋 초기값 확인
     await helpDetails.locator('summary').click();
+    await expect(helpDetails).toContainText('SMA, 단기 5 / 장기 20 (추세·거래량 필터 꺼짐)');
     await expect(helpDetails).toContainText('단기 / 장기 평균');
     await expect(helpDetails).toContainText('장기 추세 필터 (선택)');
     await expect(helpDetails).toContainText('샹들리에 ATR 청산 오버레이 (선택 사항)');
+    await expect(helpDetails).toContainText('기본 꺼짐 (활성화 시 초기값: ATR 기간 14봉 / ATR 배수 3배)');
 
-    // 돈키안 돌파로 전환 시 제목과 설명 내용 즉시 갱신 확인
+    // 돈키안 돌파로 전환 시 제목과 설명 내용(이상/이하·범위/초과 분리) 즉시 갱신 확인
     await ruleSelect.selectOption('donchian_breakout');
     await expect(helpDetails.locator('summary')).toHaveText('현재 선택한 규칙(돈키안 돌파) 입력 항목 설명 보기');
-    await expect(helpDetails).toContainText('진입 고가 기간');
-    await expect(helpDetails).toContainText('청산 저가 기간');
-    await expect(helpDetails).toContainText('최소 거래량 배수');
+    await expect(helpDetails).toContainText('진입 고가 20봉 / 청산 저가 10봉 / 최소 거래량 1배 초과');
+    await expect(helpDetails).toContainText('이상(>=)');
+    await expect(helpDetails).toContainText('이하(<=)');
+    await expect(helpDetails).toContainText('입력 허용 범위 0.5-5 (양끝 포함)');
 
-    // RSI 단기 눌림목으로 전환 + 샹들리에 체크 시 갱신 확인
+    // RSI 단기 눌림목으로 전환 + 샹들리에 체크 시 갱신(수익 미보장·종가 판정/다음 봉 체결) 확인
     await ruleSelect.selectOption('rsi2_pullback');
     await expect(helpDetails.locator('summary')).toHaveText('현재 선택한 규칙(RSI 단기 눌림목) 입력 항목 설명 보기');
-    await expect(helpDetails).toContainText('장기 추세선');
-    await expect(helpDetails).toContainText('RSI 기간 & 과매도 기준');
-    await expect(helpDetails).toContainText('청산 단기선 & 최대 보유 기간');
+    await expect(helpDetails).toContainText('RSI 기간 2봉 / 과매도 기준 10 이하 / 장기 추세선 200봉 / 청산 단기선 5봉 / 최대 보유 10봉');
+    await expect(helpDetails).toContainText('수익 미보장');
+    await expect(helpDetails).not.toContainText('즉시 익절');
 
     await page.getByLabel('샹들리에 ATR 청산 오버레이 사용').check();
     await expect(helpDetails).toContainText('샹들리에 ATR 청산 오버레이 (사용 중)');
+    await expect(helpDetails).toContainText('봉의 종가가 추적 손절선 이하(<=)로 마감할 때');
 
     // 모바일 390px 뷰포트에서 상단 도움말(4개 탭 전체)과 문맥별 입력 항목 설명을 연 상태로 가로 넘침 없음 확인
     await page.setViewportSize({ width: 390, height: 844 });
