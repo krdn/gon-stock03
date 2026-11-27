@@ -90,7 +90,7 @@ const rawServerEnv = { ...process.env };
 if (realtime) rawServerEnv.KIS_WS_APPROVAL_KEY = approvalKey;
 else await loadDevCredentials(rawServerEnv);
 const serverEnv = stripInfisicalEnv(rawServerEnv);
-const webEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('KIS_') && !name.startsWith('INFISICAL_')));
+const webEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('KIS_') && !name.startsWith('INFISICAL_') && !name.startsWith('OPENDART_')));
 const children = [
   spawn('npm', ['run', 'dev:server'], { stdio: 'inherit', env: serverEnv }),
   spawn('npm', ['run', 'dev:web'], { stdio: 'inherit', env: webEnv }),

@@ -57,28 +57,124 @@ export function parseNews(xml: string, feed: (typeof feeds)[number], cutoff: num
   }
   return items;
 }
-export async function collectNews(cutoff: number, transport = fetch) {
+const dartPublisher = '금융감독원 DART';
+const emptyGap = ' · 현재 피드에서 기준 시각에 해당하는 항목 없음';
+
+function maskedCredential(url: URL) {
+  return url.searchParams.has('crtfc_key') ? ' (crtfc_key=***)' : '';
+}
+
+async function readLimitedText(reader: ReadableStreamDefaultReader<Uint8Array>, signal: AbortSignal) {
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  for (;;) {
+    signal.throwIfAborted();
+    const { value, done } = await reader.read();
+    if (done) return Buffer.concat(chunks).toString('utf8');
+    bytes += value.byteLength;
+    if (bytes > 1024 * 1024) throw new Error('자료 크기 초과');
+    chunks.push(value);
+  }
+}
+
+async function readFeed(url: URL, transport: typeof fetch, signal: AbortSignal) {
+  signal.throwIfAborted();
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let abort!: () => void;
+  const cancelled = new Promise<never>((_, reject) => {
+    abort = () => reject(new Error('수집 시간 초과'));
+    signal.addEventListener('abort', abort, { once: true });
+  });
+  try {
+    const res = await Promise.race([transport(url.href, { redirect: 'error', signal }), cancelled]);
+    reader = res.body?.getReader();
+    if (!res.ok || !reader) throw new Error();
+    return await Promise.race([readLimitedText(reader, signal), cancelled]);
+  } catch {
+    void reader?.cancel().catch(() => {});
+    // Transport errors may contain the full request URL.
+    throw new Error('수집 실패' + maskedCredential(url));
+  } finally {
+    signal.removeEventListener('abort', abort);
+    reader?.releaseLock();
+  }
+}
+
+function dartItem(row: Record<string, unknown>, day: string, publishedAt: string): MorningItem | undefined {
+  const field = (key: string) => typeof row[key] === 'string' ? row[key].trim() : '';
+  const code = field('stock_code'), receipt = field('rcept_no');
+  const company = field('corp_name'), report = field('report_nm');
+  if (!/^\d{6}$/.test(code) || !/^\d{14}$/.test(receipt) || field('rcept_dt') !== day || !company || !report) return;
+  const prefix = '[' + company + ']';
+  const title = report.startsWith(prefix) ? report : prefix + ' ' +
+    (report.startsWith(company + ' ') ? report.slice(company.length).trimStart() : report);
+  const filer = field('flr_nm');
+  return {
+    publisher: dartPublisher, publishedAt, title: title.slice(0, 500),
+    summary: [company + '(' + code + ')', report, filer && '제출인 ' + filer, field('rm')].filter(Boolean).join(' · ').slice(0, 420),
+    url: 'https://dart.fss.or.kr/dsaf001/main.do?rcpNo=' + receipt,
+  };
+}
+
+async function collectDart(feed: (typeof feeds)[number], cutoff: number, transport: typeof fetch, key: string, signal: AbortSignal) {
+  const publishedAt = new Date(cutoff).toISOString();
+  const day = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(cutoff).replaceAll('-', '');
+  const url = new URL('https://opendart.fss.or.kr/api/list.json');
+  url.search = new URLSearchParams({ crtfc_key: key, bgn_de: day, end_de: day, page_count: '100' }).toString();
+  const items = new Map<string, MorningItem>();
+  const result = (gap?: string) => ({ items: [...items.values()], gap });
+  let page = 1;
+  try {
+    for (; page <= 5; page++) {
+      url.searchParams.set('page_no', String(page));
+      const data = JSON.parse(await readFeed(url, transport, signal));
+      if (data.status === '013') break;
+      const pages = Number(data.total_page);
+      if (data.status !== '000' || !Array.isArray(data.list) || !Number.isSafeInteger(pages) || pages < 1) throw new Error();
+      for (const row of data.list) {
+        if (!row || typeof row !== 'object') continue;
+        const item = dartItem(row, day, publishedAt);
+        if (item && !items.has(item.url)) items.set(item.url, item);
+      }
+      if (page >= pages) break;
+      if (page === 5) return result(dartPublisher + ' · OpenDART 페이지 상한 도달로 일부 공시 절단');
+    }
+    return result();
+  } catch {
+    if (signal.aborted && page > 1) return result(dartPublisher + ' · OpenDART 시간 제한 도달로 일부 공시 절단');
+    try {
+      const xml = await readFeed(new URL(feed.url), transport, signal);
+      for (const item of parseNews(xml, feed, cutoff)) {
+        const receipt = new URL(item.url).searchParams.get('rcpNo');
+        const id = receipt ? 'https://dart.fss.or.kr/dsaf001/main.do?rcpNo=' + receipt : item.url;
+        if (!items.has(id)) items.set(id, item);
+      }
+      return result(dartPublisher + ' · OpenDART 폴백(todayRSS 최근 50건 제한)');
+    } catch {
+      if (items.size) return result(dartPublisher + ' · OpenDART 후속 페이지와 todayRSS 수집 실패로 일부 공시 절단');
+      throw new Error('수집 실패');
+    }
+  }
+}
+
+export async function collectNews(cutoff: number, transport = fetch, dartKey = process.env.OPENDART_API_KEY ?? '') {
   const results = await Promise.allSettled(
     feeds.map(async (feed) => {
-      const res = await transport(feed.url, { redirect: 'error', signal: AbortSignal.timeout(7000) });
-      if (!res.ok || !res.body) throw new Error('수집 실패');
-      const chunks: Uint8Array[] = [];
-      let bytes = 0;
-      for await (const chunk of res.body) {
-        bytes += chunk.length;
-        if (bytes > 1024 * 1024) throw new Error('자료 크기 초과');
-        chunks.push(chunk);
-      }
-      return parseNews(Buffer.concat(chunks).toString('utf8'), feed, cutoff);
+      const signal = AbortSignal.timeout(7000);
+      if (feed.publisher === dartPublisher && dartKey.trim()) return collectDart(feed, cutoff, transport, dartKey.trim(), signal);
+      const xml = await readFeed(new URL(feed.url), transport, signal);
+      return { items: parseNews(xml, feed, cutoff), gap: undefined };
     }),
   );
-  const news: MorningItem[] = [],
-    gaps: string[] = [];
+  const news: MorningItem[] = [], gaps: string[] = [];
   results.forEach((r, i) => {
-    if (r.status === 'fulfilled') news.push(...r.value);
-    if (r.status === 'fulfilled' && !r.value.length)
-      gaps.push(feeds[i].publisher + ' · 현재 피드에서 기준 시각에 해당하는 항목 없음');
-    if (r.status === 'rejected') gaps.push(feeds[i].publisher + ' 자료 수집 실패');
+    if (r.status === 'rejected') {
+      gaps.push(feeds[i].publisher + ' 자료 수집 실패');
+      return;
+    }
+    news.push(...r.value.items);
+    if (r.value.gap) gaps.push(r.value.gap);
+    else if (!r.value.items.length) gaps.push(feeds[i].publisher + emptyGap);
   });
   const seenBok = new Set<string>();
   const unique = news.filter((item) => {
