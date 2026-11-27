@@ -644,13 +644,15 @@ test('KIS 모의 실시간 준비 상태에서 종가 확정형+샹들리에 카
   await expect(savedMacdCard).toContainText('KIS 모의: 확정 일봉 기반');
   await expect(savedMacdCard.getByRole('button', { name: '전략 시작', exact: true })).toBeEnabled();
 
-  // 미지원 ③: 기본 무필터 SMA 5/110은 경고 배지 표시 + 정지 상태 저장 허용 + 저장 카드의 전략 시작 버튼만 blocked로 비활성화
+  // 미지원 ③: 기본 무필터 SMA 5/110은 체결가 단위('이벤트')·경고 배지 유지 + 정지 상태 저장 허용 + 저장 카드의 전략 시작 버튼만 blocked로 비활성화
   await page.getByLabel('샹들리에 ATR 청산 오버레이 사용').uncheck();
   await ruleSelect.selectOption('ma_crossover');
   await page.getByLabel('전략 이름').fill('KIS 장기 110 SMA');
   await page.getByLabel('대상 종목').selectOption('005930');
   await page.getByLabel('단기 평균 (이벤트)').fill('5');
   await page.getByLabel('장기 평균 (이벤트)').fill('110');
+  await expect(page.getByLabel('단기 평균 (이벤트)')).toBeVisible();
+  await expect(page.getByLabel('장기 평균 (이벤트)')).toBeVisible();
   await expect(
     envBadges.locator('.badge.warning').filter({ hasText: 'KIS 모의 · 시작 제한 (정지 저장만 가능)' }),
   ).toBeVisible();
@@ -662,8 +664,9 @@ test('KIS 모의 실시간 준비 상태에서 종가 확정형+샹들리에 카
     has: page.getByRole('heading', { name: 'KIS 장기 110 SMA', exact: true }),
   });
   await expect(slow110Card).toBeVisible();
-  await expect(slow110Card).toContainText('단기 5봉');
-  await expect(slow110Card).toContainText('장기 110봉');
+  await expect(slow110Card).toContainText('단기 5이벤트');
+  await expect(slow110Card).toContainText('장기 110이벤트');
+  await expect(slow110Card).not.toContainText('110봉');
   await expect(slow110Card).toContainText('정지');
   await expect(slow110Card).toContainText('전략 시작 차단');
   await expect(slow110Card).toContainText('실시간 체결가 기본 SMA의 장기 기간은 100 이하여야 합니다.');

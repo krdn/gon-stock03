@@ -976,15 +976,26 @@ export function isKisConfirmedDailyStrategy(
   return kisRealtimeBlockReason(rule, overlay, slow) === '' && !isBasicRealtimeSma(rule, overlay, slow);
 }
 
+/** 폼 상태가 KIS 모의 체결가 이벤트 단위를 사용하는 무필터·무오버레이 기본 SMA인지 판정한다(`slow` 상한과 무관). */
+export function isKisTickSmaForm(form: RuleFormState): boolean {
+  return !form.useChandelier && !form.useVolatilityParity && isFormUnfilteredSma(form);
+}
+
+/** 저장 전략이 KIS 모의 체결가 이벤트 단위를 사용하는 무필터·무오버레이 기본 SMA인지 판정한다(`slow` 상한과 무관). */
+export function isKisTickSmaRule(rule?: StrategyRule, overlay?: ExitOverlay): boolean {
+  if (overlay?.chandelier || overlay?.volatilityParity) return false;
+  return (
+    !rule ||
+    (rule.kind === 'ma_crossover' &&
+      rule.maType === 'sma' &&
+      !rule.regimePeriod &&
+      !rule.minRelativeVolume)
+  );
+}
+
 /** 폼 상태에서 KIS 모의 기본 무필터 SMA 장기 기간 계약 상한(100) 초과 여부를 판정한다. */
 export function isKisBasicSmaSlowExceeded(form: RuleFormState): boolean {
-  return (
-    !form.useChandelier &&
-    !form.useVolatilityParity &&
-    isFormUnfilteredSma(form) &&
-    form.slow.trim() !== '' &&
-    Number(form.slow) > 100
-  );
+  return isKisTickSmaForm(form) && form.slow.trim() !== '' && Number(form.slow) > 100;
 }
 
 /** 폼 상태에서 KIS 모의 계약·시작 지원 여부를 판정한다(`assertRealtimeRule`과 100% 일치). */
