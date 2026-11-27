@@ -1,17 +1,17 @@
 {
-  "checked_at": "2026-11-27T06:52:06.813925+00:00",
-  "objective": "#231 저장 일봉 전략 v2와 기존 실험 재현",
+  "checked_at": "2026-11-27T10:41:35.224723+00:00",
+  "objective": "#235 확정 일봉 전략 7종과 PR 2B 계약",
   "sources": [
     {
-      "url": "https://zod.dev/api",
-      "finding": "discriminatedUnion과 strictObject로 전략별 필드를 제한한다."
+      "url": "https://raw.githubusercontent.com/TA-Lib/ta-lib/main/src/ta_func/ta_ADX.c",
+      "finding": "Wilder의 방향 이동 평활 및 DX 평균을 확인했다. 첫 봉을 시드에 포함하는 프로젝트 규약은 TA-Lib lookback과 다르다."
     },
     {
-      "url": "https://raw.githubusercontent.com/koreainvestment/open-trading-api/main/examples_llm/domestic_stock/inquire_daily_itemchartprice/chk_inquire_daily_itemchartprice.py",
-      "finding": "국내주식기간별시세 예제는 영업일자, 시고저종가, 누적거래량과 수정주가 선택을 제공한다."
+      "url": "https://zod.dev/api",
+      "finding": "strictObject와 discriminatedUnion으로 kind별 미지정 필드를 거부한다."
     }
   ],
-  "decisions": "저장된 확정 일봉만 사용하고 종가 판정과 다음 시가 체결을 분리한다. DEMO 종가 입력에 고저가나 거래량을 합성하지 않는다.",
+  "decisions": "첫 봉 TR=고가-저가, ±DM=0. n번째 DX, 2n-1번째 첫 ADX, 2n번째 직전·현재 비교. 저장 일봉 다음 시가, DEMO는 종가 전용.",
   "status": "reviewed",
   "task_contexts": [
     {
@@ -936,6 +936,22 @@
       ],
       "decisions": "공개·수집 시각과 승인 보고서를 보존하고 거래 기준 연구와 실행을 구분한다.",
       "status": "reviewed"
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/235",
+      "checked_at": "2026-11-27T10:41:35.224723+00:00",
+      "objective": "#235 확정 일봉 전략 7종과 PR 2B 계약",
+      "sources": [
+        {
+          "url": "https://raw.githubusercontent.com/TA-Lib/ta-lib/main/src/ta_func/ta_ADX.c",
+          "finding": "Wilder의 방향 이동 평활 및 DX 평균을 확인했다. 첫 봉을 시드에 포함하는 프로젝트 규약은 TA-Lib lookback과 다르다."
+        },
+        {
+          "url": "https://zod.dev/api",
+          "finding": "strictObject와 discriminatedUnion으로 kind별 미지정 필드를 거부한다."
+        }
+      ],
+      "decisions": "첫 봉 TR=고가-저가, ±DM=0. n번째 DX, 2n-1번째 첫 ADX, 2n번째 직전·현재 비교. 저장 일봉 다음 시가, DEMO는 종가 전용."
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."
