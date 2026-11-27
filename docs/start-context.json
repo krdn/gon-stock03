@@ -1,17 +1,17 @@
 {
-  "checked_at": "2026-11-27T10:41:35.224723+00:00",
-  "objective": "#235 확정 일봉 전략 7종과 PR 2B 계약",
+  "checked_at": "2026-11-27T22:35:10.164455+00:00",
+  "objective": "#246 저장 다종목 일봉 실험",
   "sources": [
     {
-      "url": "https://raw.githubusercontent.com/TA-Lib/ta-lib/main/src/ta_func/ta_ADX.c",
-      "finding": "Wilder의 방향 이동 평활 및 DX 평균을 확인했다. 첫 봉을 시드에 포함하는 프로젝트 규약은 TA-Lib lookback과 다르다."
+      "url": "https://sqlite.org/json1.html",
+      "finding": "json_each(body,path)로 참조 배열의 각 수집 ID를 비교한다."
     },
     {
       "url": "https://zod.dev/api",
-      "finding": "strictObject와 discriminatedUnion으로 kind별 미지정 필드를 거부한다."
+      "finding": "strictObject 및 discriminatedUnion으로 전략별 입력을 검증한다."
     }
   ],
-  "decisions": "첫 봉 TR=고가-저가, ±DM=0. n번째 DX, 2n-1번째 첫 ADX, 2n번째 직전·현재 비교. 저장 일봉 다음 시가, DEMO는 종가 전용.",
+  "decisions": "공통 거래일 종가 판정과 다음 시가 매도 선행 정산을 v3로 저장한다.",
   "status": "reviewed",
   "task_contexts": [
     {
@@ -952,6 +952,23 @@
         }
       ],
       "decisions": "첫 봉 TR=고가-저가, ±DM=0. n번째 DX, 2n-1번째 첫 ADX, 2n번째 직전·현재 비교. 저장 일봉 다음 시가, DEMO는 종가 전용."
+    },
+    {
+      "issue": "https://github.com/krdn/gon-stock03/issues/246",
+      "checked_at": "2026-11-27T22:35:10.164455+00:00",
+      "objective": "#246 저장 다종목 일봉 실험",
+      "sources": [
+        {
+          "url": "https://sqlite.org/json1.html",
+          "finding": "json_each(body,path)로 참조 배열의 각 수집 ID를 비교한다."
+        },
+        {
+          "url": "https://zod.dev/api",
+          "finding": "strictObject 및 discriminatedUnion으로 전략별 입력을 검증한다."
+        }
+      ],
+      "decisions": "공통 거래일 종가 판정과 다음 시가 매도 선행 정산을 v3로 저장한다.",
+      "status": "reviewed"
     }
   ],
   "integration_scope": "PR58 38e6e40 및 PR59 6270faa의 원래 task_contexts·checked_at 보존. 마지막 항목만 이번 통합의 공식자료 확인. 실제 KIS 업무API·주문·취소·예약·외부알림 없음."

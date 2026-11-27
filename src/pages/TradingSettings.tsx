@@ -1,3 +1,4 @@
+import {isPortfolioRule, PORTFOLIO_CATALOG} from '../../shared/portfolio-rules';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronRight, ClipboardList, SlidersHorizontal, Workflow } from 'lucide-react';
@@ -71,6 +72,7 @@ function formatTradingStrategyRule(strategy: Pick<Strategy, 'rule' | 'overlay' |
     const slow = strategy.rule?.kind === 'ma_crossover' ? strategy.rule.slow : strategy.slow;
     return `${fast}/${slow} 교차`;
   }
+  if (isPortfolioRule(strategy.rule)) return PORTFOLIO_CATALOG[strategy.rule.kind].title;
   const rule: StrategyRule = strategy.rule ?? {
     kind: 'ma_crossover',
     maType: 'sma',

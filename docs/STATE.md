@@ -1,5 +1,6 @@
 # 작업 인수인계
 
+- **다종목 포트폴리오** [#246 PR 4A-1 및 4A-2 인계 계약](tasks/246-strategy-rules-phase4a.md)
 - **확정 일봉 KIS 모의 전략 계약** [#243 PR 3B-1 · PR 3B-2 UI·매매설정·도움말·E2E 연동](tasks/243-strategy-rules-phase3b.md)
 - **저장 일봉 돌파·변동성 사이징** [#240 PR 3A-1·PR 3A-2 작업과 UI 입력 계약](tasks/240-strategy-rules-phase3a.md)
 

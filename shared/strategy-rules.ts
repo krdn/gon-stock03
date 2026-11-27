@@ -1,3 +1,4 @@
+import {isPortfolioRule, portfolioOnly, type PortfolioRule} from './portfolio-rules.ts';
 import { z } from 'zod';
 import { bollinger, dmi, macd, atr, averageVolume, ema, rollingHighest, rollingLowest, rsi, sma } from './indicators.ts';
 
@@ -53,7 +54,8 @@ export function warmup(rule: StrategyRule, overlay?: ExitOverlay) {
   }
   return Math.max(n, overlay?.chandelier?.atrPeriod ?? 0, overlay?.volatilityParity ? overlay.volatilityParity.volLookback + 1 : 0);
 }
-export function assertCloseOnly(rule?: StrategyRule, overlay?: ExitOverlay) {
+export function assertCloseOnly(rule?: StrategyRule | PortfolioRule, overlay?: ExitOverlay) {
+  if (isPortfolioRule(rule)) throw new Error(portfolioOnly);
   if (overlay?.volatilityParity || overlay?.chandelier || (rule && STRATEGY_CATALOG[rule.kind].environments.demo === false) || (rule?.kind === 'ma_crossover' && rule.minRelativeVolume))
     throw new Error('DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙은 저장 일봉 백테스트에서 사용하세요.');
 }
@@ -61,19 +63,22 @@ function unfilteredSma(rule?: StrategyRule) {
   return !rule || (rule.kind === 'ma_crossover' && rule.maType === 'sma' && !rule.regimePeriod && !rule.minRelativeVolume);
 }
 
-export function isBasicRealtimeSma(rule?: StrategyRule, overlay?: ExitOverlay, slow?: number) {
+export function isBasicRealtimeSma(rule?: StrategyRule | PortfolioRule, overlay?: ExitOverlay, slow?: number) {
+  if (isPortfolioRule(rule)) return false;
   return !overlay?.chandelier && !overlay?.volatilityParity && unfilteredSma(rule)
     && (rule?.kind === 'ma_crossover' ? rule.slow : slow ?? 0) <= 100;
 }
 
-export function assertRealtimeRule(rule?: StrategyRule, overlay?: ExitOverlay, slow?: number) {
+export function assertRealtimeRule(rule?: StrategyRule | PortfolioRule, overlay?: ExitOverlay, slow?: number) {
+  if (isPortfolioRule(rule)) throw new Error(portfolioOnly);
   if (rule?.kind === 'volatility_breakout' || overlay?.volatilityParity)
     throw new Error('윌리엄스 변동성 돌파와 변동성 패리티 수량 조절은 저장 일봉 백테스트 전용입니다.');
   if (unfilteredSma(rule) && !overlay?.chandelier && !isBasicRealtimeSma(rule, overlay, slow))
     throw new Error('실시간 체결가 기본 SMA의 장기 기간은 100 이하여야 합니다.');
 }
 
-export function normalizeRule(rule: StrategyRule | undefined, fast: number, slow: number): StrategyRule {
+export function normalizeRule(rule: PortfolioRule | StrategyRule | undefined, fast: number, slow: number): StrategyRule {
+  if (isPortfolioRule(rule)) throw new Error(portfolioOnly);
   if (!rule) return { kind: 'ma_crossover', maType: 'sma', fast, slow };
   if (rule.kind === 'ma_crossover' && unfilteredSma(rule))
     return { kind: rule.kind, maType: 'sma', fast: rule.fast, slow: rule.slow };

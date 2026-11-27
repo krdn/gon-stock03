@@ -1,3 +1,4 @@
+import { isPortfolioRule, portfolioRuleSchema } from './portfolio-rules.ts';
 import { strategyRuleSchema, exitOverlaySchema } from './strategy-rules.ts';
 import { z } from 'zod';
 import type { PaperOrder, StateSnapshot } from './model.ts';
@@ -21,10 +22,12 @@ export function samePaperIntent(order: PaperOrder, request: PaperOrderInput) {
     (capped ? order.priceCeiling === request.price : order.priceCeiling === undefined && order.price === request.price);
 }
 const strategyFields = {
-  rule: strategyRuleSchema.optional(), overlay: exitOverlaySchema.optional(),
+  rule: z.union([strategyRuleSchema,portfolioRuleSchema]).optional(), overlay: exitOverlaySchema.optional(),
   evidence: z.strictObject({ experimentId: z.hash('sha256'), inputHash: z.hash('sha256') }).optional(),
 };
-export const strategyInput = z.object({ ...strategyFields, name: z.string().trim().min(1).max(60), code: codeSchema, fast: integer(2, 60), slow: integer(3, 120), qty: integer(1, 10000), environment: z.enum(['demo', 'kis-paper']).default('demo') }).strict().refine(v => v.fast < v.slow, '단기 기간은 장기 기간보다 작아야 합니다.')
+export const strategyInput = z.object({ ...strategyFields, name: z.string().trim().min(1).max(60), code: masterCodeSchema, fast: integer(2, 60), slow: integer(3, 120), qty: integer(1, 10000), environment: z.enum(['demo', 'kis-paper']).default('demo') }).strict().refine(v => v.fast < v.slow, '단기 기간은 장기 기간보다 작아야 합니다.')
+  .refine(v => isPortfolioRule(v.rule) ? v.code === v.rule.assets[0] : codeSchema.safeParse(v.code).success, {path:['code'], message:'대표 종목 코드를 확인하세요.'})
+  .refine(v => !isPortfolioRule(v.rule) || !v.overlay, {path:['overlay'],message:'다종목 전략은 오버레이를 사용할 수 없습니다.'})
   .refine(v => v.rule?.kind === 'ma_crossover' || v.slow <= 100, {path:['slow'],message:'장기 기간은 100 이하여야 합니다.'})
   .refine(v => v.rule?.kind !== 'ma_crossover' || (v.fast === v.rule.fast && v.slow === v.rule.slow), '호환 단기·장기 기간을 규칙과 일치시켜 주세요.');
 export const backtestInput = z.object({ code: codeSchema, fast: integer(2, 60), slow: integer(3, 100), capital: integer(100000, 100000000), feeBps: z.number().min(0).max(100), slippageBps: z.number().min(0).max(100) }).strict().refine(v => v.fast < v.slow, '단기 기간은 장기 기간보다 작아야 합니다.');
@@ -89,7 +92,7 @@ export const stateSnapshotSchema = z.object({
   positions: z.array(z.object({ code: codeSchema, qty: z.number(), average: z.number() })),
   orders: z.array(z.object({ id: z.string(), code: codeSchema, side: z.enum(['buy', 'sell']), qty: z.number(), price: z.number(), filledPrice: z.number().optional(), status: z.enum(['pending', 'filled', 'cancelled']), createdAt: z.string(), filledAt: z.string().optional(), source: z.string(), fee: z.number(), requestId: z.string() })),
   watchlist: z.array(masterCodeSchema),
-  strategies: z.array(z.object({ ...strategyFields, entryTick: z.int().nonnegative().optional(), id: z.string(), name: z.string(), code: codeSchema, fast: z.number(), slow: z.number(), qty: z.number(), active: z.boolean(), lastSignal: z.enum(['buy', 'sell', 'hold']), lastTick: z.number(), environment: z.enum(['demo', 'kis-paper']).optional(), revision: z.number().int().positive().optional(), run: z.number().int().nonnegative().optional(), lastEvent: z.string().optional(), evaluations: z.array(z.object({ event: z.string(), at: z.iso.datetime(), revision: z.number().int().positive(), signal: z.enum(['buy', 'sell', 'hold']), status: z.enum(['hold', 'blocked', 'sending', 'accepted', 'unknown', 'rejected']), reason: z.string(), requestId: z.uuid().optional(), brokerId: z.string().optional() })).optional() })),
+  strategies: z.array(z.object({ ...strategyFields, entryTick: z.int().nonnegative().optional(), id: z.string(), name: z.string(), code: masterCodeSchema, fast: z.number(), slow: z.number(), qty: z.number(), active: z.boolean(), lastSignal: z.enum(['buy', 'sell', 'hold']), lastTick: z.number(), environment: z.enum(['demo', 'kis-paper']).optional(), revision: z.number().int().positive().optional(), run: z.number().int().nonnegative().optional(), lastEvent: z.string().optional(), evaluations: z.array(z.object({ event: z.string(), at: z.iso.datetime(), revision: z.number().int().positive(), signal: z.enum(['buy', 'sell', 'hold']), status: z.enum(['hold', 'blocked', 'sending', 'accepted', 'unknown', 'rejected']), reason: z.string(), requestId: z.uuid().optional(), brokerId: z.string().optional() })).optional() })),
   paperManualMaxQty: paperQuantitySetting.shape.maxQty.default(DEFAULT_PAPER_MAX_QTY),
   risk: riskInput.extend({ halted: z.boolean() }),
   events: z.array(z.object({ id: z.string(), time: z.string(), level: z.enum(['info', 'warning', 'error']), title: z.string(), detail: z.string(), read: z.boolean(), environment: z.enum(['demo', 'kis-paper', 'shared']).optional(), target: z.enum(['orders', 'paper', 'settings', 'risk', 'strategies']).optional(), requestId: z.uuid().optional() })),

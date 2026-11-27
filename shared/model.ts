@@ -1,10 +1,11 @@
+import type { PortfolioRule } from './portfolio-rules.ts';
 import type { StrategyRule, ExitOverlay } from './strategy-rules.ts';
 export type Market = 'KOSPI' | 'KOSDAQ' | 'ETF';
 export interface Instrument { code: string; name: string; market: Market; sector: string; price: number; change: number; volume: number; history: number[] }
 export interface Position { code: string; qty: number; average: number }
 export interface Order { id: string; code: string; side: 'buy' | 'sell'; qty: number; price: number; filledPrice?: number; status: 'pending' | 'filled' | 'cancelled'; createdAt: string; filledAt?: string; source: string; fee: number; requestId: string }
 export interface StrategyEvaluation { event: string; at: string; revision: number; signal: 'buy' | 'sell' | 'hold'; status: 'hold' | 'blocked' | 'sending' | 'accepted' | 'unknown' | 'rejected'; reason: string; requestId?: string; brokerId?: string }
-export interface Strategy { rule?: StrategyRule; overlay?: ExitOverlay; evidence?: {experimentId:string; inputHash:string}; entryTick?: number; id: string; name: string; code: string; fast: number; slow: number; qty: number; active: boolean; lastSignal: 'buy' | 'sell' | 'hold'; lastTick: number; environment?: 'demo' | 'kis-paper'; revision?: number; run?: number; lastEvent?: string; evaluations?: StrategyEvaluation[] }
+export interface Strategy { rule?: StrategyRule | PortfolioRule; overlay?: ExitOverlay; evidence?: {experimentId:string; inputHash:string}; entryTick?: number; id: string; name: string; code: string; fast: number; slow: number; qty: number; active: boolean; lastSignal: 'buy' | 'sell' | 'hold'; lastTick: number; environment?: 'demo' | 'kis-paper'; revision?: number; run?: number; lastEvent?: string; evaluations?: StrategyEvaluation[] }
 export interface Risk { maxOrder: number; maxPosition: number; dailyLoss: number; halted: boolean }
 export interface Event { id: string; time: string; level: 'info' | 'warning' | 'error'; title: string; detail: string; read: boolean; environment?: 'demo' | 'kis-paper' | 'shared'; target?: 'orders' | 'paper' | 'settings' | 'risk' | 'strategies'; requestId?: string }
 export interface Journal { id: string; date: string; code: string; text: string }

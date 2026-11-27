@@ -1,7 +1,7 @@
-import type { StrategyRule, ExitOverlay } from './strategy-rules.ts';
+import type { ExitOverlay } from './strategy-rules.ts';
 import { oncePolicy, strategyPolicy, validOncePolicy } from './trading-policy.ts';
 import { z } from 'zod';
-import type { State } from './model.ts';
+import type { State, Strategy } from './model.ts';
 import { DEFAULT_PAPER_MAX_QTY, MAX_ORDER_QTY } from './contracts.ts';
 
 const amount = z.int().positive();
@@ -66,7 +66,7 @@ export interface PlanVersion {
   fixed: boolean;
   limits: ReturnType<typeof planLimits>;
   runId?: string;
-  rule?: StrategyRule;
+  rule?: Strategy['rule'];
   overlay?: ExitOverlay;
   symbol?: string;
   fast?: number;
