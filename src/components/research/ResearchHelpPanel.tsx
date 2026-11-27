@@ -93,6 +93,45 @@ export const RULE_FIELD_HELP: Record<RuleKind, RuleHelpEntry> = {
       },
     ],
   },
+  volatility_breakout: {
+    summary: '전일 변동폭에 돌파 계수 k를 곱한 당일 목표가를 상향 돌파할 때 진입하고 설정 보유일 뒤 시가에 청산합니다.',
+    envBadge: '저장 일봉 전용 · DEMO 미지원 · KIS 모의 정지 저장 가능(실시간 시작 제한)',
+    basicPreset: '돌파 계수 k 0.5 / 적응형 노이즈 꺼짐 / 노이즈 20봉 / 추세 SMA 20봉 / 보유 1일',
+    executionNote:
+      '매도·청산 신호는 수익을 보장하지 않습니다(수익 미보장). 저장 일봉 전용 규칙이며 DEMO에서는 사용할 수 없습니다. 전일 확정 OHLC로 추세와 변동폭을 확정한 뒤 당일 고가가 목표가 이상(>=)이면 당일 기준가 max(시가, 목표가)로 매수 체결을 가정합니다(호가 단위 반올림 없음). 진입 당일에는 청산하지 않고, 이후 봉부터 전일 종가 기준 샹들리에 손절 또는 보유일 도달 시 당일 시가에 전량 청산합니다(시가 청산 봉 당일 재진입 금지). 준비 봉은 max(노이즈 기간, 추세 SMA 기간)봉입니다.',
+    fields: [
+      {
+        term: '돌파 계수 k',
+        range: '0.1-1 숫자 (고정 k 모드 적용)',
+        description:
+          '전일 변동폭(전일 고가−전일 저가 > 0)에 곱해 당일 목표가(당일 시가 + k × 전일 변동폭)를 만듭니다. 당일 고가가 목표가 이상(>=)이면 매수하며, k를 높이면 강한 돌파만 선별하고 낮추면 진입이 잦아집니다.',
+      },
+      {
+        term: '적응형 노이즈 k 사용',
+        range: '체크박스 (기본 꺼짐)',
+        description:
+          '켜면 고정 k 대신 직전 확정 봉들의 평균 노이즈 비율(1 − |시가−종가|/(고가−저가), 고저 폭이 0이면 0.5)을 유효 k로 사용합니다. 꼬리가 긴 흔들림 장세일수록 목표가가 자동으로 높아져 속임수 돌파를 줄입니다.',
+      },
+      {
+        term: '노이즈 평균 기간',
+        range: '5-60 정수 (기본 20)',
+        description:
+          '적응형 노이즈 평균을 구할 직전 확정 봉 수이며 준비 봉 계산에도 포함됩니다. 기간을 늘리면 k가 완만하게 변하고 줄이면 최근 일봉 형태에 빠르게 반응합니다.',
+      },
+      {
+        term: '상승 추세 SMA 기간',
+        range: '5-200 정수 (기본 20)',
+        description:
+          '전일 확정 종가가 직전 확정 종가의 추세 SMA를 초과(>)할 때만 당일 돌파 매수를 허용합니다. 기간을 늘리면 중장기 상승 추세 종목만 엄선하고 줄이면 단기 반등에도 진입합니다.',
+      },
+      {
+        term: '보유 거래일 수',
+        range: '1-10 정수 (기본 1)',
+        description:
+          '진입 다음 봉부터 누적 보유 거래일이 설정값 이상(>=)이면 당일 시가에 전량 청산합니다(수익 미보장). 샹들리에 청산을 함께 켜면 전일 종가 손절선 도달(<=)이 보유 기한보다 우선 적용됩니다.',
+      },
+    ],
+  },
   rsi2_pullback: {
     summary: '장기 상승 추세 종목이 단기 과매도로 눌렸을 때 반등을 노립니다.',
     envBadge: '저장 일봉 · DEMO 겸용 · KIS 모의 정지 저장 가능(실시간 시작 제한)',
@@ -306,6 +345,38 @@ export const CHANDELIER_FIELD_HELP: FieldHelpItem[] = [
   },
 ];
 
+/** 20 변동성 패리티 · RMS 포지션 사이징 오버레이 기본 초기값 안내. */
+export const VOLATILITY_PARITY_BASIC_PRESET =
+  '기본 꺼짐 (활성화 시 초기값: 관측 기간 20봉 / 목표 연환산 변동성 20% / 최대 배정 비중 100%)';
+
+/** 20 변동성 패리티 · RMS 포지션 사이징 오버레이 입력 항목 안내. */
+export const VOLATILITY_PARITY_FIELD_HELP: FieldHelpItem[] = [
+  {
+    term: '목표 변동성 사이징 원리',
+    range: '선택 오버레이 (저장 일봉 전용 · DEMO 미지원)',
+    description:
+      '매수 체결 시 체결일 직전 확정 종가(관측 기간+1봉)의 단순 일간 수익률 모집단 표준편차 × √252 × 100으로 연환산 변동성을 계산합니다. 목표 비중 min(최대 배정 비중/100, 목표 변동성/실측 변동성)(변동성이 0이면 최대 배정 비중)만큼 현금 예산을 배정해 전체 현금과 배정 예산 각각에서 수수료를 감당하는 정수 수량 중 작은 값으로 매수하며(0주이면 보류), 준비 봉은 관측 기간+1과 규칙 준비 봉 중 큰 값을 사용합니다. DEMO에서는 사용할 수 없습니다.',
+  },
+  {
+    term: '변동성 관측 기간',
+    range: '10-60 정수 (기본 20봉)',
+    description:
+      '직전 확정 종가에서 일간 수익률을 산출할 거래일 수(필요 종가 기간+1봉)입니다. 기간을 줄이면 최근 변동성 급등에 빠르게 수량을 줄이고, 늘리면 비중이 완만하게 조절됩니다.',
+  },
+  {
+    term: '목표 연환산 변동성 (%)',
+    range: '5-60 숫자 (기본 20%)',
+    description:
+      '목표로 삼는 연환산 변동성 수준입니다. 값을 낮출수록 변동성이 큰 종목에서 매수 수량을 더 보수적으로 축소합니다.',
+  },
+  {
+    term: '최대 배정 비중 (%)',
+    range: '10-100 숫자 (기본 100%)',
+    description:
+      '실측 변동성이 매우 낮거나 0일 때도 현금 대비 한 번에 투입할 수 있는 최대 비중 상한입니다. 예: 50%면 가용 현금의 절반 이내로 매수 수량을 제한합니다.',
+  },
+];
+
 /** `/strategies`와 `/backtest` 상단에서 열고 닫는 4탭 상세 사용방법 도움말 패널. */
 export function ResearchHelpPanel({
   panelId,
@@ -410,10 +481,11 @@ export function ResearchHelpPanel({
             <span className="research-help-step-no">2단계</span>
             <h3>규칙과 프리셋 선택</h3>
             <p>
-              전략 스튜디오나 백테스트에서 10종 전략 규칙(저장 일봉 전체 10종 · DEMO 종가 전용 4종:{' '}
+              전략 스튜디오나 백테스트에서 11종 전략 규칙(저장 일봉 전체 11종 · DEMO 종가 전용 4종:{' '}
               <code>이동평균 교차</code>, <code>RSI 단기 눌림목</code>, <code>MACD 히스토그램</code>,{' '}
               <code>볼린저 %B 반등</code>) 중 하나를 고르고 <strong>[보수적 / 기본 / 공격적]</strong> 프리셋 버튼으로
-              시작값을 채운 뒤 필요하면 <code>샹들리에 ATR 청산</code>을 켭니다.
+              시작값을 채운 뒤 필요하면 <code>샹들리에 ATR 청산</code>이나{' '}
+              <code>변동성 패리티 · RMS 사이징</code> 오버레이를 켭니다.
             </p>
           </li>
           <li>
@@ -472,7 +544,7 @@ export function ResearchHelpPanel({
           ))}
           <article className="research-help-card">
             <h3>
-              샹들리에 ATR 청산 오버레이 <code>chandelier</code>
+              19 샹들리에 ATR 청산 오버레이 <code>chandelier</code>
             </h3>
             <p className="research-help-env-line">저장 일봉 전용 · DEMO 미지원 · KIS 모의 정지 저장 가능(실시간 시작 제한)</p>
             <p className="research-help-card-note">
@@ -483,6 +555,28 @@ export function ResearchHelpPanel({
             </p>
             <dl className="research-help-dl">
               {CHANDELIER_FIELD_HELP.map(item => (
+                <div key={item.term}>
+                  <dt>
+                    {item.term} <small>{item.range}</small>
+                  </dt>
+                  <dd>{item.description}</dd>
+                </div>
+              ))}
+            </dl>
+          </article>
+          <article className="research-help-card">
+            <h3>
+              20 변동성 패리티 · RMS 포지션 사이징 <code>volatilityParity</code>
+            </h3>
+            <p className="research-help-env-line">저장 일봉 전용 · DEMO 미지원 · KIS 모의 정지 저장 가능(실시간 시작 제한)</p>
+            <p className="research-help-card-note">
+              종목의 최근 실현 변동성에 반비례해 매수 투입 비중과 정수 수량을 자동 조절하는 공통 리스크 사이징 오버레이입니다.
+            </p>
+            <p className="research-help-preset">
+              <strong>초기값:</strong> {VOLATILITY_PARITY_BASIC_PRESET}
+            </p>
+            <dl className="research-help-dl">
+              {VOLATILITY_PARITY_FIELD_HELP.map(item => (
                 <div key={item.term}>
                   <dt>
                     {item.term} <small>{item.range}</small>
@@ -536,6 +630,15 @@ export function ResearchHelpPanel({
               비교해 검증합니다.
             </p>
           </article>
+          <article className="research-help-card">
+            <h3>당일 목표가 체결 &amp; 변동성 패리티 수량 조절</h3>
+            <p>
+              기존 10종 일봉 규칙은 종가 판정 후 다음 봉 시가에 체결한다고 가정하지만,{' '}
+              <code>윌리엄스 변동성 돌파</code>는 전일 확정 OHLC로 계산한 당일 목표가를 고가가 돌파(&gt;=)하면 당일
+              기준가 <code>max(시가, 목표가)</code>에 매수하고 이후 봉 시가에 청산한다고 가정합니다. 공통 오버레이{' '}
+              <code>변동성 패리티</code>를 켜면 매수 시 직전 확정 종가 변동성에 맞춰 투입 비중과 정수 수량을 제한합니다.
+            </p>
+          </article>
         </div>
       </div>
 
@@ -549,15 +652,15 @@ export function ResearchHelpPanel({
       >
         <div className="research-help-faq">
           <article className="research-help-card">
-            <h3>Q. 왜 10종 전략 중 일부와 샹들리에 청산은 DEMO에서 저장/실행이 안 되나요?</h3>
+            <h3>Q. 왜 11종 전략 중 일부와 오버레이 2종은 DEMO에서 저장/실행이 안 되나요?</h3>
             <p>
               DEMO 합성 봉은 종가 하나만 생성합니다. 종가만 쓰는 4종(<code>이동평균 교차</code>(거래량 필터 끔),{' '}
               <code>RSI 단기 눌림목</code>, <code>MACD 히스토그램</code>, <code>볼린저 %B 반등</code>)만 DEMO
-              저장·백테스트를 지원합니다. 시가·고가·저가·거래량이 필요한 6종(<code>돈키안 돌파</code>,{' '}
-              <code>ADX·DMI 추세</code>, <code>볼린저 스퀴즈</code>, <code>TTM 스퀴즈</code>,{' '}
-              <code>거래량 고갈 눌림목</code>, <code>이격도 복원</code>)과 이동평균 거래량 필터·샹들리에 청산은 실제
-              일봉 데이터가 있는 <strong>KIS 저장 일봉 백테스트</strong>에서만 정확히 계산할 수 있어 DEMO 저장·실행을
-              차단합니다.
+              저장·백테스트를 지원합니다. 시가·고가·저가·거래량이 필요한 7종(<code>돈키안 돌파</code>,{' '}
+              <code>윌리엄스 변동성 돌파</code>, <code>ADX·DMI 추세</code>, <code>볼린저 스퀴즈</code>,{' '}
+              <code>TTM 스퀴즈</code>, <code>거래량 고갈 눌림목</code>, <code>이격도 복원</code>)과 이동평균 거래량
+              필터·<code>샹들리에 청산</code>·<code>변동성 패리티</code> 오버레이는 실제 일봉 데이터가 있는{' '}
+              <strong>KIS 저장 일봉 백테스트</strong>에서만 정확히 계산할 수 있어 DEMO 저장·실행을 차단합니다.
             </p>
           </article>
           <article className="research-help-card">

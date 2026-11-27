@@ -750,11 +750,12 @@ test('신규 7종 규칙 선택·프리셋 적용·정수/소수/대소 역전/�
 
   const ruleSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
   const options = await ruleSelect.locator('option').evaluateAll(els => els.map(el => (el as HTMLOptionElement).value));
-  expect(options).toHaveLength(10);
+  expect(options).toHaveLength(11);
   expect(options).toEqual(
     expect.arrayContaining([
       'ma_crossover',
       'donchian_breakout',
+      'volatility_breakout',
       'rsi2_pullback',
       'macd_momentum',
       'adx_dmi_trend',
@@ -1085,7 +1086,7 @@ test('10종 도움말 사전·문맥 가이드 동적 전환·지원 환경별 �
     await page.goto(route);
     await waitWorkbenchReady(page);
 
-    // 1. 상단 도움말 패널 사전 탭에 10종 + 샹들리에(총 11카드) 모두 표시 및 환경별 체결 가정 분리 확인
+    // 1. 상단 도움말 패널 사전 탭에 11종 + 오버레이 2종(총 13카드) 모두 표시 및 환경별 체결 가정 분리 확인
     await page.getByRole('button', { name: '사용방법 도움말', exact: true }).click();
     const helpRegion = page.getByRole('region', { name: '전략 스튜디오 및 백테스트 사용방법 도움말' });
     await expect(helpRegion.locator('[role="tabpanel"]')).toHaveCount(4);
@@ -1093,7 +1094,7 @@ test('10종 도움말 사전·문맥 가이드 동적 전환·지원 환경별 �
 
     const dictPanel = helpRegion.locator('[role="tabpanel"]:not([hidden])');
     const cards = dictPanel.locator('article.research-help-card');
-    await expect(cards).toHaveCount(11);
+    await expect(cards).toHaveCount(13);
 
     for (const kind of storedOnlyKinds) {
       const card = cards.filter({ has: page.locator('code', { hasText: new RegExp(`^${kind}$`) }) });
@@ -1463,5 +1464,447 @@ test('다른 수집 기록의 저장 실험을 불러와 폼을 수정한 뒤 �
     server.closeAllConnections();
     await new Promise<void>(resolve => server.close(() => resolve()));
     store.close();
+  }
+});
+
+test('3A-2: 윌리엄스 변동성 돌파·변동성 패리티 프리셋/입력 검증·v2 저장 일봉 백테스트(SMA+패리티 포함)·왕복·카드 태그 검증', async ({ page }) => {
+  const { Store } = await import('../../server/store.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const store = new Store(':memory:');
+  const fixtureA = v2DailyFixture('005930');
+  const fixtureB = v2DailyFixture('00A123');
+  store.saveDaily(fixtureA.run, fixtureA.bars);
+  store.saveDaily(fixtureB.run, fixtureB.bars);
+
+  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4314, 4339]);
+  await new Promise<void>(resolve => server.listen(4339, '127.0.0.1', resolve));
+
+  const dailyPayloads: Record<string, unknown>[] = [];
+  await page.route('**/api/**', async route => {
+    const req = route.request();
+    if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/backtest/daily') {
+      dailyPayloads.push(req.postDataJSON() as Record<string, unknown>);
+    }
+    const response = await route.fetch({ url: req.url().replace(':4314', ':4339') });
+    await route.fulfill({ response });
+  });
+
+  try {
+    // 1. 전략 스튜디오(KIS 모의): volatility_breakout 프리셋 & 입력 검증(범위/정수/badInput) + volatilityParity 검증
+    await page.goto('/strategies?environment=kis-paper');
+    await waitWorkbenchReady(page);
+
+    const ruleSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
+    await ruleSelect.selectOption('volatility_breakout');
+    await expect(page.getByLabel('돌파 계수 k')).toHaveValue('0.5');
+    await expect(page.getByLabel('적응형 노이즈 k 사용 (직전 노이즈 평균 적용)')).not.toBeChecked();
+    await expect(page.getByLabel('노이즈 평균 기간 (봉)')).toHaveValue('20');
+    await expect(page.getByLabel('상승 추세 SMA 기간 (봉)')).toHaveValue('20');
+    await expect(page.getByLabel('보유 거래일 수 (일)')).toHaveValue('1');
+    await expect(page.getByRole('button', { name: '기본', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
+    await page.getByRole('button', { name: '보수적', exact: true }).click();
+    await expect(page.getByLabel('돌파 계수 k')).toHaveValue('0.6');
+    await expect(page.getByLabel('적응형 노이즈 k 사용 (직전 노이즈 평균 적용)')).toBeChecked();
+    await expect(page.getByLabel('노이즈 평균 기간 (봉)')).toHaveValue('20');
+    await expect(page.getByLabel('상승 추세 SMA 기간 (봉)')).toHaveValue('60');
+    await expect(page.getByLabel('보유 거래일 수 (일)')).toHaveValue('1');
+
+    await page.getByRole('button', { name: '공격적', exact: true }).click();
+    await expect(page.getByLabel('돌파 계수 k')).toHaveValue('0.4');
+    await expect(page.getByLabel('적응형 노이즈 k 사용 (직전 노이즈 평균 적용)')).not.toBeChecked();
+    await expect(page.getByLabel('노이즈 평균 기간 (봉)')).toHaveValue('10');
+    await expect(page.getByLabel('상승 추세 SMA 기간 (봉)')).toHaveValue('5');
+    await expect(page.getByLabel('보유 거래일 수 (일)')).toHaveValue('2');
+
+    // 돌파 계수 범위 밖·정수 필드 소수·badInput 검증
+    await page.getByLabel('돌파 계수 k').fill('1.2');
+    await page.getByRole('button', { name: '이 설정으로 백테스트', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('돌파 계수 k는 0.1-1 범위');
+    await expect(page.getByLabel('돌파 계수 k')).toBeFocused();
+
+    await page.getByLabel('돌파 계수 k').fill('0.5');
+    await page.getByLabel('보유 거래일 수 (일)').fill('1.5');
+    await page.getByRole('button', { name: '이 설정으로 백테스트', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('보유 거래일 수는 1-10 사이의 정수로 입력하세요.');
+    await expect(page.getByLabel('보유 거래일 수 (일)')).toBeFocused();
+
+    const vbKInput = page.getByLabel('돌파 계수 k');
+    await vbKInput.fill('');
+    await vbKInput.focus();
+    await page.keyboard.type('1e');
+    await page.getByRole('button', { name: '이 설정으로 백테스트', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('올바른 숫자를 입력하세요.');
+    await expect(vbKInput).toBeFocused();
+
+    // 기본 프리셋 복원 + 변동성 패리티 활성화 후 범위·정수·badInput 검증
+    await page.getByRole('button', { name: '기본', exact: true }).click();
+    const parityCheckbox = page.getByLabel('20 변동성 패리티 · 목표 변동성 수량 조절 오버레이 (선택)');
+    await parityCheckbox.check();
+    await expect(page.getByLabel('변동성 관측 기간 (봉)')).toHaveValue('20');
+    await expect(page.getByLabel('목표 연환산 변동성 (%)')).toHaveValue('20');
+    await expect(page.getByLabel('최대 배정 비중 (%)')).toHaveValue('100');
+
+    await page.getByLabel('변동성 관측 기간 (봉)').fill('15.5');
+    await page.getByRole('button', { name: '이 설정으로 백테스트', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('변동성 관측 기간은 10-60 사이의 정수로 입력하세요.');
+    await expect(page.getByLabel('변동성 관측 기간 (봉)')).toBeFocused();
+
+    await page.getByLabel('변동성 관측 기간 (봉)').fill('20');
+    await page.getByLabel('목표 연환산 변동성 (%)').fill('3');
+    await page.getByRole('button', { name: '이 설정으로 백테스트', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('목표 연환산 변동성은 5-60% 범위');
+    await expect(page.getByLabel('목표 연환산 변동성 (%)')).toBeFocused();
+
+    await page.getByLabel('목표 연환산 변동성 (%)').fill('20');
+    await page.getByLabel('최대 배정 비중 (%)').fill('120');
+    await page.getByRole('button', { name: '이 설정으로 백테스트', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('최대 배정 비중은 10-100% 범위');
+    await expect(page.getByLabel('최대 배정 비중 (%)')).toBeFocused();
+
+    await page.getByLabel('최대 배정 비중 (%)').fill('50');
+    await page.getByLabel('대상 종목').selectOption('005930');
+    await page.getByRole('button', { name: '이 설정으로 백테스트', exact: true }).click();
+
+    // 2. 저장 일봉 백테스트로 초안 전달 및 실행 (volatility_breakout + volatilityParity)
+    await expect(page).toHaveURL(/\/backtest$/);
+    await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('volatility_breakout');
+    await expect(page.getByLabel('20 변동성 패리티 · 목표 변동성 수량 조절 오버레이 (선택)')).toBeChecked();
+    await expect(page.getByLabel('최대 배정 비중 (%)')).toHaveValue('50');
+
+    const runBtn = page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true });
+    await expect(runBtn).toBeEnabled();
+    await runBtn.click();
+
+    const result = page.getByRole('region', { name: '저장 일봉 실험 결과' });
+    await expect(result).toBeVisible();
+    await expect(result).toContainText('윌리엄스 변동성 돌파');
+    await expect(result).toContainText('변동성 패리티(20일 · 목표 20% · 최대 50%)');
+    await expect(result).toContainText('전일 변동폭 기준 당일 목표가 상향 돌파');
+    await expect(result).toContainText('목표 보유 기간 경과 시가 청산');
+    await expect(result.getByLabel('단순 보유 벤치마크 비교')).toBeVisible();
+
+    expect(dailyPayloads).toHaveLength(1);
+    expect(dailyPayloads[0]).not.toHaveProperty('fast');
+    expect(dailyPayloads[0]).not.toHaveProperty('slow');
+    expect((dailyPayloads[0].rule as { kind: string }).kind).toBe('volatility_breakout');
+    expect(dailyPayloads[0].overlay).toEqual({
+      volatilityParity: { volLookback: 20, targetAnnualVolPct: 20, maxAllocationPct: 50 },
+    });
+
+    await result.getByText('재현 입력·출처 확인', { exact: true }).click();
+    const vbHash = (await result.getByTestId('experiment-hash').textContent())?.trim() ?? '';
+    expect(vbHash).toMatch(/^[a-f0-9]{64}$/);
+    await result.getByRole('button', { name: '고정 입력으로 재현 검증', exact: true }).click();
+    await expect(result).toContainText('재현 일치');
+
+    // 3. 기본 SMA 5/20 + volatilityParity 조합도 v1이 아닌 v2 경로로 전송되는지 검증 (Reviewer Minor 1)
+    await page.getByRole('combobox', { name: '전략 규칙', exact: true }).selectOption('ma_crossover');
+    await expect(page.getByLabel('20 변동성 패리티 · 목표 변동성 수량 조절 오버레이 (선택)')).toBeChecked();
+    await runBtn.click();
+    await expect(result).toBeVisible();
+    await expect(result.getByLabel('단순 보유 벤치마크 비교')).toBeVisible();
+
+    expect(dailyPayloads).toHaveLength(2);
+    expect(dailyPayloads[1]).not.toHaveProperty('fast');
+    expect(dailyPayloads[1]).not.toHaveProperty('slow');
+    expect(dailyPayloads[1].rule).toEqual({ kind: 'ma_crossover', maType: 'sma', fast: 5, slow: 20 });
+    expect(dailyPayloads[1].overlay).toEqual({
+      volatilityParity: { volLookback: 20, targetAnnualVolPct: 20, maxAllocationPct: 50 },
+    });
+
+    // 4. 출처 전환(stored ↔ demo) 시 volatility_breakout + volatilityParity 입력 보존 확인
+    await page.getByRole('combobox', { name: '전략 규칙', exact: true }).selectOption('volatility_breakout');
+    await page.getByLabel('돌파 계수 k').fill('0.7');
+    await page.getByLabel('목표 연환산 변동성 (%)').fill('15');
+    const sourceSelect = page.getByLabel('데이터 출처');
+    await sourceSelect.selectOption('demo');
+    await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('volatility_breakout');
+    await expect(page.getByLabel('돌파 계수 k')).toHaveValue('0.7');
+    await expect(page.getByLabel('20 변동성 패리티 · 목표 변동성 수량 조절 오버레이 (선택)')).toBeChecked();
+    await expect(page.getByLabel('목표 연환산 변동성 (%)')).toHaveValue('15');
+    await sourceSelect.selectOption('stored');
+    await expect(page.getByLabel('돌파 계수 k')).toHaveValue('0.7');
+    await expect(page.getByLabel('목표 연환산 변동성 (%)')).toHaveValue('15');
+
+    // 5. 다른 수집 기록에서 저장 실험 불러온 뒤 volatilityParity 필드 수정 후 뒤로→앞으로 이동 시 stale 결과 미재결합 확인
+    await page.getByLabel('일봉 수집 기록').selectOption(fixtureB.run.id);
+    await expect(page).toHaveURL(new RegExp(`run=${fixtureB.run.id}`));
+    const savedSelect = page.getByLabel('저장 실험');
+    const vbOptionValue = await savedSelect.locator('option', { hasText: '윌리엄스 변동성 돌파' }).getAttribute('value');
+    expect(vbOptionValue).toBeTruthy();
+    await savedSelect.selectOption(vbOptionValue!);
+    await page.getByRole('button', { name: '저장 실험 불러오기', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`run=${fixtureA.run.id}`));
+    await expect(result).toBeVisible();
+    await expect(result.getByTestId('experiment-hash')).toHaveText(vbHash);
+
+    await page.getByLabel('최대 배정 비중 (%)').fill('80');
+    await expect(result).toHaveCount(0);
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`run=${fixtureB.run.id}`));
+    await page.goForward();
+    await expect(page).toHaveURL(new RegExp(`run=${fixtureA.run.id}`));
+    await expect(page.getByLabel('최대 배정 비중 (%)')).toHaveValue('80');
+    await expect(result).toHaveCount(0);
+
+    // 6. 다시 저장 실험 불러와 '이 설정으로 전략 만들기' → KIS 모의 저장 → evidence 배지·카드 태그·시작 비활성화 확인
+    await page.getByLabel('저장 실험').selectOption(vbOptionValue!);
+    await page.getByRole('button', { name: '저장 실험 불러오기', exact: true }).click();
+    await expect(result).toBeVisible();
+    await result.getByRole('button', { name: '이 설정으로 전략 만들기', exact: true }).click();
+    await expect(page).toHaveURL(/\/strategies#strategy-editor$/);
+    await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('volatility_breakout');
+    await expect(page.getByLabel('20 변동성 패리티 · 목표 변동성 수량 조절 오버레이 (선택)')).toBeChecked();
+    await expect(page.getByText(vbHash.slice(0, 8))).toBeVisible();
+
+    await page.getByLabel('전략 환경').selectOption('kis-paper');
+    await expect(page.getByText(vbHash.slice(0, 8))).toBeVisible();
+    await page.getByLabel('전략 이름').fill('검증된 변동성 돌파 패리티');
+    await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+
+    const savedCard = page.locator('.studio-card').filter({
+      has: page.getByRole('heading', { name: '검증된 변동성 돌파 패리티', exact: true }),
+    });
+    await expect(savedCard).toBeVisible();
+    await expect(savedCard).toContainText(`검증 실험 연결 · ${vbHash.slice(0, 8)}`);
+    await expect(savedCard).toContainText('윌리엄스 변동성 돌파');
+    await expect(savedCard).toContainText('k=0.5');
+    await expect(savedCard).toContainText('추세 SMA 20봉');
+    await expect(savedCard).toContainText('보유 1일');
+    await expect(savedCard).toContainText('변동성 패리티 20일 · 목표 20% · 최대 50%');
+    await expect(savedCard).toContainText('전략 시작 차단');
+    await expect(savedCard.getByRole('button', { name: '전략 시작', exact: true })).toBeDisabled();
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
+  }
+});
+
+test('3A-2: volatility_breakout 및 SMA+volatilityParity는 DEMO 저장·백테스트를 POST 0건으로 차단하고 동적 경고 배지를 표시한다', async ({ page }) => {
+  const posts: string[] = [];
+  page.on('request', req => {
+    if (req.method() === 'POST') posts.push(new URL(req.url()).pathname);
+  });
+
+  // 1. /strategies (DEMO)
+  await page.goto('/strategies');
+  await waitWorkbenchReady(page);
+  const envBadges = page.getByLabel('환경별 사용 가능 여부');
+  const ruleSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
+
+  // ma_crossover 기본 SMA + volatilityParity 체크 → 동적 경고 배지 & 저장 차단
+  await expect(envBadges).toContainText('DEMO · 거래량 필터 끔');
+  const parityCheck = page.getByLabel('20 변동성 패리티 · 목표 변동성 수량 조절 오버레이 (선택)');
+  await parityCheck.check();
+  await expect(envBadges.locator('.badge.warning')).toContainText('DEMO · 현재 설정 제한 (저장 일봉 필요)');
+  await page.getByLabel('전략 이름').fill('DEMO 패리티 차단');
+  await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('DEMO는 종가만 제공합니다');
+
+  // 해제 시 복귀
+  await parityCheck.uncheck();
+  await expect(envBadges).toContainText('DEMO · 거래량 필터 끔');
+
+  // volatility_breakout 선택 → DEMO 미지원 배지 & 저장 차단
+  await ruleSelect.selectOption('volatility_breakout');
+  await expect(envBadges).toContainText('DEMO · 미지원');
+  await page.getByLabel('전략 이름').fill('DEMO 돌파 차단');
+  await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('DEMO는 종가만 제공합니다');
+
+  // 2. /backtest?source=demo
+  await page.goto('/backtest?source=demo');
+  await waitWorkbenchReady(page);
+  const btRun = page.getByRole('button', { name: '백테스트 실행', exact: true });
+  await expect(btRun).toBeEnabled();
+
+  await page.getByLabel('20 변동성 패리티 · 목표 변동성 수량 조절 오버레이 (선택)').check();
+  await expect(page.getByLabel('환경별 사용 가능 여부').locator('.badge.warning')).toContainText(
+    'DEMO · 현재 설정 제한 (저장 일봉 필요)',
+  );
+  await btRun.click();
+  await expect(page.getByRole('main').getByRole('alert')).toContainText('DEMO는 종가만 제공합니다');
+
+  await page.getByLabel('20 변동성 패리티 · 목표 변동성 수량 조절 오버레이 (선택)').uncheck();
+  await page.getByRole('combobox', { name: '전략 규칙', exact: true }).selectOption('volatility_breakout');
+  await btRun.click();
+  await expect(page.getByRole('main').getByRole('alert')).toContainText('DEMO는 종가만 제공합니다');
+
+  expect(posts).toEqual([]);
+});
+
+test('3A-2: TradingSettings는 volatility_breakout 및 SMA+volatilityParity를 1-3단계 전면 차단하고 실제 요약·스튜디오 초안을 전달한다', async ({ page }) => {
+  const state = snapshot();
+  state.strategies = [
+    {
+      id: 'kis-vb-parity',
+      name: 'KIS 변동성 돌파 패리티',
+      code: '005930',
+      fast: 5,
+      slow: 20,
+      qty: 3,
+      active: false,
+      lastSignal: 'hold',
+      lastTick: -1,
+      environment: 'kis-paper',
+      revision: 1,
+      rule: {
+        kind: 'volatility_breakout',
+        k: 0.6,
+        useAdaptiveNoise: true,
+        noiseLookback: 20,
+        trendMaPeriod: 60,
+        holdDays: 1,
+      },
+      overlay: { volatilityParity: { volLookback: 20, targetAnnualVolPct: 15, maxAllocationPct: 60 } },
+    },
+    {
+      id: 'kis-sma-parity',
+      name: 'KIS SMA 변동성 패리티',
+      code: '005930',
+      fast: 5,
+      slow: 20,
+      qty: 2,
+      active: false,
+      lastSignal: 'hold',
+      lastTick: -1,
+      environment: 'kis-paper',
+      revision: 1,
+      rule: { kind: 'ma_crossover', maType: 'sma', fast: 5, slow: 20 },
+      overlay: { volatilityParity: { volLookback: 20, targetAnnualVolPct: 20, maxAllocationPct: 80 } },
+    },
+  ];
+  const posts: string[] = [];
+  page.on('request', req => {
+    if (req.method() === 'POST') posts.push(new URL(req.url()).pathname);
+  });
+
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.route('**/api/trading-settings', route =>
+    route.fulfill({
+      json: {
+        active: null,
+        canFix: true,
+        plans: {
+          strategy: {
+            draft: {
+              id: 'draft-sma-parity',
+              runId: 'run-sma-parity',
+              fixed: false,
+              symbol: '005930',
+              fast: 5,
+              slow: 20,
+              qty: 2,
+              limits: {
+                manualQty: 5,
+                maxOrder: 1000000,
+                maxPosition: 4000000,
+                dailyLoss: 300000,
+                halted: false,
+              },
+              terms: {
+                kind: 'strategy',
+                strategyId: 'kis-sma-parity',
+                revision: 1,
+                startsAt: '2099-01-05T00:00:00.000Z',
+                endsAt: '2099-01-05T02:00:00.000Z',
+                maxOrderAmount: 100000,
+                maxAttempts: 1,
+                maxTotalAmount: 100000,
+                sellPolicy: 'deny',
+              },
+            },
+          },
+        },
+      },
+    }),
+  );
+
+  // 1. SMA + volatilityParity: 1-3단계 차단 및 실제 규칙·오버레이 요약 표시(5/20 교차 오표시 없음)
+  await page.goto('/settings/trading/strategy/1?strategy=kis-sma-parity');
+  await waitWorkbenchReady(page);
+  await expect(page.getByRole('main')).toContainText('이동평균 교차 (SMA 5/20) · 변동성 패리티(20일 · 목표 20% · 최대 80%)');
+  await expect(page.getByRole('main')).not.toContainText('5/20 교차');
+  await expect(page.getByRole('button', { name: '한도·조건으로', exact: true })).toBeDisabled();
+
+  await page.goto('/settings/trading/strategy/2?strategy=kis-sma-parity');
+  await waitWorkbenchReady(page);
+  await expect(page.getByRole('main')).toContainText('이동평균 교차 (SMA 5/20) · 변동성 패리티(20일 · 목표 20% · 최대 80%)');
+  await expect(page.getByRole('button', { name: '초안 저장 및 검토', exact: true })).toBeDisabled();
+
+  await page.goto('/settings/trading/strategy/3?strategy=kis-sma-parity');
+  await waitWorkbenchReady(page);
+  await expect(page.getByRole('main')).toContainText(
+    '저장 대상 005930 · 이동평균 교차 (SMA 5/20) · 변동성 패리티(20일 · 목표 20% · 최대 80%) · 2주',
+  );
+  await expect(page.getByRole('button', { name: '다음 실행 고정', exact: true })).toBeDisabled();
+
+  // 2. volatility_breakout + volatilityParity: 1단계 요약·차단 및 스튜디오 초안 전달 확인
+  await page.goto('/settings/trading/strategy/1?strategy=kis-vb-parity');
+  await waitWorkbenchReady(page);
+  await expect(page.getByRole('main')).toContainText('윌리엄스 변동성 돌파 · 변동성 패리티(20일 · 목표 15% · 최대 60%)');
+  await expect(page.getByRole('main')).not.toContainText('5/20 교차');
+  await expect(page.getByRole('button', { name: '한도·조건으로', exact: true })).toBeDisabled();
+
+  await page.getByRole('link', { name: '전략 스튜디오에서 이 설정으로 새 전략 만들기' }).first().click();
+  await expect(page).toHaveURL(/\/strategies\?environment=kis-paper#strategy-editor$/);
+  await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('volatility_breakout');
+  await expect(page.getByLabel('돌파 계수 k')).toHaveValue('0.6');
+  await expect(page.getByLabel('적응형 노이즈 k 사용 (직전 노이즈 평균 적용)')).toBeChecked();
+  await expect(page.getByLabel('상승 추세 SMA 기간 (봉)')).toHaveValue('60');
+  await expect(page.getByLabel('20 변동성 패리티 · 목표 변동성 수량 조절 오버레이 (선택)')).toBeChecked();
+  await expect(page.getByLabel('목표 연환산 변동성 (%)')).toHaveValue('15');
+  await expect(page.getByLabel('최대 배정 비중 (%)')).toHaveValue('60');
+
+  expect(posts).toEqual([]);
+});
+
+test('3A-2: 도움말 13카드 사전·volatility_breakout·volatilityParity 문맥 가이드 및 390px 모바일 무넘침 검증', async ({ page }) => {
+  for (const route of ['/strategies', '/backtest']) {
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    await page.goto(route);
+    await waitWorkbenchReady(page);
+
+    // 상단 도움말 사전 13카드 및 volatility_breakout·volatilityParity 확인
+    await page.getByRole('button', { name: '사용방법 도움말', exact: true }).click();
+    const helpRegion = page.getByRole('region', { name: '전략 스튜디오 및 백테스트 사용방법 도움말' });
+    await helpRegion.getByRole('tab', { name: '전략·입력 항목 사전', exact: true }).click();
+    const dictPanel = helpRegion.locator('[role="tabpanel"]:not([hidden])');
+    const cards = dictPanel.locator('article.research-help-card');
+    await expect(cards).toHaveCount(13);
+
+    const vbCard = cards.filter({ has: page.locator('code', { hasText: /^volatility_breakout$/ }) });
+    await expect(vbCard).toHaveCount(1);
+    await expect(vbCard).toContainText('돌파 계수 k 0.5 / 적응형 노이즈 꺼짐 / 노이즈 20봉 / 추세 SMA 20봉 / 보유 1일');
+    await expect(vbCard).toContainText('수익 미보장');
+    await expect(vbCard).toContainText('DEMO에서는 사용할 수 없습니다');
+    await expect(vbCard).toContainText('max(시가, 목표가)');
+
+    const parityCard = cards.filter({ has: page.locator('code', { hasText: /^volatilityParity$/ }) });
+    await expect(parityCard).toHaveCount(1);
+    await expect(parityCard).toContainText('20 변동성 패리티 · RMS 포지션 사이징');
+    await expect(parityCard).toContainText('관측 기간 20봉 / 목표 연환산 변동성 20% / 최대 배정 비중 100%');
+    await expect(parityCard).toContainText('DEMO에서는 사용할 수 없습니다');
+
+    // 문맥 가이드 전환 확인
+    await page.getByRole('combobox', { name: '전략 규칙', exact: true }).selectOption('volatility_breakout');
+    await page.getByLabel('20 변동성 패리티 · 목표 변동성 수량 조절 오버레이 (선택)').check();
+    const helpDetails = page.locator('details.rule-field-help');
+    await helpDetails.locator('summary').click();
+    await expect(helpDetails.locator('summary')).toHaveText('현재 선택한 규칙(윌리엄스 변동성 돌파) 입력 항목 설명 보기');
+    await expect(helpDetails).toContainText('돌파 계수 k 0.5 / 적응형 노이즈 꺼짐 / 노이즈 20봉 / 추세 SMA 20봉 / 보유 1일');
+    await expect(helpDetails).toContainText('20 변동성 패리티 · RMS 포지션 사이징 (사용 중)');
+
+    // 390px 모바일 가로 넘침 없음 확인
+    await page.setViewportSize({ width: 390, height: 844 });
+    const overflow = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+    }));
+    expect(overflow.scrollWidth).toBeLessThanOrEqual(390);
+    expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.innerWidth);
   }
 });

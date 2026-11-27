@@ -112,7 +112,7 @@ export function StrategyEditor({
       setDraft(prev => ({
         ...prev,
         formError:
-          'DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙이나 샹들리에 청산은 저장 일봉 백테스트에서 사용하세요.',
+          'DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙이나 샹들리에 청산·변동성 패리티 오버레이는 저장 일봉 백테스트에서 사용하세요.',
       }));
       return;
     }
@@ -258,14 +258,14 @@ export function StrategyEditor({
 
         {demoUnsupported && (
           <p className="studio-warning" role="status">
-            DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙이나 샹들리에 청산은 DEMO에 저장할 수 없으며, 아래
-            버튼으로 저장 일봉 백테스트에서 검증할 수 있습니다.
+            DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙이나 샹들리에 청산·변동성 패리티 오버레이는 DEMO에
+            저장할 수 없으며, 아래 버튼으로 저장 일봉 백테스트에서 검증할 수 있습니다.
           </p>
         )}
         {kisUnsupported && (
           <p className="studio-warning" role="status">
-            신규 다중 전략 규칙과 샹들리에 청산은 KIS 모의 저장은 가능하지만, 장중 실시간 평가는 장전 레벨 트리거 계약
-            연결 후 활성화됩니다.
+            신규 다중 전략 규칙과 오버레이(샹들리에 청산·변동성 패리티)는 KIS 모의 저장은 가능하지만, 장중 실시간 평가는
+            장전 레벨 트리거 계약 연결 후 활성화됩니다.
           </p>
         )}
         {kisSlowExceeded && (

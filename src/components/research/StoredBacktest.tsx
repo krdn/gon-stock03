@@ -349,7 +349,7 @@ export function StoredBacktest({
   return (
     <>
       <div className="bt-nav">
-        <span>KIS 저장 일봉 · 종가 신호 → 다음 봉 시가 체결</span>
+        <span>KIS 저장 일봉 · 종가 신호 → 다음 봉 시가 체결 (변동성 돌파: 당일 목표가 매수 · 이후 시가 청산)</span>
         <a className="text-link" href="#backtest-history">
           저장된 실험으로 이동 ↓
         </a>
@@ -613,7 +613,8 @@ export function StoredBacktest({
             <details>
               <summary>체결·비용·평가 방식</summary>
               <p>
-                종가 신호 후 다음 봉 시가에 전액 매수·전량 매도합니다. 수수료는 체결금액 × bp / 10,000을 원 단위
+                종가 신호 후 다음 봉 시가에 전액 매수·전량 매도합니다(윌리엄스 변동성 돌파는 당일 목표가 매수·이후 시가
+                청산, 변동성 패리티 사용 시 목표 변동성 비중으로 수량 제한). 수수료는 체결금액 × bp / 10,000을 원 단위
                 올림합니다. 슬리피지는 매수 시 더하고 매도 시 뺍니다.
               </p>
               <p>
