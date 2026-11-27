@@ -1065,6 +1065,7 @@ export function formatRuleSummary(rule: StrategyRule, overlay?: ExitOverlay): st
 
 /** 환경 지원 여부 표시 문자열을 반환한다. */
 export function environmentAvailabilityText(value: boolean | string): string {
+  if (value === STRATEGY_CATALOG.ma_crossover.environments.kisPaper) return '체결가·확정 일봉';
   if (value === true) return '지원';
   if (value === false) return '미지원';
   return value;

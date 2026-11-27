@@ -1,3 +1,4 @@
+import { planLimits } from '../../shared/trading-plan';
 import { expect, test, type Page } from '@playwright/test';
 import { strategyInput } from '../../shared/contracts';
 import type { DailyRun, StoredBar } from '../../shared/market-data';
@@ -1257,19 +1258,15 @@ test('KIS 모의 다중 규칙 전략은 /settings/trading/strategy에서 실제
           strategy: {
             draft: {
               id: 'draft-macd-1',
+              rule: state.strategies[0].rule,
+              overlay: state.strategies[0].overlay,
               runId: 'run-macd-1',
               fixed: false,
               symbol: '005930',
               fast: 5,
               slow: 20,
               qty: 2,
-              limits: {
-                manualQty: 5,
-                maxOrder: 1000000,
-                maxPosition: 4000000,
-                dailyLoss: 300000,
-                halted: false,
-              },
+              limits: planLimits(state),
               terms: {
                 kind: 'strategy',
                 strategyId: 'kis-macd-chandelier',
@@ -1288,32 +1285,28 @@ test('KIS 모의 다중 규칙 전략은 /settings/trading/strategy에서 실제
     }),
   );
 
-  // Major 2 (1단계): 다중 규칙 전략 선택 시 5/20 교차 오표시 금지, 실제 규칙명 표시, 레거시 복사 차단 및 한도·조건으로 비활성화
+  // Major 2 (1단계): 다중 규칙 전략 선택 시 5/20 교차 오표시 금지, 실제 규칙명 표시, 레거시 복사 차단 및 한도·조건 진행
   await page.goto('/settings/trading/strategy/1?strategy=kis-macd-chandelier');
   await waitWorkbenchReady(page);
   await expect(page.getByLabel('저장 KIS 전략')).toHaveValue('kis-macd-chandelier');
   await expect(page.getByRole('main')).toContainText('MACD 히스토그램 · 샹들리에 ATR(14)×3');
   await expect(page.getByRole('main')).not.toContainText('5/20 교차');
-  await expect(page.getByRole('main')).toContainText('백테스트 전용 규칙');
+  await expect(page.getByRole('main')).not.toContainText('백테스트 전용 규칙');
   await expect(page.getByRole('button', { name: '종목·수량·교차 주기로 새 전략 만들기' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '한도·조건으로', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '한도·조건으로', exact: true })).toBeEnabled();
 
-  // Major 2 (2단계 직접 진입): 초안 저장 및 검토 비활성화 + 실제 규칙명 경고 + 1단계 복귀 링크
+  // Major 2 (2단계 직접 진입): 실제 규칙명과 초안 저장 가능 여부
   await page.goto('/settings/trading/strategy/2?strategy=kis-macd-chandelier');
   await waitWorkbenchReady(page);
   await expect(page.getByRole('main')).toContainText('MACD 히스토그램 · 샹들리에 ATR(14)×3');
-  await expect(page.getByRole('link', { name: '대상·기간(1단계)으로 돌아가기' })).toHaveAttribute(
-    'href',
-    '/settings/trading/strategy/1?strategy=kis-macd-chandelier',
-  );
-  await expect(page.getByRole('button', { name: '초안 저장 및 검토', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '초안 저장 및 검토', exact: true })).toBeEnabled();
 
-  // Major 2 (3단계 직접 진입): 저장 대상 5/20 오표시 없음, 실제 규칙명 표시 및 고정 버튼 비활성화
+  // Major 2 (3단계 직접 진입): 저장 대상 5/20 오표시 없음, 실제 규칙명 표시 및 고정 가능
   await page.goto('/settings/trading/strategy/3?strategy=kis-macd-chandelier');
   await waitWorkbenchReady(page);
   await expect(page.getByRole('main')).toContainText('저장 대상 005930 · MACD 히스토그램 · 샹들리에 ATR(14)×3 · 2주');
   await expect(page.getByRole('main')).not.toContainText('5/20');
-  await expect(page.getByRole('button', { name: '다음 실행 고정', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '다음 실행 고정', exact: true })).toBeEnabled();
   expect(posts).toEqual([]);
 
   // Minor 1: 1단계에서 '전략 스튜디오에서 이 설정으로 새 전략 만들기' 클릭 시 선택 다중 규칙·오버레이 초안이 채워져 열림

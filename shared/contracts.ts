@@ -1,7 +1,7 @@
 import { strategyRuleSchema, exitOverlaySchema } from './strategy-rules.ts';
 import { z } from 'zod';
 import type { PaperOrder, StateSnapshot } from './model.ts';
-import { masterCodeSchema } from './market-data.ts';
+import { masterCodeSchema, marketDate } from './market-data.ts';
 
 export const storageErrorMessage = '요청과 이벤트 저장에 실패했습니다. 저장소 상태를 확인하세요.';
 
@@ -53,7 +53,7 @@ export const paperCancellationSchema = z.object({
 export type PaperCancellation = z.infer<typeof paperCancellationSchema>;
 
 export const paperLedgerSchema = z.object({ minimumRun: paperRunViewSchema.optional(), orders: z.array(z.object({
-  strategy: z.object({ id: z.string(), revision: z.number().int().positive(), event: z.string(), signal: z.enum(['buy', 'sell']) }).optional(),
+  strategy: z.object({ id: z.string(), revision: z.number().int().positive(), event: z.string(), signalBarDate: marketDate.optional(), signal: z.enum(['buy', 'sell']) }).optional(),
   lastMatchedAt: z.iso.datetime().optional(), sourceLabel: z.string().optional(), sourceId: z.string().optional(),
   priceCeiling: z.int().positive().optional(), requestId: z.string().min(1).max(80), code: codeSchema, side: z.enum(['buy', 'sell']),
   qty: z.number().int().positive(), price: z.number().nonnegative(), orderType: z.literal('market').optional(),

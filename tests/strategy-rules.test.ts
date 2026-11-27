@@ -120,7 +120,7 @@ test('DEMO 종가 전략 저장·계산 및 OHLCV 거부, KIS 시작 게이트�
       assert.equal(saved.status,200);
       const id = store.read().strategies.at(-1)!.id;
       const start = await post('kis/strategies/run',{id,active:true});
-      assert.equal(start.data.error,'신규 다중 전략 규칙의 KIS 장중 실시간 평가는 장전 레벨 트리거 계약 연결 후 활성화됩니다.');
+      assert.match(start.data.error, spec.rule.kind === 'volatility_breakout' || ('overlay' in spec && 'volatilityParity' in spec.overlay!) ? /저장 일봉 백테스트 전용/ : /REST 대조/);
       assert.equal(store.read().strategies.at(-1)!.active,false);
     }
     assert.equal(upstream,0);assert.deepEqual(store.paperOrders(),[]);
@@ -193,7 +193,7 @@ for (const kind of phaseTwo) {
     assert.equal(evaluateClose(input,rule).signal,'buy');
     assert.equal(evaluateClose([...history,sell],rule,{barsHeld:1}).signal,'sell');
     assert.equal(strategyRuleSchema.safeParse({...rule,extra:0}).success,false);
-    assert.throws(()=>assertRealtimeRule(rule),/장중/);
+    assert.doesNotThrow(()=>assertRealtimeRule(rule));
     if (kind === 'macd_momentum' || kind === 'bollinger_percent_b') {
       assert.doesNotThrow(()=>assertCloseOnly(rule));
       assert.equal(evaluateClose(input.map(({close})=>({close})),rule).signal,'buy');

@@ -1,4 +1,8 @@
-import { assertRealtimeRule } from '../shared/strategy-rules.ts';
+import { eligibleDailyRun } from './strategy-contract.ts';
+import { isCalendarSnapshotFresh, isKrxTradingDay, verifyCalendar } from '../shared/krx-calendar.ts';
+import { addDays, type DailyPrice } from '../shared/market-data.ts';
+import { atr } from '../shared/indicators.ts';
+import { assertRealtimeRule, evaluateClose, isBasicRealtimeSma, normalizeRule, warmup, type ExitOverlay, type Holding } from '../shared/strategy-rules.ts';
 import type { MorningReport } from '../shared/morning.ts';
 import { krxHours, sessionBounds, type ExchangeNotice } from '../shared/trading-policy.ts';
 import { createDecipheriv, createHash, randomUUID } from 'node:crypto';
@@ -8,7 +12,7 @@ import { Store } from './store.ts';
 import { PaperBroker } from './paper.ts';
 import { KisNotSent } from './kis.ts';
 import { record, signal } from './engine.ts';
-import type { StrategyEvaluation } from '../shared/model.ts';
+import type { PaperOrder, Strategy, StrategyEvaluation } from '../shared/model.ts';
 import type { RealtimeStatus } from '../shared/realtime.ts';
 import { configuredPaperOrderInput, orderInput, type PaperOrderInput, type OrderInput } from '../shared/contracts.ts';
 
@@ -20,6 +24,59 @@ type Socket = Pick<WebSocket, 'on' | 'send' | 'pong' | 'terminate'>;
 export type SocketFactory = (url: string) => Socket;
 const socketFactory: SocketFactory = url => new WebSocket(url, { followRedirects: false, handshakeTimeout: 10000, maxPayload: 65536, perMessageDeflate: false });
 const initial = (): RealtimeStatus => ({ phase: 'stopped', required: false, ordersAllowed: false, message: '실시간 미연결 · 자동 시작 없음', code: null, lastQuoteAt: null, lastNoticeAt: null, reconciledAt: null, price: null, fresh: false });
+
+// Reconciliation evidence carries cumulative execution amount. A limit or market
+// order's submitted price is not its fill price.
+function filledAmount(store: Store, order: PaperOrder) {
+  const normalize = (id?: string) => id?.replace(/^0+(?=\d)/, '');
+  for (const audit of store.paperAudit(order.requestId).reverse()) {
+    const rows = audit.evidence?.orders.filter(row => order.brokerId && normalize(row.brokerId) === normalize(order.brokerId)
+      && (!order.organization || normalize(row.organization) === normalize(order.organization))
+      && row.date === order.tradeDate && row.code === order.code && row.side === order.side
+      && row.qty === order.qty && row.filled === order.filled && row.price === order.price
+      && (row.orderType ?? 'limit') === (order.orderType ?? 'limit'));
+    if (rows?.length === 1 && rows[0].fillAmount && rows[0].fillAmount > 0) return rows[0].fillAmount;
+  }
+}
+
+export function dailyHolding(store: Store, orders: PaperOrder[], bars: DailyPrice[], minimum: number, overlay?: ExitOverlay): Holding | undefined {
+  let shares = 0, entryDate = '', cost: number | undefined = 0;
+  // paperOrders returns newest first. Reverse first to preserve insertion order on timestamp ties.
+  for (const order of orders.filter(o => o.filled > 0).reverse().sort((a,b) => a.createdAt.localeCompare(b.createdAt))) {
+    if (order.side === 'buy') {
+      const previous = shares;
+      shares += order.filled;
+      if (shares <= 0) continue;
+      if (previous <= 0) entryDate = order.tradeDate;
+      const amount = filledAmount(store, order);
+      const longQty = Math.min(shares, order.filled);
+      cost = cost !== undefined && amount !== undefined ? cost + amount * (longQty / order.filled) : undefined;
+    } else {
+      const remaining = shares - order.filled;
+      cost = remaining <= 0 ? 0 : cost === undefined ? undefined : cost * (remaining / shares);
+      shares = remaining;
+    }
+  }
+  if (shares <= 0) return;
+  const barsHeld = Math.max(1, bars.filter(bar => bar.date >= entryDate).length);
+  const holding: Holding = { barsHeld, entryPrice: cost === undefined ? undefined : cost / shares };
+  const chandelier = overlay?.chandelier;
+  if (chandelier) {
+    const {atrPeriod, atrMultiplier} = chandelier;
+    let highest = -Infinity, range = atr(bars.slice(0, atrPeriod), atrPeriod);
+    for (let i = 0; i < bars.length; i++) {
+      const bar = bars[i];
+      if (i >= atrPeriod) {
+        const previous = bars[i-1].close;
+        range += (1 / atrPeriod) * (Math.max(bar.high, previous) - Math.min(bar.low, previous) - range);
+      }
+      if (bar.date < entryDate) continue;
+      highest = Math.max(highest, bar.high);
+      if (i + 1 >= minimum) holding.trailStop = Math.max(holding.trailStop ?? -Infinity, highest - atrMultiplier * range);
+    }
+  }
+  return holding;
+}
 
 export class Realtime {
   private morningArmed = false;
@@ -504,7 +561,7 @@ export class Realtime {
     try { this.store.update(state => {
       const strategy = state.strategies.find(s => s.id === id && s.environment === 'kis-paper');
       if (!strategy) throw new Error('KIS 전략을 찾지 못했습니다.');
-      if (active) { assertRealtimeRule(strategy.rule, strategy.overlay); this.assertReady(strategy.code); this.paper.checkStrategyStart(strategy); }
+      if (active) { assertRealtimeRule(strategy.rule, strategy.overlay, strategy.slow); this.assertReady(strategy.code); this.paper.checkStrategyStart(strategy); }
       if (strategy.active === active) return;
       strategy.active = active; strategy.run = (strategy.run ?? 0) + 1;
       if (active) {
@@ -526,34 +583,71 @@ export class Realtime {
       record(state, 'KIS 전략 정지', '실시간 중단 · 대조 후 개별 시작 필요', 'warning', { environment: 'kis-paper', target: 'strategies' });
     });
   }
+  private dailyDecision(strategy: Strategy, day: string, event: string): Pick<StrategyEvaluation, 'signal' | 'reason'> & { signalBarDate?: string } {
+    const orders = this.store.paperOrders().filter(o => o.code === strategy.code);
+    const revision = strategy.revision ?? 1;
+    if (orders.some(o => o.tradeDate === day && o.strategy?.id === strategy.id && o.strategy.revision === revision && o.status !== 'rejected')
+      || strategy.evaluations?.some(e => e.revision === revision && e.event === event && ['sending','accepted','unknown'].includes(e.status)))
+      return { signal: 'hold' as const, reason: '당일 확정 일봉 신호 이미 집행됨' };
+    const run = this.store.dailyRuns().filter(r => eligibleDailyRun(r, strategy.code)).sort((a,b) => b.startedAt.localeCompare(a.startedAt))[0];
+    // daily_bars has a unique (run_id,date) key and dailyBars reads ORDER BY date.
+    const bars = run ? this.store.dailyBars(run.id).filter(b => b.date < day) : [];
+    const rule = normalizeRule(strategy.rule, strategy.fast, strategy.slow);
+    const minimum = warmup(rule, strategy.overlay);
+    if (bars.length < minimum) return { signal: 'hold' as const, reason: '확정 일봉 준비 봉 부족' };
+    const first = bars[0].date, last = bars.at(-1)!.date;
+    const unverified = { signal: 'hold' as const, reason: '직전 거래일 확정 일봉 미확인' };
+    if (!isKrxTradingDay(day) || !isCalendarSnapshotFresh(Number(first.slice(0,4)))) return unverified;
+    const calendar = verifyCalendar(first, addDays(day, -1), bars);
+    if (!calendar.verified || calendar.dates.length !== bars.length || last !== calendar.dates.at(-1)) return unverified;
+    if (orders.some(o => o.status !== 'rejected' && o.strategy?.id === strategy.id && o.strategy.revision === revision
+      && o.strategy.signalBarDate === last))
+      return { signal: 'hold', reason: '동일 확정 일봉 신호 이미 집행됨' };
+    const holding = dailyHolding(this.store, orders, bars, minimum, strategy.overlay);
+    const decision = evaluateClose(bars, rule, holding, strategy.overlay);
+    if (holding && holding.entryPrice === undefined && rule.kind === 'disparity_reversion' && decision.signal !== 'sell')
+      return { signal: 'hold' as const, reason: '대조된 매수 체결금액 부족' };
+    return { ...decision, signalBarDate: last };
+  }
+
   private async evaluateStrategies(event: string) {
     if (!this.store.read().strategies.some(s => s.active && s.environment === 'kis-paper' && s.code === this.state.code)) return;
-    const jobs: { id: string; input: PaperOrderInput; check: (minimumWaitMs?: number) => void }[] = [];
+    const jobs: { id: string; revision: number; event: string; signalBarDate?: string; input: PaperOrderInput; check: (minimumWaitMs?: number) => void }[] = [];
     const prices = [...this.history], price = this.state.price!, code = this.state.code!;
     this.store.update(state => {
       for (const strategy of state.strategies) {
         if (!strategy.active || strategy.environment !== 'kis-paper' || strategy.code !== code) continue;
         if (strategy.lastEvent && (strategy.lastEvent.split(':')[0] > event.split(':')[0] || (strategy.lastEvent.split(':')[0] === event.split(':')[0] && Number(strategy.lastEvent.split(':')[1]) >= this.volume))) continue;
         strategy.lastEvent = event;
-        const direction = signal(prices, strategy.fast, strategy.slow);
-        strategy.lastSignal = direction;
-        const evaluation: StrategyEvaluation = { event, at: new Date(this.now()).toISOString(), revision: strategy.revision ?? 1, signal: direction, status: 'hold', reason: prices.length < strategy.slow + 1 ? '표본 부족' : '교차 없음' };
+        const basic = isBasicRealtimeSma(strategy.rule, strategy.overlay, strategy.slow);
+        const day = basic ? '' : this.config!.session.date.replaceAll('-', '');
+        const sourceEvent = basic ? event : day + ':daily';
+        const evaluation: StrategyEvaluation = { event: sourceEvent, at: new Date(this.now()).toISOString(),
+          revision: strategy.revision ?? 1, signal: 'hold', status: 'hold', reason: '' };
         const run = strategy.run ?? 0;
         try {
-          const ready = this.orderGuard(code);
+          const decision = basic
+            ? { signal: signal(prices, strategy.fast, strategy.slow), reason: prices.length < strategy.slow + 1 ? '표본 부족' : '교차 없음' }
+            : this.dailyDecision(strategy, day, sourceEvent);
+          const direction = decision.signal;
+          evaluation.signal = direction;
+          evaluation.reason = decision.reason;
+          if (basic && direction === 'hold') this.orderGuard(code);
           if (direction !== 'hold') {
+            const ready = this.orderGuard(code);
             if (strategy.evaluations?.some(e => e.status === 'sending')) throw new KisNotSent('이전 전략 주문 검사 중 · 이번 신호는 재전송하지 않습니다.');
             const market = this.paper.strategyOrderType === 'market';
             const input = configuredPaperOrderInput.parse({ code, price: market ? 0 : price, ...(market && {orderType:'market'}),
               qty: strategy.qty, side: direction, requestId: randomUUID() });
-            evaluation.status = 'sending'; evaluation.reason = '공통 승인·위험 검사 대기'; evaluation.requestId = input.requestId;
-            jobs.push({ id: strategy.id, input, check: minimumWaitMs => {
+            evaluation.status = 'sending'; evaluation.reason = basic ? '공통 승인·위험 검사 대기' : decision.reason; evaluation.requestId = input.requestId;
+            jobs.push({ id: strategy.id, revision: strategy.revision ?? 1, event: sourceEvent, signalBarDate: decision.signalBarDate, input, check: minimumWaitMs => {
               ready(minimumWaitMs);
               const current = this.store.read().strategies.find(s => s.id === strategy.id);
               if (!current?.active || (current.run ?? 0) !== run || current.revision !== strategy.revision) throw new KisNotSent('전략 정지 또는 실행 변경으로 전송을 차단했습니다.');
             } });
           }
         } catch (error) { evaluation.status = 'blocked'; evaluation.reason = error instanceof Error ? error.message : '평가 차단'; }
+        strategy.lastSignal = evaluation.signal;
         const evaluations = [evaluation, ...(strategy.evaluations ?? [])];
         let remaining = 100 - evaluations.filter(e => e.status === 'sending').length;
         strategy.evaluations = evaluations.filter(e => e.status === 'sending' || remaining-- > 0);
@@ -562,14 +656,18 @@ export class Realtime {
     for (const job of jobs) {
       let result: Partial<StrategyEvaluation>;
       try {
-        const strategy = this.store.read().strategies.find(s => s.id === job.id)!;
-        const order = await this.paper.submit(job.input, job.check, { id: job.id, revision: strategy.revision ?? 1, event, signal: job.input.side });
+        const source = { id: job.id, revision: job.revision, event: job.event, signal: job.input.side,
+          ...(job.signalBarDate && { signalBarDate: job.signalBarDate }) };
+        const order = await this.paper.submit(job.input, job.check, source);
         result = { status: order.status === 'accepted' ? 'accepted' : order.status === 'rejected' ? 'rejected' : 'unknown', reason: order.message, brokerId: order.brokerId };
       } catch (error) { result = { status: 'blocked', reason: error instanceof Error ? error.message : '공통 주문 검사 실패' }; }
       this.store.update(state => {
         const strategy = state.strategies.find(s => s.id === job.id)!;
         const evaluation = strategy.evaluations?.find(e => e.requestId === job.input.requestId);
-        if (evaluation) Object.assign(evaluation, result);
+        if (evaluation) {
+          if (job.event.endsWith(':daily')) result.reason = evaluation.reason + ' · ' + result.reason;
+          Object.assign(evaluation, result);
+        }
         if (strategy.active && (result.status === 'unknown' || this.paper.budgetExhausted() || this.paper.contractExpired())) {
           strategy.active = false;
           strategy.run = (strategy.run ?? 0) + 1;

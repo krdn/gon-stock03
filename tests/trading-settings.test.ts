@@ -1,3 +1,7 @@
+import { createExperiment } from '../server/backtest.ts';
+import { STRATEGY_CATALOG } from '../shared/strategy-rules.ts';
+import { strategyContractSchema } from '../server/strategy-contract.ts';
+import { dailyFixture } from './backtest-fixture.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
@@ -326,4 +330,67 @@ test('새 마스터 종목으로 구형 전략 초안이나 원시 계약을 처
   } finally {
     f.close();
   }
+});
+
+test('확정 일봉 10종 계약·샹들리에 고정, 적격 일봉 복제 및 재개', () => {
+  for (const {presets} of Object.values(STRATEGY_CATALOG)) {
+    const rule = presets.basic;
+    if (rule.kind === 'volatility_breakout') continue;
+    const f = fixture();
+    try {
+      const overlay = {chandelier:{atrPeriod:7,atrMultiplier:2}};
+      f.store.update(s => {
+        const strategy = s.strategies.at(-1)!;
+        Object.assign(strategy,{rule,overlay});
+        if (rule.kind === 'ma_crossover') Object.assign(strategy,{fast:rule.fast,slow:rule.slow});
+      });
+      const {run,bars} = dailyFixture();
+      run.code = '005930';
+      bars.forEach(b => { b.code = run.code; });
+      run.triggerSource = 'manual_sync';
+      f.store.saveDaily(run,bars);
+      createExperiment(f.store,{...dailyFixture().input,code:run.code});
+      const later = {...run,id:randomUUID(),startedAt:'2026-01-25T01:00:00.000Z'};
+      f.store.saveDaily(later,bars);
+      f.store.saveDaily({...run,triggerSource:'manual',id:randomUUID(),quality:{...run.quality,state:'unverified'}},bars);
+      const {draft} = saveTradingDraft(f.store,{terms:strategyDraft,expectedId:null});
+      assert.deepEqual(draft.rule,rule);
+      assert.deepEqual(draft.overlay,overlay);
+      f.store.update(s => { s.strategies.at(-1)!.overlay = undefined; });
+      assert.throws(()=>fixTradingDraft(f.store,f.kis,{kind:'strategy',expectedId:draft.id}),/조건을 다시 확인/);
+      f.store.update(s => { s.strategies.at(-1)!.overlay = overlay; });
+      const fixed = fixTradingDraft(f.store,f.kis,{kind:'strategy',expectedId:draft.id}).draft;
+      const file = join(f.dir,'trading-runs','strategy-'+draft.id,'strategy-'+fixed.runId+'.json');
+      const {path, config} = readPreparedRun(file,'strategy');
+      const contract = config as StrategyContract;
+      assert.deepEqual(contract.rule,rule);
+      assert.deepEqual(contract.overlay,overlay);
+      const seed = new Store(path,{contract});
+      try {
+        assert.deepEqual(seed.dailyRuns(),[later,run]);
+        assert.deepEqual(seed.dailyBars(later.id),bars);
+        assert.deepEqual(seed.dailyBars(run.id),bars);
+        assert.equal(seed.read().strategies[0].active,false);
+      } finally { seed.close(); }
+    } finally { f.close(); }
+  }
+});
+
+test('기본 SMA의 생략·비활성 필터와 빈 오버레이는 같은 레거시 계약이다', () => {
+  const f = fixture();
+  try {
+    const {draft} = saveTradingDraft(f.store,{terms:strategyDraft,expectedId:null});
+    const fixed = fixTradingDraft(f.store,f.kis,{kind:'strategy',expectedId:draft.id}).draft;
+    const file = join(f.dir,'trading-runs','strategy-'+draft.id,'strategy-'+fixed.runId+'.json');
+    const bytes = readFileSync(file,'utf8');
+    assert.ok(!bytes.includes('"rule"') && !bytes.includes('"overlay"'));
+    f.store.update(s => Object.assign(s.strategies.at(-1)!, {rule:{kind:'ma_crossover',maType:'sma',fast:2,slow:3,regimePeriod:null,minRelativeVolume:0}, overlay:{}}));
+    const config = readPreparedRun(file,'strategy').config;
+    assert.equal(readFileSync(file,'utf8'),bytes);
+    assert.equal(strategyContractSchema.safeParse({...config,slow:110}).success,false);
+    assert.equal(strategyContractSchema.safeParse({...config,slow:110,overlay:{chandelier:{atrPeriod:7,atrMultiplier:2}}}).success,true);
+    assert.equal(strategyContractSchema.safeParse({...config,rule:{kind:'ma_crossover',maType:'ema',fast:3,slow:4}}).success,false);
+    assert.equal(strategyContractSchema.safeParse({...config,rule:STRATEGY_CATALOG.volatility_breakout.presets.basic}).success,false);
+    assert.equal(strategyContractSchema.safeParse({...config,overlay:{volatilityParity:{volLookback:10,targetAnnualVolPct:20,maxAllocationPct:100}}}).success,false);
+  } finally { f.close(); }
 });
