@@ -5,6 +5,7 @@
 .studio-tools { justify-content: space-between; margin-bottom: 14px; }
 .studio-tools .field { margin: 0; min-width: 180px; }
 .studio-tools .button { align-self: end; }
+.studio-tools-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; align-self: end; }
 .studio-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(290px, 1fr); align-items: start; gap: 18px; }
 .studio-results, .studio-editor { min-width: 0; }
 .strategy-studio h2, .strategy-studio h3 { margin: 0; font-size: 16px; line-height: 1.4; }
@@ -67,11 +68,109 @@
 .rule-checkbox input[type="checkbox"] { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--teal); }
 .rule-overlay-box .form-grid { margin-top: 10px; }
 
+/* 문맥별 규칙 입력 항목 접이식 가이드 */
+.rule-field-help {
+  margin: 8px 0 10px; padding: 8px 11px; border-radius: 6px;
+  border: 1px solid #dce6e3; background: #f8fbfa; font-size: 12px; line-height: 1.55;
+  min-width: 0; overflow-wrap: anywhere;
+}
+.rule-field-help > summary {
+  cursor: pointer; font-weight: 600; color: #135951; padding: 2px 0;
+}
+.rule-field-help > summary:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; border-radius: 4px; }
+.rule-field-help-content {
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid #e2ebe8;
+}
+.rule-field-help-summary { margin: 0 0 6px; color: #3d515c; font-size: 12px; }
+.rule-field-help-preset {
+  margin: 0 0 8px; padding: 5px 8px; border-radius: 4px;
+  background: #edf5f2; color: #195e55; font-size: 11px; line-height: 1.5;
+}
+.rule-field-help-overlay-title {
+  margin: 10px 0 6px; padding-top: 8px; border-top: 1px dashed #d6e2de;
+  font-size: 12px; font-weight: 600; color: #195e55;
+}
+.rule-field-help-list { margin: 0; display: grid; gap: 8px; }
+.rule-field-help-list > div { min-width: 0; }
+.rule-field-help-list dt { font-weight: 600; color: #24333e; font-size: 12px; }
+.rule-field-help-list dt small { font-weight: 500; color: #4c5f6b; margin-left: 4px; font-size: 11px; }
+.rule-field-help-list dd { margin: 2px 0 0; color: #435560; font-size: 12px; line-height: 1.55; }
+
+/* 전략 스튜디오·백테스트 공통 4탭 사용방법 도움말 패널 */
+.research-help {
+  margin-bottom: 16px; border-left: 3px solid var(--teal);
+  min-width: 0; overflow-wrap: anywhere;
+}
+.research-help-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 10px 14px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.research-help-head h2 { margin: 0; font-size: 16px; line-height: 1.4; color: #1a2d37; }
+.research-help .research-help-sub { margin: 4px 0 0; font-size: 12px; color: var(--muted); line-height: 1.55; }
+.research-help-tabs {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--line);
+}
+.research-help-tab {
+  min-height: 34px; padding: 6px 12px; border-radius: 6px;
+  border: 1px solid #dce3e7; background: #f7f9fa; color: #394c57;
+  font-size: 12px; font-weight: 500; line-height: 1.35;
+}
+.research-help-tab:hover { background: #edf3f2; color: #135951; }
+.research-help-tab.active {
+  background: var(--teal); border-color: var(--teal); color: #fff; font-weight: 600;
+}
+.research-help-tab:focus-visible,
+.research-help-body:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; border-radius: 6px; }
+.research-help-body { min-width: 0; font-size: 13px; line-height: 1.6; color: #293b46; }
+.research-help-body[hidden] { display: none; }
+.research-help-steps {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+}
+.research-help-steps li {
+  padding: 12px 14px; border-radius: 7px; border: 1px solid #e1eae7; background: #f8fbfa; min-width: 0;
+}
+.research-help-step-no {
+  display: inline-block; margin-bottom: 6px; padding: 2px 7px; border-radius: 4px;
+  background: #e5f3ee; color: #086a57; font-size: 11px; font-weight: 700;
+}
+.research-help-steps h3,
+.research-help-card h3 { margin: 0 0 6px; font-size: 14px; line-height: 1.45; color: #1b313c; }
+.research-help .research-help-steps p,
+.research-help .research-help-card p { margin: 0; font-size: 12px; line-height: 1.6; color: #3c4f5a; }
+.research-help-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+}
+.research-help-faq { display: grid; gap: 10px; }
+.research-help-card {
+  padding: 12px 14px; border-radius: 7px; border: 1px solid var(--line); background: #fafcfc; min-width: 0;
+}
+.research-help-card h3 code {
+  margin-left: 4px; padding: 1px 5px; border-radius: 4px;
+  background: #eaf1ef; color: #145b52; font-size: 11px; font-weight: 500;
+}
+.research-help .research-help-card-note { margin: 0 0 8px; color: #4c5f6b; }
+.research-help .research-help-preset {
+  margin: 0 0 8px; padding: 5px 8px; border-radius: 4px;
+  background: #edf5f2; color: #195e55; font-size: 11px; line-height: 1.5;
+}
+.research-help-dl { margin: 0; display: grid; gap: 8px; }
+.research-help-dl > div { min-width: 0; }
+.research-help-dl dt { font-size: 12px; font-weight: 600; color: #20333e; }
+.research-help-dl dt small { margin-left: 4px; font-size: 11px; font-weight: 500; color: #4c5f6b; }
+.research-help-dl dd { margin: 2px 0 0; font-size: 12px; line-height: 1.55; color: #3f525d; }
+
 @media (max-width: 900px) {
   .studio-grid { grid-template-columns: 1fr; gap: 10px; }
   .studio-tools { gap: 8px; }
   .studio-tools .field { min-width: 0; flex: 1; }
+  .research-help-steps, .research-help-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 520px) {
   .studio-editor .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .studio-tools-actions { width: 100%; }
+  .studio-tools-actions > * { flex: 1 1 auto; }
+  .research-help { padding: 15px; }
+  .research-help-tab { flex: 1 1 calc(50% - 6px); text-align: center; }
 }
