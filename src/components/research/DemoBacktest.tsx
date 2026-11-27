@@ -83,7 +83,7 @@ export function DemoBacktest({
     }
     if (!isDemoRuleSupported(ruleForm)) {
       setError(
-        'DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙이나 샹들리에 청산은 저장 일봉 백테스트에서 사용하세요.',
+        'DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙이나 샹들리에 청산·변동성 패리티 오버레이는 저장 일봉 백테스트에서 사용하세요.',
       );
       return;
     }
@@ -159,8 +159,8 @@ export function DemoBacktest({
             <CostFields values={costs} change={setCosts} />
             {demoUnsupported && (
               <p className="bt-warning" role="status">
-                DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙이나 샹들리에 청산은 저장 일봉 백테스트에서
-                사용하세요.
+                DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙이나 샹들리에 청산·변동성 패리티 오버레이는 저장
+                일봉 백테스트에서 사용하세요.
               </p>
             )}
             <p className="bt-note">비용은 검증용 가정이며 세금은 포함하지 않습니다. 결과는 이 화면에서 확인합니다.</p>

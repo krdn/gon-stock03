@@ -108,6 +108,19 @@ export function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: bo
               거래량 <b>{rule.volumeMultiplier}배 초과</b>
             </span>
           </>
+        ) : rule.kind === 'volatility_breakout' ? (
+          <>
+            <span>
+              돌파 계수{' '}
+              <b>{rule.useAdaptiveNoise ? `적응형 노이즈(${rule.noiseLookback}봉)` : `k=${rule.k}`}</b>
+            </span>
+            <span>
+              추세 SMA <b>{rule.trendMaPeriod}봉</b>
+            </span>
+            <span>
+              보유 <b>{rule.holdDays}일</b>
+            </span>
+          </>
         ) : rule.kind === 'rsi2_pullback' ? (
           <>
             <span>
@@ -220,6 +233,15 @@ export function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: bo
         {s.overlay?.chandelier && (
           <span>
             샹들리에 <b>ATR({s.overlay.chandelier.atrPeriod})×{s.overlay.chandelier.atrMultiplier}</b>
+          </span>
+        )}
+        {s.overlay?.volatilityParity && (
+          <span>
+            변동성 패리티{' '}
+            <b>
+              {s.overlay.volatilityParity.volLookback}일 · 목표 {s.overlay.volatilityParity.targetAnnualVolPct}% · 최대{' '}
+              {s.overlay.volatilityParity.maxAllocationPct}%
+            </b>
           </span>
         )}
         <span>

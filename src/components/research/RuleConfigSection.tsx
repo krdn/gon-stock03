@@ -11,7 +11,13 @@ import {
   type RuleFormState,
   type RuleKind,
 } from '../../pages/research-rule-form';
-import { CHANDELIER_BASIC_PRESET, CHANDELIER_FIELD_HELP, RULE_FIELD_HELP } from './ResearchHelpPanel';
+import {
+  CHANDELIER_BASIC_PRESET,
+  CHANDELIER_FIELD_HELP,
+  RULE_FIELD_HELP,
+  VOLATILITY_PARITY_BASIC_PRESET,
+  VOLATILITY_PARITY_FIELD_HELP,
+} from './ResearchHelpPanel';
 
 /** 규칙 카탈로그 안내(3줄 설명 + 환경 배지 + 프리셋) 및 규칙별 세부 입력·오버레이·문맥 가이드 UI. */
 export function RuleConfigSection({
@@ -66,7 +72,7 @@ export function RuleConfigSection({
             ))}
           </select>
         </label>
-        <p className="rule-selector-meta">10종 전략 지원 · 저장 일봉 전체 / DEMO 종가 전용 4종</p>
+        <p className="rule-selector-meta">11종 전략 지원 · 저장 일봉 전체 / DEMO 종가 전용 4종</p>
       </div>
 
       <div className="rule-guide" aria-label="규칙 요약 안내">
@@ -236,6 +242,79 @@ export function RuleConfigSection({
               required
             />
           </label>
+        </>
+      )}
+
+      {form.kind === 'volatility_breakout' && (
+        <>
+          <div className="form-grid">
+            <label className="field">
+              돌파 계수 k
+              <input
+                name="vbK"
+                type="number"
+                min="0.1"
+                max="1"
+                step="0.05"
+                value={form.vbK}
+                onChange={e => update({ vbK: e.target.value })}
+                required
+              />
+            </label>
+            <label className="field">
+              보유 거래일 수 (일)
+              <input
+                name="vbHoldDays"
+                type="number"
+                min="1"
+                max="10"
+                step="1"
+                value={form.vbHoldDays}
+                onChange={e => update({ vbHoldDays: e.target.value })}
+                required
+              />
+            </label>
+          </div>
+          <div className="rule-option-row">
+            <label className="rule-checkbox">
+              <input
+                name="vbUseAdaptiveNoise"
+                type="checkbox"
+                checked={form.vbUseAdaptiveNoise}
+                disabled={disabled}
+                onChange={e => update({ vbUseAdaptiveNoise: e.target.checked })}
+              />
+              <span>적응형 노이즈 k 사용 (직전 노이즈 평균 적용)</span>
+            </label>
+          </div>
+          <div className="form-grid">
+            <label className="field">
+              노이즈 평균 기간 (봉)
+              <input
+                name="vbNoiseLookback"
+                type="number"
+                min="5"
+                max="60"
+                step="1"
+                value={form.vbNoiseLookback}
+                onChange={e => update({ vbNoiseLookback: e.target.value })}
+                required
+              />
+            </label>
+            <label className="field">
+              상승 추세 SMA 기간 (봉)
+              <input
+                name="vbTrendMaPeriod"
+                type="number"
+                min="5"
+                max="200"
+                step="1"
+                value={form.vbTrendMaPeriod}
+                onChange={e => update({ vbTrendMaPeriod: e.target.value })}
+                required
+              />
+            </label>
+          </div>
         </>
       )}
 
@@ -742,6 +821,64 @@ export function RuleConfigSection({
         )}
       </div>
 
+      <div className="rule-overlay-box">
+        <label className="rule-checkbox">
+          <input
+            name="useVolatilityParity"
+            type="checkbox"
+            checked={form.useVolatilityParity}
+            disabled={disabled}
+            onChange={e => update({ useVolatilityParity: e.target.checked })}
+          />
+          <span>20 변동성 패리티 · 목표 변동성 수량 조절 오버레이 (선택)</span>
+        </label>
+        {form.useVolatilityParity && (
+          <>
+            <div className="form-grid">
+              <label className="field">
+                변동성 관측 기간 (봉)
+                <input
+                  name="volLookback"
+                  type="number"
+                  min="10"
+                  max="60"
+                  step="1"
+                  value={form.volLookback}
+                  onChange={e => update({ volLookback: e.target.value })}
+                  required
+                />
+              </label>
+              <label className="field">
+                목표 연환산 변동성 (%)
+                <input
+                  name="targetAnnualVolPct"
+                  type="number"
+                  min="5"
+                  max="60"
+                  step="1"
+                  value={form.targetAnnualVolPct}
+                  onChange={e => update({ targetAnnualVolPct: e.target.value })}
+                  required
+                />
+              </label>
+            </div>
+            <label className="field">
+              최대 배정 비중 (%)
+              <input
+                name="maxAllocationPct"
+                type="number"
+                min="10"
+                max="100"
+                step="5"
+                value={form.maxAllocationPct}
+                onChange={e => update({ maxAllocationPct: e.target.value })}
+                required
+              />
+            </label>
+          </>
+        )}
+      </div>
+
       <details className="rule-field-help">
         <summary>현재 선택한 규칙({catalog.title}) 입력 항목 설명 보기</summary>
         <div className="rule-field-help-content">
@@ -766,6 +903,20 @@ export function RuleConfigSection({
           </p>
           <dl className="rule-field-help-list">
             {CHANDELIER_FIELD_HELP.map(item => (
+              <div key={item.term}>
+                <dt>
+                  {item.term} <small>{item.range}</small>
+                </dt>
+                <dd>{item.description}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="rule-field-help-overlay-title">
+            20 변동성 패리티 · RMS 포지션 사이징 ({form.useVolatilityParity ? '사용 중' : '선택 사항'}) ·{' '}
+            {VOLATILITY_PARITY_BASIC_PRESET}
+          </p>
+          <dl className="rule-field-help-list">
+            {VOLATILITY_PARITY_FIELD_HELP.map(item => (
               <div key={item.term}>
                 <dt>
                   {item.term} <small>{item.range}</small>

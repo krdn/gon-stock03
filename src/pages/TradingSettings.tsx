@@ -40,7 +40,11 @@ function formatTradingStrategyRule(strategy: Strategy): string {
   const { rule, overlay } = strategy;
   const parts: string[] = [];
   if (!rule) {
-    parts.push(`${strategy.fast}/${strategy.slow} 교차`);
+    parts.push(
+      isKisContractSupported(strategy)
+        ? `${strategy.fast}/${strategy.slow} 교차`
+        : `${STRATEGY_CATALOG.ma_crossover.title} (SMA ${strategy.fast}/${strategy.slow})`,
+    );
   } else if (rule.kind === 'ma_crossover') {
     const basic = isKisContractSupported(strategy);
     if (basic) {
@@ -55,6 +59,11 @@ function formatTradingStrategyRule(strategy: Strategy): string {
   }
   if (overlay?.chandelier) {
     parts.push(`샹들리에 ATR(${overlay.chandelier.atrPeriod})×${overlay.chandelier.atrMultiplier}`);
+  }
+  if (overlay?.volatilityParity) {
+    parts.push(
+      `변동성 패리티(${overlay.volatilityParity.volLookback}일 · 목표 ${overlay.volatilityParity.targetAnnualVolPct}% · 최대 ${overlay.volatilityParity.maxAllocationPct}%)`,
+    );
   }
   return parts.join(' · ');
 }

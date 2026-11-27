@@ -61,7 +61,6 @@ export type StrategyTransferDraft = z.infer<typeof strategyTransferSchema>;
 /** 규칙·오버레이 입력 폼 상태 (빈 입력·재편집을 안전하게 유지하기 위해 문자열로 보관). */
 export interface RuleFormState {
   kind: RuleKind;
-  unsupportedDailyInput?: boolean;
   maType: 'sma' | 'ema';
   fast: string;
   slow: string;
@@ -70,6 +69,11 @@ export interface RuleFormState {
   entryLookback: string;
   exitLookback: string;
   volumeMultiplier: string;
+  vbK: string;
+  vbUseAdaptiveNoise: boolean;
+  vbNoiseLookback: string;
+  vbTrendMaPeriod: string;
+  vbHoldDays: string;
   rsiPeriod: string;
   oversoldThreshold: string;
   longTrendMa: string;
@@ -104,6 +108,10 @@ export interface RuleFormState {
   useChandelier: boolean;
   atrPeriod: string;
   atrMultiplier: string;
+  useVolatilityParity: boolean;
+  volLookback: string;
+  targetAnnualVolPct: string;
+  maxAllocationPct: string;
 }
 
 /** 환경 전환 시에도 편집값과 해제된 evidence 상태를 보존하는 전략 에디터 초안 상태. */
@@ -128,10 +136,11 @@ export interface CostAssumptions {
 /** 저장 일봉 백테스트 선택 전환 시 전달하는 포커스·불러오기 정보. */
 export type BacktestSelection = { focus: 'policy' | 'run' } | { saved: Experiment };
 
-/** 지원하는 10종 전략 규칙 키 목록. */
+/** 지원하는 11종 전략 규칙 키 목록. */
 export const RULE_KINDS = [
   'ma_crossover',
   'donchian_breakout',
+  'volatility_breakout',
   'rsi2_pullback',
   'macd_momentum',
   'adx_dmi_trend',
@@ -145,7 +154,10 @@ export const RULE_KINDS = [
 /** 전략 규칙 선택 `<optgroup>` 그룹 정의. */
 export const RULE_GROUPS: { label: string; kinds: readonly RuleKind[] }[] = [
   { label: '추세 · 모멘텀 (3종)', kinds: ['ma_crossover', 'macd_momentum', 'adx_dmi_trend'] },
-  { label: '변동성 돌파 · 스퀴즈 (3종)', kinds: ['donchian_breakout', 'bollinger_squeeze', 'ttm_squeeze'] },
+  {
+    label: '변동성 돌파 · 스퀴즈 (4종)',
+    kinds: ['donchian_breakout', 'volatility_breakout', 'bollinger_squeeze', 'ttm_squeeze'],
+  },
   {
     label: '눌림목 · 평균회귀 (4종)',
     kinds: ['rsi2_pullback', 'bollinger_percent_b', 'low_volume_pullback', 'disparity_reversion'],
@@ -222,6 +234,7 @@ export function validateCosts(
 export function defaultRuleForm(): RuleFormState {
   const ma = STRATEGY_CATALOG.ma_crossover.presets.basic;
   const donchian = STRATEGY_CATALOG.donchian_breakout.presets.basic;
+  const vb = STRATEGY_CATALOG.volatility_breakout.presets.basic;
   const rsi2 = STRATEGY_CATALOG.rsi2_pullback.presets.basic;
   const macd = STRATEGY_CATALOG.macd_momentum.presets.basic;
   const adx = STRATEGY_CATALOG.adx_dmi_trend.presets.basic;
@@ -240,6 +253,11 @@ export function defaultRuleForm(): RuleFormState {
     entryLookback: donchian.kind === 'donchian_breakout' ? String(donchian.entryLookback) : '20',
     exitLookback: donchian.kind === 'donchian_breakout' ? String(donchian.exitLookback) : '10',
     volumeMultiplier: donchian.kind === 'donchian_breakout' ? String(donchian.volumeMultiplier) : '1',
+    vbK: String(vb.k),
+    vbUseAdaptiveNoise: vb.useAdaptiveNoise,
+    vbNoiseLookback: String(vb.noiseLookback),
+    vbTrendMaPeriod: String(vb.trendMaPeriod),
+    vbHoldDays: String(vb.holdDays),
     rsiPeriod: rsi2.kind === 'rsi2_pullback' ? String(rsi2.rsiPeriod) : '2',
     oversoldThreshold: rsi2.kind === 'rsi2_pullback' ? String(rsi2.oversoldThreshold) : '10',
     longTrendMa: rsi2.kind === 'rsi2_pullback' ? String(rsi2.longTrendMa) : '200',
@@ -274,6 +292,10 @@ export function defaultRuleForm(): RuleFormState {
     useChandelier: false,
     atrPeriod: '14',
     atrMultiplier: '3',
+    useVolatilityParity: false,
+    volLookback: '20',
+    targetAnnualVolPct: '20',
+    maxAllocationPct: '100',
   };
 }
 
@@ -285,8 +307,12 @@ export function formFromRule(rule?: StrategyRule, overlay?: ExitOverlay): RuleFo
     base.atrPeriod = String(overlay.chandelier.atrPeriod);
     base.atrMultiplier = String(overlay.chandelier.atrMultiplier);
   }
-  if (overlay?.volatilityParity) base.unsupportedDailyInput = true;
-  if (rule?.kind === 'volatility_breakout') return {...base, unsupportedDailyInput:true};
+  if (overlay?.volatilityParity) {
+    base.useVolatilityParity = true;
+    base.volLookback = String(overlay.volatilityParity.volLookback);
+    base.targetAnnualVolPct = String(overlay.volatilityParity.targetAnnualVolPct);
+    base.maxAllocationPct = String(overlay.volatilityParity.maxAllocationPct);
+  }
   if (!rule) return base;
   base.kind = rule.kind;
   switch (rule.kind) {
@@ -301,6 +327,13 @@ export function formFromRule(rule?: StrategyRule, overlay?: ExitOverlay): RuleFo
       base.entryLookback = String(rule.entryLookback);
       base.exitLookback = String(rule.exitLookback);
       base.volumeMultiplier = String(rule.volumeMultiplier);
+      break;
+    case 'volatility_breakout':
+      base.vbK = String(rule.k);
+      base.vbUseAdaptiveNoise = rule.useAdaptiveNoise;
+      base.vbNoiseLookback = String(rule.noiseLookback);
+      base.vbTrendMaPeriod = String(rule.trendMaPeriod);
+      base.vbHoldDays = String(rule.holdDays);
       break;
     case 'rsi2_pullback':
       base.rsiPeriod = String(rule.rsiPeriod);
@@ -369,6 +402,13 @@ export function applyPreset(form: RuleFormState, presetKey: PresetKey): RuleForm
       next.entryLookback = String(preset.entryLookback);
       next.exitLookback = String(preset.exitLookback);
       next.volumeMultiplier = String(preset.volumeMultiplier);
+      break;
+    case 'volatility_breakout':
+      next.vbK = String(preset.k);
+      next.vbUseAdaptiveNoise = preset.useAdaptiveNoise;
+      next.vbNoiseLookback = String(preset.noiseLookback);
+      next.vbTrendMaPeriod = String(preset.trendMaPeriod);
+      next.vbHoldDays = String(preset.holdDays);
       break;
     case 'rsi2_pullback':
       next.rsiPeriod = String(preset.rsiPeriod);
@@ -451,6 +491,16 @@ export function matchedPreset(form: RuleFormState): PresetKey | null {
         numEq(form.entryLookback, preset.entryLookback) &&
         numEq(form.exitLookback, preset.exitLookback) &&
         numEq(form.volumeMultiplier, preset.volumeMultiplier)
+      ) {
+        return key;
+      }
+    } else if (preset.kind === 'volatility_breakout' && form.kind === 'volatility_breakout') {
+      if (
+        numEq(form.vbK, preset.k) &&
+        form.vbUseAdaptiveNoise === preset.useAdaptiveNoise &&
+        numEq(form.vbNoiseLookback, preset.noiseLookback) &&
+        numEq(form.vbTrendMaPeriod, preset.trendMaPeriod) &&
+        numEq(form.vbHoldDays, preset.holdDays)
       ) {
         return key;
       }
@@ -546,7 +596,6 @@ export function badNumberMessage(input: HTMLInputElement): string {
 export function buildRuleAndOverlay(
   form: RuleFormState,
 ): { ok: true; rule: StrategyRule; overlay?: ExitOverlay } | { ok: false; error: string; focusName?: string } {
-  if (form.unsupportedDailyInput) return {ok:false, error:'이 저장 일봉 실험은 현재 폼에서 편집할 수 없습니다.'};
   let rawRule: unknown;
   switch (form.kind) {
     case 'ma_crossover': {
@@ -603,6 +652,33 @@ export function buildRuleAndOverlay(
         return { ok: false, error: '최소 거래량 배수는 0.5-5 범위의 숫자로 입력하세요.', focusName: 'volumeMultiplier' };
       }
       rawRule = { kind: 'donchian_breakout', entryLookback, exitLookback, volumeMultiplier };
+      break;
+    }
+    case 'volatility_breakout': {
+      const k = Number(form.vbK);
+      const noiseLookback = Number(form.vbNoiseLookback);
+      const trendMaPeriod = Number(form.vbTrendMaPeriod);
+      const holdDays = Number(form.vbHoldDays);
+      if (form.vbK.trim() === '' || !Number.isFinite(k) || k < 0.1 || k > 1) {
+        return { ok: false, error: '돌파 계수 k는 0.1-1 범위의 숫자로 입력하세요.', focusName: 'vbK' };
+      }
+      if (form.vbNoiseLookback.trim() === '' || !Number.isInteger(noiseLookback) || noiseLookback < 5 || noiseLookback > 60) {
+        return { ok: false, error: '노이즈 평균 기간은 5-60 사이의 정수로 입력하세요.', focusName: 'vbNoiseLookback' };
+      }
+      if (form.vbTrendMaPeriod.trim() === '' || !Number.isInteger(trendMaPeriod) || trendMaPeriod < 5 || trendMaPeriod > 200) {
+        return { ok: false, error: '상승 추세 SMA 기간은 5-200 사이의 정수로 입력하세요.', focusName: 'vbTrendMaPeriod' };
+      }
+      if (form.vbHoldDays.trim() === '' || !Number.isInteger(holdDays) || holdDays < 1 || holdDays > 10) {
+        return { ok: false, error: '보유 거래일 수는 1-10 사이의 정수로 입력하세요.', focusName: 'vbHoldDays' };
+      }
+      rawRule = {
+        kind: 'volatility_breakout',
+        k,
+        useAdaptiveNoise: form.vbUseAdaptiveNoise,
+        noiseLookback,
+        trendMaPeriod,
+        holdDays,
+      };
       break;
     }
     case 'rsi2_pullback': {
@@ -787,20 +863,55 @@ export function buildRuleAndOverlay(
   }
 
   let overlay: ExitOverlay | undefined;
-  if (form.useChandelier) {
-    const atrPeriod = Number(form.atrPeriod);
-    const atrMultiplier = Number(form.atrMultiplier);
-    if (form.atrPeriod.trim() === '' || !Number.isInteger(atrPeriod) || atrPeriod < 7 || atrPeriod > 30) {
-      return { ok: false, error: '샹들리에 청산 ATR 기간은 7-30 사이의 정수로 입력하세요.', focusName: 'atrPeriod' };
+  if (form.useChandelier || form.useVolatilityParity) {
+    const rawOverlay: Record<string, unknown> = {};
+    if (form.useChandelier) {
+      const atrPeriod = Number(form.atrPeriod);
+      const atrMultiplier = Number(form.atrMultiplier);
+      if (form.atrPeriod.trim() === '' || !Number.isInteger(atrPeriod) || atrPeriod < 7 || atrPeriod > 30) {
+        return { ok: false, error: '샹들리에 청산 ATR 기간은 7-30 사이의 정수로 입력하세요.', focusName: 'atrPeriod' };
+      }
+      if (form.atrMultiplier.trim() === '' || !Number.isFinite(atrMultiplier) || atrMultiplier < 1.5 || atrMultiplier > 5) {
+        return { ok: false, error: '샹들리에 청산 ATR 배수는 1.5-5 범위의 숫자로 입력하세요.', focusName: 'atrMultiplier' };
+      }
+      rawOverlay.chandelier = { atrPeriod, atrMultiplier };
     }
-    if (form.atrMultiplier.trim() === '' || !Number.isFinite(atrMultiplier) || atrMultiplier < 1.5 || atrMultiplier > 5) {
-      return { ok: false, error: '샹들리에 청산 ATR 배수는 1.5-5 범위의 숫자로 입력하세요.', focusName: 'atrMultiplier' };
+    if (form.useVolatilityParity) {
+      const volLookback = Number(form.volLookback);
+      const targetAnnualVolPct = Number(form.targetAnnualVolPct);
+      const maxAllocationPct = Number(form.maxAllocationPct);
+      if (form.volLookback.trim() === '' || !Number.isInteger(volLookback) || volLookback < 10 || volLookback > 60) {
+        return { ok: false, error: '변동성 관측 기간은 10-60 사이의 정수로 입력하세요.', focusName: 'volLookback' };
+      }
+      if (
+        form.targetAnnualVolPct.trim() === '' ||
+        !Number.isFinite(targetAnnualVolPct) ||
+        targetAnnualVolPct < 5 ||
+        targetAnnualVolPct > 60
+      ) {
+        return {
+          ok: false,
+          error: '목표 연환산 변동성은 5-60% 범위의 숫자로 입력하세요.',
+          focusName: 'targetAnnualVolPct',
+        };
+      }
+      if (
+        form.maxAllocationPct.trim() === '' ||
+        !Number.isFinite(maxAllocationPct) ||
+        maxAllocationPct < 10 ||
+        maxAllocationPct > 100
+      ) {
+        return { ok: false, error: '최대 배정 비중은 10-100% 범위의 숫자로 입력하세요.', focusName: 'maxAllocationPct' };
+      }
+      rawOverlay.volatilityParity = { volLookback, targetAnnualVolPct, maxAllocationPct };
     }
-    const parsedOverlay = exitOverlaySchema.safeParse({
-      chandelier: { atrPeriod, atrMultiplier },
-    });
+    const parsedOverlay = exitOverlaySchema.safeParse(rawOverlay);
     if (!parsedOverlay.success) {
-      return { ok: false, error: '샹들리에 청산은 ATR 기간 7-30, 배수 1.5-5 범위로 입력하세요.', focusName: 'atrPeriod' };
+      return {
+        ok: false,
+        error: parsedOverlay.error.issues[0]?.message ?? '오버레이 입력값을 확인하세요.',
+        focusName: form.useChandelier ? 'atrPeriod' : 'volLookback',
+      };
     }
     overlay = parsedOverlay.data;
   }
@@ -819,13 +930,14 @@ export function isLegacySma(
     rule.slow <= 100 &&
     !rule.regimePeriod &&
     !rule.minRelativeVolume &&
-    !overlay?.chandelier
+    !overlay?.chandelier &&
+    !overlay?.volatilityParity
   );
 }
 
 /** DEMO(종가 전용) 환경에서 실행·저장 가능한 규칙 조합인지 확인한다 (`assertCloseOnly`와 동일 기준). */
 export function isDemoRuleSupported(form: RuleFormState): boolean {
-  if (form.useChandelier) return false;
+  if (form.useChandelier || form.useVolatilityParity) return false;
   if (STRATEGY_CATALOG[form.kind].environments.demo === false) return false;
   if (form.kind === 'ma_crossover' && form.minRelativeVolume.trim() !== '' && Number(form.minRelativeVolume) > 0) {
     return false;
@@ -835,7 +947,7 @@ export function isDemoRuleSupported(form: RuleFormState): boolean {
 
 /** KIS 모의 실시간 평가 및 계약(`strategyContractSchema`, slow <= 100)에서 즉시 시작 가능한 규칙인지 확인한다. */
 export function kisRealtimeBlockReason(rule?: StrategyRule, overlay?: ExitOverlay, slow?: number): string {
-  if (overlay?.chandelier) {
+  if (overlay?.chandelier || overlay?.volatilityParity) {
     return '신규 다중 전략 규칙·오버레이는 장전 레벨 트리거 계약 연결 후 실시간 시작 가능합니다.';
   }
   if (!rule) {
@@ -854,6 +966,7 @@ export function kisRealtimeBlockReason(rule?: StrategyRule, overlay?: ExitOverla
 export function isKisBasicSmaSlowExceeded(form: RuleFormState): boolean {
   return (
     !form.useChandelier &&
+    !form.useVolatilityParity &&
     form.kind === 'ma_crossover' &&
     form.maType === 'sma' &&
     form.regimePeriod.trim() === '' &&
@@ -865,7 +978,7 @@ export function isKisBasicSmaSlowExceeded(form: RuleFormState): boolean {
 
 /** 폼 상태에서 KIS 모의 실시간 즉시 시작 가능 여부를 판정한다. */
 export function isKisRealtimeFormSupported(form: RuleFormState): boolean {
-  if (form.useChandelier) return false;
+  if (form.useChandelier || form.useVolatilityParity) return false;
   if (form.kind !== 'ma_crossover') return false;
   if (form.maType !== 'sma') return false;
   if (form.regimePeriod.trim() !== '') return false;
@@ -891,6 +1004,13 @@ export function formatRuleSummary(rule: StrategyRule, overlay?: ExitOverlay): st
     case 'donchian_breakout':
       parts.push(
         `${STRATEGY_CATALOG.donchian_breakout.title} (진입 ${rule.entryLookback} / 청산 ${rule.exitLookback} · 거래량 ${rule.volumeMultiplier}배 초과)`,
+      );
+      break;
+    case 'volatility_breakout':
+      parts.push(
+        `${STRATEGY_CATALOG.volatility_breakout.title} (${
+          rule.useAdaptiveNoise ? `적응형 노이즈 ${rule.noiseLookback}봉` : `k=${rule.k}`
+        } · 추세 SMA${rule.trendMaPeriod} · 보유 ${rule.holdDays}일)`,
       );
       break;
     case 'rsi2_pullback':
@@ -934,6 +1054,11 @@ export function formatRuleSummary(rule: StrategyRule, overlay?: ExitOverlay): st
   }
   if (overlay?.chandelier) {
     parts.push(`샹들리에 ATR(${overlay.chandelier.atrPeriod})×${overlay.chandelier.atrMultiplier}`);
+  }
+  if (overlay?.volatilityParity) {
+    parts.push(
+      `변동성 패리티(${overlay.volatilityParity.volLookback}일 · 목표 ${overlay.volatilityParity.targetAnnualVolPct}% · 최대 ${overlay.volatilityParity.maxAllocationPct}%)`,
+    );
   }
   return parts.join(' · ');
 }
