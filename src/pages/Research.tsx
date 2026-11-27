@@ -6,7 +6,7 @@ import { Badge, Chart, Panel, Stat } from '../components/ui';
 import { won, type BacktestResult, type Strategy } from '../../shared/model';
 import { dailyRunsSchema } from '../../shared/data-inventory';
 import type { DailyRun } from '../../shared/market-data';
-import { experimentListSchema, experimentSchema, backtestResultSchema, type Experiment } from '../../shared/backtest';
+import { legacyExperimentListSchema as experimentListSchema, legacyExperiment as experimentSchema, backtestResultSchema, type LegacyExperiment as Experiment } from '../../shared/backtest';
 import { z } from 'zod';
 
 import './Strategies.css';

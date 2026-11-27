@@ -1,3 +1,4 @@
+import { assertCloseOnly, evaluateClose, warmup, type StrategyRule, type ExitOverlay, type RuleBar } from '../shared/strategy-rules.ts';
 import { randomUUID } from 'node:crypto';
 import { equity, type State, type BacktestInput, type BacktestResult, type Event } from '../shared/model.ts';
 import type { DailyPrice } from '../shared/market-data.ts';
@@ -73,6 +74,13 @@ export function advanceTick(state: State) {
       if (!position || position.qty < order.qty) throw new Error('보유 수량 대조가 필요합니다.');
       state.cash += amount - cost; position.qty -= order.qty;
     }
+    const owner = state.strategies.find(s => s.id === order.source);
+    if (owner?.rule?.kind === 'rsi2_pullback') owner.entryTick = order.side === 'buy' ? state.tick : undefined;
+    if (position.qty === 0) {
+      for (const strategy of state.strategies) {
+        if (strategy.code === order.code && strategy.entryTick !== undefined) delete strategy.entryTick;
+      }
+    }
     order.status = 'filled'; order.filledPrice = instrument.price; order.filledAt = new Date().toISOString(); order.fee = cost;
     record(state, '데모 주문 체결', `${instrument.name} ${order.qty}주 · ${instrument.price.toLocaleString('ko-KR')}원 · 비용 ${cost}원`);
   }
@@ -81,10 +89,15 @@ export function advanceTick(state: State) {
     if (strategy.environment === 'kis-paper' || !strategy.active || strategy.lastTick === state.tick || state.risk.halted) continue;
     strategy.lastTick = state.tick;
     const instrument = state.instruments.find(i => i.code === strategy.code)!;
-    strategy.lastSignal = signal(instrument.history, strategy.fast, strategy.slow);
+    const positionQty = state.positions.find(p => p.code === strategy.code)?.qty ?? 0;
+    if (!positionQty && strategy.entryTick !== undefined) delete strategy.entryTick;
+    const holding = strategy.entryTick === undefined ? undefined : {barsHeld:state.tick - strategy.entryTick + 1};
+    strategy.lastSignal = strategy.rule ? evaluateClose(instrument.history.map(close => ({close})), strategy.rule, holding).signal
+      : signal(instrument.history, strategy.fast, strategy.slow);
     if (strategy.lastSignal === 'hold') continue;
     try {
-      placeOrder(state, { code: strategy.code, side: strategy.lastSignal, qty: strategy.qty, price: instrument.price, requestId: randomUUID() }, strategy.id);
+      const qty = strategy.rule?.kind === 'rsi2_pullback' && strategy.lastSignal === 'sell' ? Math.min(strategy.qty, positionQty) : strategy.qty;
+      placeOrder(state, { code: strategy.code, side: strategy.lastSignal, qty, price: instrument.price, requestId: randomUUID() }, strategy.id);
     } catch (error) { record(state, '전략 주문 차단', `${strategy.name}: ${error instanceof Error ? error.message : '검증 실패'}`, 'warning'); }
   }
   state.updatedAt = new Date().toISOString();
@@ -127,4 +140,48 @@ function simulate(prices: number[], executionPrices: number[], input: BacktestIn
   }
   const finalEquity = values.at(-1)!;
   return { equity: values, trades, finalEquity, returnPct: (finalEquity / input.capital - 1) * 100, maxDrawdown: drawdown, fees, slippageCost, source: '' };
+}
+
+interface RuleSimulation { capital:number; feeBps:number; slippageBps:number; rule:StrategyRule; overlay?:ExitOverlay }
+export function backtestRules(bars: RuleBar[], executions: number[], input: RuleSimulation, environment:'demo'|'daily') {
+  if (environment === 'demo') assertCloseOnly(input.rule,input.overlay);
+  const required = warmup(input.rule,input.overlay) + 1;
+  if (bars.length < required) throw new Error(`판정과 다음 봉 체결에 최소 ${required}봉이 필요합니다.`);
+  const unitsAt = (cash:number,price:number) => {
+    const units = Math.floor(cash / (price * (1 + input.feeBps / 10000)));
+    return units * price + fee(units * price,input.feeBps) > cash ? units - 1 : units;
+  };
+  const benchPrice = executions[0] * (1 + input.slippageBps / 10000);
+  const benchQty = unitsAt(input.capital,benchPrice);
+  const benchCash = input.capital - (benchQty * benchPrice + fee(benchQty * benchPrice,input.feeBps));
+  let benchPeak = input.capital, benchDrawdown = 0, benchValue = input.capital;
+  let cash = input.capital, qty = 0, fees = 0, slippageCost = 0, peak = cash, maxDrawdown = 0, entry = 0;
+  let trailStop: number | undefined;
+  const equity:number[] = [], trades:(BacktestResult['trades'][number] & {reason:string})[] = [];
+  for (let i = 0; i < bars.length; i++) {
+    const holding = qty ? {barsHeld:i-entry, trailStop} : undefined;
+    const decision = evaluateClose(bars.slice(0,i),input.rule,holding,input.overlay);
+    trailStop = decision.trailStop;
+    const {signal:side, reason} = decision;
+    if ((side === 'buy' && !qty) || (side === 'sell' && qty)) {
+      const price = executions[i] * (1 + (side === 'buy' ? 1 : -1) * input.slippageBps / 10000);
+      const units = side === 'buy' ? unitsAt(cash,price) : qty;
+      if (units > 0) {
+        const cost = fee(units * price,input.feeBps);
+        if (side === 'buy') {cash -= units * price + cost; qty = units; entry = i;}
+        else {cash += units * price - cost; qty = 0;}
+        trailStop = undefined;
+        fees += cost; slippageCost += Math.abs(price-executions[i]) * units;
+        trades.push({bar:i,side,price,qty:units,fee:cost,...(environment === 'daily' && {date:bars[i].date,signalDate:bars[i-1].date}),reason});
+      }
+    }
+    const value = cash + qty * bars[i].close;
+    equity.push(value); peak = Math.max(peak,value); maxDrawdown = Math.max(maxDrawdown,(peak-value)/peak*100);
+    benchValue = benchCash + benchQty * bars[i].close;
+    benchPeak = Math.max(benchPeak,benchValue); benchDrawdown = Math.max(benchDrawdown,(benchPeak-benchValue)/benchPeak*100);
+  }
+  const finalEquity = equity.at(-1)!;
+  return {equity,trades,finalEquity,returnPct:(finalEquity/input.capital-1)*100,maxDrawdown,fees,slippageCost,
+    source:environment === 'daily' ? `KIS 저장 일봉 ${bars.length}봉 · 다음 봉 시가 체결 가정 · 세금 미포함` : `합성 ${bars.length}봉 · 다음 봉 종가 체결 가정 · 세금 미포함`,
+    benchmark:{returnPct:(benchValue/input.capital-1)*100,maxDrawdown:benchDrawdown,finalEquity:benchValue}};
 }
