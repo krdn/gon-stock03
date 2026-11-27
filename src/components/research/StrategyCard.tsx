@@ -304,7 +304,11 @@ export function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: bo
             다음 계약 준비
           </Link>
         )}
-        <Link className="text-link" to="/backtest" state={{ strategyDraft: cardBacktestDraft }}>
+        <Link
+          className="text-link"
+          to={`/backtest?source=stored&strategyId=${encodeURIComponent(s.id)}`}
+          state={{ strategyDraft: cardBacktestDraft }}
+        >
           이 설정으로 백테스트
         </Link>
       </div>

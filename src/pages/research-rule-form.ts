@@ -43,6 +43,19 @@ const flexibleTradeSchema = backtestResultSchema.shape.trades.element.extend({
   reason: z.string().min(1).optional(),
 });
 
+/** v2 단일 규칙 백테스트 결과 엄격 검증 스키마 (`shared/backtest.ts` `ruleResultSchema`와 동일). */
+export const ruleReplayResultSchema = backtestResultSchema.extend({
+  trades: z.array(backtestResultSchema.shape.trades.element.extend({ reason: z.string().min(1) })),
+  benchmark: benchmarkSchema,
+});
+
+/** 엔진 버전(`v1`·`v2`·`v3`)에 대응하는 엄격 재현 결과 스키마를 반환한다. */
+export function replayResultSchemaFor(engineVersion: Experiment['snapshot']['engineVersion']) {
+  if (engineVersion === 'daily-portfolio-next-open-v3') return portfolioResultSchema;
+  if (engineVersion === 'daily-rules-next-open-v2') return ruleReplayResultSchema;
+  return backtestResultSchema;
+}
+
 /** v1·v2·v3 백테스트 결과 응답 검증 스키마. */
 export const flexibleResultSchema = backtestResultSchema.extend({
   trades: z.array(flexibleTradeSchema),
@@ -152,6 +165,26 @@ export interface CostAssumptions {
   capital: number;
   feeBps: number;
   slippageBps: number;
+}
+
+/** 저장 일봉 백테스트의 날짜·정책·바스켓 runId 편집 상태 (DEMO ↔ 저장 일봉 전환 시 보존). */
+export interface StoredBacktestDraft {
+  from: string;
+  to: string;
+  dateEdited: boolean;
+  portfolioPolicy: 'adjusted' | 'raw' | null;
+  portfolioRunOverrides: Record<string, string>;
+}
+
+/** 저장 일봉 백테스트 기본 편집 상태를 생성한다. */
+export function defaultStoredBacktestDraft(): StoredBacktestDraft {
+  return {
+    from: '',
+    to: '',
+    dateEdited: false,
+    portfolioPolicy: null,
+    portfolioRunOverrides: {},
+  };
 }
 
 /** 저장 일봉 백테스트 선택 전환 시 전달하는 포커스·불러오기 정보. */

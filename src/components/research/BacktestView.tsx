@@ -1,46 +1,89 @@
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { BookOpen } from 'lucide-react';
 import { z } from 'zod';
+import { isPortfolioRule } from '../../../shared/portfolio-rules';
 import { useWorkbench } from '../../context';
 import {
   costsOf,
   defaultCosts,
   defaultRuleForm,
+  defaultStoredBacktestDraft,
   formFromRule,
+  formPortfolioCodes,
+  isPortfolioKind,
   parseTransferDraft,
   ruleFromExperimentInput,
   type BacktestSelection,
   type CostAssumptions,
   type RuleFormState,
+  type StoredBacktestDraft,
+  type StrategyTransferDraft,
 } from '../../pages/research-rule-form';
 import { DemoBacktest } from './DemoBacktest';
 import { ResearchHelpPanel } from './ResearchHelpPanel';
 import { StoredBacktest } from './StoredBacktest';
+
+/** 두 다종목 바스켓 코드 집합(순서 무관)이 동일한지 비교한다. */
+function sameCodeSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const setB = new Set(b);
+  return a.every(code => setB.has(code));
+}
 
 /** 백테스트 최상위 페이지 (`/backtest`). */
 export function Backtest() {
   const [params, setParams] = useSearchParams();
   const location = useLocation();
   const transfer = useRef<{ key: string; selection: BacktestSelection } | null>(null);
-  const { busy } = useWorkbench();
+  const { state, busy } = useWorkbench();
   const [helpOpen, setHelpOpen] = useState(false);
   const helpPanelId = useId();
   const helpToggleRef = useRef<HTMLButtonElement>(null);
   const source = params.get('source') ?? 'stored';
   const runId = params.get('run');
+  const strategyIdParam = params.get('strategyId');
   const valid =
     params.getAll('source').length <= 1 &&
     params.getAll('run').length <= 1 &&
+    params.getAll('strategyId').length <= 1 &&
     (source === 'stored' || source === 'demo') &&
     (runId === null || (params.get('source') === 'stored' && z.uuid().safeParse(runId).success));
   const locState = location.state as { backtestSelection?: string; strategyDraft?: unknown } | null;
   const strategyDraft = parseTransferDraft(locState?.strategyDraft);
+  const [hydratedDraft, setHydratedDraft] = useState<StrategyTransferDraft | null>(null);
+  const hydratedStrategyRef = useRef<string | null>(strategyDraft ? `state:${location.key}` : null);
   const [ruleForm, setRuleForm] = useState<RuleFormState>(() =>
     strategyDraft ? formFromRule(strategyDraft.rule, strategyDraft.overlay) : defaultRuleForm(),
   );
   const [costs, setCosts] = useState<CostAssumptions>(defaultCosts);
-  const [portfolioRunOverrides, setPortfolioRunOverrides] = useState<Record<string, string>>({});
+  const [storedDraft, setStoredDraft] = useState<StoredBacktestDraft>(defaultStoredBacktestDraft);
+
+  useEffect(() => {
+    if (strategyDraft || !strategyIdParam) return;
+    if (hydratedStrategyRef.current === strategyIdParam) return;
+    const matched = state.strategies.find(item => item.id === strategyIdParam);
+    if (!matched) return;
+    hydratedStrategyRef.current = strategyIdParam;
+    const rule = matched.rule ?? {
+      kind: 'ma_crossover' as const,
+      maType: 'sma' as const,
+      fast: matched.fast,
+      slow: matched.slow,
+    };
+    const nextDraft: StrategyTransferDraft = {
+      code: isPortfolioRule(rule) ? rule.assets[0] : matched.code,
+      rule,
+      ...(!isPortfolioRule(rule) && matched.overlay ? { overlay: matched.overlay } : {}),
+      ...(matched.evidence ? { evidence: matched.evidence } : {}),
+    };
+    transfer.current = null;
+    setHydratedDraft(nextDraft);
+    setRuleForm(formFromRule(nextDraft.rule, isPortfolioRule(nextDraft.rule) ? undefined : nextDraft.overlay));
+    setStoredDraft(defaultStoredBacktestDraft());
+  }, [strategyDraft, strategyIdParam, state.strategies]);
+
+  const effectiveDraft = strategyDraft ?? hydratedDraft;
 
   function invalidateTransfer() {
     transfer.current = null;
@@ -48,6 +91,12 @@ export function Backtest() {
 
   function handleRuleFormChange(next: RuleFormState) {
     transfer.current = null;
+    const modeChanged = isPortfolioKind(ruleForm.kind) !== isPortfolioKind(next.kind);
+    const basketChanged =
+      isPortfolioKind(next.kind) && !sameCodeSet(formPortfolioCodes(ruleForm), formPortfolioCodes(next));
+    if (modeChanged || basketChanged) {
+      setStoredDraft(prev => ({ ...prev, dateEdited: false }));
+    }
     setRuleForm(next);
   }
 
@@ -56,9 +105,11 @@ export function Backtest() {
     setCosts(next);
   }
 
-  function handlePortfolioRunsChange(next: Record<string, string>) {
-    transfer.current = null;
-    setPortfolioRunOverrides(next);
+  function updateStoredDraft(patch: Partial<StoredBacktestDraft>, options?: { invalidate?: boolean }) {
+    if (options?.invalidate !== false) {
+      transfer.current = null;
+    }
+    setStoredDraft(prev => ({ ...prev, ...patch }));
   }
 
   function select(nextSource: string, nextRun?: string, selection?: BacktestSelection) {
@@ -69,19 +120,31 @@ export function Backtest() {
       setRuleForm(
         formFromRule(ruleFromExperimentInput(savedInput), 'overlay' in savedInput ? savedInput.overlay : undefined),
       );
-      if ('runs' in savedInput) {
-        setPortfolioRunOverrides(Object.fromEntries(savedInput.runs.map(item => [item.code, item.runId])));
-      } else {
-        setPortfolioRunOverrides({});
-      }
+      setStoredDraft({
+        from: savedInput.from,
+        to: savedInput.to,
+        dateEdited: true,
+        portfolioPolicy: 'runs' in savedInput ? savedInput.adjustment : null,
+        portfolioRunOverrides:
+          'runs' in savedInput ? Object.fromEntries(savedInput.runs.map(item => [item.code, item.runId])) : {},
+      });
+    } else if (selection && 'focus' in selection) {
+      setStoredDraft(prev => ({
+        ...prev,
+        from: '',
+        to: '',
+        dateEdited: false,
+        portfolioPolicy: null,
+      }));
     }
     const next = new URLSearchParams(params);
     next.set('source', nextSource);
     next.delete('run');
+    next.delete('strategyId');
     if (nextRun) next.set('run', nextRun);
     transfer.current = selection ? { key: crypto.randomUUID(), selection } : null;
     const nextState: Record<string, unknown> = { backtestSelection: transfer.current?.key };
-    if (strategyDraft) nextState.strategyDraft = strategyDraft;
+    if (effectiveDraft) nextState.strategyDraft = effectiveDraft;
     setParams(next, { state: nextState });
   }
 
@@ -127,7 +190,7 @@ export function Backtest() {
         </p>
       ) : source === 'demo' ? (
         <DemoBacktest
-          strategyDraft={strategyDraft}
+          strategyDraft={effectiveDraft}
           ruleForm={ruleForm}
           setRuleForm={handleRuleFormChange}
           costs={costs}
@@ -138,13 +201,13 @@ export function Backtest() {
           key={runId ?? 'default'}
           requested={runId}
           initial={initial}
-          strategyDraft={strategyDraft}
+          strategyDraft={effectiveDraft}
           ruleForm={ruleForm}
           setRuleForm={handleRuleFormChange}
           costs={costs}
           setCosts={handleCostsChange}
-          portfolioRunOverrides={portfolioRunOverrides}
-          setPortfolioRunOverrides={handlePortfolioRunsChange}
+          storedDraft={storedDraft}
+          updateStoredDraft={updateStoredDraft}
           onInvalidateTransfer={invalidateTransfer}
           select={(id, selection) => select('stored', id, selection)}
         />

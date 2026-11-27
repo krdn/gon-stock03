@@ -18,12 +18,14 @@ function portfolioDailyFixture(
     startDate?: string;
     startedAt?: string;
     captureDate?: string;
+    adjustment?: 'adjusted' | 'raw';
     priceFn: (i: number) => number;
   },
 ) {
   const barCount = options.barCount ?? 150;
   const startDate = options.startDate ?? '20250102';
   const startedAt = options.startedAt ?? '2026-06-01T01:00:00.000Z';
+  const adjustment = options.adjustment ?? 'adjusted';
   const dates: string[] = [];
   for (let offset = 0; dates.length < barCount; offset++) {
     const candidate = addDays(startDate, offset);
@@ -37,7 +39,7 @@ function portfolioDailyFixture(
     code,
     from: dates[0],
     to: dates.at(-1)!,
-    adjustment: 'adjusted',
+    adjustment,
     source: 'kis-rest',
     exchange: 'KRX',
     endpoint: '/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice',
@@ -74,7 +76,7 @@ function portfolioDailyFixture(
       close,
       volume: 150000,
       code,
-      adjustment: 'adjusted',
+      adjustment,
       source: 'kis-rest',
       collectedAt: startedAt,
     };
@@ -400,9 +402,9 @@ test('4A-2: 전략 스튜디오 다종목 왕복·evidence 해제·DEMO 차단(P
     await expect(savedCard).toContainText(portfolioOnly);
     await expect(savedCard.getByRole('button', { name: '전략 시작', exact: true })).toBeDisabled();
 
-    // 4. 카드의 '이 설정으로 백테스트' 클릭 → /backtest로 바스켓·안전자산·파라미터 전달 및 적격 runId 자동 매핑 확인
+    // 4. 카드의 '이 설정으로 백테스트' 클릭 → /backtest?source=stored&strategyId=... 이동 및 적격 runId 자동 매핑 확인
     await savedCard.getByRole('link', { name: '이 설정으로 백테스트', exact: true }).click();
-    await expect(page).toHaveURL(/\/backtest$/);
+    await expect(page).toHaveURL(/\/backtest\?source=stored&strategyId=/);
     await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('dual_momentum');
     await expect(page.getByLabel('위험 자산 1', { exact: true })).toHaveValue('069500');
     await expect(page.getByLabel('위험 자산 2', { exact: true })).toHaveValue('005930');
@@ -598,6 +600,8 @@ test('4A-2: 도움말 15카드 사전·dual_momentum·faber_gtaa 문맥 가이�
     await expect(dmCard).toContainText('거래일 달력이 100% 일치');
     await expect(dmCard).toContainText('생존 편향');
     await expect(dmCard).toContainText('앞 순서 종목이 우선');
+    await expect(dmCard).toContainText('소폭 축소 매도가 발생할 수 있으며');
+    await expect(dmCard).toContainText('입력 순서 뒤쪽 종목의 체결 수량이 줄어들 수 있습니다');
 
     const gtaaCard = cards.filter({ has: page.locator('code', { hasText: /^faber_gtaa$/ }) });
     await expect(gtaaCard).toHaveCount(1);
@@ -605,6 +609,8 @@ test('4A-2: 도움말 15카드 사전·dual_momentum·faber_gtaa 문맥 가이�
     await expect(gtaaCard).toContainText('추세 SMA 120봉 / 리밸런싱 20봉');
     await expect(gtaaCard).toContainText('거래일 달력이 100% 일치');
     await expect(gtaaCard).toContainText('위험 자산 동일 비중 첫 시가 보유');
+    await expect(gtaaCard).toContainText('소폭 축소 매도가 발생할 수 있으며');
+    await expect(gtaaCard).toContainText('입력 순서 뒤쪽 종목의 체결 수량이 줄어들 수 있습니다');
 
     // 문맥 가이드 전환 확인
     const ruleSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
@@ -627,5 +633,275 @@ test('4A-2: 도움말 15카드 사전·dual_momentum·faber_gtaa 문맥 가이�
     }));
     expect(overflow.scrollWidth).toBeLessThanOrEqual(390);
     expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.innerWidth);
+  }
+});
+
+test('4A-2 보완 Major 1: v3 재현 응답에서 rebalances·benchmark·trades[].code 누락 시 matches=true라도 오류로 거부한다', async ({
+  page,
+}) => {
+  const { Store } = await import('../../server/store.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const store = new Store(':memory:');
+
+  const runA = portfolioDailyFixture('069500', '11111111-aaaa-4111-8111-111111111111', {
+    barCount: 120,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => (i < 50 ? 30000 + i * 200 : 40000 - (i - 50) * 150),
+  });
+  const runB = portfolioDailyFixture('005930', '22222222-bbbb-4222-8222-222222222222', {
+    barCount: 120,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => (i < 50 ? 50000 - i * 100 : 45000 + (i - 50) * 260),
+  });
+  store.saveDaily(runA.run, runA.bars);
+  store.saveDaily(runB.run, runB.bars);
+
+  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4314, 4343]);
+  await new Promise<void>(resolve => server.listen(4343, '127.0.0.1', resolve));
+
+  let corruptMode: 'missing-rebalances' | 'missing-benchmark' | 'missing-trade-code' = 'missing-rebalances';
+  await page.route('**/api/**', async route => {
+    const req = route.request();
+    const pathname = new URL(req.url()).pathname;
+    const response = await route.fetch({ url: req.url().replace(':4314', ':4343') });
+    if (req.method() === 'POST' && pathname === '/api/backtest/replay') {
+      const json = (await response.json()) as {
+        result: Record<string, unknown>;
+        matches: boolean;
+        inputHash: string;
+      };
+      const corrupted = structuredClone(json);
+      corrupted.matches = true;
+      if (corruptMode === 'missing-rebalances') {
+        delete corrupted.result.rebalances;
+      } else if (corruptMode === 'missing-benchmark') {
+        delete corrupted.result.benchmark;
+      } else if (corruptMode === 'missing-trade-code') {
+        const trades = corrupted.result.trades as Record<string, unknown>[];
+        if (trades.length > 0) delete trades[0].code;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(corrupted) });
+      return;
+    }
+    await route.fulfill({ response });
+  });
+
+  try {
+    await page.goto('/backtest');
+    await waitWorkbenchReady(page);
+    await page.getByRole('combobox', { name: '전략 규칙', exact: true }).selectOption('dual_momentum');
+    await page.getByRole('button', { name: '공격적', exact: true }).click();
+    await page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true }).click();
+
+    const result = page.getByRole('region', { name: '저장 일봉 실험 결과' });
+    await expect(result).toBeVisible();
+    const verifyBtn = result.getByRole('button', { name: '고정 입력으로 재현 검증', exact: true });
+
+    for (const mode of ['missing-rebalances', 'missing-benchmark', 'missing-trade-code'] as const) {
+      corruptMode = mode;
+      await verifyBtn.click();
+      await expect(result.getByRole('alert')).toContainText('재현 응답 형식이 올바르지 않습니다.');
+      await expect(result).not.toContainText('재현 일치');
+    }
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
+  }
+});
+
+test('4A-2 보완 Major 2: 저장 일봉의 수동 날짜(from/to)·다종목 수정주가 정책·종목별 runId가 DEMO 왕복 후에도 보존된다', async ({
+  page,
+}) => {
+  const { Store } = await import('../../server/store.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const store = new Store(':memory:');
+
+  const adjA = portfolioDailyFixture('069500', '33333333-1111-4111-8111-111111111111', {
+    barCount: 140,
+    adjustment: 'adjusted',
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 30000 + i * 140,
+  });
+  const adjB = portfolioDailyFixture('005930', '33333333-2222-4222-8222-222222222222', {
+    barCount: 140,
+    adjustment: 'adjusted',
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 50000 + i * 110,
+  });
+  const rawANew = portfolioDailyFixture('069500', '44444444-1111-4111-8111-111111111111', {
+    barCount: 140,
+    adjustment: 'raw',
+    startedAt: '2026-06-03T01:00:00.000Z',
+    priceFn: i => 30000 + i * 160,
+  });
+  const rawAOld = portfolioDailyFixture('069500', '44444444-0000-4000-8000-000000000000', {
+    barCount: 140,
+    adjustment: 'raw',
+    startedAt: '2026-05-01T01:00:00.000Z',
+    priceFn: i => 30000 + i * 120,
+  });
+  const rawB = portfolioDailyFixture('005930', '44444444-2222-4222-8222-222222222222', {
+    barCount: 140,
+    adjustment: 'raw',
+    startedAt: '2026-06-03T01:00:00.000Z',
+    priceFn: i => 50000 + i * 95,
+  });
+  store.saveDaily(adjA.run, adjA.bars);
+  store.saveDaily(adjB.run, adjB.bars);
+  store.saveDaily(rawAOld.run, rawAOld.bars);
+  store.saveDaily(rawANew.run, rawANew.bars);
+  store.saveDaily(rawB.run, rawB.bars);
+
+  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4314, 4344]);
+  await new Promise<void>(resolve => server.listen(4344, '127.0.0.1', resolve));
+
+  const dailyPayloads: Record<string, unknown>[] = [];
+  await page.route('**/api/**', async route => {
+    const req = route.request();
+    if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/backtest/daily') {
+      dailyPayloads.push(req.postDataJSON() as Record<string, unknown>);
+    }
+    const response = await route.fetch({ url: req.url().replace(':4314', ':4344') });
+    await route.fulfill({ response });
+  });
+
+  try {
+    await page.goto('/backtest');
+    await waitWorkbenchReady(page);
+    await page.getByRole('combobox', { name: '전략 규칙', exact: true }).selectOption('dual_momentum');
+    await page.getByRole('button', { name: '공격적', exact: true }).click();
+
+    // 수정주가 정책을 원주가(raw)로 변경하고, 069500 runId를 구 기록(rawAOld)으로 수동 변경, 날짜도 좁은 구간으로 수정
+    await page.getByLabel('수정주가 정책').selectOption('raw');
+    await expect(page.getByLabel('069500 일봉 수집 기록')).toHaveValue(rawANew.run.id);
+    await page.getByLabel('069500 일봉 수집 기록').selectOption(rawAOld.run.id);
+    await expect(page.getByLabel('069500 일봉 수집 기록')).toHaveValue(rawAOld.run.id);
+
+    const customFrom = '2025-02-03';
+    const customTo = '2025-06-20';
+    await page.locator('input[name="from"]').fill(customFrom);
+    await page.locator('input[name="to"]').fill(customTo);
+
+    // DEMO 탭 → 저장 일봉 탭 왕복
+    const sourceSelect = page.getByLabel('데이터 출처');
+    await sourceSelect.selectOption('demo');
+    await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('dual_momentum');
+    await sourceSelect.selectOption('stored');
+
+    // 복원 검증: 정책(raw), 수동 runId(rawAOld), 수동 날짜(from/to) 모두 commonRange로 초기화되지 않고 유지
+    await expect(page.getByLabel('수정주가 정책')).toHaveValue('raw');
+    await expect(page.getByLabel('069500 일봉 수집 기록')).toHaveValue(rawAOld.run.id);
+    await expect(page.getByLabel('005930 일봉 수집 기록')).toHaveValue(rawB.run.id);
+    await expect(page.locator('input[name="from"]')).toHaveValue(customFrom);
+    await expect(page.locator('input[name="to"]')).toHaveValue(customTo);
+
+    // 보존된 조건으로 실행 시 정확한 raw·수동 runId·수동 날짜 페이로드 전송 확인
+    await page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true }).click();
+    await expect(page.getByRole('region', { name: '저장 일봉 실험 결과' })).toBeVisible();
+    expect(dailyPayloads).toHaveLength(1);
+    expect(dailyPayloads[0].adjustment).toBe('raw');
+    expect(dailyPayloads[0].from).toBe('20250203');
+    expect(dailyPayloads[0].to).toBe('20250620');
+    expect(dailyPayloads[0].runs).toEqual(
+      expect.arrayContaining([
+        { code: '069500', runId: rawAOld.run.id },
+        { code: '005930', runId: rawB.run.id },
+      ]),
+    );
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
+  }
+});
+
+test('4A-2 보완 Minor 1: location.state 없이 /backtest?source=stored&strategyId=<다종목전략ID> 직접 진입 시 1회 복원되고 이후 편집을 덮어쓰지 않는다', async ({
+  page,
+}) => {
+  const { Store } = await import('../../server/store.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const store = new Store(':memory:');
+
+  const runA = portfolioDailyFixture('069500', '55555555-1111-4111-8111-111111111111', {
+    barCount: 120,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 30000 + i * 150,
+  });
+  const runB = portfolioDailyFixture('005930', '55555555-2222-4222-8222-222222222222', {
+    barCount: 120,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 50000 + i * 100,
+  });
+  const runSafe = portfolioDailyFixture('00088K', '55555555-3333-4333-8333-333333333333', {
+    barCount: 120,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 20000 + i * 20,
+  });
+  store.saveDaily(runA.run, runA.bars);
+  store.saveDaily(runB.run, runB.bars);
+  store.saveDaily(runSafe.run, runSafe.bars);
+
+  const strategyId = 'direct-url-portfolio-strategy';
+  store.update(state => {
+    state.strategies.push({
+      id: strategyId,
+      name: '직접 진입 듀얼 모멘텀',
+      code: '069500',
+      fast: 5,
+      slow: 20,
+      qty: 1,
+      active: false,
+      lastSignal: 'hold',
+      lastTick: -1,
+      environment: 'kis-paper',
+      revision: 1,
+      rule: {
+        kind: 'dual_momentum',
+        assets: ['069500', '005930'],
+        safeAsset: '00088K',
+        lookbackDays: 40,
+        rebalanceDays: 15,
+      },
+    });
+  });
+
+  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4314, 4345]);
+  await new Promise<void>(resolve => server.listen(4345, '127.0.0.1', resolve));
+
+  await page.route('**/api/**', async route => {
+    const response = await route.fetch({ url: route.request().url().replace(':4314', ':4345') });
+    await route.fulfill({ response });
+  });
+
+  try {
+    // location.state 없이 URL 쿼리만으로 직접 진입
+    await page.goto(`/backtest?source=stored&strategyId=${encodeURIComponent(strategyId)}`);
+    await waitWorkbenchReady(page);
+
+    await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('dual_momentum');
+    await expect(page.getByLabel('위험 자산 1', { exact: true })).toHaveValue('069500');
+    await expect(page.getByLabel('위험 자산 2', { exact: true })).toHaveValue('005930');
+    await expect(page.getByLabel('안전자산 종목코드 (선택 · 비우면 현금 보유)')).toHaveValue('00088K');
+    await expect(page.getByLabel('모멘텀 관측 기간 (봉)')).toHaveValue('40');
+    await expect(page.getByLabel('리밸런싱 주기 (봉)')).toHaveValue('15');
+    await expect(page.getByLabel('069500 일봉 수집 기록')).toHaveValue(runA.run.id);
+    await expect(page.getByLabel('005930 일봉 수집 기록')).toHaveValue(runB.run.id);
+    await expect(page.getByLabel('00088K 일봉 수집 기록')).toHaveValue(runSafe.run.id);
+
+    // 1회 복원 가드 확인: 사용자가 관측 기간을 55로 수정하고 출처 탭을 왕복해도 40으로 되돌아가지 않음
+    await page.getByLabel('모멘텀 관측 기간 (봉)').fill('55');
+    const sourceSelect = page.getByLabel('데이터 출처');
+    await sourceSelect.selectOption('demo');
+    await expect(page.getByLabel('모멘텀 관측 기간 (봉)')).toHaveValue('55');
+    await sourceSelect.selectOption('stored');
+    await expect(page.getByLabel('모멘텀 관측 기간 (봉)')).toHaveValue('55');
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
   }
 });

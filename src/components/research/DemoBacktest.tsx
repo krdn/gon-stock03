@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Play } from 'lucide-react';
 import { z } from 'zod';
 import { won } from '../../../shared/model';
@@ -40,6 +40,11 @@ export function DemoBacktest({
 }) {
   const { state, act, available, busy } = useWorkbench();
   const [selection, setSelection] = useState<string | null>(() => strategyDraft?.code ?? null);
+  useEffect(() => {
+    if (selection === null && strategyDraft?.code) {
+      setSelection(strategyDraft.code);
+    }
+  }, [selection, strategyDraft?.code]);
   const [calculation, setCalculation] = useState<{
     code: string;
     summary: string;

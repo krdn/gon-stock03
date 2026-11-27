@@ -16,18 +16,19 @@ import {
   costsOf,
   dateInput,
   findBadNumberInput,
-  flexibleResultSchema,
   formatRuleSummary,
   formFromRule,
   isLegacySma,
   isPortfolioKind,
   isSameRuleForm,
   pricePolicy,
+  replayResultSchemaFor,
   ruleFromExperimentInput,
   validateCosts,
   type BacktestSelection,
   type CostAssumptions,
   type RuleFormState,
+  type StoredBacktestDraft,
   type StrategyTransferDraft,
 } from '../../pages/research-rule-form';
 import { CostFields, Rebalances, ResultSummary, Trades, useResultFocus } from './BacktestShared';
@@ -70,8 +71,8 @@ export function StoredBacktest({
   setRuleForm,
   costs,
   setCosts,
-  portfolioRunOverrides,
-  setPortfolioRunOverrides,
+  storedDraft,
+  updateStoredDraft,
   onInvalidateTransfer,
   select,
 }: {
@@ -82,23 +83,30 @@ export function StoredBacktest({
   setRuleForm: (next: RuleFormState) => void;
   costs: CostAssumptions;
   setCosts: (next: CostAssumptions) => void;
-  portfolioRunOverrides: Record<string, string>;
-  setPortfolioRunOverrides: (next: Record<string, string>) => void;
+  storedDraft: StoredBacktestDraft;
+  updateStoredDraft: (patch: Partial<StoredBacktestDraft>, options?: { invalidate?: boolean }) => void;
   onInvalidateTransfer: () => void;
   select: (id: string, selection: BacktestSelection) => void;
 }) {
   const { state, act, available, busy } = useWorkbench();
   const navigate = useNavigate();
+  const { from, to, dateEdited, portfolioPolicy, portfolioRunOverrides } = storedDraft;
   const rawSaved = initial && 'saved' in initial ? initial.saved : null;
   const savedRunsMatch =
     rawSaved === null ||
     !('runs' in rawSaved.snapshot.input) ||
-    rawSaved.snapshot.input.runs.every(
-      item => !portfolioRunOverrides[item.code] || portfolioRunOverrides[item.code] === item.runId,
-    );
+    ((portfolioPolicy === null || portfolioPolicy === rawSaved.snapshot.input.adjustment) &&
+      rawSaved.snapshot.input.runs.every(
+        item => !portfolioRunOverrides[item.code] || portfolioRunOverrides[item.code] === item.runId,
+      ));
+  const savedDatesMatch =
+    rawSaved === null ||
+    !dateEdited ||
+    (from === rawSaved.snapshot.input.from && to === rawSaved.snapshot.input.to);
   const savedMatchesForm =
     rawSaved !== null &&
     savedRunsMatch &&
+    savedDatesMatch &&
     costs.capital === rawSaved.snapshot.input.capital &&
     costs.feeBps === rawSaved.snapshot.input.feeBps &&
     costs.slippageBps === rawSaved.snapshot.input.slippageBps &&
@@ -115,11 +123,7 @@ export function StoredBacktest({
   const [runs, setRuns] = useState<DailyRun[] | null>(null);
   const [experiments, setExperiments] = useState<z.infer<typeof experimentListSchema>['experiments']>([]);
   const [selected, setSelected] = useState<string | null>(requested);
-  const [portfolioPolicy, setPortfolioPolicy] = useState<'adjusted' | 'raw' | null>(input?.adjustment ?? null);
   const [savedId, setSavedId] = useState(saved?.id ?? '');
-  const [from, setFrom] = useState(input?.from ?? '');
-  const [to, setTo] = useState(input?.to ?? '');
-  const [dateEdited, setDateEdited] = useState(Boolean(input));
   const [experiment, setExperiment] = useState<Experiment | null>(saved);
   const [replay, setReplay] = useState('');
   const [loading, setLoading] = useState(true);
@@ -176,9 +180,8 @@ export function StoredBacktest({
         );
         if (match && (!runs || selected === null)) {
           setSelected(match.id);
-          if (!isPortfolioKind(ruleForm.kind)) {
-            setFrom(input?.from ?? match.from);
-            setTo(input?.to ?? match.to);
+          if (!isPortfolioKind(ruleForm.kind) && !dateEdited) {
+            updateStoredDraft({ from: input?.from ?? match.from, to: input?.to ?? match.to }, { invalidate: false });
           }
         }
       } catch {
@@ -203,6 +206,21 @@ export function StoredBacktest({
     : run?.adjustment ?? runs?.[0]?.adjustment ?? 'adjusted';
   const eligible = isEligibleDailyRun(run);
   const locked = busy || pending || loading;
+
+  // 단일 종목 strategyId 비동기 복원 완료 시 일치하는 수집 기록으로 자동 선택
+  const syncedDraftCode = useRef<string | null>(null);
+  useEffect(() => {
+    if (portfolioMode || !runs || requested !== null || !strategyDraft) return;
+    if (syncedDraftCode.current === strategyDraft.code) return;
+    syncedDraftCode.current = strategyDraft.code;
+    const preferred = runs.find(row => row.code === strategyDraft.code);
+    if (preferred && preferred.id !== selected) {
+      setSelected(preferred.id);
+      if (!dateEdited) {
+        updateStoredDraft({ from: preferred.from, to: preferred.to }, { invalidate: false });
+      }
+    }
+  }, [portfolioMode, runs, requested, strategyDraft, selected, dateEdited, updateStoredDraft]);
 
   const basketEntries = useMemo(() => {
     if (!portfolioMode) return [];
@@ -247,9 +265,19 @@ export function StoredBacktest({
 
   useEffect(() => {
     if (!portfolioMode || dateEdited || !commonRange || !commonRange.valid) return;
-    setFrom(commonRange.from);
-    setTo(commonRange.to);
-  }, [portfolioMode, dateEdited, commonRange]);
+    if (from === commonRange.from && to === commonRange.to) return;
+    updateStoredDraft({ from: commonRange.from, to: commonRange.to }, { invalidate: false });
+  }, [portfolioMode, dateEdited, commonRange, from, to, updateStoredDraft]);
+
+  const restoredRangeWarning =
+    portfolioMode &&
+    dateEdited &&
+    commonRange?.valid &&
+    marketDate.safeParse(from).success &&
+    marketDate.safeParse(to).success &&
+    (from > to || from < commonRange.from || to > commonRange.to)
+      ? `설정한 조회 기간(${dateInput(from)} ~ ${dateInput(to)})이 현재 선택된 바스켓의 공통 가능 기간(${dateInput(commonRange.from)} ~ ${dateInput(commonRange.to)})을 벗어났습니다.`
+      : '';
 
   const codeOptions = useMemo(() => {
     const map = new Map<string, string | undefined>();
@@ -482,18 +510,19 @@ export function StoredBacktest({
         select(targetRunId, { saved: loaded });
         return;
       }
-      setFrom(fixed.from);
-      setTo(fixed.to);
-      setDateEdited(true);
       setCosts(costsOf(fixed));
       setRuleForm(formFromRule(ruleFromExperimentInput(fixed), 'overlay' in fixed ? fixed.overlay : undefined));
-      if ('runs' in fixed) {
-        setPortfolioPolicy(fixed.adjustment);
-        setPortfolioRunOverrides(Object.fromEntries(fixed.runs.map(item => [item.code, item.runId])));
-      } else {
-        setPortfolioPolicy(null);
-        setPortfolioRunOverrides({});
-      }
+      updateStoredDraft(
+        {
+          from: fixed.from,
+          to: fixed.to,
+          dateEdited: true,
+          portfolioPolicy: 'runs' in fixed ? fixed.adjustment : null,
+          portfolioRunOverrides:
+            'runs' in fixed ? Object.fromEntries(fixed.runs.map(item => [item.code, item.runId])) : {},
+        },
+        { invalidate: false },
+      );
       setExperiment(loaded);
     } catch {
       if (!controller.signal.aborted) setLoadError('저장 실험 조회 실패 · 다시 불러오세요.');
@@ -507,8 +536,9 @@ export function StoredBacktest({
     setReplay('');
     setReplayError('');
     try {
+      const resultSchema = replayResultSchemaFor(experiment.snapshot.engineVersion);
       const response = z
-        .object({ result: flexibleResultSchema, matches: z.boolean(), inputHash: z.string() })
+        .object({ result: resultSchema, matches: z.boolean(), inputHash: z.string() })
         .parse(await act('backtest/replay', { id: experiment.id }));
       if (response.inputHash !== experiment.inputHash) throw new Error('실험 입력이 일치하지 않습니다.');
       if (response.matches) setReplay('재현 일치 · 고정 입력과 저장 결과가 같습니다.');
@@ -596,12 +626,13 @@ export function StoredBacktest({
                     onChange={event => {
                       const nextPolicy = event.target.value as 'adjusted' | 'raw';
                       if (portfolioMode) {
-                        setPortfolioPolicy(nextPolicy);
-                        setPortfolioRunOverrides({});
-                        setDateEdited(false);
+                        updateStoredDraft({
+                          portfolioPolicy: nextPolicy,
+                          portfolioRunOverrides: {},
+                          dateEdited: false,
+                        });
                         clearResult();
                       } else if (run?.adjustment !== nextPolicy) {
-                        setPortfolioPolicy(null);
                         chooseRun(
                           runs?.find(row => row.adjustment === nextPolicy)?.id,
                           'policy',
@@ -664,11 +695,12 @@ export function StoredBacktest({
                             aria-label={`${item.code} 일봉 수집 기록`}
                             value={item.chosen?.id ?? ''}
                             onChange={event => {
-                              setPortfolioRunOverrides({
-                                ...portfolioRunOverrides,
-                                [item.code]: event.target.value,
+                              updateStoredDraft({
+                                portfolioRunOverrides: {
+                                  ...portfolioRunOverrides,
+                                  [item.code]: event.target.value,
+                                },
                               });
-                              setDateEdited(false);
                               clearResult();
                             }}
                           >
@@ -707,6 +739,11 @@ export function StoredBacktest({
                       선택한 종목별 수집 기록에 겹치는 공통 가능 기간이 없습니다. 다른 수집 기록을 선택하세요.
                     </p>
                   )}
+                  {restoredRangeWarning && (
+                    <p className="bt-warning" role="status">
+                      {restoredRangeWarning}
+                    </p>
+                  )}
                 </div>
               )}
               <div className="form-grid">
@@ -720,8 +757,7 @@ export function StoredBacktest({
                     min={portfolioMode ? (commonRange?.valid ? dateInput(commonRange.from) : undefined) : run && dateInput(run.from)}
                     max={portfolioMode ? (commonRange?.valid ? dateInput(commonRange.to) : undefined) : run && dateInput(run.to)}
                     onChange={event => {
-                      setDateEdited(true);
-                      setFrom(event.target.value.replaceAll('-', ''));
+                      updateStoredDraft({ from: event.target.value.replaceAll('-', ''), dateEdited: true });
                     }}
                   />
                 </label>
@@ -735,8 +771,7 @@ export function StoredBacktest({
                     min={portfolioMode ? (commonRange?.valid ? dateInput(commonRange.from) : undefined) : run && dateInput(run.from)}
                     max={portfolioMode ? (commonRange?.valid ? dateInput(commonRange.to) : undefined) : run && dateInput(run.to)}
                     onChange={event => {
-                      setDateEdited(true);
-                      setTo(event.target.value.replaceAll('-', ''));
+                      updateStoredDraft({ to: event.target.value.replaceAll('-', ''), dateEdited: true });
                     }}
                   />
                 </label>
@@ -744,8 +779,6 @@ export function StoredBacktest({
               <RuleConfigSection
                 form={ruleForm}
                 onChange={next => {
-                  const switchedToPortfolio = !isPortfolioKind(ruleForm.kind) && isPortfolioKind(next.kind);
-                  if (switchedToPortfolio) setDateEdited(false);
                   setRuleForm(next);
                   clearResult();
                 }}
@@ -933,7 +966,9 @@ export function StoredBacktest({
                 종가 신호 후 다음 봉 시가에 전액 매수·전량 매도합니다(윌리엄스 변동성 돌파는 당일 목표가 매수·이후 시가
                 청산, 변동성 패리티 사용 시 목표 변동성 비중으로 수량 제한). 다종목 자산배분(v3)은 리밸런싱일 시가
                 총평가액 기준으로 목표 정수 수량을 산출해 매도를 선행한 뒤 가용 현금 내 정수 수량만 매수하며 잔여 현금을
-                보유합니다. 수수료는 체결금액 × bp / 10,000을 원 단위 올림합니다. 슬리피지는 매수 시 더하고 매도 시
+                보유합니다. 동일 비중을 유지하는 리밸런싱에서도 슬리피지·수수료를 포함한 목표 수량 재산정으로 소폭 축소
+                매도가 발생할 수 있으며, 매수 현금이 부족하면 위험 자산(assets) 입력 순서 뒤쪽 종목의 체결 수량이 줄어들
+                수 있습니다. 수수료는 체결금액 × bp / 10,000을 원 단위 올림합니다. 슬리피지는 매수 시 더하고 매도 시
                 뺍니다.
               </p>
               <p>
