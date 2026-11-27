@@ -631,8 +631,9 @@ test('전략 스튜디오와 백테스트 상단 사용방법 도움말 패널�
     await expect(activePanel).not.toContainText('즉시 익절');
     await expect(activePanel).toContainText('chandelier');
     await expect(activePanel).toContainText('기본 꺼짐 (활성화 시 초기값: ATR 기간 14봉 / ATR 배수 3배)');
-    await expect(activePanel).toContainText('봉의 종가가 추적 손절선 이하(<=)로 마감할 때');
-    await expect(activePanel).toContainText('다음 봉에 체결(저장 일봉은 다음 봉 시가, DEMO는 다음 봉 종가 가정)');
+    await expect(activePanel).toContainText('저장 일봉에서는 봉의 종가가 추적 손절선 이하(<=)이면');
+    await expect(activePanel).toContainText('다음 봉 시가에 체결한다고 가정합니다. DEMO에서는 샹들리에를 사용할 수 없습니다.');
+    await expect(activePanel).not.toContainText('DEMO는 다음 봉 종가');
 
     await page.keyboard.press('ArrowRight');
     await expect(tabs.nth(2)).toBeFocused();
@@ -712,7 +713,9 @@ test('RuleConfigSection 문맥별 입력 항목 설명이 선택 규칙 변경�
 
     await page.getByLabel('샹들리에 ATR 청산 오버레이 사용').check();
     await expect(helpDetails).toContainText('샹들리에 ATR 청산 오버레이 (사용 중)');
-    await expect(helpDetails).toContainText('봉의 종가가 추적 손절선 이하(<=)로 마감할 때');
+    await expect(helpDetails).toContainText('저장 일봉에서는 봉의 종가가 추적 손절선 이하(<=)이면');
+    await expect(helpDetails).toContainText('다음 봉 시가에 체결한다고 가정합니다. DEMO에서는 샹들리에를 사용할 수 없습니다.');
+    await expect(helpDetails).not.toContainText('DEMO는 다음 봉 종가');
 
     // 모바일 390px 뷰포트에서 상단 도움말(4개 탭 전체)과 문맥별 입력 항목 설명을 연 상태로 가로 넘침 없음 확인
     await page.setViewportSize({ width: 390, height: 844 });
