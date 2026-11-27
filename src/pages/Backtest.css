@@ -10,9 +10,32 @@
 .bt-page .form-grid { align-items: end; }
 .bt-pickers { grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr); }
 .bt-page select, .bt-page input { width: 100%; min-width: 0; }
+.bt-page input[type="checkbox"] { width: 16px; }
 .bt-page :is(.panel p, details) { margin: 9px 0; line-height: 1.55; }
 .bt-page .bt-note { color: var(--muted); font-size: 13px; }
 .bt-warning { padding: 9px 12px; border-left: 3px solid #ba7212; background: #fff4da; color: #593900; }
+.bt-draft-banner {
+  padding: 9px 12px; border-left: 3px solid var(--teal);
+  background: #edf6f3; color: #12564e; font-size: 12px; border-radius: 4px;
+}
+.bt-actions { margin-top: 12px; gap: 8px; }
+.bt-benchmark {
+  margin: 12px 0; padding: 12px 14px; border-radius: 7px;
+  border: 1px solid var(--line); background: #f8faf9;
+}
+.bt-benchmark-head {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 6px 12px; margin-bottom: 10px; font-size: 13px;
+}
+.bt-benchmark-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.bt-benchmark-col {
+  background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; min-width: 0;
+}
+.bt-benchmark-label { display: block; font-size: 11px; font-weight: 600; color: var(--teal); margin-bottom: 8px; }
+.bt-benchmark-col dl { margin: 0; display: grid; gap: 6px; font-size: 12px; }
+.bt-benchmark-col dl > div { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.bt-benchmark-col dt { color: var(--muted); }
+.bt-benchmark-col dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
 .bt-page details > summary { cursor: pointer; }
 .bt-page .bt-result, #backtest-history { scroll-margin-top: 76px; }
 .bt-page .bt-result:focus-visible, #backtest-history:focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; }
@@ -21,6 +44,6 @@
   .bt-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 520px) {
-  .bt-pickers { grid-template-columns: minmax(0, 1fr); }
+  .bt-pickers, .bt-benchmark-grid { grid-template-columns: minmax(0, 1fr); }
   .bt-page .panel { padding: 15px; }
 }

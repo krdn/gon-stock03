@@ -1,11 +1,11 @@
 .strategy-studio { min-width: 0; }
-.strategy-studio .studio-tools, .studio-list-title, .studio-card-head, .studio-replay, .studio-result-line, .studio-terms {
+.strategy-studio .studio-tools, .studio-list-title, .studio-card-head, .studio-card-badges, .studio-replay, .studio-result-line, .studio-terms {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
 }
 .studio-tools { justify-content: space-between; margin-bottom: 14px; }
 .studio-tools .field { margin: 0; min-width: 180px; }
 .studio-tools .button { align-self: end; }
-.studio-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(270px, 1fr); align-items: start; gap: 18px; }
+.studio-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(290px, 1fr); align-items: start; gap: 18px; }
 .studio-results, .studio-editor { min-width: 0; }
 .strategy-studio h2, .strategy-studio h3 { margin: 0; font-size: 16px; line-height: 1.4; }
 .strategy-studio [tabindex="-1"] { scroll-margin-top: 80px; }
@@ -22,6 +22,7 @@
 .studio-list-title { margin: 18px 0 9px; }
 .studio-card, .studio-rules { margin-bottom: 10px; }
 .studio-card-head, .studio-replay { justify-content: space-between; }
+.studio-card-badges { gap: 6px; }
 .studio-terms { margin: 10px 0 4px; background: #f4f7f6; padding: 10px 12px; border-radius: 5px; font-size: 13px; gap: 6px 16px; }
 .studio-card .button-row { margin-top: 10px; }
 .studio-history { border-top: 1px solid var(--line); margin-top: 6px; }
@@ -29,10 +30,48 @@
 .studio-rules { padding-block: 8px; }
 .studio-editor form { margin-top: 12px; }
 .studio-editor .field { gap: 5px; margin-bottom: 10px; }
-.studio-editor .button.wide { margin-top: 2px; }
+.studio-editor .button.wide { margin-top: 8px; }
+.studio-editor .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px; align-items: end; }
 .studio-replay { background: white; border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; }
+.studio-evidence {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px;
+  margin: 10px 0; padding: 9px 12px; border-radius: 6px;
+  background: #edf6f3; border: 1px solid #cce3dc; color: #135951; font-size: 12px;
+}
+.studio-evidence .text-link { margin-left: auto; }
+
+/* 다중 전략 규칙 안내·프리셋·오버레이 공통 스타일 */
+.rule-config { min-width: 0; margin: 6px 0 10px; }
+.rule-guide {
+  margin: 8px 0 10px; padding: 10px 12px; border-radius: 6px;
+  background: #f5f8f7; border: 1px solid #e1eae7; font-size: 12px; line-height: 1.55;
+}
+.rule-guide-lines { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px; }
+.rule-guide-lines li { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.rule-guide-lines strong { color: #195e55; font-size: 11px; }
+.rule-env-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.rule-presets {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  gap: 8px; margin: 0 0 10px;
+}
+.rule-presets-label { font-size: 11px; color: var(--muted); font-weight: 500; }
+.rule-preset-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.rule-overlay-box {
+  margin: 8px 0 10px; padding: 10px 12px; border-radius: 6px;
+  border: 1px solid var(--line); background: #fafcfb;
+}
+.rule-checkbox {
+  display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 500;
+  color: #263a45; cursor: pointer;
+}
+.rule-checkbox input[type="checkbox"] { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--teal); }
+.rule-overlay-box .form-grid { margin-top: 10px; }
+
 @media (max-width: 900px) {
   .studio-grid { grid-template-columns: 1fr; gap: 10px; }
   .studio-tools { gap: 8px; }
   .studio-tools .field { min-width: 0; flex: 1; }
+}
+@media (max-width: 520px) {
+  .studio-editor .form-grid { grid-template-columns: minmax(0, 1fr); }
 }
