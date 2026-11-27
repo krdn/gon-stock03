@@ -18,3 +18,11 @@
 v3 데이터를 생성한 뒤 이전 프로그램으로 되돌릴 경우 v3를 읽고 수집 참조를 보호할 수 있는 버전이 필요하다. 롤백 시에는 변경 전 백업의 복사본을 사용한다. Graphify CLI는 PATH에 없어 그래프 갱신은 미검증이다.
 
 최종 검증 기준은 [원격 작업 브랜치 HEAD](https://github.com/krdn/gon-stock03/commits/krdn/strategy-rules-phase4a-pr1)이다. npm test 375건 및 typecheck·build 통과. PR 본문에 로컬 HEAD와 동일한 원격 SHA, 브라우저 회귀 및 CI 결과를 기록한다.
+
+## PR 4A-2 UI·도움말·매매설정 차단·E2E 연동
+
+- 규칙 폼·에디터·카드(`src/pages/research-rule-form.ts`, `src/components/research/RuleConfigSection.tsx`, `StrategyEditor.tsx`, `StrategyCard.tsx`): `shared/portfolio-rules.ts`의 `PORTFOLIO_CATALOG`(`dual_momentum`, `faber_gtaa`), `portfolioRuleSchema`, `portfolioWarmup`, `portfolioCodes`, `isPortfolioRule`, `portfolioOnly`를 정식 연결했다. 위험 자산 2-6개 순서 유지·중복 차단, 안전자산 선택(`null`=현금), 대표 종목 `assets[0]` 자동 동기화, 공통 오버레이 비활성화 및 `overlay` 생략, 환경 배지 3종(`저장 일봉: 다종목 자산배분 (v3)`, `DEMO: 미지원`, `KIS 모의: 시작 불가 (저장 일봉 백테스트 전용)`), DEMO 저장·실행 차단(POST 0건), KIS 모의 정지 저장 허용 및 `전략 시작` 버튼 비활성화, 카드 `이 설정으로 백테스트` 왕복 링크를 구현했다.
+- 저장 일봉 다종목 백테스트(`StoredBacktest.tsx`, `BacktestShared.tsx`, `BacktestView.tsx`, `DemoBacktest.tsx`): `experimentListSchema`·`experimentSchema`로 v1/v2/v3 목록·불러오기·재현(`POST /api/backtest/replay`)을 통합했다. 바스켓 종목별 적격 `kis-rest` 수집 기록 자동 매핑(`to` 내림차순 → `startedAt` 내림차순) + 수동 변경 드롭다운, `수집 필요` 차단(POST 0건), 공통 가능 기간 `[max(from), min(to, captureDate - 1)]` 안내 및 범위 밖·역순 날짜 클라이언트 차단(POST 0건 + `role="alert"` + 포커스 이동), `daily-portfolio-next-open-v3` 결과(위험 자산 동일 비중 벤치마크 비교, 리밸런싱 내역 표, 거래 내역 `종목 코드` 열, `이 설정으로 전략 만들기` 왕복), 출처 전환 시 상태 보존과 뒤로→앞으로 stale 결과 미재결합을 구현했다.
+- 매매 설정(`src/pages/TradingSettings.tsx`): 다종목 전략의 1·2·3단계(직접 URL 진입 포함) 진행·저장·고정을 `portfolioOnly` 사유와 실제 규칙 요약(`formatRuleSummary`, `5/20 교차` 오표시 없음)으로 전면 차단(POST 0건)하고 전략 스튜디오 초안 전달 링크를 유지했다.
+- 사용방법 도움말(`ResearchHelpPanel.tsx`): `전략·입력 항목 사전`을 15카드(단일 11종 + 다종목 2종 `13 ETF 듀얼 모멘텀`·`14 파버 GTAA` + 공통 오버레이 2종)로 확장하고 프리셋·경계·동률 우선·달력 100% 일치·생존 편향·정수 잔여 현금·분배금/세금 미포함을 4탭 및 문맥 가이드에 반영했다.
+- 검증: `npm run typecheck`, `npm run build`, `npm test` 375/375 통과, 격리 포트 4314 `npm run test:e2e` 345/345 통과(`tests/browser/portfolio-rules-v3.spec.ts` 신규 4건 포함). Orca 내장 브라우저에서 `/strategies`·`/backtest`·`/settings/trading/strategy` 데스크톱(1440×1050)·모바일(390×844, `scrollWidth <= 390`)·키보드 탭 이동·콘솔 오류 0건을 실측하고 임시 4314 서버 종료 및 포트 해제를 확인했다. 실제 KIS 계좌·운영 저장 일봉 성과와 Graphify CLI 그래프 갱신은 미검증이다.

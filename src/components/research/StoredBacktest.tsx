@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Play, Plus } from 'lucide-react';
 import { z } from 'zod';
-import { won } from '../../../shared/model';
+import { experimentListSchema, experimentSchema, type Experiment } from '../../../shared/backtest';
 import { dailyRunsSchema } from '../../../shared/data-inventory';
-import { marketDate, type DailyRun } from '../../../shared/market-data';
-import { singleExperimentListSchema as experimentListSchema, singleExperimentSchema as experimentSchema, type SingleExperiment as Experiment } from '../../../shared/backtest';
+import { addDays, marketDate, masterCodeSchema, type DailyRun } from '../../../shared/market-data';
+import { won } from '../../../shared/model';
+import { PORTFOLIO_CATALOG, isPortfolioRule, portfolioCodes, portfolioWarmup } from '../../../shared/portfolio-rules';
 import { STRATEGY_CATALOG, warmup } from '../../../shared/strategy-rules';
 import { useWorkbench } from '../../context';
 import { Chart, Panel } from '../ui';
@@ -19,6 +20,7 @@ import {
   formatRuleSummary,
   formFromRule,
   isLegacySma,
+  isPortfolioKind,
   isSameRuleForm,
   pricePolicy,
   ruleFromExperimentInput,
@@ -28,10 +30,38 @@ import {
   type RuleFormState,
   type StrategyTransferDraft,
 } from '../../pages/research-rule-form';
-import { CostFields, ResultSummary, Trades, useResultFocus } from './BacktestShared';
+import { CostFields, Rebalances, ResultSummary, Trades, useResultFocus } from './BacktestShared';
 import { RuleConfigSection } from './RuleConfigSection';
 
-/** KIS 저장 일봉 백테스트 패널 (v1 하위 호환 + v2 다중 규칙·벤치마크·전략 연결). */
+/** 저장 일봉 수집 기록이 백테스트 실행 적격 조건을 충족하는지 판정한다. */
+function isEligibleDailyRun(run: DailyRun | undefined): boolean {
+  return Boolean(
+    run &&
+      run.source === 'kis-rest' &&
+      run.coverageComplete &&
+      run.nextDate === null &&
+      run.status.complete &&
+      !run.status.error &&
+      run.quality.state === 'passed' &&
+      Boolean(run.calendar),
+  );
+}
+
+/** 특정 종목·수정주가 정책의 적격 수집 기록을 `to` 내림차순 → `startedAt` 내림차순으로 정렬 반환한다. */
+function eligibleRunsFor(runs: DailyRun[] | null, code: string, adjustment: 'adjusted' | 'raw'): DailyRun[] {
+  if (!runs) return [];
+  return runs
+    .filter(row => row.code === code && row.adjustment === adjustment && isEligibleDailyRun(row))
+    .sort((a, b) => b.to.localeCompare(a.to, 'en') || b.startedAt.localeCompare(a.startedAt, 'en'));
+}
+
+/** 수집 기록의 실행 가능 최대 종료일(`min(to, captureDate - 1)`)을 반환한다. */
+function maxEffectiveTo(run: DailyRun): string {
+  const beforeCapture = addDays(run.captureDate, -1);
+  return run.to < beforeCapture ? run.to : beforeCapture;
+}
+
+/** KIS 저장 일봉 백테스트 패널 (v1 하위 호환 + v2 단일 다중 규칙 + v3 다종목 자산배분). */
 export function StoredBacktest({
   requested,
   initial,
@@ -40,6 +70,8 @@ export function StoredBacktest({
   setRuleForm,
   costs,
   setCosts,
+  portfolioRunOverrides,
+  setPortfolioRunOverrides,
   onInvalidateTransfer,
   select,
 }: {
@@ -50,14 +82,23 @@ export function StoredBacktest({
   setRuleForm: (next: RuleFormState) => void;
   costs: CostAssumptions;
   setCosts: (next: CostAssumptions) => void;
+  portfolioRunOverrides: Record<string, string>;
+  setPortfolioRunOverrides: (next: Record<string, string>) => void;
   onInvalidateTransfer: () => void;
   select: (id: string, selection: BacktestSelection) => void;
 }) {
-  const { act, available, busy } = useWorkbench();
+  const { state, act, available, busy } = useWorkbench();
   const navigate = useNavigate();
   const rawSaved = initial && 'saved' in initial ? initial.saved : null;
+  const savedRunsMatch =
+    rawSaved === null ||
+    !('runs' in rawSaved.snapshot.input) ||
+    rawSaved.snapshot.input.runs.every(
+      item => !portfolioRunOverrides[item.code] || portfolioRunOverrides[item.code] === item.runId,
+    );
   const savedMatchesForm =
     rawSaved !== null &&
+    savedRunsMatch &&
     costs.capital === rawSaved.snapshot.input.capital &&
     costs.feeBps === rawSaved.snapshot.input.feeBps &&
     costs.slippageBps === rawSaved.snapshot.input.slippageBps &&
@@ -74,9 +115,11 @@ export function StoredBacktest({
   const [runs, setRuns] = useState<DailyRun[] | null>(null);
   const [experiments, setExperiments] = useState<z.infer<typeof experimentListSchema>['experiments']>([]);
   const [selected, setSelected] = useState<string | null>(requested);
+  const [portfolioPolicy, setPortfolioPolicy] = useState<'adjusted' | 'raw' | null>(input?.adjustment ?? null);
   const [savedId, setSavedId] = useState(saved?.id ?? '');
   const [from, setFrom] = useState(input?.from ?? '');
   const [to, setTo] = useState(input?.to ?? '');
+  const [dateEdited, setDateEdited] = useState(Boolean(input));
   const [experiment, setExperiment] = useState<Experiment | null>(saved);
   const [replay, setReplay] = useState('');
   const [loading, setLoading] = useState(true);
@@ -126,13 +169,17 @@ export function StoredBacktest({
         setSavedId(previous =>
           savedList.experiments.some(row => row.id === previous)
             ? previous
-            : (savedList.experiments.find(row => row.input.runId === id) ??
+            : (savedList.experiments.find(row =>
+                'runs' in row.input ? row.input.runs.some(item => item.runId === id) : row.input.runId === id,
+              ) ??
                 (requested === null ? savedList.experiments[0] : undefined))?.id ?? '',
         );
         if (match && (!runs || selected === null)) {
           setSelected(match.id);
-          setFrom(input?.from ?? match.from);
-          setTo(input?.to ?? match.to);
+          if (!isPortfolioKind(ruleForm.kind)) {
+            setFrom(input?.from ?? match.from);
+            setTo(input?.to ?? match.to);
+          }
         }
       } catch {
         if (!controller.signal.aborted) {
@@ -149,22 +196,78 @@ export function StoredBacktest({
     return () => controller.abort();
   }, [revision]);
 
+  const portfolioMode = isPortfolioKind(ruleForm.kind);
   const run = runs?.find(row => row.id === selected);
-  const policy = run?.adjustment ?? runs?.[0]?.adjustment ?? 'adjusted';
-  const eligible =
-    run?.coverageComplete &&
-    run.nextDate === null &&
-    run.status.complete &&
-    !run.status.error &&
-    run.quality.state === 'passed' &&
-    !!run.calendar;
+  const policy: 'adjusted' | 'raw' = portfolioMode
+    ? portfolioPolicy ?? run?.adjustment ?? runs?.[0]?.adjustment ?? 'adjusted'
+    : run?.adjustment ?? runs?.[0]?.adjustment ?? 'adjusted';
+  const eligible = isEligibleDailyRun(run);
   const locked = busy || pending || loading;
 
+  const basketEntries = useMemo(() => {
+    if (!portfolioMode) return [];
+    const entries: { code: string; role: string }[] = [];
+    const seen = new Set<string>();
+    ruleForm.portfolioAssets.forEach((raw, idx) => {
+      const code = raw.trim().toUpperCase();
+      if (!code || seen.has(code) || !masterCodeSchema.safeParse(code).success) return;
+      seen.add(code);
+      entries.push({ code, role: `위험 자산 ${idx + 1}` });
+    });
+    const safeCode = ruleForm.portfolioSafeAsset.trim().toUpperCase();
+    if (safeCode && !seen.has(safeCode) && masterCodeSchema.safeParse(safeCode).success) {
+      seen.add(safeCode);
+      entries.push({ code: safeCode, role: '안전자산' });
+    }
+    return entries;
+  }, [portfolioMode, ruleForm.portfolioAssets, ruleForm.portfolioSafeAsset]);
+
+  const basketMappings = useMemo(() => {
+    return basketEntries.map(entry => {
+      const candidates = eligibleRunsFor(runs, entry.code, policy);
+      const overrideId = portfolioRunOverrides[entry.code];
+      const chosen = candidates.find(item => item.id === overrideId) ?? candidates[0] ?? null;
+      return { ...entry, candidates, chosen };
+    });
+  }, [basketEntries, runs, policy, portfolioRunOverrides]);
+
+  const missingBasketCodes = basketMappings.filter(item => !item.chosen).map(item => item.code);
+  const commonRange = useMemo(() => {
+    if (!portfolioMode || basketMappings.length < 2 || missingBasketCodes.length > 0) return null;
+    let commonFrom = '';
+    let commonTo = '';
+    for (const item of basketMappings) {
+      const chosen = item.chosen!;
+      const effTo = maxEffectiveTo(chosen);
+      if (!commonFrom || chosen.from > commonFrom) commonFrom = chosen.from;
+      if (!commonTo || effTo < commonTo) commonTo = effTo;
+    }
+    return { from: commonFrom, to: commonTo, valid: commonFrom <= commonTo };
+  }, [portfolioMode, basketMappings, missingBasketCodes.length]);
+
+  useEffect(() => {
+    if (!portfolioMode || dateEdited || !commonRange || !commonRange.valid) return;
+    setFrom(commonRange.from);
+    setTo(commonRange.to);
+  }, [portfolioMode, dateEdited, commonRange]);
+
+  const codeOptions = useMemo(() => {
+    const map = new Map<string, string | undefined>();
+    for (const inst of state.instruments) map.set(inst.code, inst.name);
+    for (const row of runs ?? []) {
+      if (!map.has(row.code)) map.set(row.code, undefined);
+    }
+    return [...map.entries()].map(([code, name]) => ({ code, name }));
+  }, [state.instruments, runs]);
+
   const previewRule = buildRuleAndOverlay(ruleForm);
-  const minBarsHint =
-    previewRule.ok && !isLegacySma(previewRule.rule, previewRule.overlay)
-      ? `선택 기간에 판정·체결용 최소 ${warmup(previewRule.rule, previewRule.overlay) + 1}봉 이상이 필요합니다. 실행하면 규칙·비용 가정과 결과를 함께 저장합니다.`
-      : '선택 기간에 장기 기간 + 2봉 이상이 필요합니다. 실행하면 입력·비용 가정과 결과를 함께 저장합니다.';
+  const minBarsHint = previewRule.ok
+    ? isPortfolioRule(previewRule.rule)
+      ? `선택 공통 기간에 판정·체결용 최소 ${portfolioWarmup(previewRule.rule) + 1}봉 이상이 필요합니다(바스켓 전 종목 거래일 달력 100% 일치 필요). 실행하면 규칙·비용 가정과 결과를 함께 저장합니다.`
+      : !isLegacySma(previewRule.rule, previewRule.overlay)
+        ? `선택 기간에 판정·체결용 최소 ${warmup(previewRule.rule, previewRule.overlay) + 1}봉 이상이 필요합니다. 실행하면 규칙·비용 가정과 결과를 함께 저장합니다.`
+        : '선택 기간에 장기 기간 + 2봉 이상이 필요합니다. 실행하면 입력·비용 가정과 결과를 함께 저장합니다.'
+    : '선택 기간에 규칙별 최소 준비 봉 이상이 필요합니다. 실행하면 입력·비용 가정과 결과를 함께 저장합니다.';
 
   function chooseRun(id: string | undefined, focus: 'policy' | 'run') {
     if (id && id !== selected) select(id, { focus });
@@ -179,7 +282,8 @@ export function StoredBacktest({
 
   async function execute(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!run || !eligible || locked || listError || !available) return;
+    if (locked || listError || !available) return;
+    if (!portfolioMode && (!run || !eligible)) return;
     clearResult();
     const fromInput = event.currentTarget.querySelector<HTMLInputElement>('input[name="from"]');
     const toInput = event.currentTarget.querySelector<HTMLInputElement>('input[name="to"]');
@@ -190,16 +294,6 @@ export function StoredBacktest({
     }
     if (toInput?.validity.badInput || !marketDate.safeParse(to).success) {
       setError('종료일을 올바르게 입력하세요.');
-      toInput?.focus();
-      return;
-    }
-    if (from < run.from || from > run.to) {
-      setError(`시작일은 수집 구간(${dateInput(run.from)} ~ ${dateInput(run.to)}) 안에서 선택하세요.`);
-      fromInput?.focus();
-      return;
-    }
-    if (to < run.from || to > run.to) {
-      setError(`종료일은 수집 구간(${dateInput(run.from)} ~ ${dateInput(run.to)}) 안에서 선택하세요.`);
       toInput?.focus();
       return;
     }
@@ -218,7 +312,7 @@ export function StoredBacktest({
     if (!built.ok) {
       setError(built.error);
       if (built.focusName) {
-        event.currentTarget.querySelector<HTMLInputElement>(`[name="${built.focusName}"]`)?.focus();
+        event.currentTarget.querySelector<HTMLElement>(`[name="${built.focusName}"]`)?.focus();
       }
       return;
     }
@@ -226,6 +320,87 @@ export function StoredBacktest({
     if (costError) {
       setError(costError.message);
       event.currentTarget.querySelector<HTMLInputElement>(`[name="${costError.focusName}"]`)?.focus();
+      return;
+    }
+
+    if (isPortfolioRule(built.rule)) {
+      if (missingBasketCodes.length > 0) {
+        setError(`수집 필요 종목(${missingBasketCodes.join(', ')})이 있어 다종목 백테스트를 실행할 수 없습니다.`);
+        return;
+      }
+      if (!commonRange || !commonRange.valid) {
+        setError('선택한 바스켓 종목들의 공통 가능 기간이 없어 실행할 수 없습니다.');
+        fromInput?.focus();
+        return;
+      }
+      if (from < commonRange.from || from > commonRange.to) {
+        setError(`시작일은 공통 가능 기간(${dateInput(commonRange.from)} ~ ${dateInput(commonRange.to)}) 안에서 선택하세요.`);
+        fromInput?.focus();
+        return;
+      }
+      if (to < commonRange.from || to > commonRange.to) {
+        setError(`종료일은 공통 가능 기간(${dateInput(commonRange.from)} ~ ${dateInput(commonRange.to)}) 안에서 선택하세요.`);
+        toInput?.focus();
+        return;
+      }
+      const chosenByCode = new Map(basketMappings.map(item => [item.code, item.chosen!]));
+      const portfolioRuns = portfolioCodes(built.rule).map(code => ({
+        code,
+        runId: chosenByCode.get(code)!.id,
+      }));
+      try {
+        const body = {
+          runs: portfolioRuns,
+          source: 'kis-rest' as const,
+          from,
+          to,
+          adjustment: policy,
+          capital: costs.capital,
+          feeBps: costs.feeBps,
+          slippageBps: costs.slippageBps,
+          rule: built.rule,
+        };
+        const response = await act<{ experiment: unknown }>('backtest/daily', body);
+        const created = experimentSchema.parse(response.experiment);
+        setExperiment(created);
+        setSavedId(created.id);
+        setExperiments(items =>
+          items.some(item => item.id === created.id)
+            ? items
+            : [
+                {
+                  id: created.id,
+                  createdAt: created.createdAt,
+                  input: created.snapshot.input,
+                  bars:
+                    created.snapshot.engineVersion === 'daily-portfolio-next-open-v3'
+                      ? (created.snapshot.legs[0]?.bars.length ?? 0)
+                      : created.snapshot.bars.length,
+                },
+                ...items,
+              ],
+        );
+      } catch (err) {
+        setError(
+          err instanceof z.ZodError
+            ? '실험 응답 형식이 올바르지 않습니다.'
+            : err instanceof Error
+              ? err.message
+              : '다종목 실험 실행 실패',
+        );
+      }
+      return;
+    }
+
+    if (!run || !eligible) return;
+    if (from < run.from || from > run.to) {
+      setError(`시작일은 수집 구간(${dateInput(run.from)} ~ ${dateInput(run.to)}) 안에서 선택하세요.`);
+      fromInput?.focus();
+      return;
+    }
+    if (to < run.from || to > run.to) {
+      setError(`종료일은 수집 구간(${dateInput(run.from)} ~ ${dateInput(run.to)}) 안에서 선택하세요.`);
+      toInput?.focus();
       return;
     }
     try {
@@ -265,7 +440,10 @@ export function StoredBacktest({
                 id: created.id,
                 createdAt: created.createdAt,
                 input: created.snapshot.input,
-                bars: created.snapshot.bars.length,
+                bars:
+                  created.snapshot.engineVersion === 'daily-portfolio-next-open-v3'
+                    ? (created.snapshot.legs[0]?.bars.length ?? 0)
+                    : created.snapshot.bars.length,
               },
               ...items,
             ],
@@ -296,14 +474,26 @@ export function StoredBacktest({
       if (controller.signal.aborted) return;
       if (loaded.id !== savedId) throw new Error();
       const fixed = loaded.snapshot.input;
-      if (fixed.runId !== selected) {
-        select(fixed.runId, { saved: loaded });
+      const targetRunId =
+        'runs' in fixed
+          ? (fixed.runs.find(item => item.code === fixed.rule.assets[0])?.runId ?? fixed.runs[0].runId)
+          : fixed.runId;
+      if (targetRunId !== selected) {
+        select(targetRunId, { saved: loaded });
         return;
       }
       setFrom(fixed.from);
       setTo(fixed.to);
+      setDateEdited(true);
       setCosts(costsOf(fixed));
       setRuleForm(formFromRule(ruleFromExperimentInput(fixed), 'overlay' in fixed ? fixed.overlay : undefined));
+      if ('runs' in fixed) {
+        setPortfolioPolicy(fixed.adjustment);
+        setPortfolioRunOverrides(Object.fromEntries(fixed.runs.map(item => [item.code, item.runId])));
+      } else {
+        setPortfolioPolicy(null);
+        setPortfolioRunOverrides({});
+      }
       setExperiment(loaded);
     } catch {
       if (!controller.signal.aborted) setLoadError('저장 실험 조회 실패 · 다시 불러오세요.');
@@ -337,19 +527,27 @@ export function StoredBacktest({
   function createStrategyFromExperiment() {
     if (!experiment) return;
     const expInput = experiment.snapshot.input;
+    const rule = ruleFromExperimentInput(expInput);
     const backtestDraft: StrategyTransferDraft = {
-      code: expInput.code,
-      rule: ruleFromExperimentInput(expInput),
+      code: 'runs' in expInput ? expInput.rule.assets[0] : expInput.code,
+      rule,
       ...('overlay' in expInput && expInput.overlay ? { overlay: expInput.overlay } : {}),
       evidence: { experimentId: experiment.id, inputHash: experiment.inputHash },
     };
     navigate('/strategies#strategy-editor', { state: { backtestDraft } });
   }
 
+  const portfolioCanExecute =
+    !loading &&
+    missingBasketCodes.length === 0 &&
+    (commonRange === null || commonRange.valid);
+  const submitDisabled = !available || (portfolioMode ? !portfolioCanExecute : !eligible);
+  const isV3Experiment = experiment?.snapshot.engineVersion === 'daily-portfolio-next-open-v3';
+
   return (
     <>
       <div className="bt-nav">
-        <span>KIS 저장 일봉 · 종가 신호 → 다음 봉 시가 체결 (변동성 돌파: 당일 목표가 매수 · 이후 시가 청산)</span>
+        <span>KIS 저장 일봉 · 종가 신호 → 다음 봉 시가 체결 (변동성 돌파: 당일 목표가 매수 · 다종목: 리밸런싱 시가)</span>
         <a className="text-link" href="#backtest-history">
           저장된 실험으로 이동 ↓
         </a>
@@ -368,7 +566,10 @@ export function StoredBacktest({
           {strategyDraft && (
             <p className="bt-draft-banner" role="status">
               전략 스튜디오 초안 적용 · {formatRuleSummary(strategyDraft.rule, strategyDraft.overlay)}
-              {run && run.code !== strategyDraft.code && ` · 저장 일봉에 ${strategyDraft.code}가 없어 ${run.code} 선택`}
+              {!portfolioMode &&
+                run &&
+                run.code !== strategyDraft.code &&
+                ` · 저장 일봉에 ${strategyDraft.code}가 없어 ${run.code} 선택`}
             </p>
           )}
           <form
@@ -380,22 +581,29 @@ export function StoredBacktest({
             }}
           >
             <fieldset className="backtest-fields" disabled={locked || !!listError}>
-              {!loading && !listError && selected && !run && (
+              {!portfolioMode && !loading && !listError && selected && !run && (
                 <p className="bt-warning" role="alert">
                   요청한 수집 기록을 찾을 수 없습니다. 데이터 상태를 확인하거나 기록을 직접 선택하세요.
                 </p>
               )}
               {!loading && !listError && !runs?.length && <p>저장된 KIS 일봉이 없습니다</p>}
-              <div className="bt-pickers">
+              <div className={portfolioMode ? 'bt-pickers bt-pickers-single' : 'bt-pickers'}>
                 <label className="field">
                   수정주가 정책
                   <select
                     ref={policySelect}
                     value={policy}
                     onChange={event => {
-                      if (run?.adjustment !== event.target.value) {
+                      const nextPolicy = event.target.value as 'adjusted' | 'raw';
+                      if (portfolioMode) {
+                        setPortfolioPolicy(nextPolicy);
+                        setPortfolioRunOverrides({});
+                        setDateEdited(false);
+                        clearResult();
+                      } else if (run?.adjustment !== nextPolicy) {
+                        setPortfolioPolicy(null);
                         chooseRun(
-                          runs?.find(row => row.adjustment === event.target.value)?.id,
+                          runs?.find(row => row.adjustment === nextPolicy)?.id,
                           'policy',
                         );
                       }
@@ -409,27 +617,29 @@ export function StoredBacktest({
                     </option>
                   </select>
                 </label>
-                <label className="field">
-                  일봉 수집 기록
-                  <select
-                    ref={runSelect}
-                    value={run?.id ?? ''}
-                    onChange={event => chooseRun(event.target.value, 'run')}
-                  >
-                    <option value="" disabled>
-                      수집 기록 선택
-                    </option>
-                    {runs
-                      ?.filter(row => row.adjustment === policy)
-                      .map(row => (
-                        <option key={row.id} value={row.id}>
-                          {row.code} · {dateInput(row.from)} ~ {dateInput(row.to)} · {row.id.slice(0, 8)}
-                        </option>
-                      ))}
-                  </select>
-                </label>
+                {!portfolioMode && (
+                  <label className="field">
+                    일봉 수집 기록
+                    <select
+                      ref={runSelect}
+                      value={run?.id ?? ''}
+                      onChange={event => chooseRun(event.target.value, 'run')}
+                    >
+                      <option value="" disabled>
+                        수집 기록 선택
+                      </option>
+                      {runs
+                        ?.filter(row => row.adjustment === policy)
+                        .map(row => (
+                          <option key={row.id} value={row.id}>
+                            {row.code} · {dateInput(row.from)} ~ {dateInput(row.to)} · {row.id.slice(0, 8)}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                )}
               </div>
-              {run && (
+              {!portfolioMode && run && (
                 <p className={eligible ? 'bt-note' : 'bt-warning'}>
                   {eligible
                     ? `입력 달력 대조 통과 · 수집 기준일 ${dateInput(run.captureDate)}`
@@ -440,6 +650,65 @@ export function StoredBacktest({
                         : '수집 상태·품질 확인 필요 · 실행할 수 없습니다.'}
                 </p>
               )}
+              {portfolioMode && (
+                <div className="bt-basket-runs" aria-label="바스켓 종목별 일봉 수집 기록">
+                  <strong className="bt-basket-title">바스켓 종목별 일봉 수집 기록</strong>
+                  {basketMappings.map(item => (
+                    <div key={item.code} className="bt-basket-row">
+                      <label className="field">
+                        <span>
+                          {item.role} · <code>{item.code}</code>
+                        </span>
+                        {item.candidates.length > 0 ? (
+                          <select
+                            aria-label={`${item.code} 일봉 수집 기록`}
+                            value={item.chosen?.id ?? ''}
+                            onChange={event => {
+                              setPortfolioRunOverrides({
+                                ...portfolioRunOverrides,
+                                [item.code]: event.target.value,
+                              });
+                              setDateEdited(false);
+                              clearResult();
+                            }}
+                          >
+                            {item.candidates.map(candidate => (
+                              <option key={candidate.id} value={candidate.id}>
+                                {dateInput(candidate.from)} ~ {dateInput(candidate.to)} · 기준일{' '}
+                                {dateInput(candidate.captureDate)} · {candidate.id.slice(0, 8)}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <p className="bt-warning" role="status">
+                            수집 필요 · {item.code}의 적격 {pricePolicy(policy)} 일봉 기록이 없습니다.
+                          </p>
+                        )}
+                      </label>
+                    </div>
+                  ))}
+                  {missingBasketCodes.length > 0 && (
+                    <p className="bt-warning" role="status">
+                      수집 필요 종목({missingBasketCodes.join(', ')})이 있어 실행을 차단했습니다.{' '}
+                      <Link className="text-link" to="/data#inventory-daily">
+                        데이터 상태
+                      </Link>
+                      에서 일봉을 수집하세요.
+                    </p>
+                  )}
+                  {commonRange && commonRange.valid && (
+                    <p className="bt-note">
+                      공통 가능 기간: <strong>{dateInput(commonRange.from)}</strong> ~{' '}
+                      <strong>{dateInput(commonRange.to)}</strong> (각 종목 수집일 전일까지)
+                    </p>
+                  )}
+                  {commonRange && !commonRange.valid && (
+                    <p className="bt-warning" role="status">
+                      선택한 종목별 수집 기록에 겹치는 공통 가능 기간이 없습니다. 다른 수집 기록을 선택하세요.
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="form-grid">
                 <label className="field">
                   시작일
@@ -448,9 +717,12 @@ export function StoredBacktest({
                     type="date"
                     required
                     value={dateInput(from)}
-                    min={run && dateInput(run.from)}
-                    max={run && dateInput(run.to)}
-                    onChange={event => setFrom(event.target.value.replaceAll('-', ''))}
+                    min={portfolioMode ? (commonRange?.valid ? dateInput(commonRange.from) : undefined) : run && dateInput(run.from)}
+                    max={portfolioMode ? (commonRange?.valid ? dateInput(commonRange.to) : undefined) : run && dateInput(run.to)}
+                    onChange={event => {
+                      setDateEdited(true);
+                      setFrom(event.target.value.replaceAll('-', ''));
+                    }}
                   />
                 </label>
                 <label className="field">
@@ -460,21 +732,27 @@ export function StoredBacktest({
                     type="date"
                     required
                     value={dateInput(to)}
-                    min={run && dateInput(run.from)}
-                    max={run && dateInput(run.to)}
-                    onChange={event => setTo(event.target.value.replaceAll('-', ''))}
+                    min={portfolioMode ? (commonRange?.valid ? dateInput(commonRange.from) : undefined) : run && dateInput(run.from)}
+                    max={portfolioMode ? (commonRange?.valid ? dateInput(commonRange.to) : undefined) : run && dateInput(run.to)}
+                    onChange={event => {
+                      setDateEdited(true);
+                      setTo(event.target.value.replaceAll('-', ''));
+                    }}
                   />
                 </label>
               </div>
               <RuleConfigSection
                 form={ruleForm}
                 onChange={next => {
+                  const switchedToPortfolio = !isPortfolioKind(ruleForm.kind) && isPortfolioKind(next.kind);
+                  if (switchedToPortfolio) setDateEdited(false);
                   setRuleForm(next);
                   clearResult();
                 }}
                 disabled={locked || !!listError}
                 mode="stored"
                 unit="봉"
+                codeOptions={codeOptions}
               />
               <CostFields values={costs} change={setCosts} />
               <p className="bt-note">{minBarsHint}</p>
@@ -483,12 +761,12 @@ export function StoredBacktest({
                   저장 일봉 실험 실패 · {error}
                 </p>
               )}
-              <button className="button primary wide" disabled={!available || !eligible}>
+              <button className="button primary wide" disabled={submitDisabled}>
                 <Play size={15} />저장 일봉 실험 실행
               </button>
             </fieldset>
           </form>
-          <Link className="text-link" to={run ? `/data?run=${run.id}#inventory-daily` : '/data#inventory-daily'}>
+          <Link className="text-link" to={!portfolioMode && run ? `/data?run=${run.id}#inventory-daily` : '/data#inventory-daily'}>
             데이터 상태 확인 →
           </Link>
         </Panel>
@@ -496,22 +774,43 @@ export function StoredBacktest({
           {experiment && (
             <section ref={resultRef} tabIndex={-1} className="bt-result" aria-label="저장 일봉 실험 결과">
               <Panel title="저장 일봉 실험 결과">
-                <strong>
-                  {experiment.snapshot.input.code} · {pricePolicy(experiment.snapshot.input.adjustment)} ·{' '}
-                  {experiment.snapshot.bars.length}봉
-                </strong>
-                <p>
-                  {dateInput(experiment.snapshot.input.from)} ~ {dateInput(experiment.snapshot.input.to)} · 수집 기준일{' '}
-                  {dateInput(experiment.snapshot.collection.captureDate)}
-                </p>
-                <p>
-                  {'rule' in experiment.snapshot.input
-                    ? formatRuleSummary(experiment.snapshot.input.rule, experiment.snapshot.input.overlay)
-                    : `단기 ${experiment.snapshot.input.fast} / 장기 ${experiment.snapshot.input.slow}`}{' '}
-                  · 초기 {won(experiment.snapshot.input.capital)}원 · 수수료 {experiment.snapshot.input.feeBps}bp ·
-                  슬리피지 {experiment.snapshot.input.slippageBps}bp
-                </p>
-                <ResultSummary result={experiment.result} label="저장 구간 수익률" />
+                {experiment.snapshot.engineVersion === 'daily-portfolio-next-open-v3' ? (
+                  <>
+                    <strong>
+                      {portfolioCodes(experiment.snapshot.input.rule).join(' / ')} ·{' '}
+                      {pricePolicy(experiment.snapshot.input.adjustment)} ·{' '}
+                      {experiment.snapshot.legs[0]?.bars.length ?? 0}봉
+                    </strong>
+                    <p>
+                      {dateInput(experiment.snapshot.input.from)} ~ {dateInput(experiment.snapshot.input.to)} · 다종목
+                      자산배분 ({experiment.snapshot.legs.length}종목)
+                    </p>
+                    <p>
+                      {formatRuleSummary(experiment.snapshot.input.rule)} · 초기{' '}
+                      {won(experiment.snapshot.input.capital)}원 · 수수료 {experiment.snapshot.input.feeBps}bp ·
+                      슬리피지 {experiment.snapshot.input.slippageBps}bp
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <strong>
+                      {experiment.snapshot.input.code} · {pricePolicy(experiment.snapshot.input.adjustment)} ·{' '}
+                      {experiment.snapshot.bars.length}봉
+                    </strong>
+                    <p>
+                      {dateInput(experiment.snapshot.input.from)} ~ {dateInput(experiment.snapshot.input.to)} · 수집
+                      기준일 {dateInput(experiment.snapshot.collection.captureDate)}
+                    </p>
+                    <p>
+                      {'rule' in experiment.snapshot.input
+                        ? formatRuleSummary(experiment.snapshot.input.rule, experiment.snapshot.input.overlay)
+                        : `단기 ${experiment.snapshot.input.fast} / 장기 ${experiment.snapshot.input.slow}`}{' '}
+                      · 초기 {won(experiment.snapshot.input.capital)}원 · 수수료 {experiment.snapshot.input.feeBps}bp ·
+                      슬리피지 {experiment.snapshot.input.slippageBps}bp
+                    </p>
+                  </>
+                )}
+                <ResultSummary result={experiment.result} label="저장 구간 수익률" portfolio={isV3Experiment} />
                 <div className="button-row bt-actions">
                   <button className="button secondary" disabled={locked || !available} onClick={() => void verify()}>
                     고정 입력으로 재현 검증
@@ -534,10 +833,25 @@ export function StoredBacktest({
                   <p>
                     엔진 {experiment.snapshot.engineVersion} · 저장 {experiment.createdAt}
                   </p>
-                  <p>
-                    수집 ID {experiment.snapshot.collection.id} · 출처 {experiment.snapshot.collection.endpoint}
-                  </p>
-                  <p>입력 달력 {experiment.snapshot.collection.calendar?.source ?? '미기록'} · 공식 출처 진위 미검증</p>
+                  {experiment.snapshot.engineVersion === 'daily-portfolio-next-open-v3' ? (
+                    <ul className="bt-leg-list">
+                      {experiment.snapshot.legs.map(leg => (
+                        <li key={leg.code}>
+                          <code>{leg.code}</code> · 수집 ID {leg.collection.id} · 기준일{' '}
+                          {dateInput(leg.collection.captureDate)} · 달력 {leg.collection.calendar?.source ?? '미기록'}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <>
+                      <p>
+                        수집 ID {experiment.snapshot.collection.id} · 출처 {experiment.snapshot.collection.endpoint}
+                      </p>
+                      <p>
+                        입력 달력 {experiment.snapshot.collection.calendar?.source ?? '미기록'} · 공식 출처 진위 미검증
+                      </p>
+                    </>
+                  )}
                   <a
                     className="text-link"
                     href={`/api/backtest/experiments/${experiment.id}`}
@@ -552,6 +866,8 @@ export function StoredBacktest({
                 <Chart values={experiment.result.equity} height={230} label="저장 일봉 백테스트 평가자산 곡선" />
                 <p>{experiment.result.source}</p>
               </Panel>
+              {experiment.snapshot.engineVersion === 'daily-portfolio-next-open-v3' &&
+                'rebalances' in experiment.result && <Rebalances rebalances={experiment.result.rebalances} />}
               <Trades result={experiment.result} daily />
             </section>
           )}
@@ -581,9 +897,10 @@ export function StoredBacktest({
                       <option value="">실험 선택</option>
                       {experiments.map(item => (
                         <option key={item.id} value={item.id}>
-                          {item.input.code}
-                          {'rule' in item.input ? ` · ${STRATEGY_CATALOG[item.input.rule.kind].title}` : ''} ·{' '}
-                          {dateInput(item.input.from)} ~ {dateInput(item.input.to)} ·{' '}
+                          {'runs' in item.input
+                            ? `${portfolioCodes(item.input.rule).join('/')} · ${PORTFOLIO_CATALOG[item.input.rule.kind].title}`
+                            : `${item.input.code}${'rule' in item.input ? ` · ${STRATEGY_CATALOG[item.input.rule.kind].title}` : ''}`}{' '}
+                          · {dateInput(item.input.from)} ~ {dateInput(item.input.to)} ·{' '}
                           {pricePolicy(item.input.adjustment)} · {item.bars}봉 · {item.id.slice(0, 10)}
                         </option>
                       ))}
@@ -607,15 +924,17 @@ export function StoredBacktest({
           </section>
           <Panel title="계산 가정과 한계">
             <p>
-              세금·배당·기업행사를 반영하지 않습니다. 입력 달력의 공식성·가격 정확성·과거 시점 정보(PIT)와 실제 수익성은
-              미검증입니다.
+              세금·배당·기업행사를 반영하지 않습니다. ETF 분배금·입력 달력의 공식성·가격 정확성·과거 시점 정보(PIT)·현재
+              상장 종목 선택에 따른 생존 편향과 실제 수익성은 미검증입니다.
             </p>
             <details>
               <summary>체결·비용·평가 방식</summary>
               <p>
                 종가 신호 후 다음 봉 시가에 전액 매수·전량 매도합니다(윌리엄스 변동성 돌파는 당일 목표가 매수·이후 시가
-                청산, 변동성 패리티 사용 시 목표 변동성 비중으로 수량 제한). 수수료는 체결금액 × bp / 10,000을 원 단위
-                올림합니다. 슬리피지는 매수 시 더하고 매도 시 뺍니다.
+                청산, 변동성 패리티 사용 시 목표 변동성 비중으로 수량 제한). 다종목 자산배분(v3)은 리밸런싱일 시가
+                총평가액 기준으로 목표 정수 수량을 산출해 매도를 선행한 뒤 가용 현금 내 정수 수량만 매수하며 잔여 현금을
+                보유합니다. 수수료는 체결금액 × bp / 10,000을 원 단위 올림합니다. 슬리피지는 매수 시 더하고 매도 시
+                뺍니다.
               </p>
               <p>
                 낙폭은 초기자금을 포함한 최고 평가자산 대비 하락률입니다. 마지막 보유분은 종가로 평가합니다. 원주가

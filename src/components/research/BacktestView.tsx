@@ -40,6 +40,7 @@ export function Backtest() {
     strategyDraft ? formFromRule(strategyDraft.rule, strategyDraft.overlay) : defaultRuleForm(),
   );
   const [costs, setCosts] = useState<CostAssumptions>(defaultCosts);
+  const [portfolioRunOverrides, setPortfolioRunOverrides] = useState<Record<string, string>>({});
 
   function invalidateTransfer() {
     transfer.current = null;
@@ -55,6 +56,11 @@ export function Backtest() {
     setCosts(next);
   }
 
+  function handlePortfolioRunsChange(next: Record<string, string>) {
+    transfer.current = null;
+    setPortfolioRunOverrides(next);
+  }
+
   function select(nextSource: string, nextRun?: string, selection?: BacktestSelection) {
     if (valid && nextSource === source && nextRun === undefined && !selection) return;
     if (selection && 'saved' in selection) {
@@ -63,6 +69,11 @@ export function Backtest() {
       setRuleForm(
         formFromRule(ruleFromExperimentInput(savedInput), 'overlay' in savedInput ? savedInput.overlay : undefined),
       );
+      if ('runs' in savedInput) {
+        setPortfolioRunOverrides(Object.fromEntries(savedInput.runs.map(item => [item.code, item.runId])));
+      } else {
+        setPortfolioRunOverrides({});
+      }
     }
     const next = new URLSearchParams(params);
     next.set('source', nextSource);
@@ -132,6 +143,8 @@ export function Backtest() {
           setRuleForm={handleRuleFormChange}
           costs={costs}
           setCosts={handleCostsChange}
+          portfolioRunOverrides={portfolioRunOverrides}
+          setPortfolioRunOverrides={handlePortfolioRunsChange}
           onInvalidateTransfer={invalidateTransfer}
           select={(id, selection) => select('stored', id, selection)}
         />

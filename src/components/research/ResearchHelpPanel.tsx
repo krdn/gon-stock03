@@ -1,8 +1,7 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { X } from 'lucide-react';
-import { STRATEGY_CATALOG } from '../../../shared/strategy-rules';
-import { RULE_KINDS, type RuleKind } from '../../pages/research-rule-form';
+import { RULE_KINDS, ruleTitle, type RuleKind } from '../../pages/research-rule-form';
 
 /** 사용방법 도움말 탭 식별자. */
 export type HelpTabId = 'workflow' | 'dictionary' | 'results' | 'faq';
@@ -324,6 +323,74 @@ export const RULE_FIELD_HELP: Record<RuleKind, RuleHelpEntry> = {
       },
     ],
   },
+  dual_momentum: {
+    summary:
+      '리밸런싱일 종가 기준 최근 수익률이 양수(> 0)인 위험 자산 중 1위 종목에 100% 배분하고, 모두 0 이하이면 안전자산 또는 현금으로 전환합니다.',
+    envBadge: '저장 일봉: 다종목 자산배분 (v3) · DEMO 미지원 · KIS 모의 정지 저장만 가능(시작·계약 고정 차단)',
+    basicPreset: '모멘텀 관측 60봉 / 리밸런싱 20봉 (보수적 120/20 · 공격적 20/10 · 위험 자산 2-6종 · 안전자산 선택)',
+    executionNote:
+      '매도·리밸런싱은 수익을 보장하지 않습니다(수익 미보장). 저장 일봉 다종목 백테스트(v3) 전용이며 DEMO 저장·합성 백테스트는 차단되고, KIS 모의에서는 정지 상태(active=false) 저장만 가능하며 시작·계약 고정은 차단됩니다(단일 종목 공통 오버레이 미지원). 바스켓 전 종목의 거래일 달력이 100% 일치해야 하며, 리밸런싱일 종가 판정 후 다음 봉 시가에 슬리피지 전 시가 총평가액 기준으로 목표 정수 수량을 산출해 매도를 선행한 뒤 가용 현금 내 정수 수량만 매수하고 잔여 현금을 보유합니다(잔여 현금 부족 시 입력 순서 뒤쪽 매수 수량 축소 가능). 수익률이 같으면 입력한 위험 자산 앞 순서 종목이 우선합니다. 벤치마크는 위험 자산 동일 비중 첫 시가 보유이며 분배금·배당·세금은 미포함이고, 현재 상장 종목 선택에 따른 생존 편향에 유의하세요. 최소 준비 봉은 관측 기간+2봉(판정 lookbackDays+1봉 + 다음 봉 시가 체결 1봉, 기본 62봉)입니다.',
+    fields: [
+      {
+        term: '위험 자산 바스켓 (assets)',
+        range: '2-6개 종목코드 (6자리 영숫자 · 중복 금지 · 순서 보존)',
+        description:
+          '상대·절대 모멘텀을 비교할 위험 자산 목록입니다. 수익률(당일 종가/N봉전 종가 − 1)이 0 초과(> 0)인 종목 중 최댓값 1종에 100% 배분하며, 동률이면 앞 순서 종목이 우선합니다. 대표 종목(code)은 위험 자산 1과 자동 동기화됩니다.',
+      },
+      {
+        term: '안전자산 (safeAsset, 선택)',
+        range: '6자리 영숫자 코드 또는 비움 (assets와 중복 금지)',
+        description:
+          '모든 위험 자산의 모멘텀이 0 이하(<= 0)일 때 100% 배분할 방어 자산입니다. 비워두면(null) 하락·약세 구간에서 현금을 100% 보유합니다.',
+      },
+      {
+        term: '모멘텀 관측 기간 (lookbackDays)',
+        range: '20-252 정수 (기본 60봉)',
+        description:
+          '수익률을 측정할 과거 거래일 간격입니다. 기간을 줄이면 최근 추세 변화에 빠르게 갈아타고, 늘리면 중장기 모멘텀 우위 종목에 집중합니다.',
+      },
+      {
+        term: '리밸런싱 주기 (rebalanceDays)',
+        range: '5-60 정수 (기본 20봉)',
+        description:
+          '첫 준비 완료 종가 이후 다음 리밸런싱 판정까지의 거래일 간격입니다. 주기를 줄이면 대응이 빨라지지만 수수료·슬리피지가 늘어날 수 있습니다.',
+      },
+    ],
+  },
+  faber_gtaa: {
+    summary:
+      '리밸런싱일 종가가 이동평균선을 초과(>)하는 위험 자산에 각각 1/N 동일 비중을 배분하고, 이탈(<=) 비중은 안전자산 또는 현금으로 돌립니다.',
+    envBadge: '저장 일봉: 다종목 자산배분 (v3) · DEMO 미지원 · KIS 모의 정지 저장만 가능(시작·계약 고정 차단)',
+    basicPreset: '추세 SMA 120봉 / 리밸런싱 20봉 (보수적 200/20 · 공격적 60/10 · 위험 자산 2-6종 · 안전자산 선택)',
+    executionNote:
+      '매도·리밸런싱은 수익을 보장하지 않습니다(수익 미보장). 저장 일봉 다종목 백테스트(v3) 전용이며 DEMO 저장·합성 백테스트는 차단되고, KIS 모의에서는 정지 상태(active=false) 저장만 가능하며 시작·계약 고정은 차단됩니다(단일 종목 공통 오버레이 미지원). 바스켓 전 종목의 거래일 달력이 100% 일치해야 하며, 리밸런싱일 종가 판정 후 다음 봉 시가에 슬리피지 전 시가 총평가액 기준으로 목표 정수 수량을 산출해 매도를 선행한 뒤 가용 현금 내 정수 수량만 매수하고 잔여 현금을 보유합니다(잔여 현금 부족 시 입력 순서 뒤쪽 매수 수량 축소 가능). 당일 포함 단순 이동평균(SMA) 초과(>) 위험 자산에만 1/N씩 배분하고 나머지 (N−선정 수)/N 비중은 안전자산(비우면 현금)으로 배분합니다. 벤치마크는 위험 자산 동일 비중 첫 시가 보유이며 분배금·배당·세금은 미포함이고, 현재 상장 종목 선택에 따른 생존 편향에 유의하세요. 최소 준비 봉은 SMA 기간+1봉(판정 smaPeriod봉 + 다음 봉 시가 체결 1봉, 기본 121봉)입니다.',
+    fields: [
+      {
+        term: '위험 자산 바스켓 (assets)',
+        range: '2-6개 종목코드 (6자리 영숫자 · 중복 금지)',
+        description:
+          '분산 투자할 위험 자산 목록(N종)입니다. 리밸런싱일 종가가 당일 포함 SMA를 초과(>)하는 종목에 각각 1/N 동일 비중을 배분합니다. 대표 종목(code)은 위험 자산 1과 자동 동기화됩니다.',
+      },
+      {
+        term: '안전자산 (safeAsset, 선택)',
+        range: '6자리 영숫자 코드 또는 비움 (assets와 중복 금지)',
+        description:
+          '종가가 SMA 이하(<=)인 위험 자산들의 미배정 비중 합계((N−선정 수)/N)를 옮겨 담을 방어 자산입니다. 비워두면(null) 해당 비중만큼 현금을 보유합니다.',
+      },
+      {
+        term: '추세 이동평균 기간 (smaPeriod)',
+        range: '20-250 정수 (기본 120봉)',
+        description:
+          '각 위험 자산의 추세 유지 여부를 판정할 당일 포함 단순 이동평균(SMA) 기간입니다. 기간을 늘리면 잦은 교체를 줄이고, 줄이면 하락 전환에 빠르게 방어합니다.',
+      },
+      {
+        term: '리밸런싱 주기 (rebalanceDays)',
+        range: '5-60 정수 (기본 20봉)',
+        description:
+          '첫 준비 완료 종가 이후 다음 비중 재조정까지의 거래일 간격입니다. 주기를 줄이면 추세 변화에 빠르게 반응하지만 거래 비용이 늘어날 수 있습니다.',
+      },
+    ],
+  },
 };
 
 /** 샹들리에 ATR 청산 오버레이 기본 초기값 안내. */
@@ -481,10 +548,11 @@ export function ResearchHelpPanel({
             <span className="research-help-step-no">2단계</span>
             <h3>규칙과 프리셋 선택</h3>
             <p>
-              전략 스튜디오나 백테스트에서 11종 전략 규칙(저장 일봉 전체 11종 · DEMO 종가 전용 4종:{' '}
+              전략 스튜디오나 백테스트에서 13종 전략 규칙(단일 종목 11종 + 다종목 자산배분 2종:{' '}
+              <code>13 ETF 듀얼 모멘텀</code>, <code>14 파버 GTAA</code> · DEMO 종가 전용 4종:{' '}
               <code>이동평균 교차</code>, <code>RSI 단기 눌림목</code>, <code>MACD 히스토그램</code>,{' '}
               <code>볼린저 %B 반등</code>) 중 하나를 고르고 <strong>[보수적 / 기본 / 공격적]</strong> 프리셋 버튼으로
-              시작값을 채운 뒤 필요하면 <code>샹들리에 ATR 청산</code>이나{' '}
+              시작값을 채운 뒤 단일 종목 전략이면 필요에 따라 <code>샹들리에 ATR 청산</code>이나{' '}
               <code>변동성 패리티 · RMS 사이징</code> 오버레이를 켭니다.
             </p>
           </li>
@@ -493,9 +561,10 @@ export function ResearchHelpPanel({
             <h3>저장 전 백테스트 검증</h3>
             <p>
               바로 저장하지 않고 <strong>이 설정으로 백테스트</strong> 버튼을 눌러 과거 구간 수익률·최대낙폭(MDD)·체결
-              횟수를 확인합니다. 다중 전략·EMA·필터·오버레이·장기 101-120(<code>v2</code>) 실행 시에는{' '}
-              <strong>단순 보유(저장 일봉은 첫 봉 시가, DEMO는 첫 합성 봉 종가 매수 기준)</strong>와의 비교도 함께
-              표시됩니다.
+              횟수를 확인합니다. 단일 종목 다중 규칙(<code>v2</code>)은{' '}
+              <strong>단순 보유(저장 일봉은 첫 봉 시가, DEMO는 첫 합성 봉 종가 매수 기준)</strong>와 비교하며, 다종목
+              자산배분(<code>v3</code>)은 <strong>위험 자산 동일 비중 첫 시가 보유</strong> 벤치마크·리밸런싱 내역·종목별
+              체결 내역을 함께 표시합니다.
             </p>
           </li>
           <li>
@@ -507,8 +576,9 @@ export function ResearchHelpPanel({
               전략 연결·재현 검증 미제공). 이름을 정해 저장한 뒤 DEMO 재생 또는 KIS 모의 계약 연결로 실행합니다. KIS
               모의에서는 기본 무필터 SMA(장기 100 이하)는 실시간 체결가(<code>H0STCNT0</code>) 교차로, 종가 확정형
               10종(EMA·필터 포함)과 <code>19 샹들리에 청산</code>은 전용 원장에 복사된 직전 KRX 개장일 확정 일봉으로
-              당일 1회 집행합니다(<code>05 윌리엄스 변동성 돌파</code>·<code>20 변동성 패리티</code>·무필터 SMA 장기
-              101-120은 저장 일봉 백테스트 전용이며 정지 저장만 가능).
+              당일 1회 집행합니다(<code>05 윌리엄스 변동성 돌파</code>·<code>13 ETF 듀얼 모멘텀</code>·
+              <code>14 파버 GTAA</code>·<code>20 변동성 패리티</code>·무필터 SMA 장기 101-120은 저장 일봉 백테스트
+              전용이며 정지 저장만 가능).
             </p>
           </li>
         </ol>
@@ -523,29 +593,37 @@ export function ResearchHelpPanel({
         className="research-help-body"
       >
         <div className="research-help-grid">
-          {RULE_KINDS.map(kind => (
-            <article key={kind} className="research-help-card">
-              <h3>
-                {STRATEGY_CATALOG[kind].title} <code>{kind}</code>
-              </h3>
-              <p className="research-help-env-line">{RULE_FIELD_HELP[kind].envBadge}</p>
-              <p className="research-help-card-note">{RULE_FIELD_HELP[kind].summary}</p>
-              <p className="research-help-preset">
-                <strong>기본 프리셋 초기값:</strong> {RULE_FIELD_HELP[kind].basicPreset}
-              </p>
-              <p className="research-help-exec-note">{RULE_FIELD_HELP[kind].executionNote}</p>
-              <dl className="research-help-dl">
-                {RULE_FIELD_HELP[kind].fields.map(item => (
-                  <div key={item.term}>
-                    <dt>
-                      {item.term} <small>{item.range}</small>
-                    </dt>
-                    <dd>{item.description}</dd>
-                  </div>
-                ))}
-              </dl>
-            </article>
-          ))}
+          {RULE_KINDS.map(kind => {
+            const cardTitle =
+              kind === 'dual_momentum'
+                ? `13 ${ruleTitle(kind)}`
+                : kind === 'faber_gtaa'
+                  ? `14 ${ruleTitle(kind)}`
+                  : ruleTitle(kind);
+            return (
+              <article key={kind} className="research-help-card">
+                <h3>
+                  {cardTitle} <code>{kind}</code>
+                </h3>
+                <p className="research-help-env-line">{RULE_FIELD_HELP[kind].envBadge}</p>
+                <p className="research-help-card-note">{RULE_FIELD_HELP[kind].summary}</p>
+                <p className="research-help-preset">
+                  <strong>기본 프리셋 초기값:</strong> {RULE_FIELD_HELP[kind].basicPreset}
+                </p>
+                <p className="research-help-exec-note">{RULE_FIELD_HELP[kind].executionNote}</p>
+                <dl className="research-help-dl">
+                  {RULE_FIELD_HELP[kind].fields.map(item => (
+                    <div key={item.term}>
+                      <dt>
+                        {item.term} <small>{item.range}</small>
+                      </dt>
+                      <dd>{item.description}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </article>
+            );
+          })}
           <article className="research-help-card">
             <h3>
               19 샹들리에 ATR 청산 오버레이 <code>chandelier</code>
@@ -648,6 +726,17 @@ export function ResearchHelpPanel({
               기준 투입 비중·정수 수량 제한)는 저장 일봉 백테스트 전용이며 KIS 모의 시작·계약 고정은 차단됩니다.
             </p>
           </article>
+          <article className="research-help-card">
+            <h3>다종목 자산배분 (v3) 정산·벤치마크·유의사항</h3>
+            <p>
+              <code>13 ETF 듀얼 모멘텀</code>과 <code>14 파버 GTAA</code>는 저장 일봉 다종목 백테스트(
+              <code>daily-portfolio-next-open-v3</code>) 전용입니다. 바스켓 전 종목(위험 자산 2-6종 + 선택 안전자산)의
+              거래일 달력이 100% 일치해야 하며, 리밸런싱일 다음 봉 시가에 슬리피지 전 시가 총평가액으로 목표 정수 수량을
+              산출해 매도를 먼저 체결한 뒤 가용 현금 안에서 정수 수량만 매수하고 잔여 현금을 보유합니다. 벤치마크는 위험
+              자산 동일 비중 첫 시가 보유(비용·잔여 현금 동일 적용)이며, 분배금·배당·세금은 포함하지 않고 현재 상장 종목
+              선택에 따른 생존 편향에 유의해야 합니다.
+            </p>
+          </article>
         </div>
       </div>
 
@@ -661,15 +750,14 @@ export function ResearchHelpPanel({
       >
         <div className="research-help-faq">
           <article className="research-help-card">
-            <h3>Q. 왜 11종 전략 중 일부와 오버레이 2종은 DEMO에서 저장/실행이 안 되나요?</h3>
+            <h3>Q. 왜 13종 전략 중 일부와 오버레이 2종은 DEMO에서 저장/실행이 안 되나요?</h3>
             <p>
-              DEMO 합성 봉은 종가 하나만 생성합니다. 종가만 쓰는 4종(<code>이동평균 교차</code>(거래량 필터 끔),{' '}
-              <code>RSI 단기 눌림목</code>, <code>MACD 히스토그램</code>, <code>볼린저 %B 반등</code>)만 DEMO
-              저장·백테스트를 지원합니다. 시가·고가·저가·거래량이 필요한 7종(<code>돈키안 돌파</code>,{' '}
-              <code>윌리엄스 변동성 돌파</code>, <code>ADX·DMI 추세</code>, <code>볼린저 스퀴즈</code>,{' '}
-              <code>TTM 스퀴즈</code>, <code>거래량 고갈 눌림목</code>, <code>이격도 복원</code>)과 이동평균 거래량
+              DEMO 합성 봉은 종가 하나만 생성하며 단일 종목 연습 전용입니다. 종가만 쓰는 단일 종목 4종(
+              <code>이동평균 교차</code>(거래량 필터 끔), <code>RSI 단기 눌림목</code>, <code>MACD 히스토그램</code>,{' '}
+              <code>볼린저 %B 반등</code>)만 DEMO 저장·백테스트를 지원합니다. 시가·고가·저가·거래량이 필요한 단일 종목
+              7종, 다종목 자산배분 2종(<code>13 ETF 듀얼 모멘텀</code>, <code>14 파버 GTAA</code>), 이동평균 거래량
               필터·<code>샹들리에 청산</code>·<code>변동성 패리티</code> 오버레이는 실제 일봉 데이터가 있는{' '}
-              <strong>KIS 저장 일봉 백테스트</strong>에서만 정확히 계산할 수 있어 DEMO 저장·실행을 차단합니다.
+              <strong>KIS 저장 일봉 백테스트</strong>에서만 계산할 수 있어 DEMO 저장·실행을 차단합니다.
             </p>
           </article>
           <article className="research-help-card">
@@ -679,7 +767,8 @@ export function ResearchHelpPanel({
               시작·계약 고정을 지원합니다. <strong>종가 확정형 10종(EMA·추세/거래량 필터 포함)</strong>과{' '}
               <strong>19 샹들리에 청산</strong>은 매매 설정에서 계약 고정 시 검증 완료 일봉을 전용 원장에 복사하여
               세션 직전 KRX 개장일 확정 일봉 신호로 당일 1회 집행하며, 고정 이후 추가 수집한 일봉은 기존 전용 원장에
-              자동 반영되지 않습니다. 반면 <strong>05 윌리엄스 변동성 돌파</strong>와{' '}
+              자동 반영되지 않습니다. 반면 <strong>05 윌리엄스 변동성 돌파</strong>,{' '}
+              <strong>13 ETF 듀얼 모멘텀</strong>, <strong>14 파버 GTAA</strong>,{' '}
               <strong>20 변동성 패리티 · RMS</strong>는 저장 일봉 백테스트 전용이라 KIS 모의에서는 정지 상태(
               <code>active=false</code>) 저장만 가능하고 시작·계약 고정은 차단됩니다. 또한 기본 무필터 SMA라도 장기
               기간이 <code>101-120</code>이면 <strong>정지 상태(active=false) 저장과 저장 일봉 백테스트는 가능하지만</strong>
@@ -687,10 +776,19 @@ export function ResearchHelpPanel({
             </p>
           </article>
           <article className="research-help-card">
+            <h3>Q. 다종목 백테스트에서 &apos;수집 필요&apos; 또는 달력 불일치 오류가 뜨는 이유는?</h3>
+            <p>
+              다종목 자산배분(<code>v3</code>)은 바스켓의 모든 위험 자산과 선택한 안전자산 각각에 대해{' '}
+              <code>passed</code> 상태의 달력 대조 완료 KIS 저장 일봉이 필요하며, 선택한 기간의 거래일 달력이 전 종목
+              100% 일치해야 합니다. 일부 종목이 미수집이면 데이터 상태 화면에서 먼저 수집하고, 공통 가능 기간
+              (<code>[max(시작일), min(종료일, 수집일−1일)]</code>) 안에서 기간을 지정해 실행하세요.
+            </p>
+          </article>
+          <article className="research-help-card">
             <h3>Q. 검증 실험 연결 배지가 왜 사라졌나요?</h3>
             <p>
-              백테스트에서 넘어온 뒤 종목이나 규칙 숫자를 하나라도 바꾸면 검증받았던 원래 설정과 달라집니다. 허위 검증
-              표시를 막기 위해 설정이 바뀌는 즉시 배지가 자동 해제됩니다.
+              백테스트에서 넘어온 뒤 종목·바스켓 순서·안전자산이나 규칙 숫자를 하나라도 바꾸면 검증받았던 원래 설정과
+              달라집니다. 허위 검증 표시를 막기 위해 설정이 바뀌는 즉시 배지가 자동 해제됩니다.
             </p>
           </article>
         </div>

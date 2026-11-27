@@ -1,16 +1,21 @@
+import { useId } from 'react';
+import { portfolioWarmup } from '../../../shared/portfolio-rules';
 import { STRATEGY_CATALOG } from '../../../shared/strategy-rules';
 import { Badge } from '../ui';
 import {
+  PORTFOLIO_RULE_GUIDE,
   PRESET_ENTRIES,
   RULE_GROUPS,
   applyPreset,
   environmentAvailabilityText,
   isDemoRuleSupported,
   isKisTickSmaForm,
+  isPortfolioKind,
   isSameRuleForm,
   kisFormBlockReason,
   kisFormExecutionMode,
   matchedPreset,
+  ruleTitle,
   type RuleFormState,
   type RuleKind,
 } from '../../pages/research-rule-form';
@@ -31,6 +36,7 @@ export function RuleConfigSection({
   unit,
   periodError,
   periodErrorId,
+  codeOptions,
 }: {
   form: RuleFormState;
   onChange: (next: RuleFormState) => void;
@@ -39,22 +45,30 @@ export function RuleConfigSection({
   unit: string;
   periodError?: boolean;
   periodErrorId?: string;
+  codeOptions?: { code: string; name?: string }[];
 }) {
-  const catalog = STRATEGY_CATALOG[form.kind];
+  const datalistId = useId();
+  const portfolioMode = isPortfolioKind(form.kind);
+  const title = ruleTitle(form.kind);
+  const guide = isPortfolioKind(form.kind) ? PORTFOLIO_RULE_GUIDE[form.kind] : STRATEGY_CATALOG[form.kind];
+  const singleCatalog = isPortfolioKind(form.kind) ? null : STRATEGY_CATALOG[form.kind];
   const activePreset = matchedPreset(form);
-  const demoCatalogSupported = catalog.environments.demo !== false;
+  const demoCatalogSupported = portfolioMode ? false : singleCatalog!.environments.demo !== false;
   const demoFormSupported = isDemoRuleSupported(form);
   const demoBadgeTone = !demoCatalogSupported ? 'neutral' : demoFormSupported ? 'teal' : 'warning';
-  const demoBadgeText = !demoCatalogSupported
+  const demoBadgeText = portfolioMode
     ? '미지원'
-    : demoFormSupported
-      ? environmentAvailabilityText(catalog.environments.demo)
-      : '현재 설정 제한 (저장 일봉 필요)';
+    : !demoCatalogSupported
+      ? '미지원'
+      : demoFormSupported
+        ? environmentAvailabilityText(singleCatalog!.environments.demo)
+        : '현재 설정 제한 (저장 일봉 필요)';
   const kisMode = kisFormExecutionMode(form);
   const kisBlockReason = kisFormBlockReason(form);
   const kisBadgeTone = kisMode === 'unsupported' ? 'warning' : 'teal';
-  const kisBadgeLabel =
-    kisMode === 'confirmed-daily'
+  const kisBadgeLabel = portfolioMode
+    ? 'KIS 모의: 시작 불가 (저장 일봉 백테스트 전용)'
+    : kisMode === 'confirmed-daily'
       ? 'KIS 모의: 확정 일봉 기반'
       : kisMode === 'realtime-tick'
         ? 'KIS 모의 · 실시간 체결가'
@@ -64,6 +78,67 @@ export function RuleConfigSection({
   const slowLabel = mode === 'strategy' ? `장기 평균 (${effectiveUnit})` : '장기 (봉)';
   const update = (patch: Partial<RuleFormState>) => onChange({ ...form, ...patch });
 
+  function handleKindChange(nextKind: RuleKind) {
+    if (isPortfolioKind(nextKind)) {
+      update({ kind: nextKind, useChandelier: false, useVolatilityParity: false });
+      return;
+    }
+    update({ kind: nextKind });
+  }
+
+  function updatePortfolioAsset(index: number, value: string) {
+    const nextAssets = form.portfolioAssets.map((item, i) => (i === index ? value.toUpperCase() : item));
+    update({ portfolioAssets: nextAssets });
+  }
+
+  function movePortfolioAsset(index: number, delta: -1 | 1) {
+    const target = index + delta;
+    if (target < 0 || target >= form.portfolioAssets.length) return;
+    const nextAssets = [...form.portfolioAssets];
+    [nextAssets[index], nextAssets[target]] = [nextAssets[target], nextAssets[index]];
+    update({ portfolioAssets: nextAssets });
+  }
+
+  function addPortfolioAsset() {
+    if (form.portfolioAssets.length >= 6) return;
+    update({ portfolioAssets: [...form.portfolioAssets, ''] });
+  }
+
+  function removePortfolioAsset(index: number) {
+    if (form.portfolioAssets.length <= 2) return;
+    update({ portfolioAssets: form.portfolioAssets.filter((_, i) => i !== index) });
+  }
+
+  const portfolioWarmupBars = (() => {
+    if (form.kind === 'dual_momentum') {
+      const lookbackDays = Number(form.dmLookbackDays);
+      if (form.dmLookbackDays.trim() !== '' && Number.isInteger(lookbackDays) && lookbackDays >= 20 && lookbackDays <= 252) {
+        return portfolioWarmup({
+          kind: 'dual_momentum',
+          assets: ['069500', '005930'],
+          safeAsset: null,
+          lookbackDays,
+          rebalanceDays: 20,
+        });
+      }
+      return null;
+    }
+    if (form.kind === 'faber_gtaa') {
+      const smaPeriod = Number(form.gtaaSmaPeriod);
+      if (form.gtaaSmaPeriod.trim() !== '' && Number.isInteger(smaPeriod) && smaPeriod >= 20 && smaPeriod <= 250) {
+        return portfolioWarmup({
+          kind: 'faber_gtaa',
+          assets: ['069500', '005930'],
+          safeAsset: null,
+          smaPeriod,
+          rebalanceDays: 20,
+        });
+      }
+      return null;
+    }
+    return null;
+  })();
+
   return (
     <div className="rule-config">
       <div className="rule-selector-wrap">
@@ -72,43 +147,53 @@ export function RuleConfigSection({
           <select
             value={form.kind}
             disabled={disabled}
-            onChange={e => update({ kind: e.target.value as RuleKind })}
+            onChange={e => handleKindChange(e.target.value as RuleKind)}
           >
             {RULE_GROUPS.map(group => (
               <optgroup key={group.label} label={group.label}>
                 {group.kinds.map(kind => (
                   <option key={kind} value={kind}>
-                    {STRATEGY_CATALOG[kind].title}
+                    {ruleTitle(kind)}
                   </option>
                 ))}
               </optgroup>
             ))}
           </select>
         </label>
-        <p className="rule-selector-meta">11종 전략 지원 · 저장 일봉 전체 / DEMO 종가 전용 4종</p>
+        <p className="rule-selector-meta">13종 전략 지원 · 저장 일봉 13종(다종목 2종 포함) / DEMO 종가 전용 4종</p>
       </div>
 
       <div className="rule-guide" aria-label="규칙 요약 안내">
         <ul className="rule-guide-lines">
           <li>
             <strong>매수</strong>
-            <span>{catalog.buyWhen}</span>
+            <span>{guide.buyWhen}</span>
           </li>
           <li>
             <strong>매도</strong>
-            <span>{catalog.sellWhen}</span>
+            <span>{guide.sellWhen}</span>
           </li>
           <li>
             <strong>주의</strong>
-            <span>{catalog.cautionRegime}</span>
+            <span>{guide.cautionRegime}</span>
           </li>
         </ul>
         <div className="rule-env-badges" aria-label="환경별 사용 가능 여부">
-          <Badge tone={catalog.environments.daily ? 'teal' : 'neutral'}>
-            저장 일봉 · {environmentAvailabilityText(catalog.environments.daily)}
-          </Badge>
-          <Badge tone={demoBadgeTone}>DEMO · {demoBadgeText}</Badge>
-          <Badge tone={kisBadgeTone}>{kisBadgeLabel}</Badge>
+          {portfolioMode ? (
+            <>
+              <Badge tone="teal">저장 일봉: 다종목 자산배분 (v3)</Badge>
+              <Badge tone="neutral">DEMO: 미지원</Badge>
+              <Badge tone="warning">{kisBadgeLabel}</Badge>
+            </>
+          ) : (
+            <>
+              <Badge tone={singleCatalog!.environments.daily ? 'teal' : 'neutral'}>
+                저장 일봉 · {environmentAvailabilityText(singleCatalog!.environments.daily)}
+              </Badge>
+              <Badge tone={demoBadgeTone}>DEMO · {demoBadgeText}</Badge>
+              <Badge tone={kisBadgeTone}>{kisBadgeLabel}</Badge>
+            </>
+          )}
         </div>
         {kisMode === 'confirmed-daily' && (
           <p className="rule-kis-note">
@@ -143,6 +228,163 @@ export function RuleConfigSection({
           ))}
         </div>
       </div>
+
+      {portfolioMode && (
+        <div className="rule-portfolio-basket">
+          {codeOptions && codeOptions.length > 0 && (
+            <datalist id={datalistId}>
+              {codeOptions.map(option => (
+                <option key={option.code} value={option.code}>
+                  {option.name ? `${option.name} (${option.code})` : option.code}
+                </option>
+              ))}
+            </datalist>
+          )}
+          <div className="rule-basket-head">
+            <span className="rule-presets-label">위험 자산 바스켓 (2-6종 · 순서 보존)</span>
+            <button
+              type="button"
+              className="button secondary small-button"
+              disabled={disabled || form.portfolioAssets.length >= 6}
+              onClick={addPortfolioAsset}
+            >
+              위험 자산 추가
+            </button>
+          </div>
+          <div className="rule-basket-rows">
+            {form.portfolioAssets.map((asset, index) => (
+              <div key={index} className="rule-basket-row">
+                <label className="field">
+                  위험 자산 {index + 1}
+                  <input
+                    name={`portfolioAsset-${index}`}
+                    type="text"
+                    maxLength={6}
+                    placeholder="예: 069500"
+                    list={codeOptions?.length ? datalistId : undefined}
+                    value={asset}
+                    disabled={disabled}
+                    onChange={e => updatePortfolioAsset(index, e.target.value)}
+                    required
+                  />
+                </label>
+                <div className="rule-basket-row-actions">
+                  <button
+                    type="button"
+                    className="button secondary small-button"
+                    aria-label={`위험 자산 ${index + 1} 위로 이동`}
+                    disabled={disabled || index === 0}
+                    onClick={() => movePortfolioAsset(index, -1)}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    className="button secondary small-button"
+                    aria-label={`위험 자산 ${index + 1} 아래로 이동`}
+                    disabled={disabled || index === form.portfolioAssets.length - 1}
+                    onClick={() => movePortfolioAsset(index, 1)}
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    className="button secondary small-button"
+                    aria-label={`위험 자산 ${index + 1} 삭제`}
+                    disabled={disabled || form.portfolioAssets.length <= 2}
+                    onClick={() => removePortfolioAsset(index)}
+                  >
+                    삭제
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="rule-selector-meta">
+            {form.kind === 'dual_momentum'
+              ? '동률 시 입력한 위험 자산 앞 순서 종목이 우선합니다. 대표 종목은 위험 자산 1과 자동 동기화됩니다.'
+              : '종가가 이동평균을 초과한 위험 자산에 각각 1/N 배분합니다. 대표 종목은 위험 자산 1과 자동 동기화됩니다.'}
+          </p>
+          <label className="field">
+            안전자산 종목코드 (선택 · 비우면 현금 보유)
+            <input
+              name="portfolioSafeAsset"
+              type="text"
+              maxLength={6}
+              placeholder="비우면 현금 보유 (예: 148070)"
+              list={codeOptions?.length ? datalistId : undefined}
+              value={form.portfolioSafeAsset}
+              disabled={disabled}
+              onChange={e => update({ portfolioSafeAsset: e.target.value.toUpperCase() })}
+            />
+          </label>
+          {form.kind === 'dual_momentum' && (
+            <div className="form-grid">
+              <label className="field">
+                모멘텀 관측 기간 (봉)
+                <input
+                  name="dmLookbackDays"
+                  type="number"
+                  min="20"
+                  max="252"
+                  step="1"
+                  value={form.dmLookbackDays}
+                  onChange={e => update({ dmLookbackDays: e.target.value })}
+                  required
+                />
+              </label>
+              <label className="field">
+                리밸런싱 주기 (봉)
+                <input
+                  name="dmRebalanceDays"
+                  type="number"
+                  min="5"
+                  max="60"
+                  step="1"
+                  value={form.dmRebalanceDays}
+                  onChange={e => update({ dmRebalanceDays: e.target.value })}
+                  required
+                />
+              </label>
+            </div>
+          )}
+          {form.kind === 'faber_gtaa' && (
+            <div className="form-grid">
+              <label className="field">
+                추세 이동평균 기간 (봉)
+                <input
+                  name="gtaaSmaPeriod"
+                  type="number"
+                  min="20"
+                  max="250"
+                  step="1"
+                  value={form.gtaaSmaPeriod}
+                  onChange={e => update({ gtaaSmaPeriod: e.target.value })}
+                  required
+                />
+              </label>
+              <label className="field">
+                리밸런싱 주기 (봉)
+                <input
+                  name="gtaaRebalanceDays"
+                  type="number"
+                  min="5"
+                  max="60"
+                  step="1"
+                  value={form.gtaaRebalanceDays}
+                  onChange={e => update({ gtaaRebalanceDays: e.target.value })}
+                  required
+                />
+              </label>
+            </div>
+          )}
+          {portfolioWarmupBars !== null && (
+            <p className="rule-selector-meta">
+              최소 준비 봉: {portfolioWarmupBars + 1}봉 (판정 {portfolioWarmupBars}봉 + 다음 봉 시가 체결 1봉)
+            </p>
+          )}
+        </div>
+      )}
 
       {form.kind === 'ma_crossover' && (
         <>
@@ -805,13 +1047,13 @@ export function RuleConfigSection({
         <label className="rule-checkbox">
           <input
             type="checkbox"
-            checked={form.useChandelier}
-            disabled={disabled}
+            checked={!portfolioMode && form.useChandelier}
+            disabled={disabled || portfolioMode}
             onChange={e => update({ useChandelier: e.target.checked })}
           />
           <span>샹들리에 ATR 청산 오버레이 사용</span>
         </label>
-        {form.useChandelier && (
+        {!portfolioMode && form.useChandelier && (
           <div className="form-grid">
             <label className="field">
               ATR 기간 (봉)
@@ -847,13 +1089,13 @@ export function RuleConfigSection({
           <input
             name="useVolatilityParity"
             type="checkbox"
-            checked={form.useVolatilityParity}
-            disabled={disabled}
+            checked={!portfolioMode && form.useVolatilityParity}
+            disabled={disabled || portfolioMode}
             onChange={e => update({ useVolatilityParity: e.target.checked })}
           />
           <span>20 변동성 패리티 · 목표 변동성 수량 조절 오버레이 (선택)</span>
         </label>
-        {form.useVolatilityParity && (
+        {!portfolioMode && form.useVolatilityParity && (
           <>
             <div className="form-grid">
               <label className="field">
@@ -898,10 +1140,16 @@ export function RuleConfigSection({
             </label>
           </>
         )}
+        {portfolioMode && (
+          <p className="rule-selector-meta">
+            다종목 자산배분 전략({title})에서는 단일 종목 공통 오버레이를 사용할 수 없으며
+            저장·실행 시 오버레이는 생략됩니다.
+          </p>
+        )}
       </div>
 
       <details className="rule-field-help">
-        <summary>현재 선택한 규칙({catalog.title}) 입력 항목 설명 보기</summary>
+        <summary>현재 선택한 규칙({title}) 입력 항목 설명 보기</summary>
         <div className="rule-field-help-content">
           <p className="rule-field-help-env">{RULE_FIELD_HELP[form.kind].envBadge}</p>
           <p className="rule-field-help-summary">{RULE_FIELD_HELP[form.kind].summary}</p>
@@ -920,7 +1168,8 @@ export function RuleConfigSection({
             ))}
           </dl>
           <p className="rule-field-help-overlay-title">
-            샹들리에 ATR 청산 오버레이 ({form.useChandelier ? '사용 중' : '선택 사항'}) · {CHANDELIER_BASIC_PRESET}
+            샹들리에 ATR 청산 오버레이 ({portfolioMode ? '다종목 전략 미적용' : form.useChandelier ? '사용 중' : '선택 사항'}) ·{' '}
+            {CHANDELIER_BASIC_PRESET}
           </p>
           <dl className="rule-field-help-list">
             {CHANDELIER_FIELD_HELP.map(item => (
@@ -933,7 +1182,8 @@ export function RuleConfigSection({
             ))}
           </dl>
           <p className="rule-field-help-overlay-title">
-            20 변동성 패리티 · RMS 포지션 사이징 ({form.useVolatilityParity ? '사용 중' : '선택 사항'}) ·{' '}
+            20 변동성 패리티 · RMS 포지션 사이징 (
+            {portfolioMode ? '다종목 전략 미적용' : form.useVolatilityParity ? '사용 중' : '선택 사항'}) ·{' '}
             {VOLATILITY_PARITY_BASIC_PRESET}
           </p>
           <dl className="rule-field-help-list">
