@@ -14,12 +14,18 @@
 .bt-page select, .bt-page input { width: 100%; min-width: 0; }
 .bt-page input[type="checkbox"] { width: 16px; }
 .bt-page :is(.panel p, details) { margin: 9px 0; line-height: 1.55; }
+.bt-page .rule-selector-wrap .rule-selector-field { margin-bottom: 4px; }
+.bt-page .rule-selector-meta { margin: 0; }
 .bt-page .research-help .research-help-sub { margin: 4px 0 0; }
 .bt-page .research-help :is(.research-help-steps p, .research-help-card p) { margin: 0; }
+.bt-page .research-help .research-help-env-line { margin: 0 0 6px; }
 .bt-page .research-help .research-help-card-note { margin: 0 0 8px; }
 .bt-page .research-help .research-help-preset { margin: 0 0 8px; }
+.bt-page .research-help .research-help-exec-note { margin: 0 0 8px; }
+.bt-page .rule-field-help .rule-field-help-env { margin: 0 0 6px; }
 .bt-page .rule-field-help .rule-field-help-summary { margin: 0 0 6px; }
 .bt-page .rule-field-help .rule-field-help-preset { margin: 0 0 8px; }
+.bt-page .rule-field-help .rule-field-help-exec { margin: 0 0 8px; }
 .bt-page .rule-field-help .rule-field-help-overlay-title { margin: 10px 0 6px; }
 .bt-page .bt-note { color: var(--muted); font-size: 13px; }
 .bt-warning { padding: 9px 12px; border-left: 3px solid #ba7212; background: #fff4da; color: #593900; }

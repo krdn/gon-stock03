@@ -76,13 +76,59 @@ interface RuleFormState {
   longTrendMa: string;
   exitShortMa: string;
   maxHoldingDays: string;
+  fastPeriod: string;
+  slowPeriod: string;
+  signalPeriod: string;
+  requireZeroLineAbove: boolean;
+  diPeriod: string;
+  adxThreshold: string;
+  bbSqueezePeriod: string;
+  stdDevMultiplier: string;
+  squeezeLookback: string;
+  squeezePercentile: string;
+  ttmPeriod: string;
+  bbMult: string;
+  kcMult: string;
+  bbPeriod: string;
+  bbStdDev: string;
+  pbRsiPeriod: string;
+  rsiOversold: string;
+  exitPercentB: string;
+  pullbackDays: string;
+  maxVolumeRatio: string;
+  trendFastMa: string;
+  trendSlowMa: string;
+  maPeriod: string;
+  buyDisparity: string;
+  sellDisparity: string;
+  stopLossPct: string;
   useChandelier: boolean;
   atrPeriod: string;
   atrMultiplier: string;
 }
 
-const RULE_KINDS = ['ma_crossover', 'donchian_breakout', 'rsi2_pullback'] as const;
-const editableRule = (kind: RuleKind): kind is typeof RULE_KINDS[number] => RULE_KINDS.some(value => value === kind);
+const RULE_KINDS = [
+  'ma_crossover',
+  'donchian_breakout',
+  'rsi2_pullback',
+  'macd_momentum',
+  'adx_dmi_trend',
+  'bollinger_squeeze',
+  'ttm_squeeze',
+  'bollinger_percent_b',
+  'low_volume_pullback',
+  'disparity_reversion',
+] as const;
+
+const RULE_GROUPS: { label: string; kinds: readonly RuleKind[] }[] = [
+  { label: '추세 · 모멘텀 (3종)', kinds: ['ma_crossover', 'macd_momentum', 'adx_dmi_trend'] },
+  { label: '변동성 돌파 · 스퀴즈 (3종)', kinds: ['donchian_breakout', 'bollinger_squeeze', 'ttm_squeeze'] },
+  {
+    label: '눌림목 · 평균회귀 (4종)',
+    kinds: ['rsi2_pullback', 'bollinger_percent_b', 'low_volume_pullback', 'disparity_reversion'],
+  },
+];
+
 const PRESET_ENTRIES: { key: PresetKey; label: string }[] = [
   { key: 'conservative', label: '보수적' },
   { key: 'basic', label: '기본' },
@@ -97,6 +143,14 @@ interface FieldHelpItem {
   description: string;
 }
 
+interface RuleHelpEntry {
+  summary: string;
+  envBadge: string;
+  basicPreset: string;
+  executionNote: string;
+  fields: FieldHelpItem[];
+}
+
 const HELP_TABS: { id: HelpTabId; label: string }[] = [
   { id: 'workflow', label: '처음부터 따라하기' },
   { id: 'dictionary', label: '전략·입력 항목 사전' },
@@ -105,16 +159,19 @@ const HELP_TABS: { id: HelpTabId; label: string }[] = [
 ];
 
 /** 규칙별 입력 항목 상세 안내 (상단 도움말 사전과 `RuleConfigSection` 문맥 가이드가 공유). */
-const RULE_FIELD_HELP: Record<typeof RULE_KINDS[number], { summary: string; basicPreset: string; fields: FieldHelpItem[] }> = {
+const RULE_FIELD_HELP: Record<RuleKind, RuleHelpEntry> = {
   ma_crossover: {
     summary: '단기 이동평균과 장기 이동평균의 교차(골든·데드크로스)로 추세 전환을 포착합니다.',
+    envBadge: '저장 일봉 · DEMO 겸용(거래량 필터 꺼짐) · KIS 모의(필터 없는 SMA 100 이하)',
     basicPreset: 'SMA, 단기 5 / 장기 20 (추세·거래량 필터 꺼짐)',
+    executionNote:
+      '매도 신호는 현재 수익 여부를 보장하지 않습니다(수익 미보장). 저장 일봉은 종가 판정 후 다음 봉 시가, 거래량 필터를 끈 DEMO는 다음 합성 봉 종가에 체결한다고 가정합니다. 준비 봉은 max(장기+1, 추세 필터, 거래량 필터 사용 시 21)봉입니다.',
     fields: [
       {
         term: '단기 / 장기 평균',
-        range: '단기 2-60 · 장기 3-120 (단기 < 장기)',
+        range: '단기 2-60 정수 · 장기 3-120 정수 (단기 < 장기)',
         description:
-          '단기선이 장기선을 위로 뚫을 때(골든크로스) 매수, 아래로 뚫을 때(데드크로스) 매도합니다. 기간 숫자를 줄이면 신호가 빨라지지만 속임수(잦은 매매)가 늘고, 늘리면 큰 추세만 느리게 잡습니다.',
+          '전봉 단기<=장기에서 오늘 단기>장기(초과)로 상향 돌파하면 매수, 전봉 단기>=장기에서 오늘 단기<장기(미만)로 하향 돌파하면 매도합니다. 기간을 줄이면 신호가 빨라지지만 속임수가 늘고, 늘리면 큰 추세만 느리게 잡습니다.',
       },
       {
         term: '평균 방식 (SMA vs EMA)',
@@ -124,62 +181,234 @@ const RULE_FIELD_HELP: Record<typeof RULE_KINDS[number], { summary: string; basi
       },
       {
         term: '장기 추세 필터 (선택)',
-        range: '20-240봉 (비우면 미사용)',
+        range: '20-240 정수 (비우면 미사용)',
         description:
-          '예: 60을 넣으면 오늘 종가가 60일 평균선 위에 있는 상승 추세일 때만 매수해 하락장 매수를 막습니다.',
+          '예: 60을 넣으면 오늘 종가가 60일 평균선을 초과(>)할 때만 매수해 하락장 매수를 막습니다. 숫자를 키우면 더 큰 장기 추세만 허용합니다.',
       },
       {
         term: '최소 상대 거래량 (선택)',
-        range: '0-5배 (비우면 미사용)',
+        range: '0-5 숫자 (비우면 미사용 · 저장 일봉 전용)',
         description:
-          '예: 1.5를 넣으면 오늘 거래량이 직전 20일 평균 거래량의 1.5배 이상 터진 날에만 매수합니다.',
+          '예: 1.5를 넣으면 오늘 거래량이 직전 20봉 평균 거래량의 1.5배 이상(>=)일 때만 매수합니다. 배수를 높일수록 거래량이 크게 터진 돌파만 고릅니다.',
       },
     ],
   },
   donchian_breakout: {
     summary: '가격 채널 돌파와 거래량 확인을 결합한 터틀 트레이딩 방식입니다.',
+    envBadge: '저장 일봉 전용 · KIS 모의 정지 저장 가능(실시간 시작 제한)',
     basicPreset: '진입 고가 20봉 / 청산 저가 10봉 / 최소 거래량 1배 초과',
+    executionNote:
+      '매도 신호는 수익을 보장하지 않습니다(수익 미보장). 저장 일봉에서는 종가 판정 후 다음 봉 시가에 체결한다고 가정합니다. DEMO에서는 사용할 수 없습니다. 준비 봉은 max(진입 기간, 20)+1봉입니다.',
     fields: [
       {
         term: '진입 고가 기간',
-        range: '10-120봉',
+        range: '10-120 정수',
         description:
-          '종가가 직전 N일 최고가 이상(>=)으로 마감하고 거래량 조건을 충족할 때 매수합니다(터틀 트레이딩 방식).',
+          '종가가 직전 N일 최고가 이상(>=)으로 마감하고 거래량 조건을 충족할 때 매수합니다(터틀 트레이딩 방식). 기간을 늘리면 큰 돌파만 잡고 줄이면 잦게 진입합니다.',
       },
       {
         term: '청산 저가 기간',
-        range: '3-60봉 (진입 기간 미만)',
+        range: '3-60 정수 (진입 기간 미만)',
         description:
-          '종가가 직전 M일 최저가 이하(<=)로 내려가 마감하면 매도합니다. 진입 기간보다 짧게 설정해 이익을 지킵니다.',
+          '종가가 직전 M일 최저가 이하(<=)로 내려가 마감하면 매도합니다. 기간을 줄이면 빠르게 청산하고 늘리면 흔들림을 더 견딥니다.',
       },
       {
         term: '최소 거래량 배수',
-        range: '입력 허용 범위 0.5-5 (양끝 포함) · 판정 기준: 직전 20봉 평균 × 배수 초과(>)',
+        range: '입력 허용 범위 0.5-5 (양끝 포함) · 숫자 · 판정 기준: 직전 20봉 평균 × 배수 초과(>)',
         description:
-          '입력값은 0.5-5 범위로 설정하며, 실제 진입 판정은 돌파 당일 거래량이 직전 20봉 평균 거래량 × 배수를 초과(>)할 때만 매수해 거래량 없는 가짜 돌파를 거릅니다.',
+          '입력값은 0.5-5 범위로 설정하며, 실제 진입 판정은 돌파 당일 거래량이 직전 20봉 평균 거래량 × 배수를 초과(>)할 때만 매수해 거래량 없는 가짜 돌파를 거릅니다. 배수를 높이면 진입이 줄고 낮추면 늘어납니다.',
       },
     ],
   },
   rsi2_pullback: {
     summary: '장기 상승 추세 종목이 단기 과매도로 눌렸을 때 반등을 노립니다.',
+    envBadge: '저장 일봉 · DEMO 겸용 · KIS 모의 정지 저장 가능(실시간 시작 제한)',
     basicPreset: 'RSI 기간 2봉 / 과매도 기준 10 이하 / 장기 추세선 200봉 / 청산 단기선 5봉 / 최대 보유 10봉',
+    executionNote:
+      '매도/청산 신호는 현재 수익 여부를 검사하지 않으므로 수익을 보장하지 않습니다(수익 미보장). 저장 일봉은 종가 판정 후 다음 봉 시가, DEMO는 다음 합성 봉 종가에 체결한다고 가정합니다. 준비 봉은 max(장기 추세선, 청산 단기선, RSI 기간+1)봉입니다.',
     fields: [
       {
         term: '장기 추세선',
-        range: '60-240봉 (기본 200)',
-        description: '기본 200일선 위에 있는 장기 상승 종목만 골라 하락 추세 종목을 섣불리 사는 위험을 막습니다.',
+        range: '60-240 정수 (기본 200)',
+        description:
+          '종가가 장기 SMA 초과(>)이고 청산 단기선 미만(<)일 때만 진입 후보가 됩니다. 기간을 늘리면 장기 상승 종목만 엄선하고 줄이면 중기 상승 종목까지 넓어집니다.',
       },
       {
         term: 'RSI 기간 & 과매도 기준',
-        range: 'RSI 기간 2-5봉 · 기준 2-25 이하',
+        range: 'RSI 기간 2-5 정수 · 기준 2-25 숫자 (이하 <=)',
         description:
-          '단기 급락 정도를 재는 민감한 지표입니다. 과매도 기준을 10에서 5로 낮추면 더 극단적으로 떨어진 날에만 신중하게 매수합니다.',
+          'Wilder RSI가 기준 이하(<=)일 때 매수합니다. 과매도 기준을 10에서 5로 낮추면 더 극단적으로 떨어진 날에만 신중하게 매수하고, 높이면 진입이 잦아집니다.',
       },
       {
         term: '청산 단기선 & 최대 보유 기간',
-        range: '청산선 3-10봉 · 보유 3-20봉',
+        range: '청산선 3-10 정수 · 보유 3-20 정수',
         description:
-          '주가가 단기 평균(예: 5일선)을 회복하거나 RSI가 70 이상이 되거나 최대 보유 기간에 도달하면 매도/청산 신호를 냅니다(현재 수익 여부를 검사하지 않으므로 수익 미보장).',
+          '주가가 단기 평균 이상(>=)을 회복하거나 RSI가 70 이상(>=)이 되거나 보유 봉 수가 최대 보유 기간 이상(>=)에 도달하면 매도/청산 신호를 냅니다(현재 수익 여부를 검사하지 않으므로 수익 미보장). 숫자를 줄이면 빨리 청산하고 늘리면 더 오래 기다립니다.',
+      },
+    ],
+  },
+  macd_momentum: {
+    summary: '단기·장기 EMA 차이와 시그널선의 간격(히스토그램) 전환으로 모멘텀 변화를 포착합니다.',
+    envBadge: '저장 일봉 · DEMO 겸용 · KIS 모의 정지 저장 가능(실시간 시작 제한)',
+    basicPreset: '단기 12봉 / 장기 26봉 / 시그널 9봉 / 제로선 위 필터 꺼짐',
+    executionNote:
+      '매도 신호는 수익을 보장하지 않습니다(수익 미보장). 저장 일봉은 종가 판정 후 다음 봉 시가, DEMO는 다음 합성 봉 종가에 체결한다고 가정합니다. 준비 봉은 장기+시그널+10봉입니다.',
+    fields: [
+      {
+        term: '단기 / 장기 EMA 기간',
+        range: '단기 3-30 정수 · 장기 10-100 정수 (단기 < 장기)',
+        description:
+          '각 기간 첫 SMA에서 시작하는 EMA 차이로 MACD선을 계산합니다. 기간을 줄이면 추세 전환을 빠르게 잡지만 횡보장 잦은 매매가 늘고, 늘리면 큰 추세만 느리게 잡습니다.',
+      },
+      {
+        term: '시그널 EMA 기간',
+        range: '3-30 정수',
+        description:
+          '히스토그램(MACD−시그널)이 전봉 0 이하(<=)에서 오늘 0 초과(>)로 바뀌면 매수, 전봉 0 이상(>=)에서 오늘 0 미만(<)으로 바뀌면 매도합니다. 숫자를 줄이면 신호가 빨라지고 늘리면 완만해집니다.',
+      },
+      {
+        term: 'MACD > 0 (제로선 위에서만 매수)',
+        range: '체크박스 (기본 꺼짐)',
+        description:
+          '켜면 히스토그램 양전환 시점에 MACD선이 0 초과(>)인 상승 구간에서만 매수해 하락 추세 중 반등 진입을 줄입니다. 끄면 제로선 아래 반등도 허용합니다.',
+      },
+    ],
+  },
+  adx_dmi_trend: {
+    summary: '방향성 지수(+DI/−DI)와 추세 강도(ADX)를 결합해 추세가 강해질 때만 진입합니다.',
+    envBadge: '저장 일봉 전용 · KIS 모의 정지 저장 가능(실시간 시작 제한)',
+    basicPreset: 'DI 기간 14봉 / ADX 기준 25 이상',
+    executionNote:
+      '매도 신호는 수익을 보장하지 않습니다(수익 미보장). 저장 일봉에서는 종가 판정 후 다음 봉 시가에 체결한다고 가정합니다. DEMO에서는 사용할 수 없습니다. 준비 봉은 2×DI 기간봉입니다.',
+    fields: [
+      {
+        term: 'DI · ADX 기간',
+        range: '7-30 정수',
+        description:
+          '고가·저가·종가로 +DI, −DI와 Wilder 평활 ADX를 계산합니다. 기간을 줄이면 추세 전환에 민감해지지만 잡음이 늘고, 늘리면 신호는 늦지만 큰 추세 위주로 걸러냅니다.',
+      },
+      {
+        term: 'ADX 추세 기준',
+        range: '15-40 숫자',
+        description:
+          '+DI가 −DI 초과(>)이고 ADX가 기준 이상(>=)이며 직전 봉 ADX 초과(>)로 상승 중이면 매수, +DI가 −DI 미만(<)으로 역전되면 매도합니다. 기준을 높이면 강한 추세에만 신중히 진입하고 낮추면 더 잦게 진입합니다.',
+      },
+    ],
+  },
+  bollinger_squeeze: {
+    summary: '볼린저 밴드 폭이 극도로 좁아진(스퀴즈) 뒤 거래량이 동반된 상단 돌파를 노립니다.',
+    envBadge: '저장 일봉 전용 · KIS 모의 정지 저장 가능(실시간 시작 제한)',
+    basicPreset: '밴드 20봉 / 표준편차 2배 / 수축 비교 60봉 / 하위 25% 이하',
+    executionNote:
+      '매도 신호는 수익을 보장하지 않습니다(수익 미보장). 저장 일봉에서는 종가 판정 후 다음 봉 시가에 체결한다고 가정합니다. DEMO에서는 사용할 수 없습니다. 준비 봉은 max(밴드 기간+수축 비교 기간, 21)봉입니다.',
+    fields: [
+      {
+        term: '밴드 기간 & 표준편차 배수',
+        range: '기간 10-60 정수 · 배수 1.5-3 숫자',
+        description:
+          '종가 모집단 표준편차로 상단·중심·하단을 계산합니다. 스퀴즈 조건과 당일 거래량(직전 20봉 평균×1.2배 초과 >)을 충족하며 종가가 상단 초과(>)면 매수, 종가가 중심선 미만(<)이면 매도합니다. 기간이나 배수를 키우면 돌파가 줄고 줄이면 잦아집니다.',
+      },
+      {
+        term: '수축 비교 기간 & 하위 분위수',
+        range: '비교 기간 20-120 정수 · 분위수 10-50 숫자',
+        description:
+          '오늘을 제외한 직전 5봉 최소 밴드폭 비율이 직전 비교 기간 밴드폭의 하위 분위수(오름차순 ceil(N×p/100) 순위) 이하(<=)일 때 수축으로 봅니다. 분위수를 낮추면 극심한 응축만 허용하고 높이면 진입이 늘어납니다.',
+      },
+    ],
+  },
+  ttm_squeeze: {
+    summary: '볼린저 밴드가 켈트너 채널 안으로 들어갔다가 풀리는 변동성 발산과 모멘텀 방향을 결합합니다.',
+    envBadge: '저장 일봉 전용 · KIS 모의 정지 저장 가능(실시간 시작 제한)',
+    basicPreset: '기간 20봉 / 볼린저 2배 / 켈트너 1.5배 (보수적·기본 동일)',
+    executionNote:
+      '매도 신호는 수익을 보장하지 않습니다(수익 미보장). 저장 일봉에서는 종가 판정 후 다음 봉 시가에 체결한다고 가정합니다. DEMO에서는 사용할 수 없습니다. 준비 봉은 기간+2봉입니다.',
+    fields: [
+      {
+        term: '공통 계산 기간',
+        range: '14-30 정수',
+        description:
+          'SMA 볼린저, EMA·Wilder ATR 켈트너, 모멘텀 기준선(종가−((기간 고저 중간값+SMA)/2))에 함께 사용합니다. 기간을 줄이면 수축 해제와 모멘텀 전환이 빨라지고 늘리면 완만해집니다.',
+      },
+      {
+        term: '볼린저 배수 & 켈트너 배수',
+        range: 'BB 1.5-2.5 숫자 · KC 1-2.5 숫자',
+        description:
+          '볼린저 상단 < 켈트너 상단(미만) 및 볼린저 하단 > 켈트너 하단(초과)이면 수축입니다. 직전 봉 수축이 오늘 해제되고 모멘텀이 0 초과(>)이며 직전 모멘텀 초과(>)로 커지면 매수, 모멘텀이 0 미만(<)이거나 양수에서 2봉 연속 미만(<)으로 둔화하면 매도합니다. BB 배수를 줄이거나 KC 배수를 키우면 수축 판정이 잦아집니다.',
+      },
+    ],
+  },
+  bollinger_percent_b: {
+    summary: '볼린저 하단 부근 과매도 구간에서 %B와 종가가 함께 반등할 때 단기 복원을 노립니다.',
+    envBadge: '저장 일봉 · DEMO 겸용 · KIS 모의 정지 저장 가능(실시간 시작 제한)',
+    basicPreset: '볼린저 20봉 / 표준편차 2배 / RSI 14봉 / RSI 35 이하 / 청산 %B 0.55 이상',
+    executionNote:
+      '매도 신호는 수익을 보장하지 않습니다(수익 미보장). 저장 일봉은 종가 판정 후 다음 봉 시가, DEMO는 다음 합성 봉 종가에 체결한다고 가정합니다. 준비 봉은 max(볼린저 기간, RSI 기간+1)+1봉입니다.',
+    fields: [
+      {
+        term: '볼린저 기간 & 표준편차 배수',
+        range: '기간 14-30 정수 · 배수 1.8-2.5 숫자',
+        description:
+          '밴드 내 종가 위치 %B(폭이 0이면 0.5)를 계산합니다. 배수를 키우면 하단 이탈(%B <= 0.05) 빈도가 줄어 보수적이 되고, 줄이면 진입 기회가 늘어납니다.',
+      },
+      {
+        term: 'RSI 기간 & 과매도 기준',
+        range: 'RSI 기간 7-21 정수 · 기준 20-40 숫자',
+        description:
+          '직전 %B가 0.05 이하(<=)에서 오늘 %B와 종가가 모두 직전 봉 초과(>)로 상승하고 Wilder RSI가 기준 이하(<=)이면 매수합니다. 과매도 기준을 낮추면 깊은 침체만 고르고 높이면 더 빨리 진입합니다.',
+      },
+      {
+        term: '청산 목표 %B',
+        range: '0.4-1 숫자',
+        description:
+          '현재 %B가 목표 수준 이상(>=)에 도달하면 매도합니다. 값을 낮추면(예: 0.5) 중심선 부근에서 빠르게 청산하고, 높이면(예: 0.65) 더 큰 반등까지 보유합니다.',
+      },
+    ],
+  },
+  low_volume_pullback: {
+    summary: '상승 추세 중 거래량이 줄어든 눌림목 뒤 직전 고가를 넘는 양봉 반전을 포착합니다.',
+    envBadge: '저장 일봉 전용 · KIS 모의 정지 저장 가능(실시간 시작 제한)',
+    basicPreset: '눌림 3봉 / 최대 거래량 0.65배 이하 / 단기 추세 20봉 / 장기 추세 60봉',
+    executionNote:
+      '매도 신호는 수익을 보장하지 않습니다(수익 미보장). 저장 일봉에서는 종가 판정 후 다음 봉 시가에 체결한다고 가정합니다. DEMO에서는 사용할 수 없습니다. 준비 봉은 max(장기 추세선, 21+눌림 기간)봉입니다.',
+    fields: [
+      {
+        term: '눌림 기간 & 최대 거래량 비율',
+        range: '눌림 2-7 정수 · 비율 0.3-0.9 숫자',
+        description:
+          '직전 눌림 구간 모든 종가가 구간 직전 기준봉 종가 미만(<)이고 눌림 평균 거래량이 직전 20봉 평균 × 비율 이하(<=)일 때, 오늘 양봉(종가 > 시가) 종가가 직전 봉 고가 초과(>)로 마감하면 매수합니다. 눌림 기간을 늘리거나 비율을 낮추면 진입이 까다로워집니다.',
+      },
+      {
+        term: '단기 / 장기 추세선',
+        range: '단기 10-30 정수 · 장기 40-120 정수 (단기 < 장기)',
+        description:
+          '단기 SMA와 종가가 모두 장기 SMA 초과(>)인 상승 추세에서만 매수합니다. 종가가 단기 SMA 미만(<)이거나 매 판정 시점 직전 눌림 기간 최저가 이하(<=)면 매도합니다. 기간을 줄이면 반응이 빨라지고 늘리면 큰 상승 추세에만 집중합니다.',
+      },
+    ],
+  },
+  disparity_reversion: {
+    summary: '이동평균 대비 과도하게 벌어진 하방 이격에서 봉 내 하단 반등 마감 시 복원을 노립니다.',
+    envBadge: '저장 일봉 전용 · KIS 모의 정지 저장 가능(실시간 시작 제한)',
+    basicPreset: '이동평균 20봉 / 매수 93% 이하 / 매도 99.5% 이상 / 손절 5% 이하',
+    executionNote:
+      '매도·손절 신호는 수익을 보장하지 않으며 다음 봉 시가가 손절 기준보다 낮을 수 있습니다(수익 미보장). 저장 일봉에서는 종가 판정 후 다음 봉 시가에 체결한다고 가정합니다. DEMO에서는 사용할 수 없습니다. 준비 봉은 이동평균 기간봉입니다.',
+    fields: [
+      {
+        term: '이동평균 기간',
+        range: '10-60 정수',
+        description:
+          '이격도(종가/SMA×100)의 기준 평균선을 계산합니다. 기간을 줄이면 기준선이 주가를 빨리 따라가 괴리가 작아지고, 늘리면 중기 평균 대비 낙폭을 측정합니다.',
+      },
+      {
+        term: '매수 이격도 & 매도 이격도',
+        range: '매수 85-97 숫자 · 매도 98-105 숫자 (매수 < 매도)',
+        description:
+          '이격도가 매수 기준 이하(<=)이고 당일 고저 폭이 양수(고가 > 저가)이며 봉 내 종가 위치가 40% 이상(>=)이면 매수, 이격도가 매도 기준 이상(>=)이면 매도합니다. 매수 기준을 낮추면 더 큰 급락만 고르고 매도 기준을 높이면 더 큰 복원까지 보유합니다.',
+      },
+      {
+        term: '손절 기준 (%)',
+        range: '2-10 숫자',
+        description:
+          '종가가 실제 진입 체결가 대비 설정 손절률 이상 하락(종가 <= 진입 체결가×(1−손절%/100))하면 손절 매도 신호를 냅니다. 숫자를 줄이면 손실을 빨리 끊고 늘리면 흔들림을 더 견딥니다.',
       },
     ],
   },
@@ -306,9 +535,10 @@ function ResearchHelpPanel({
             <span className="research-help-step-no">2단계</span>
             <h3>규칙과 프리셋 선택</h3>
             <p>
-              전략 스튜디오나 백테스트에서 전략 규칙(<code>이동평균 교차</code>, <code>돈키안 돌파</code>,{' '}
-              <code>RSI 단기 눌림목</code>)을 고르고 <strong>[보수적 / 기본 / 공격적]</strong> 프리셋 버튼으로 시작값을
-              채운 뒤 필요하면 <code>샹들리에 ATR 청산</code>을 켭니다.
+              전략 스튜디오나 백테스트에서 10종 전략 규칙(저장 일봉 전체 10종 · DEMO 종가 전용 4종:{' '}
+              <code>이동평균 교차</code>, <code>RSI 단기 눌림목</code>, <code>MACD 히스토그램</code>,{' '}
+              <code>볼린저 %B 반등</code>) 중 하나를 고르고 <strong>[보수적 / 기본 / 공격적]</strong> 프리셋 버튼으로
+              시작값을 채운 뒤 필요하면 <code>샹들리에 ATR 청산</code>을 켭니다.
             </p>
           </li>
           <li>
@@ -347,10 +577,12 @@ function ResearchHelpPanel({
               <h3>
                 {STRATEGY_CATALOG[kind].title} <code>{kind}</code>
               </h3>
+              <p className="research-help-env-line">{RULE_FIELD_HELP[kind].envBadge}</p>
               <p className="research-help-card-note">{RULE_FIELD_HELP[kind].summary}</p>
               <p className="research-help-preset">
                 <strong>기본 프리셋 초기값:</strong> {RULE_FIELD_HELP[kind].basicPreset}
               </p>
+              <p className="research-help-exec-note">{RULE_FIELD_HELP[kind].executionNote}</p>
               <dl className="research-help-dl">
                 {RULE_FIELD_HELP[kind].fields.map(item => (
                   <div key={item.term}>
@@ -367,6 +599,7 @@ function ResearchHelpPanel({
             <h3>
               샹들리에 ATR 청산 오버레이 <code>chandelier</code>
             </h3>
+            <p className="research-help-env-line">저장 일봉 전용 · DEMO 미지원 · KIS 모의 정지 저장 가능(실시간 시작 제한)</p>
             <p className="research-help-card-note">
               전략 기본 매도 신호와 별개로 변동성 기반 추적 손절선을 함께 적용하는 보호 장치입니다.
             </p>
@@ -441,10 +674,15 @@ function ResearchHelpPanel({
       >
         <div className="research-help-faq">
           <article className="research-help-card">
-            <h3>Q. 왜 돈키안 돌파나 샹들리에 청산은 DEMO에서 저장/실행이 안 되나요?</h3>
+            <h3>Q. 왜 10종 전략 중 일부와 샹들리에 청산은 DEMO에서 저장/실행이 안 되나요?</h3>
             <p>
-              DEMO 합성 봉은 종가 하나만 생성합니다. 고가·저가·거래량이 꼭 필요한 전략과 샹들리에 청산은 실제 일봉
-              데이터가 있는 <strong>KIS 저장 일봉 백테스트</strong>에서만 정확히 계산할 수 있어 DEMO 저장을 차단합니다.
+              DEMO 합성 봉은 종가 하나만 생성합니다. 종가만 쓰는 4종(<code>이동평균 교차</code>(거래량 필터 끔),{' '}
+              <code>RSI 단기 눌림목</code>, <code>MACD 히스토그램</code>, <code>볼린저 %B 반등</code>)만 DEMO
+              저장·백테스트를 지원합니다. 시가·고가·저가·거래량이 필요한 6종(<code>돈키안 돌파</code>,{' '}
+              <code>ADX·DMI 추세</code>, <code>볼린저 스퀴즈</code>, <code>TTM 스퀴즈</code>,{' '}
+              <code>거래량 고갈 눌림목</code>, <code>이격도 복원</code>)과 이동평균 거래량 필터·샹들리에 청산은 실제
+              일봉 데이터가 있는 <strong>KIS 저장 일봉 백테스트</strong>에서만 정확히 계산할 수 있어 DEMO 저장·실행을
+              차단합니다.
             </p>
           </article>
           <article className="research-help-card">
@@ -495,6 +733,13 @@ function defaultRuleForm(): RuleFormState {
   const ma = STRATEGY_CATALOG.ma_crossover.presets.basic;
   const donchian = STRATEGY_CATALOG.donchian_breakout.presets.basic;
   const rsi2 = STRATEGY_CATALOG.rsi2_pullback.presets.basic;
+  const macd = STRATEGY_CATALOG.macd_momentum.presets.basic;
+  const adx = STRATEGY_CATALOG.adx_dmi_trend.presets.basic;
+  const bbSqueeze = STRATEGY_CATALOG.bollinger_squeeze.presets.basic;
+  const ttm = STRATEGY_CATALOG.ttm_squeeze.presets.basic;
+  const percentB = STRATEGY_CATALOG.bollinger_percent_b.presets.basic;
+  const lowVol = STRATEGY_CATALOG.low_volume_pullback.presets.basic;
+  const disparity = STRATEGY_CATALOG.disparity_reversion.presets.basic;
   return {
     kind: 'ma_crossover',
     maType: ma.kind === 'ma_crossover' ? ma.maType : 'sma',
@@ -510,6 +755,32 @@ function defaultRuleForm(): RuleFormState {
     longTrendMa: rsi2.kind === 'rsi2_pullback' ? String(rsi2.longTrendMa) : '200',
     exitShortMa: rsi2.kind === 'rsi2_pullback' ? String(rsi2.exitShortMa) : '5',
     maxHoldingDays: rsi2.kind === 'rsi2_pullback' ? String(rsi2.maxHoldingDays) : '10',
+    fastPeriod: String(macd.fastPeriod),
+    slowPeriod: String(macd.slowPeriod),
+    signalPeriod: String(macd.signalPeriod),
+    requireZeroLineAbove: macd.requireZeroLineAbove,
+    diPeriod: String(adx.diPeriod),
+    adxThreshold: String(adx.adxThreshold),
+    bbSqueezePeriod: String(bbSqueeze.period),
+    stdDevMultiplier: String(bbSqueeze.stdDevMultiplier),
+    squeezeLookback: String(bbSqueeze.squeezeLookback),
+    squeezePercentile: String(bbSqueeze.squeezePercentile),
+    ttmPeriod: String(ttm.period),
+    bbMult: String(ttm.bbMult),
+    kcMult: String(ttm.kcMult),
+    bbPeriod: String(percentB.bbPeriod),
+    bbStdDev: String(percentB.bbStdDev),
+    pbRsiPeriod: String(percentB.rsiPeriod),
+    rsiOversold: String(percentB.rsiOversold),
+    exitPercentB: String(percentB.exitPercentB),
+    pullbackDays: String(lowVol.pullbackDays),
+    maxVolumeRatio: String(lowVol.maxVolumeRatio),
+    trendFastMa: String(lowVol.trendFastMa),
+    trendSlowMa: String(lowVol.trendSlowMa),
+    maPeriod: String(disparity.maPeriod),
+    buyDisparity: String(disparity.buyDisparity),
+    sellDisparity: String(disparity.sellDisparity),
+    stopLossPct: String(disparity.stopLossPct),
     useChandelier: false,
     atrPeriod: '14',
     atrMultiplier: '3',
@@ -546,6 +817,46 @@ function formFromRule(rule?: StrategyRule, overlay?: ExitOverlay): RuleFormState
       base.exitShortMa = String(rule.exitShortMa);
       base.maxHoldingDays = String(rule.maxHoldingDays);
       break;
+    case 'macd_momentum':
+      base.fastPeriod = String(rule.fastPeriod);
+      base.slowPeriod = String(rule.slowPeriod);
+      base.signalPeriod = String(rule.signalPeriod);
+      base.requireZeroLineAbove = rule.requireZeroLineAbove;
+      break;
+    case 'adx_dmi_trend':
+      base.diPeriod = String(rule.diPeriod);
+      base.adxThreshold = String(rule.adxThreshold);
+      break;
+    case 'bollinger_squeeze':
+      base.bbSqueezePeriod = String(rule.period);
+      base.stdDevMultiplier = String(rule.stdDevMultiplier);
+      base.squeezeLookback = String(rule.squeezeLookback);
+      base.squeezePercentile = String(rule.squeezePercentile);
+      break;
+    case 'ttm_squeeze':
+      base.ttmPeriod = String(rule.period);
+      base.bbMult = String(rule.bbMult);
+      base.kcMult = String(rule.kcMult);
+      break;
+    case 'bollinger_percent_b':
+      base.bbPeriod = String(rule.bbPeriod);
+      base.bbStdDev = String(rule.bbStdDev);
+      base.pbRsiPeriod = String(rule.rsiPeriod);
+      base.rsiOversold = String(rule.rsiOversold);
+      base.exitPercentB = String(rule.exitPercentB);
+      break;
+    case 'low_volume_pullback':
+      base.pullbackDays = String(rule.pullbackDays);
+      base.maxVolumeRatio = String(rule.maxVolumeRatio);
+      base.trendFastMa = String(rule.trendFastMa);
+      base.trendSlowMa = String(rule.trendSlowMa);
+      break;
+    case 'disparity_reversion':
+      base.maPeriod = String(rule.maPeriod);
+      base.buyDisparity = String(rule.buyDisparity);
+      base.sellDisparity = String(rule.sellDisparity);
+      base.stopLossPct = String(rule.stopLossPct);
+      break;
   }
   return base;
 }
@@ -574,19 +885,65 @@ function applyPreset(form: RuleFormState, presetKey: PresetKey): RuleFormState {
       next.exitShortMa = String(preset.exitShortMa);
       next.maxHoldingDays = String(preset.maxHoldingDays);
       break;
+    case 'macd_momentum':
+      next.fastPeriod = String(preset.fastPeriod);
+      next.slowPeriod = String(preset.slowPeriod);
+      next.signalPeriod = String(preset.signalPeriod);
+      next.requireZeroLineAbove = preset.requireZeroLineAbove;
+      break;
+    case 'adx_dmi_trend':
+      next.diPeriod = String(preset.diPeriod);
+      next.adxThreshold = String(preset.adxThreshold);
+      break;
+    case 'bollinger_squeeze':
+      next.bbSqueezePeriod = String(preset.period);
+      next.stdDevMultiplier = String(preset.stdDevMultiplier);
+      next.squeezeLookback = String(preset.squeezeLookback);
+      next.squeezePercentile = String(preset.squeezePercentile);
+      break;
+    case 'ttm_squeeze':
+      next.ttmPeriod = String(preset.period);
+      next.bbMult = String(preset.bbMult);
+      next.kcMult = String(preset.kcMult);
+      break;
+    case 'bollinger_percent_b':
+      next.bbPeriod = String(preset.bbPeriod);
+      next.bbStdDev = String(preset.bbStdDev);
+      next.pbRsiPeriod = String(preset.rsiPeriod);
+      next.rsiOversold = String(preset.rsiOversold);
+      next.exitPercentB = String(preset.exitPercentB);
+      break;
+    case 'low_volume_pullback':
+      next.pullbackDays = String(preset.pullbackDays);
+      next.maxVolumeRatio = String(preset.maxVolumeRatio);
+      next.trendFastMa = String(preset.trendFastMa);
+      next.trendSlowMa = String(preset.trendSlowMa);
+      break;
+    case 'disparity_reversion':
+      next.maPeriod = String(preset.maPeriod);
+      next.buyDisparity = String(preset.buyDisparity);
+      next.sellDisparity = String(preset.sellDisparity);
+      next.stopLossPct = String(preset.stopLossPct);
+      break;
   }
   return next;
 }
 
-/** 현재 폼 값이 일치하는 프리셋 키를 반환한다. */
+/** 문자열 입력값이 대상 숫자와 정확히 일치하는지 판정한다(빈 문자열의 0 변환 차단). */
+function numEq(raw: string, expected: number): boolean {
+  return raw.trim() !== '' && Number(raw) === expected;
+}
+
+/** 현재 폼 값이 일치하는 프리셋 키를 반환한다(동일 값 프리셋은 기본 우선). */
 function matchedPreset(form: RuleFormState): PresetKey | null {
-  for (const { key } of PRESET_ENTRIES) {
+  const order: PresetKey[] = ['basic', 'conservative', 'aggressive'];
+  for (const key of order) {
     const preset = STRATEGY_CATALOG[form.kind].presets[key];
     if (preset.kind === 'ma_crossover' && form.kind === 'ma_crossover') {
       if (
         form.maType === preset.maType &&
-        Number(form.fast) === preset.fast &&
-        Number(form.slow) === preset.slow &&
+        numEq(form.fast, preset.fast) &&
+        numEq(form.slow, preset.slow) &&
         form.regimePeriod.trim() === '' &&
         (form.minRelativeVolume.trim() === '' || Number(form.minRelativeVolume) === 0)
       ) {
@@ -594,19 +951,77 @@ function matchedPreset(form: RuleFormState): PresetKey | null {
       }
     } else if (preset.kind === 'donchian_breakout' && form.kind === 'donchian_breakout') {
       if (
-        Number(form.entryLookback) === preset.entryLookback &&
-        Number(form.exitLookback) === preset.exitLookback &&
-        Number(form.volumeMultiplier) === preset.volumeMultiplier
+        numEq(form.entryLookback, preset.entryLookback) &&
+        numEq(form.exitLookback, preset.exitLookback) &&
+        numEq(form.volumeMultiplier, preset.volumeMultiplier)
       ) {
         return key;
       }
     } else if (preset.kind === 'rsi2_pullback' && form.kind === 'rsi2_pullback') {
       if (
-        Number(form.rsiPeriod) === preset.rsiPeriod &&
-        Number(form.oversoldThreshold) === preset.oversoldThreshold &&
-        Number(form.longTrendMa) === preset.longTrendMa &&
-        Number(form.exitShortMa) === preset.exitShortMa &&
-        Number(form.maxHoldingDays) === preset.maxHoldingDays
+        numEq(form.rsiPeriod, preset.rsiPeriod) &&
+        numEq(form.oversoldThreshold, preset.oversoldThreshold) &&
+        numEq(form.longTrendMa, preset.longTrendMa) &&
+        numEq(form.exitShortMa, preset.exitShortMa) &&
+        numEq(form.maxHoldingDays, preset.maxHoldingDays)
+      ) {
+        return key;
+      }
+    } else if (preset.kind === 'macd_momentum' && form.kind === 'macd_momentum') {
+      if (
+        numEq(form.fastPeriod, preset.fastPeriod) &&
+        numEq(form.slowPeriod, preset.slowPeriod) &&
+        numEq(form.signalPeriod, preset.signalPeriod) &&
+        form.requireZeroLineAbove === preset.requireZeroLineAbove
+      ) {
+        return key;
+      }
+    } else if (preset.kind === 'adx_dmi_trend' && form.kind === 'adx_dmi_trend') {
+      if (numEq(form.diPeriod, preset.diPeriod) && numEq(form.adxThreshold, preset.adxThreshold)) {
+        return key;
+      }
+    } else if (preset.kind === 'bollinger_squeeze' && form.kind === 'bollinger_squeeze') {
+      if (
+        numEq(form.bbSqueezePeriod, preset.period) &&
+        numEq(form.stdDevMultiplier, preset.stdDevMultiplier) &&
+        numEq(form.squeezeLookback, preset.squeezeLookback) &&
+        numEq(form.squeezePercentile, preset.squeezePercentile)
+      ) {
+        return key;
+      }
+    } else if (preset.kind === 'ttm_squeeze' && form.kind === 'ttm_squeeze') {
+      if (
+        numEq(form.ttmPeriod, preset.period) &&
+        numEq(form.bbMult, preset.bbMult) &&
+        numEq(form.kcMult, preset.kcMult)
+      ) {
+        return key;
+      }
+    } else if (preset.kind === 'bollinger_percent_b' && form.kind === 'bollinger_percent_b') {
+      if (
+        numEq(form.bbPeriod, preset.bbPeriod) &&
+        numEq(form.bbStdDev, preset.bbStdDev) &&
+        numEq(form.pbRsiPeriod, preset.rsiPeriod) &&
+        numEq(form.rsiOversold, preset.rsiOversold) &&
+        numEq(form.exitPercentB, preset.exitPercentB)
+      ) {
+        return key;
+      }
+    } else if (preset.kind === 'low_volume_pullback' && form.kind === 'low_volume_pullback') {
+      if (
+        numEq(form.pullbackDays, preset.pullbackDays) &&
+        numEq(form.maxVolumeRatio, preset.maxVolumeRatio) &&
+        numEq(form.trendFastMa, preset.trendFastMa) &&
+        numEq(form.trendSlowMa, preset.trendSlowMa)
+      ) {
+        return key;
+      }
+    } else if (preset.kind === 'disparity_reversion' && form.kind === 'disparity_reversion') {
+      if (
+        numEq(form.maPeriod, preset.maPeriod) &&
+        numEq(form.buyDisparity, preset.buyDisparity) &&
+        numEq(form.sellDisparity, preset.sellDisparity) &&
+        numEq(form.stopLossPct, preset.stopLossPct)
       ) {
         return key;
       }
@@ -634,89 +1049,238 @@ function badNumberMessage(input: HTMLInputElement): string {
 function buildRuleAndOverlay(
   form: RuleFormState,
 ): { ok: true; rule: StrategyRule; overlay?: ExitOverlay } | { ok: false; error: string; focusName?: string } {
-  if (!editableRule(form.kind)) return {ok:false, error:'이 규칙의 편집 화면은 준비 중입니다.'};
   let rawRule: unknown;
-  if (form.kind === 'ma_crossover') {
-    const fast = Number(form.fast);
-    const slow = Number(form.slow);
-    if (form.fast.trim() === '' || !Number.isInteger(fast) || fast < 2 || fast > 60) {
-      return { ok: false, error: '단기 기간은 2-60 사이의 정수로 입력하세요.', focusName: 'fast' };
-    }
-    if (form.slow.trim() === '' || !Number.isInteger(slow) || slow < 3 || slow > 120) {
-      return { ok: false, error: '장기 기간은 3-120 사이의 정수로 입력하세요.', focusName: 'slow' };
-    }
-    if (fast >= slow) {
-      return { ok: false, error: '단기 기간은 장기 기간보다 작아야 합니다.', focusName: 'fast' };
-    }
-    const trimmedRegime = form.regimePeriod.trim();
-    const trimmedVol = form.minRelativeVolume.trim();
-    const maRule: Record<string, unknown> = {
-      kind: 'ma_crossover',
-      maType: form.maType,
-      fast,
-      slow,
-    };
-    if (trimmedRegime !== '') {
-      const regime = Number(trimmedRegime);
-      if (!Number.isInteger(regime) || regime < 20 || regime > 240) {
-        return { ok: false, error: '장기 추세 필터는 20-240 사이의 정수로 입력하세요.', focusName: 'regimePeriod' };
+  switch (form.kind) {
+    case 'ma_crossover': {
+      const fast = Number(form.fast);
+      const slow = Number(form.slow);
+      if (form.fast.trim() === '' || !Number.isInteger(fast) || fast < 2 || fast > 60) {
+        return { ok: false, error: '단기 기간은 2-60 사이의 정수로 입력하세요.', focusName: 'fast' };
       }
-      maRule.regimePeriod = regime;
-    }
-    if (trimmedVol !== '') {
-      const vol = Number(trimmedVol);
-      if (!Number.isFinite(vol) || vol < 0 || vol > 5) {
-        return { ok: false, error: '최소 상대 거래량은 0-5 범위의 숫자로 입력하세요.', focusName: 'minRelativeVolume' };
+      if (form.slow.trim() === '' || !Number.isInteger(slow) || slow < 3 || slow > 120) {
+        return { ok: false, error: '장기 기간은 3-120 사이의 정수로 입력하세요.', focusName: 'slow' };
       }
-      if (vol > 0) maRule.minRelativeVolume = vol;
+      if (fast >= slow) {
+        return { ok: false, error: '단기 기간은 장기 기간보다 작아야 합니다.', focusName: 'fast' };
+      }
+      const trimmedRegime = form.regimePeriod.trim();
+      const trimmedVol = form.minRelativeVolume.trim();
+      const maRule: Record<string, unknown> = {
+        kind: 'ma_crossover',
+        maType: form.maType,
+        fast,
+        slow,
+      };
+      if (trimmedRegime !== '') {
+        const regime = Number(trimmedRegime);
+        if (!Number.isInteger(regime) || regime < 20 || regime > 240) {
+          return { ok: false, error: '장기 추세 필터는 20-240 사이의 정수로 입력하세요.', focusName: 'regimePeriod' };
+        }
+        maRule.regimePeriod = regime;
+      }
+      if (trimmedVol !== '') {
+        const vol = Number(trimmedVol);
+        if (!Number.isFinite(vol) || vol < 0 || vol > 5) {
+          return { ok: false, error: '최소 상대 거래량은 0-5 범위의 숫자로 입력하세요.', focusName: 'minRelativeVolume' };
+        }
+        if (vol > 0) maRule.minRelativeVolume = vol;
+      }
+      rawRule = maRule;
+      break;
     }
-    rawRule = maRule;
-  } else if (form.kind === 'donchian_breakout') {
-    const entryLookback = Number(form.entryLookback);
-    const exitLookback = Number(form.exitLookback);
-    const volumeMultiplier = Number(form.volumeMultiplier);
-    if (form.entryLookback.trim() === '' || !Number.isInteger(entryLookback) || entryLookback < 10 || entryLookback > 120) {
-      return { ok: false, error: '진입 고가 기간은 10-120 사이의 정수로 입력하세요.', focusName: 'entryLookback' };
+    case 'donchian_breakout': {
+      const entryLookback = Number(form.entryLookback);
+      const exitLookback = Number(form.exitLookback);
+      const volumeMultiplier = Number(form.volumeMultiplier);
+      if (form.entryLookback.trim() === '' || !Number.isInteger(entryLookback) || entryLookback < 10 || entryLookback > 120) {
+        return { ok: false, error: '진입 고가 기간은 10-120 사이의 정수로 입력하세요.', focusName: 'entryLookback' };
+      }
+      if (form.exitLookback.trim() === '' || !Number.isInteger(exitLookback) || exitLookback < 3 || exitLookback > 60) {
+        return { ok: false, error: '청산 저가 기간은 3-60 사이의 정수로 입력하세요.', focusName: 'exitLookback' };
+      }
+      if (exitLookback >= entryLookback) {
+        return { ok: false, error: '청산 기간은 진입 기간보다 작아야 합니다.', focusName: 'exitLookback' };
+      }
+      if (form.volumeMultiplier.trim() === '' || !Number.isFinite(volumeMultiplier) || volumeMultiplier < 0.5 || volumeMultiplier > 5) {
+        return { ok: false, error: '최소 거래량 배수는 0.5-5 범위의 숫자로 입력하세요.', focusName: 'volumeMultiplier' };
+      }
+      rawRule = { kind: 'donchian_breakout', entryLookback, exitLookback, volumeMultiplier };
+      break;
     }
-    if (form.exitLookback.trim() === '' || !Number.isInteger(exitLookback) || exitLookback < 3 || exitLookback > 60) {
-      return { ok: false, error: '청산 저가 기간은 3-60 사이의 정수로 입력하세요.', focusName: 'exitLookback' };
+    case 'rsi2_pullback': {
+      const rsiPeriod = Number(form.rsiPeriod);
+      const oversoldThreshold = Number(form.oversoldThreshold);
+      const longTrendMa = Number(form.longTrendMa);
+      const exitShortMa = Number(form.exitShortMa);
+      const maxHoldingDays = Number(form.maxHoldingDays);
+      if (form.rsiPeriod.trim() === '' || !Number.isInteger(rsiPeriod) || rsiPeriod < 2 || rsiPeriod > 5) {
+        return { ok: false, error: 'RSI 기간은 2-5 사이의 정수로 입력하세요.', focusName: 'rsiPeriod' };
+      }
+      if (form.oversoldThreshold.trim() === '' || !Number.isFinite(oversoldThreshold) || oversoldThreshold < 2 || oversoldThreshold > 25) {
+        return { ok: false, error: '과매도 기준은 2-25 범위의 숫자로 입력하세요.', focusName: 'oversoldThreshold' };
+      }
+      if (form.longTrendMa.trim() === '' || !Number.isInteger(longTrendMa) || longTrendMa < 60 || longTrendMa > 240) {
+        return { ok: false, error: '장기 추세선은 60-240 사이의 정수로 입력하세요.', focusName: 'longTrendMa' };
+      }
+      if (form.exitShortMa.trim() === '' || !Number.isInteger(exitShortMa) || exitShortMa < 3 || exitShortMa > 10) {
+        return { ok: false, error: '청산 단기선은 3-10 사이의 정수로 입력하세요.', focusName: 'exitShortMa' };
+      }
+      if (form.maxHoldingDays.trim() === '' || !Number.isInteger(maxHoldingDays) || maxHoldingDays < 3 || maxHoldingDays > 20) {
+        return { ok: false, error: '최대 보유 기간은 3-20 사이의 정수로 입력하세요.', focusName: 'maxHoldingDays' };
+      }
+      rawRule = {
+        kind: 'rsi2_pullback',
+        rsiPeriod,
+        oversoldThreshold,
+        longTrendMa,
+        exitShortMa,
+        maxHoldingDays,
+      };
+      break;
     }
-    if (exitLookback >= entryLookback) {
-      return { ok: false, error: '청산 기간은 진입 기간보다 작아야 합니다.', focusName: 'exitLookback' };
+    case 'macd_momentum': {
+      const fastPeriod = Number(form.fastPeriod);
+      const slowPeriod = Number(form.slowPeriod);
+      const signalPeriod = Number(form.signalPeriod);
+      if (form.fastPeriod.trim() === '' || !Number.isInteger(fastPeriod) || fastPeriod < 3 || fastPeriod > 30) {
+        return { ok: false, error: 'MACD 단기 EMA 기간은 3-30 사이의 정수로 입력하세요.', focusName: 'fastPeriod' };
+      }
+      if (form.slowPeriod.trim() === '' || !Number.isInteger(slowPeriod) || slowPeriod < 10 || slowPeriod > 100) {
+        return { ok: false, error: 'MACD 장기 EMA 기간은 10-100 사이의 정수로 입력하세요.', focusName: 'slowPeriod' };
+      }
+      if (fastPeriod >= slowPeriod) {
+        return { ok: false, error: 'MACD 단기 기간은 장기 기간보다 작아야 합니다.', focusName: 'fastPeriod' };
+      }
+      if (form.signalPeriod.trim() === '' || !Number.isInteger(signalPeriod) || signalPeriod < 3 || signalPeriod > 30) {
+        return { ok: false, error: '시그널 EMA 기간은 3-30 사이의 정수로 입력하세요.', focusName: 'signalPeriod' };
+      }
+      rawRule = {
+        kind: 'macd_momentum',
+        fastPeriod,
+        slowPeriod,
+        signalPeriod,
+        requireZeroLineAbove: form.requireZeroLineAbove,
+      };
+      break;
     }
-    if (form.volumeMultiplier.trim() === '' || !Number.isFinite(volumeMultiplier) || volumeMultiplier < 0.5 || volumeMultiplier > 5) {
-      return { ok: false, error: '최소 거래량 배수는 0.5-5 범위의 숫자로 입력하세요.', focusName: 'volumeMultiplier' };
+    case 'adx_dmi_trend': {
+      const diPeriod = Number(form.diPeriod);
+      const adxThreshold = Number(form.adxThreshold);
+      if (form.diPeriod.trim() === '' || !Number.isInteger(diPeriod) || diPeriod < 7 || diPeriod > 30) {
+        return { ok: false, error: 'DI 기간은 7-30 사이의 정수로 입력하세요.', focusName: 'diPeriod' };
+      }
+      if (form.adxThreshold.trim() === '' || !Number.isFinite(adxThreshold) || adxThreshold < 15 || adxThreshold > 40) {
+        return { ok: false, error: 'ADX 기준은 15-40 범위의 숫자로 입력하세요.', focusName: 'adxThreshold' };
+      }
+      rawRule = { kind: 'adx_dmi_trend', diPeriod, adxThreshold };
+      break;
     }
-    rawRule = { kind: 'donchian_breakout', entryLookback, exitLookback, volumeMultiplier };
-  } else {
-    const rsiPeriod = Number(form.rsiPeriod);
-    const oversoldThreshold = Number(form.oversoldThreshold);
-    const longTrendMa = Number(form.longTrendMa);
-    const exitShortMa = Number(form.exitShortMa);
-    const maxHoldingDays = Number(form.maxHoldingDays);
-    if (form.rsiPeriod.trim() === '' || !Number.isInteger(rsiPeriod) || rsiPeriod < 2 || rsiPeriod > 5) {
-      return { ok: false, error: 'RSI 기간은 2-5 사이의 정수로 입력하세요.', focusName: 'rsiPeriod' };
+    case 'bollinger_squeeze': {
+      const period = Number(form.bbSqueezePeriod);
+      const stdDevMultiplier = Number(form.stdDevMultiplier);
+      const squeezeLookback = Number(form.squeezeLookback);
+      const squeezePercentile = Number(form.squeezePercentile);
+      if (form.bbSqueezePeriod.trim() === '' || !Number.isInteger(period) || period < 10 || period > 60) {
+        return { ok: false, error: '볼린저 기간은 10-60 사이의 정수로 입력하세요.', focusName: 'bbSqueezePeriod' };
+      }
+      if (form.stdDevMultiplier.trim() === '' || !Number.isFinite(stdDevMultiplier) || stdDevMultiplier < 1.5 || stdDevMultiplier > 3) {
+        return { ok: false, error: '표준편차 배수는 1.5-3 범위의 숫자로 입력하세요.', focusName: 'stdDevMultiplier' };
+      }
+      if (form.squeezeLookback.trim() === '' || !Number.isInteger(squeezeLookback) || squeezeLookback < 20 || squeezeLookback > 120) {
+        return { ok: false, error: '수축 비교 기간은 20-120 사이의 정수로 입력하세요.', focusName: 'squeezeLookback' };
+      }
+      if (form.squeezePercentile.trim() === '' || !Number.isFinite(squeezePercentile) || squeezePercentile < 10 || squeezePercentile > 50) {
+        return { ok: false, error: '수축 하위 분위수는 10-50 범위의 숫자로 입력하세요.', focusName: 'squeezePercentile' };
+      }
+      rawRule = { kind: 'bollinger_squeeze', period, stdDevMultiplier, squeezeLookback, squeezePercentile };
+      break;
     }
-    if (form.oversoldThreshold.trim() === '' || !Number.isFinite(oversoldThreshold) || oversoldThreshold < 2 || oversoldThreshold > 25) {
-      return { ok: false, error: '과매도 기준은 2-25 범위의 숫자로 입력하세요.', focusName: 'oversoldThreshold' };
+    case 'ttm_squeeze': {
+      const period = Number(form.ttmPeriod);
+      const bbMult = Number(form.bbMult);
+      const kcMult = Number(form.kcMult);
+      if (form.ttmPeriod.trim() === '' || !Number.isInteger(period) || period < 14 || period > 30) {
+        return { ok: false, error: '계산 기간은 14-30 사이의 정수로 입력하세요.', focusName: 'ttmPeriod' };
+      }
+      if (form.bbMult.trim() === '' || !Number.isFinite(bbMult) || bbMult < 1.5 || bbMult > 2.5) {
+        return { ok: false, error: '볼린저 배수는 1.5-2.5 범위의 숫자로 입력하세요.', focusName: 'bbMult' };
+      }
+      if (form.kcMult.trim() === '' || !Number.isFinite(kcMult) || kcMult < 1 || kcMult > 2.5) {
+        return { ok: false, error: '켈트너 배수는 1-2.5 범위의 숫자로 입력하세요.', focusName: 'kcMult' };
+      }
+      rawRule = { kind: 'ttm_squeeze', period, bbMult, kcMult };
+      break;
     }
-    if (form.longTrendMa.trim() === '' || !Number.isInteger(longTrendMa) || longTrendMa < 60 || longTrendMa > 240) {
-      return { ok: false, error: '장기 추세선은 60-240 사이의 정수로 입력하세요.', focusName: 'longTrendMa' };
+    case 'bollinger_percent_b': {
+      const bbPeriod = Number(form.bbPeriod);
+      const bbStdDev = Number(form.bbStdDev);
+      const rsiPeriod = Number(form.pbRsiPeriod);
+      const rsiOversold = Number(form.rsiOversold);
+      const exitPercentB = Number(form.exitPercentB);
+      if (form.bbPeriod.trim() === '' || !Number.isInteger(bbPeriod) || bbPeriod < 14 || bbPeriod > 30) {
+        return { ok: false, error: '볼린저 기간은 14-30 사이의 정수로 입력하세요.', focusName: 'bbPeriod' };
+      }
+      if (form.bbStdDev.trim() === '' || !Number.isFinite(bbStdDev) || bbStdDev < 1.8 || bbStdDev > 2.5) {
+        return { ok: false, error: '볼린저 표준편차 배수는 1.8-2.5 범위의 숫자로 입력하세요.', focusName: 'bbStdDev' };
+      }
+      if (form.pbRsiPeriod.trim() === '' || !Number.isInteger(rsiPeriod) || rsiPeriod < 7 || rsiPeriod > 21) {
+        return { ok: false, error: 'RSI 기간은 7-21 사이의 정수로 입력하세요.', focusName: 'pbRsiPeriod' };
+      }
+      if (form.rsiOversold.trim() === '' || !Number.isFinite(rsiOversold) || rsiOversold < 20 || rsiOversold > 40) {
+        return { ok: false, error: 'RSI 과매도 기준은 20-40 범위의 숫자로 입력하세요.', focusName: 'rsiOversold' };
+      }
+      if (form.exitPercentB.trim() === '' || !Number.isFinite(exitPercentB) || exitPercentB < 0.4 || exitPercentB > 1) {
+        return { ok: false, error: '청산 목표 %B는 0.4-1 범위의 숫자로 입력하세요.', focusName: 'exitPercentB' };
+      }
+      rawRule = { kind: 'bollinger_percent_b', bbPeriod, bbStdDev, rsiPeriod, rsiOversold, exitPercentB };
+      break;
     }
-    if (form.exitShortMa.trim() === '' || !Number.isInteger(exitShortMa) || exitShortMa < 3 || exitShortMa > 10) {
-      return { ok: false, error: '청산 단기선은 3-10 사이의 정수로 입력하세요.', focusName: 'exitShortMa' };
+    case 'low_volume_pullback': {
+      const pullbackDays = Number(form.pullbackDays);
+      const maxVolumeRatio = Number(form.maxVolumeRatio);
+      const trendFastMa = Number(form.trendFastMa);
+      const trendSlowMa = Number(form.trendSlowMa);
+      if (form.pullbackDays.trim() === '' || !Number.isInteger(pullbackDays) || pullbackDays < 2 || pullbackDays > 7) {
+        return { ok: false, error: '눌림 기간은 2-7 사이의 정수로 입력하세요.', focusName: 'pullbackDays' };
+      }
+      if (form.maxVolumeRatio.trim() === '' || !Number.isFinite(maxVolumeRatio) || maxVolumeRatio < 0.3 || maxVolumeRatio > 0.9) {
+        return { ok: false, error: '최대 거래량 비율은 0.3-0.9 범위의 숫자로 입력하세요.', focusName: 'maxVolumeRatio' };
+      }
+      if (form.trendFastMa.trim() === '' || !Number.isInteger(trendFastMa) || trendFastMa < 10 || trendFastMa > 30) {
+        return { ok: false, error: '단기 추세선은 10-30 사이의 정수로 입력하세요.', focusName: 'trendFastMa' };
+      }
+      if (form.trendSlowMa.trim() === '' || !Number.isInteger(trendSlowMa) || trendSlowMa < 40 || trendSlowMa > 120) {
+        return { ok: false, error: '장기 추세선은 40-120 사이의 정수로 입력하세요.', focusName: 'trendSlowMa' };
+      }
+      if (trendFastMa >= trendSlowMa) {
+        return { ok: false, error: '단기 추세선은 장기 추세선보다 작아야 합니다.', focusName: 'trendFastMa' };
+      }
+      rawRule = { kind: 'low_volume_pullback', pullbackDays, maxVolumeRatio, trendFastMa, trendSlowMa };
+      break;
     }
-    if (form.maxHoldingDays.trim() === '' || !Number.isInteger(maxHoldingDays) || maxHoldingDays < 3 || maxHoldingDays > 20) {
-      return { ok: false, error: '최대 보유 기간은 3-20 사이의 정수로 입력하세요.', focusName: 'maxHoldingDays' };
+    case 'disparity_reversion': {
+      const maPeriod = Number(form.maPeriod);
+      const buyDisparity = Number(form.buyDisparity);
+      const sellDisparity = Number(form.sellDisparity);
+      const stopLossPct = Number(form.stopLossPct);
+      if (form.maPeriod.trim() === '' || !Number.isInteger(maPeriod) || maPeriod < 10 || maPeriod > 60) {
+        return { ok: false, error: '이동평균 기간은 10-60 사이의 정수로 입력하세요.', focusName: 'maPeriod' };
+      }
+      if (form.buyDisparity.trim() === '' || !Number.isFinite(buyDisparity) || buyDisparity < 85 || buyDisparity > 97) {
+        return { ok: false, error: '매수 이격도는 85-97 범위의 숫자로 입력하세요.', focusName: 'buyDisparity' };
+      }
+      if (form.sellDisparity.trim() === '' || !Number.isFinite(sellDisparity) || sellDisparity < 98 || sellDisparity > 105) {
+        return { ok: false, error: '매도 이격도는 98-105 범위의 숫자로 입력하세요.', focusName: 'sellDisparity' };
+      }
+      if (buyDisparity >= sellDisparity) {
+        return { ok: false, error: '매수 이격도는 매도 이격도보다 작아야 합니다.', focusName: 'buyDisparity' };
+      }
+      if (form.stopLossPct.trim() === '' || !Number.isFinite(stopLossPct) || stopLossPct < 2 || stopLossPct > 10) {
+        return { ok: false, error: '손절 기준은 2-10 범위의 숫자로 입력하세요.', focusName: 'stopLossPct' };
+      }
+      rawRule = { kind: 'disparity_reversion', maPeriod, buyDisparity, sellDisparity, stopLossPct };
+      break;
     }
-    rawRule = {
-      kind: 'rsi2_pullback',
-      rsiPeriod,
-      oversoldThreshold,
-      longTrendMa,
-      exitShortMa,
-      maxHoldingDays,
-    };
   }
 
   const parsedRule = strategyRuleSchema.safeParse(rawRule);
@@ -761,10 +1325,10 @@ function isLegacySma(
   );
 }
 
-/** DEMO(종가 전용) 환경에서 실행·저장 가능한 규칙 조합인지 확인한다. */
+/** DEMO(종가 전용) 환경에서 실행·저장 가능한 규칙 조합인지 확인한다 (`assertCloseOnly`와 동일 기준). */
 function isDemoRuleSupported(form: RuleFormState): boolean {
   if (form.useChandelier) return false;
-  if (form.kind === 'donchian_breakout') return false;
+  if (STRATEGY_CATALOG[form.kind].environments.demo === false) return false;
   if (form.kind === 'ma_crossover' && form.minRelativeVolume.trim() !== '' && Number(form.minRelativeVolume) > 0) {
     return false;
   }
@@ -820,20 +1384,55 @@ function ruleFromExperimentInput(input: Experiment['snapshot']['input']): Strate
 /** 규칙과 오버레이를 한 줄 한글 요약으로 포맷한다. */
 function formatRuleSummary(rule: StrategyRule, overlay?: ExitOverlay): string {
   const parts: string[] = [];
-  if (rule.kind === 'ma_crossover') {
-    parts.push(`${STRATEGY_CATALOG.ma_crossover.title} (${rule.maType.toUpperCase()} ${rule.fast}/${rule.slow})`);
-    if (rule.regimePeriod) parts.push(`추세선 ${rule.regimePeriod}봉`);
-    if (rule.minRelativeVolume) parts.push(`상대거래량 ${rule.minRelativeVolume}배+`);
-  } else if (rule.kind === 'donchian_breakout') {
-    parts.push(
-      `${STRATEGY_CATALOG.donchian_breakout.title} (진입 ${rule.entryLookback} / 청산 ${rule.exitLookback} · 거래량 ${rule.volumeMultiplier}배 초과)`,
-    );
-  } else if (rule.kind === 'rsi2_pullback') {
-    parts.push(
-      `${STRATEGY_CATALOG.rsi2_pullback.title} (RSI${rule.rsiPeriod} ≤ ${rule.oversoldThreshold} · 장기 ${rule.longTrendMa} · 청산 ${rule.exitShortMa} · 최대 ${rule.maxHoldingDays}봉)`,
-    );
-  } else {
-    parts.push(STRATEGY_CATALOG[rule.kind].title);
+  switch (rule.kind) {
+    case 'ma_crossover':
+      parts.push(`${STRATEGY_CATALOG.ma_crossover.title} (${rule.maType.toUpperCase()} ${rule.fast}/${rule.slow})`);
+      if (rule.regimePeriod) parts.push(`추세선 ${rule.regimePeriod}봉`);
+      if (rule.minRelativeVolume) parts.push(`상대거래량 ${rule.minRelativeVolume}배+`);
+      break;
+    case 'donchian_breakout':
+      parts.push(
+        `${STRATEGY_CATALOG.donchian_breakout.title} (진입 ${rule.entryLookback} / 청산 ${rule.exitLookback} · 거래량 ${rule.volumeMultiplier}배 초과)`,
+      );
+      break;
+    case 'rsi2_pullback':
+      parts.push(
+        `${STRATEGY_CATALOG.rsi2_pullback.title} (RSI${rule.rsiPeriod} ≤ ${rule.oversoldThreshold} · 장기 ${rule.longTrendMa} · 청산 ${rule.exitShortMa} · 최대 ${rule.maxHoldingDays}봉)`,
+      );
+      break;
+    case 'macd_momentum':
+      parts.push(
+        `${STRATEGY_CATALOG.macd_momentum.title} (${rule.fastPeriod}/${rule.slowPeriod}/${rule.signalPeriod}${rule.requireZeroLineAbove ? ' · MACD > 0' : ''})`,
+      );
+      break;
+    case 'adx_dmi_trend':
+      parts.push(`${STRATEGY_CATALOG.adx_dmi_trend.title} (DI ${rule.diPeriod}봉 · ADX ≥ ${rule.adxThreshold})`);
+      break;
+    case 'bollinger_squeeze':
+      parts.push(
+        `${STRATEGY_CATALOG.bollinger_squeeze.title} (${rule.period}봉/${rule.stdDevMultiplier}σ · 압축 ${rule.squeezeLookback}봉 하위 ${rule.squeezePercentile}%)`,
+      );
+      break;
+    case 'ttm_squeeze':
+      parts.push(
+        `${STRATEGY_CATALOG.ttm_squeeze.title} (${rule.period}봉 · BB ${rule.bbMult}배 / KC ${rule.kcMult}배)`,
+      );
+      break;
+    case 'bollinger_percent_b':
+      parts.push(
+        `${STRATEGY_CATALOG.bollinger_percent_b.title} (BB ${rule.bbPeriod}봉/${rule.bbStdDev}σ · RSI${rule.rsiPeriod} ≤ ${rule.rsiOversold} · 청산 %B ≥ ${rule.exitPercentB})`,
+      );
+      break;
+    case 'low_volume_pullback':
+      parts.push(
+        `${STRATEGY_CATALOG.low_volume_pullback.title} (눌림 ${rule.pullbackDays}봉 · 거래량 ≤ ${rule.maxVolumeRatio}배 · 추세 ${rule.trendFastMa}/${rule.trendSlowMa}봉)`,
+      );
+      break;
+    case 'disparity_reversion':
+      parts.push(
+        `${STRATEGY_CATALOG.disparity_reversion.title} (MA ${rule.maPeriod}봉 · 매수 ≤ ${rule.buyDisparity}% / 매도 ≥ ${rule.sellDisparity}% · 손절 ${rule.stopLossPct}%)`,
+      );
+      break;
   }
   if (overlay?.chandelier) {
     parts.push(`샹들리에 ATR(${overlay.chandelier.atrPeriod})×${overlay.chandelier.atrMultiplier}`);
@@ -872,7 +1471,6 @@ function RuleConfigSection({
   periodError?: boolean;
   periodErrorId?: string;
 }) {
-  if (!editableRule(form.kind)) return <p>{STRATEGY_CATALOG[form.kind].title} · 이 규칙의 편집 화면은 준비 중입니다.</p>;
   const catalog = STRATEGY_CATALOG[form.kind];
   const activePreset = matchedPreset(form);
   const fastLabel = mode === 'strategy' ? `단기 평균 (${unit})` : '단기 (봉)';
@@ -881,20 +1479,27 @@ function RuleConfigSection({
 
   return (
     <div className="rule-config">
-      <label className="field">
-        전략 규칙
-        <select
-          value={form.kind}
-          disabled={disabled}
-          onChange={e => update({ kind: e.target.value as RuleKind })}
-        >
-          {RULE_KINDS.map(kind => (
-            <option key={kind} value={kind}>
-              {STRATEGY_CATALOG[kind].title}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="rule-selector-wrap">
+        <label className="field rule-selector-field">
+          전략 규칙
+          <select
+            value={form.kind}
+            disabled={disabled}
+            onChange={e => update({ kind: e.target.value as RuleKind })}
+          >
+            {RULE_GROUPS.map(group => (
+              <optgroup key={group.label} label={group.label}>
+                {group.kinds.map(kind => (
+                  <option key={kind} value={kind}>
+                    {STRATEGY_CATALOG[kind].title}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+        <p className="rule-selector-meta">10종 전략 지원 · 저장 일봉 전체 / DEMO 종가 전용 4종</p>
+      </div>
 
       <div className="rule-guide" aria-label="규칙 요약 안내">
         <ul className="rule-guide-lines">
@@ -1134,6 +1739,398 @@ function RuleConfigSection({
         </>
       )}
 
+      {form.kind === 'macd_momentum' && (
+        <>
+          <div className="form-grid">
+            <label className="field">
+              단기 EMA (봉)
+              <input
+                name="fastPeriod"
+                type="number"
+                min="3"
+                max="30"
+                step="1"
+                value={form.fastPeriod}
+                onChange={e => update({ fastPeriod: e.target.value })}
+                required
+              />
+            </label>
+            <label className="field">
+              장기 EMA (봉)
+              <input
+                name="slowPeriod"
+                type="number"
+                min="10"
+                max="100"
+                step="1"
+                value={form.slowPeriod}
+                onChange={e => update({ slowPeriod: e.target.value })}
+                required
+              />
+            </label>
+          </div>
+          <label className="field">
+            시그널 EMA (봉)
+            <input
+              name="signalPeriod"
+              type="number"
+              min="3"
+              max="30"
+              step="1"
+              value={form.signalPeriod}
+              onChange={e => update({ signalPeriod: e.target.value })}
+              required
+            />
+          </label>
+          <div className="rule-option-row">
+            <label className="rule-checkbox">
+              <input
+                name="requireZeroLineAbove"
+                type="checkbox"
+                checked={form.requireZeroLineAbove}
+                disabled={disabled}
+                onChange={e => update({ requireZeroLineAbove: e.target.checked })}
+              />
+              <span>MACD &gt; 0 (제로선 위에서만 매수)</span>
+            </label>
+          </div>
+        </>
+      )}
+
+      {form.kind === 'adx_dmi_trend' && (
+        <div className="form-grid">
+          <label className="field">
+            DI 기간 (봉)
+            <input
+              name="diPeriod"
+              type="number"
+              min="7"
+              max="30"
+              step="1"
+              value={form.diPeriod}
+              onChange={e => update({ diPeriod: e.target.value })}
+              required
+            />
+          </label>
+          <label className="field">
+            ADX 기준
+            <input
+              name="adxThreshold"
+              type="number"
+              min="15"
+              max="40"
+              step="0.5"
+              value={form.adxThreshold}
+              onChange={e => update({ adxThreshold: e.target.value })}
+              required
+            />
+          </label>
+        </div>
+      )}
+
+      {form.kind === 'bollinger_squeeze' && (
+        <>
+          <div className="form-grid">
+            <label className="field">
+              볼린저 기간 (봉)
+              <input
+                name="bbSqueezePeriod"
+                type="number"
+                min="10"
+                max="60"
+                step="1"
+                value={form.bbSqueezePeriod}
+                onChange={e => update({ bbSqueezePeriod: e.target.value })}
+                required
+              />
+            </label>
+            <label className="field">
+              표준편차 배수
+              <input
+                name="stdDevMultiplier"
+                type="number"
+                min="1.5"
+                max="3"
+                step="0.1"
+                value={form.stdDevMultiplier}
+                onChange={e => update({ stdDevMultiplier: e.target.value })}
+                required
+              />
+            </label>
+          </div>
+          <div className="form-grid">
+            <label className="field">
+              수축 비교 기간 (봉)
+              <input
+                name="squeezeLookback"
+                type="number"
+                min="20"
+                max="120"
+                step="1"
+                value={form.squeezeLookback}
+                onChange={e => update({ squeezeLookback: e.target.value })}
+                required
+              />
+            </label>
+            <label className="field">
+              수축 하위 분위수 (%)
+              <input
+                name="squeezePercentile"
+                type="number"
+                min="10"
+                max="50"
+                step="0.5"
+                value={form.squeezePercentile}
+                onChange={e => update({ squeezePercentile: e.target.value })}
+                required
+              />
+            </label>
+          </div>
+        </>
+      )}
+
+      {form.kind === 'ttm_squeeze' && (
+        <>
+          <label className="field">
+            계산 기간 (봉)
+            <input
+              name="ttmPeriod"
+              type="number"
+              min="14"
+              max="30"
+              step="1"
+              value={form.ttmPeriod}
+              onChange={e => update({ ttmPeriod: e.target.value })}
+              required
+            />
+          </label>
+          <div className="form-grid">
+            <label className="field">
+              볼린저 배수
+              <input
+                name="bbMult"
+                type="number"
+                min="1.5"
+                max="2.5"
+                step="0.1"
+                value={form.bbMult}
+                onChange={e => update({ bbMult: e.target.value })}
+                required
+              />
+            </label>
+            <label className="field">
+              켈트너 배수
+              <input
+                name="kcMult"
+                type="number"
+                min="1"
+                max="2.5"
+                step="0.1"
+                value={form.kcMult}
+                onChange={e => update({ kcMult: e.target.value })}
+                required
+              />
+            </label>
+          </div>
+        </>
+      )}
+
+      {form.kind === 'bollinger_percent_b' && (
+        <>
+          <div className="form-grid">
+            <label className="field">
+              볼린저 기간 (봉)
+              <input
+                name="bbPeriod"
+                type="number"
+                min="14"
+                max="30"
+                step="1"
+                value={form.bbPeriod}
+                onChange={e => update({ bbPeriod: e.target.value })}
+                required
+              />
+            </label>
+            <label className="field">
+              볼린저 표준편차 배수
+              <input
+                name="bbStdDev"
+                type="number"
+                min="1.8"
+                max="2.5"
+                step="0.1"
+                value={form.bbStdDev}
+                onChange={e => update({ bbStdDev: e.target.value })}
+                required
+              />
+            </label>
+          </div>
+          <div className="form-grid">
+            <label className="field">
+              RSI 기간 (봉)
+              <input
+                name="pbRsiPeriod"
+                type="number"
+                min="7"
+                max="21"
+                step="1"
+                value={form.pbRsiPeriod}
+                onChange={e => update({ pbRsiPeriod: e.target.value })}
+                required
+              />
+            </label>
+            <label className="field">
+              RSI 과매도 기준 (이하)
+              <input
+                name="rsiOversold"
+                type="number"
+                min="20"
+                max="40"
+                step="0.5"
+                value={form.rsiOversold}
+                onChange={e => update({ rsiOversold: e.target.value })}
+                required
+              />
+            </label>
+          </div>
+          <label className="field">
+            청산 목표 %B (이상)
+            <input
+              name="exitPercentB"
+              type="number"
+              min="0.4"
+              max="1"
+              step="0.05"
+              value={form.exitPercentB}
+              onChange={e => update({ exitPercentB: e.target.value })}
+              required
+            />
+          </label>
+        </>
+      )}
+
+      {form.kind === 'low_volume_pullback' && (
+        <>
+          <div className="form-grid">
+            <label className="field">
+              눌림 기간 (봉)
+              <input
+                name="pullbackDays"
+                type="number"
+                min="2"
+                max="7"
+                step="1"
+                value={form.pullbackDays}
+                onChange={e => update({ pullbackDays: e.target.value })}
+                required
+              />
+            </label>
+            <label className="field">
+              최대 거래량 비율 (배)
+              <input
+                name="maxVolumeRatio"
+                type="number"
+                min="0.3"
+                max="0.9"
+                step="0.05"
+                value={form.maxVolumeRatio}
+                onChange={e => update({ maxVolumeRatio: e.target.value })}
+                required
+              />
+            </label>
+          </div>
+          <div className="form-grid">
+            <label className="field">
+              단기 추세선 (봉)
+              <input
+                name="trendFastMa"
+                type="number"
+                min="10"
+                max="30"
+                step="1"
+                value={form.trendFastMa}
+                onChange={e => update({ trendFastMa: e.target.value })}
+                required
+              />
+            </label>
+            <label className="field">
+              장기 추세선 (봉)
+              <input
+                name="trendSlowMa"
+                type="number"
+                min="40"
+                max="120"
+                step="1"
+                value={form.trendSlowMa}
+                onChange={e => update({ trendSlowMa: e.target.value })}
+                required
+              />
+            </label>
+          </div>
+        </>
+      )}
+
+      {form.kind === 'disparity_reversion' && (
+        <>
+          <div className="form-grid">
+            <label className="field">
+              이동평균 기간 (봉)
+              <input
+                name="maPeriod"
+                type="number"
+                min="10"
+                max="60"
+                step="1"
+                value={form.maPeriod}
+                onChange={e => update({ maPeriod: e.target.value })}
+                required
+              />
+            </label>
+            <label className="field">
+              손절 기준 (%)
+              <input
+                name="stopLossPct"
+                type="number"
+                min="2"
+                max="10"
+                step="0.5"
+                value={form.stopLossPct}
+                onChange={e => update({ stopLossPct: e.target.value })}
+                required
+              />
+            </label>
+          </div>
+          <div className="form-grid">
+            <label className="field">
+              매수 이격도 (%, 이하)
+              <input
+                name="buyDisparity"
+                type="number"
+                min="85"
+                max="97"
+                step="0.5"
+                value={form.buyDisparity}
+                onChange={e => update({ buyDisparity: e.target.value })}
+                required
+              />
+            </label>
+            <label className="field">
+              매도 이격도 (%, 이상)
+              <input
+                name="sellDisparity"
+                type="number"
+                min="98"
+                max="105"
+                step="0.5"
+                value={form.sellDisparity}
+                onChange={e => update({ sellDisparity: e.target.value })}
+                required
+              />
+            </label>
+          </div>
+        </>
+      )}
+
       <div className="rule-overlay-box">
         <label className="rule-checkbox">
           <input
@@ -1178,10 +2175,12 @@ function RuleConfigSection({
       <details className="rule-field-help">
         <summary>현재 선택한 규칙({catalog.title}) 입력 항목 설명 보기</summary>
         <div className="rule-field-help-content">
+          <p className="rule-field-help-env">{RULE_FIELD_HELP[form.kind].envBadge}</p>
           <p className="rule-field-help-summary">{RULE_FIELD_HELP[form.kind].summary}</p>
           <p className="rule-field-help-preset">
             <strong>기본 프리셋 초기값:</strong> {RULE_FIELD_HELP[form.kind].basicPreset}
           </p>
+          <p className="rule-field-help-exec">{RULE_FIELD_HELP[form.kind].executionNote}</p>
           <dl className="rule-field-help-list">
             {RULE_FIELD_HELP[form.kind].fields.map(item => (
               <div key={item.term}>
@@ -1581,6 +2580,99 @@ function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: boolean }
               최대보유 <b>{rule.maxHoldingDays}봉</b>
             </span>
           </>
+        ) : rule.kind === 'macd_momentum' ? (
+          <>
+            <span>
+              EMA/시그널{' '}
+              <b>
+                {rule.fastPeriod}/{rule.slowPeriod}/{rule.signalPeriod}봉
+              </b>
+            </span>
+            <span>
+              제로선 필터 <b>{rule.requireZeroLineAbove ? 'MACD > 0' : '미사용'}</b>
+            </span>
+          </>
+        ) : rule.kind === 'adx_dmi_trend' ? (
+          <>
+            <span>
+              DI 기간 <b>{rule.diPeriod}봉</b>
+            </span>
+            <span>
+              ADX 기준 <b>≥ {rule.adxThreshold}</b>
+            </span>
+          </>
+        ) : rule.kind === 'bollinger_squeeze' ? (
+          <>
+            <span>
+              볼린저{' '}
+              <b>
+                {rule.period}봉 · {rule.stdDevMultiplier}σ
+              </b>
+            </span>
+            <span>
+              수축 구간{' '}
+              <b>
+                {rule.squeezeLookback}봉 하위 {rule.squeezePercentile}%
+              </b>
+            </span>
+          </>
+        ) : rule.kind === 'ttm_squeeze' ? (
+          <>
+            <span>
+              기간 <b>{rule.period}봉</b>
+            </span>
+            <span>
+              BB / KC{' '}
+              <b>
+                {rule.bbMult}배 / {rule.kcMult}배
+              </b>
+            </span>
+          </>
+        ) : rule.kind === 'bollinger_percent_b' ? (
+          <>
+            <span>
+              볼린저{' '}
+              <b>
+                {rule.bbPeriod}봉 · {rule.bbStdDev}σ
+              </b>
+            </span>
+            <span>
+              RSI({rule.rsiPeriod}) <b>≤ {rule.rsiOversold}</b>
+            </span>
+            <span>
+              청산 %B <b>≥ {rule.exitPercentB}</b>
+            </span>
+          </>
+        ) : rule.kind === 'low_volume_pullback' ? (
+          <>
+            <span>
+              눌림 <b>{rule.pullbackDays}봉</b>
+            </span>
+            <span>
+              거래량 비율 <b>≤ {rule.maxVolumeRatio}배</b>
+            </span>
+            <span>
+              추세선{' '}
+              <b>
+                {rule.trendFastMa}/{rule.trendSlowMa}봉
+              </b>
+            </span>
+          </>
+        ) : rule.kind === 'disparity_reversion' ? (
+          <>
+            <span>
+              이동평균 <b>{rule.maPeriod}봉</b>
+            </span>
+            <span>
+              매수/매도 이격도{' '}
+              <b>
+                ≤ {rule.buyDisparity}% / ≥ {rule.sellDisparity}%
+              </b>
+            </span>
+            <span>
+              손절 <b>-{rule.stopLossPct}%</b>
+            </span>
+          </>
         ) : null}
         {s.overlay?.chandelier && (
           <span>
@@ -1760,6 +2852,14 @@ function StrategyEditor({
     if (!built.ok) {
       setDraft(prev => ({ ...prev, formError: built.error }));
       focusField(built.focusName);
+      return;
+    }
+    if (environment === 'demo' && !isDemoRuleSupported(ruleForm)) {
+      setDraft(prev => ({
+        ...prev,
+        formError:
+          'DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙이나 샹들리에 청산은 저장 일봉 백테스트에서 사용하세요.',
+      }));
       return;
     }
     const parsedQty = Number(qty);
@@ -2169,6 +3269,12 @@ function DemoBacktest({ strategyDraft }: { strategyDraft: StrategyTransferDraft 
     const costError = validateCosts(costs);
     if (costError) {
       setError(costError);
+      return;
+    }
+    if (!isDemoRuleSupported(ruleForm)) {
+      setError(
+        'DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙이나 샹들리에 청산은 저장 일봉 백테스트에서 사용하세요.',
+      );
       return;
     }
     try {

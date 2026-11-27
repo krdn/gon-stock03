@@ -736,3 +736,403 @@ test('RuleConfigSection 문맥별 입력 항목 설명이 선택 규칙 변경�
     }
   }
 });
+
+test('신규 7종 규칙 선택·프리셋 적용·정수/소수/대소 역전/범위 밖/badInput 검증이 동작한다', async ({ page }) => {
+  const posts: string[] = [];
+  page.on('request', req => {
+    if (req.method() === 'POST') posts.push(new URL(req.url()).pathname);
+  });
+
+  await page.goto('/strategies?environment=kis-paper');
+  await waitWorkbenchReady(page);
+
+  const ruleSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
+  const options = await ruleSelect.locator('option').evaluateAll(els => els.map(el => (el as HTMLOptionElement).value));
+  expect(options).toHaveLength(10);
+  expect(options).toEqual(
+    expect.arrayContaining([
+      'ma_crossover',
+      'donchian_breakout',
+      'rsi2_pullback',
+      'macd_momentum',
+      'adx_dmi_trend',
+      'bollinger_squeeze',
+      'ttm_squeeze',
+      'bollinger_percent_b',
+      'low_volume_pullback',
+      'disparity_reversion',
+    ]),
+  );
+
+  // 1. MACD 히스토그램: 프리셋·체크박스·대소 역전·정수 소수·badInput 검증
+  await ruleSelect.selectOption('macd_momentum');
+  await expect(page.getByLabel('단기 EMA (봉)')).toHaveValue('12');
+  await expect(page.getByLabel('장기 EMA (봉)')).toHaveValue('26');
+  await expect(page.getByLabel('시그널 EMA (봉)')).toHaveValue('9');
+  await expect(page.getByLabel('MACD > 0 (제로선 위에서만 매수)')).not.toBeChecked();
+  await expect(page.getByRole('button', { name: '기본', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
+  await page.getByRole('button', { name: '보수적', exact: true }).click();
+  await expect(page.getByLabel('MACD > 0 (제로선 위에서만 매수)')).toBeChecked();
+  await expect(page.getByRole('button', { name: '보수적', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
+  await page.getByRole('button', { name: '공격적', exact: true }).click();
+  await expect(page.getByLabel('단기 EMA (봉)')).toHaveValue('8');
+  await expect(page.getByLabel('장기 EMA (봉)')).toHaveValue('17');
+  await expect(page.getByLabel('MACD > 0 (제로선 위에서만 매수)')).not.toBeChecked();
+
+  // 대소 역전 차단
+  await page.getByLabel('단기 EMA (봉)').fill('20');
+  await page.getByLabel('장기 EMA (봉)').fill('15');
+  await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('MACD 단기 기간은 장기 기간보다 작아야 합니다.');
+  await expect(page.getByLabel('단기 EMA (봉)')).toBeFocused();
+
+  // 정수 필드에 소수 입력 차단
+  await page.getByLabel('단기 EMA (봉)').fill('12.5');
+  await page.getByLabel('장기 EMA (봉)').fill('26');
+  await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('MACD 단기 EMA 기간은 3-30 사이의 정수로 입력하세요.');
+  await expect(page.getByLabel('단기 EMA (봉)')).toBeFocused();
+
+  // badInput('1e') 차단
+  const macdFast = page.getByLabel('단기 EMA (봉)');
+  await macdFast.fill('');
+  await macdFast.focus();
+  await page.keyboard.type('1e');
+  await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('올바른 숫자를 입력하세요.');
+  await expect(macdFast).toBeFocused();
+
+  // 2. ADX·DMI 추세: 프리셋 및 소수/범위 검증
+  await ruleSelect.selectOption('adx_dmi_trend');
+  await expect(page.getByLabel('DI 기간 (봉)')).toHaveValue('14');
+  await expect(page.getByLabel('ADX 기준')).toHaveValue('25');
+  await page.getByRole('button', { name: '보수적', exact: true }).click();
+  await expect(page.getByLabel('ADX 기준')).toHaveValue('30');
+  await page.getByLabel('DI 기간 (봉)').fill('14.5');
+  await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('DI 기간은 7-30 사이의 정수로 입력하세요.');
+  await page.getByLabel('DI 기간 (봉)').fill('14');
+  await page.getByLabel('ADX 기준').fill('50');
+  await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('ADX 기준은 15-40 범위');
+
+  // 3. 볼린저 스퀴즈: 프리셋 및 범위 검증
+  await ruleSelect.selectOption('bollinger_squeeze');
+  await page.getByRole('button', { name: '공격적', exact: true }).click();
+  await expect(page.getByLabel('표준편차 배수')).toHaveValue('1.8');
+  await expect(page.getByLabel('수축 비교 기간 (봉)')).toHaveValue('40');
+  await expect(page.getByLabel('수축 하위 분위수 (%)')).toHaveValue('35');
+  await page.getByLabel('수축 하위 분위수 (%)').fill('5');
+  await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('수축 하위 분위수는 10-50 범위');
+
+  // 4. TTM 스퀴즈: 프리셋 및 범위 검증
+  await ruleSelect.selectOption('ttm_squeeze');
+  await expect(page.getByLabel('계산 기간 (봉)')).toHaveValue('20');
+  await expect(page.getByLabel('볼린저 배수')).toHaveValue('2');
+  await expect(page.getByLabel('켈트너 배수')).toHaveValue('1.5');
+  await page.getByRole('button', { name: '공격적', exact: true }).click();
+  await expect(page.getByLabel('계산 기간 (봉)')).toHaveValue('14');
+  await page.getByLabel('켈트너 배수').fill('0.5');
+  await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('켈트너 배수는 1-2.5 범위');
+
+  // 5. 볼린저 %B 반등: 프리셋 및 범위 검증
+  await ruleSelect.selectOption('bollinger_percent_b');
+  await expect(page.getByLabel('RSI 기간 (봉)')).toHaveValue('14');
+  await expect(page.getByLabel('청산 목표 %B (이상)')).toHaveValue('0.55');
+  await page.getByRole('button', { name: '보수적', exact: true }).click();
+  await expect(page.getByLabel('볼린저 표준편차 배수')).toHaveValue('2.2');
+  await expect(page.getByLabel('RSI 과매도 기준 (이하)')).toHaveValue('30');
+  await page.getByLabel('청산 목표 %B (이상)').fill('0.2');
+  await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('청산 목표 %B는 0.4-1 범위');
+
+  // 6. 거래량 고갈 눌림목: 프리셋 및 정수/범위 검증
+  await ruleSelect.selectOption('low_volume_pullback');
+  await page.getByRole('button', { name: '보수적', exact: true }).click();
+  await expect(page.getByLabel('눌림 기간 (봉)')).toHaveValue('4');
+  await expect(page.getByLabel('최대 거래량 비율 (배)')).toHaveValue('0.55');
+  await page.getByLabel('눌림 기간 (봉)').fill('3.5');
+  await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('눌림 기간은 2-7 사이의 정수로 입력하세요.');
+  await page.getByLabel('눌림 기간 (봉)').fill('3');
+  await page.getByLabel('단기 추세선 (봉)').fill('35');
+  await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('단기 추세선은 10-30 사이의 정수로 입력하세요.');
+
+  // 7. 이격도 복원: 프리셋 및 범위 검증
+  await ruleSelect.selectOption('disparity_reversion');
+  await page.getByRole('button', { name: '공격적', exact: true }).click();
+  await expect(page.getByLabel('이동평균 기간 (봉)')).toHaveValue('15');
+  await expect(page.getByLabel('매수 이격도 (%, 이하)')).toHaveValue('95');
+  await expect(page.getByLabel('매도 이격도 (%, 이상)')).toHaveValue('100.5');
+  await expect(page.getByLabel('손절 기준 (%)')).toHaveValue('6');
+  await page.getByLabel('매수 이격도 (%, 이하)').fill('99');
+  await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('매수 이격도는 85-97 범위');
+  await page.getByLabel('매수 이격도 (%, 이하)').fill('93');
+  await page.getByLabel('손절 기준 (%)').fill('15');
+  await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('손절 기준은 2-10 범위');
+
+  expect(posts).toEqual([]);
+});
+
+test('DEMO 종가 전용 분기: MACD·%B는 백테스트/저장 성공하고 일봉 전용 신규 5종은 안내·차단한다', async ({ page }) => {
+  await page.goto('/strategies');
+  await waitWorkbenchReady(page);
+  await expect(page.getByLabel('전략 환경')).toBeEnabled();
+
+  const ruleSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
+
+  // DEMO 저장 허용 1: MACD 히스토그램
+  await ruleSelect.selectOption('macd_momentum');
+  await expect(page.getByText('DEMO · 지원')).toBeVisible();
+  await page.getByRole('button', { name: '보수적', exact: true }).click();
+  await page.getByLabel('전략 이름').fill('DEMO MACD 모멘텀');
+  await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+  const macdCard = page.locator('.studio-card').filter({
+    has: page.getByRole('heading', { name: 'DEMO MACD 모멘텀', exact: true }),
+  });
+  await expect(macdCard).toBeVisible();
+  await expect(macdCard).toContainText('MACD 히스토그램');
+  await expect(macdCard).toContainText('12/26/9봉');
+  await expect(macdCard).toContainText('MACD > 0');
+
+  // DEMO 저장 허용 2: 볼린저 %B 반등
+  await ruleSelect.selectOption('bollinger_percent_b');
+  await expect(page.getByText('DEMO · 지원')).toBeVisible();
+  await page.getByRole('button', { name: '공격적', exact: true }).click();
+  await page.getByLabel('전략 이름').fill('DEMO 볼린저 %B');
+  await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+  const pbCard = page.locator('.studio-card').filter({
+    has: page.getByRole('heading', { name: 'DEMO 볼린저 %B', exact: true }),
+  });
+  await expect(pbCard).toBeVisible();
+  await expect(pbCard).toContainText('볼린저 %B 반등');
+  await expect(pbCard).toContainText('14봉 · 1.8σ');
+  await expect(pbCard).toContainText('RSI(10)');
+
+  // DEMO 저장 차단: 신규 일봉 전용 5종은 POST 없이 경고 표시
+  const blockedPosts: string[] = [];
+  page.on('request', req => {
+    if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/strategies') {
+      blockedPosts.push(req.url());
+    }
+  });
+  for (const kind of [
+    'adx_dmi_trend',
+    'bollinger_squeeze',
+    'ttm_squeeze',
+    'low_volume_pullback',
+    'disparity_reversion',
+  ] as const) {
+    await ruleSelect.selectOption(kind);
+    await expect(page.getByText('DEMO · 미지원')).toBeVisible();
+    await page.getByLabel('전략 이름').fill(`DEMO 차단 ${kind}`);
+    await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('DEMO는 종가만 제공합니다');
+  }
+  expect(blockedPosts).toEqual([]);
+
+  // /backtest?source=demo: MACD·%B 성공(최상위 fast/slow 없음) vs 일봉 전용 5종 차단(POST 0건)
+  const demoPayloads: Record<string, unknown>[] = [];
+  page.on('request', req => {
+    if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/backtest') {
+      demoPayloads.push(req.postDataJSON() as Record<string, unknown>);
+    }
+  });
+
+  await page.goto('/backtest?source=demo');
+  await waitWorkbenchReady(page);
+  const btSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
+  const runBtn = page.getByRole('button', { name: '백테스트 실행', exact: true });
+  await expect(runBtn).toBeEnabled();
+
+  for (const kind of ['macd_momentum', 'bollinger_percent_b'] as const) {
+    await btSelect.selectOption(kind);
+    await runBtn.click();
+    const result = page.getByRole('region', { name: '합성 실험 결과' });
+    await expect(result).toBeVisible();
+    await expect(result.getByLabel('단순 보유 벤치마크 비교')).toBeVisible();
+  }
+  expect(demoPayloads).toHaveLength(2);
+  for (const sent of demoPayloads) {
+    expect(sent).not.toHaveProperty('fast');
+    expect(sent).not.toHaveProperty('slow');
+    expect(sent).toHaveProperty('rule');
+  }
+
+  for (const kind of ['adx_dmi_trend', 'bollinger_squeeze', 'ttm_squeeze', 'low_volume_pullback', 'disparity_reversion'] as const) {
+    await btSelect.selectOption(kind);
+    await runBtn.click();
+    await expect(page.getByRole('main').getByRole('alert')).toContainText('DEMO는 종가만 제공합니다');
+  }
+  expect(demoPayloads).toHaveLength(2);
+});
+
+test('신규 7종 저장 일봉 백테스트 실행 및 /strategies ↔ /backtest 왕복·evidence 배지·KIS 모의 정지 저장 및 시작 비활성화', async ({ page }) => {
+  const { Store } = await import('../../server/store.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const store = new Store(':memory:');
+  const fixture = v2DailyFixture('005930');
+  store.saveDaily(fixture.run, fixture.bars);
+
+  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4314, 4336]);
+  await new Promise<void>(resolve => server.listen(4336, '127.0.0.1', resolve));
+
+  const dailyPayloads: Record<string, unknown>[] = [];
+  await page.route('**/api/**', async route => {
+    const req = route.request();
+    if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/backtest/daily') {
+      dailyPayloads.push(req.postDataJSON() as Record<string, unknown>);
+    }
+    const response = await route.fetch({ url: req.url().replace(':4314', ':4336') });
+    await route.fulfill({ response });
+  });
+
+  try {
+    await page.goto('/backtest');
+    await waitWorkbenchReady(page);
+    const btSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
+    const runBtn = page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true });
+    await expect(runBtn).toBeEnabled();
+
+    const newKinds = [
+      'macd_momentum',
+      'adx_dmi_trend',
+      'bollinger_squeeze',
+      'ttm_squeeze',
+      'bollinger_percent_b',
+      'low_volume_pullback',
+      'disparity_reversion',
+    ] as const;
+
+    const result = page.getByRole('region', { name: '저장 일봉 실험 결과' });
+    for (const kind of newKinds) {
+      await btSelect.selectOption(kind);
+      await runBtn.click();
+      await expect(result).toBeVisible();
+      await expect(result.getByLabel('단순 보유 벤치마크 비교')).toBeVisible();
+    }
+
+    expect(dailyPayloads).toHaveLength(7);
+    newKinds.forEach((kind, idx) => {
+      const sent = dailyPayloads[idx];
+      expect(sent).not.toHaveProperty('fast');
+      expect(sent).not.toHaveProperty('slow');
+      expect((sent.rule as { kind: string }).kind).toBe(kind);
+    });
+
+    // 마지막 결과(disparity_reversion)에서 해시 추출 후 전략 스튜디오로 전달
+    await result.getByText('재현 입력·출처 확인', { exact: true }).click();
+    const hash = (await result.getByTestId('experiment-hash').textContent())?.trim() ?? '';
+    expect(hash).toMatch(/^[a-f0-9]{64}$/);
+
+    await result.getByRole('button', { name: '이 설정으로 전략 만들기', exact: true }).click();
+    await expect(page).toHaveURL(/\/strategies#strategy-editor$/);
+    await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('disparity_reversion');
+    await expect(page.getByLabel('이동평균 기간 (봉)')).toHaveValue('20');
+    await expect(page.getByLabel('매수 이격도 (%, 이하)')).toHaveValue('93');
+    await expect(page.getByLabel('매도 이격도 (%, 이상)')).toHaveValue('99.5');
+    await expect(page.getByLabel('손절 기준 (%)')).toHaveValue('5');
+    await expect(page.getByText(hash.slice(0, 8))).toBeVisible();
+
+    // KIS 모의 전환 시 초안·evidence 유지 + 정지 저장 허용 + 카드 시작 버튼 비활성화
+    await page.getByLabel('전략 환경').selectOption('kis-paper');
+    await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('disparity_reversion');
+    await expect(page.getByText(hash.slice(0, 8))).toBeVisible();
+    await page.getByLabel('전략 이름').fill('검증된 이격도 복원');
+    await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+
+    const savedCard = page.locator('.studio-card').filter({
+      has: page.getByRole('heading', { name: '검증된 이격도 복원', exact: true }),
+    });
+    await expect(savedCard).toBeVisible();
+    await expect(savedCard).toContainText(`검증 실험 연결 · ${hash.slice(0, 8)}`);
+    await expect(savedCard).toContainText('이격도 복원');
+    await expect(savedCard).toContainText('≤ 93% / ≥ 99.5%');
+    await expect(savedCard).toContainText('-5%');
+    await expect(savedCard).toContainText('정지');
+    await expect(savedCard).toContainText('전략 시작 차단');
+    await expect(savedCard.getByRole('button', { name: '전략 시작', exact: true })).toBeDisabled();
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
+  }
+});
+
+test('10종 도움말 사전·문맥 가이드 동적 전환·지원 환경별 체결 가정 분리 및 390px 모바일 무넘침 검증', async ({ page }) => {
+  const storedOnlyKinds = [
+    'donchian_breakout',
+    'adx_dmi_trend',
+    'bollinger_squeeze',
+    'ttm_squeeze',
+    'low_volume_pullback',
+    'disparity_reversion',
+  ] as const;
+  const demoCompatibleKinds = ['ma_crossover', 'rsi2_pullback', 'macd_momentum', 'bollinger_percent_b'] as const;
+
+  for (const route of ['/strategies', '/backtest']) {
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    await page.goto(route);
+    await waitWorkbenchReady(page);
+
+    // 1. 상단 도움말 패널 사전 탭에 10종 + 샹들리에(총 11카드) 모두 표시 및 환경별 체결 가정 분리 확인
+    await page.getByRole('button', { name: '사용방법 도움말', exact: true }).click();
+    const helpRegion = page.getByRole('region', { name: '전략 스튜디오 및 백테스트 사용방법 도움말' });
+    await expect(helpRegion.locator('[role="tabpanel"]')).toHaveCount(4);
+    await helpRegion.getByRole('tab', { name: '전략·입력 항목 사전', exact: true }).click();
+
+    const dictPanel = helpRegion.locator('[role="tabpanel"]:not([hidden])');
+    const cards = dictPanel.locator('article.research-help-card');
+    await expect(cards).toHaveCount(11);
+
+    for (const kind of storedOnlyKinds) {
+      const card = cards.filter({ has: page.locator('code', { hasText: new RegExp(`^${kind}$`) }) });
+      await expect(card).toHaveCount(1);
+      await expect(card).toContainText('저장 일봉에서는 종가 판정 후 다음 봉 시가에 체결한다고 가정합니다. DEMO에서는 사용할 수 없습니다.');
+      await expect(card).not.toContainText('다음 합성 봉 종가');
+    }
+    for (const kind of demoCompatibleKinds) {
+      const card = cards.filter({ has: page.locator('code', { hasText: new RegExp(`^${kind}$`) }) });
+      await expect(card).toHaveCount(1);
+      await expect(card).toContainText('다음 합성 봉 종가에 체결한다고 가정합니다.');
+    }
+
+    // 2. 문맥별 입력 항목 설명이 신규 7종 전환마다 동적 갱신 확인
+    const ruleSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
+    const helpDetails = page.locator('details.rule-field-help');
+    await helpDetails.locator('summary').click();
+
+    const expectedContext: [string, string, string][] = [
+      ['macd_momentum', 'MACD 히스토그램', '단기 12봉 / 장기 26봉 / 시그널 9봉 / 제로선 위 필터 꺼짐'],
+      ['adx_dmi_trend', 'ADX·DMI 추세', 'DI 기간 14봉 / ADX 기준 25 이상'],
+      ['bollinger_squeeze', '볼린저 스퀴즈', '밴드 20봉 / 표준편차 2배 / 수축 비교 60봉 / 하위 25% 이하'],
+      ['ttm_squeeze', 'TTM 스퀴즈', '기간 20봉 / 볼린저 2배 / 켈트너 1.5배'],
+      ['bollinger_percent_b', '볼린저 %B 반등', '볼린저 20봉 / 표준편차 2배 / RSI 14봉 / RSI 35 이하 / 청산 %B 0.55 이상'],
+      ['low_volume_pullback', '거래량 고갈 눌림목', '눌림 3봉 / 최대 거래량 0.65배 이하 / 단기 추세 20봉 / 장기 추세 60봉'],
+      ['disparity_reversion', '이격도 복원', '이동평균 20봉 / 매수 93% 이하 / 매도 99.5% 이상 / 손절 5% 이하'],
+    ];
+
+    for (const [kind, title, presetSnippet] of expectedContext) {
+      await ruleSelect.selectOption(kind);
+      await expect(helpDetails.locator('summary')).toHaveText(`현재 선택한 규칙(${title}) 입력 항목 설명 보기`);
+      await expect(helpDetails).toContainText(presetSnippet);
+    }
+
+    // 3. 모바일 390px에서 10종 선택기·문맥 가이드·도움말 사전 열림 상태로 가로 넘침 없음 확인
+    await page.setViewportSize({ width: 390, height: 844 });
+    const overflow = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+    }));
+    expect(overflow.scrollWidth).toBeLessThanOrEqual(390);
+    expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.innerWidth);
+  }
+});
