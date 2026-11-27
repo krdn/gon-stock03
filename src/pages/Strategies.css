@@ -59,6 +59,7 @@
 .rule-guide-lines li { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 8px; align-items: baseline; }
 .rule-guide-lines strong { color: #195e55; font-size: 11px; }
 .rule-env-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.rule-env-badges .badge.warning { background: #fff0e7; color: #8c351e; font-weight: 600; }
 .rule-presets {
   display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
   gap: 8px; margin: 0 0 10px;

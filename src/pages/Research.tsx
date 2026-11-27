@@ -929,6 +929,11 @@ function applyPreset(form: RuleFormState, presetKey: PresetKey): RuleFormState {
   return next;
 }
 
+/** 두 규칙 폼 상태가 모든 필드에서 동일한지 비교한다. */
+function isSameRuleForm(a: RuleFormState, b: RuleFormState): boolean {
+  return (Object.keys(a) as (keyof RuleFormState)[]).every(key => a[key] === b[key]);
+}
+
 /** 문자열 입력값이 대상 숫자와 정확히 일치하는지 판정한다(빈 문자열의 0 변환 차단). */
 function numEq(raw: string, expected: number): boolean {
   return raw.trim() !== '' && Number(raw) === expected;
@@ -1473,6 +1478,14 @@ function RuleConfigSection({
 }) {
   const catalog = STRATEGY_CATALOG[form.kind];
   const activePreset = matchedPreset(form);
+  const demoCatalogSupported = catalog.environments.demo !== false;
+  const demoFormSupported = isDemoRuleSupported(form);
+  const demoBadgeTone = !demoCatalogSupported ? 'neutral' : demoFormSupported ? 'teal' : 'warning';
+  const demoBadgeText = !demoCatalogSupported
+    ? '미지원'
+    : demoFormSupported
+      ? environmentAvailabilityText(catalog.environments.demo)
+      : '현재 설정 제한 (저장 일봉 필요)';
   const fastLabel = mode === 'strategy' ? `단기 평균 (${unit})` : '단기 (봉)';
   const slowLabel = mode === 'strategy' ? `장기 평균 (${unit})` : '장기 (봉)';
   const update = (patch: Partial<RuleFormState>) => onChange({ ...form, ...patch });
@@ -1520,9 +1533,7 @@ function RuleConfigSection({
           <Badge tone={catalog.environments.daily ? 'teal' : 'neutral'}>
             저장 일봉 · {environmentAvailabilityText(catalog.environments.daily)}
           </Badge>
-          <Badge tone={catalog.environments.demo ? 'teal' : 'neutral'}>
-            DEMO · {environmentAvailabilityText(catalog.environments.demo)}
-          </Badge>
+          <Badge tone={demoBadgeTone}>DEMO · {demoBadgeText}</Badge>
           <Badge tone={catalog.environments.kisPaper ? 'teal' : 'neutral'}>
             KIS 모의 · {environmentAvailabilityText(catalog.environments.kisPaper)}
           </Badge>
@@ -1539,7 +1550,11 @@ function RuleConfigSection({
               disabled={disabled}
               aria-pressed={activePreset === key}
               className={'button small-button ' + (activePreset === key ? 'primary' : 'secondary')}
-              onClick={() => onChange(applyPreset(form, key))}
+              onClick={() => {
+                if (activePreset === key) return;
+                const next = applyPreset(form, key);
+                if (!isSameRuleForm(form, next)) onChange(next);
+              }}
             >
               {label}
             </button>
@@ -2299,7 +2314,7 @@ export function Strategies() {
             type="button"
             className={'button ' + (helpOpen ? 'primary' : 'secondary')}
             aria-expanded={helpOpen}
-            aria-controls={helpPanelId}
+            aria-controls={helpOpen ? helpPanelId : undefined}
             onClick={() => setHelpOpen(open => !open)}
           >
             <BookOpen size={15} aria-hidden="true" />
@@ -2813,7 +2828,10 @@ function StrategyEditor({
   }
 
   function handleRuleChange(next: RuleFormState) {
-    setDraft(prev => ({ ...prev, ruleForm: next, formError: '', evidence: undefined }));
+    setDraft(prev => {
+      if (isSameRuleForm(prev.ruleForm, next)) return prev;
+      return { ...prev, ruleForm: next, formError: '', evidence: undefined };
+    });
   }
 
   function handleCodeChange(nextCode: string) {
@@ -3063,15 +3081,20 @@ function costsOf({ capital, feeBps, slippageBps }: CostAssumptions): CostAssumpt
   return { capital, feeBps, slippageBps };
 }
 
-function validateCosts(costs: CostAssumptions): string | null {
+function validateCosts(
+  costs: CostAssumptions,
+): { message: string; focusName: keyof CostAssumptions } | null {
   if (!Number.isInteger(costs.capital) || costs.capital < 100000 || costs.capital > 100000000) {
-    return '초기 자금은 100,000원 이상 100,000,000원 이하의 정수로 입력하세요.';
+    return {
+      message: '초기 자금은 100,000원 이상 100,000,000원 이하의 정수로 입력하세요.',
+      focusName: 'capital',
+    };
   }
   if (!Number.isFinite(costs.feeBps) || costs.feeBps < 0 || costs.feeBps > 100) {
-    return '수수료는 0-100bp 범위로 입력하세요.';
+    return { message: '수수료는 0-100bp 범위로 입력하세요.', focusName: 'feeBps' };
   }
   if (!Number.isFinite(costs.slippageBps) || costs.slippageBps < 0 || costs.slippageBps > 100) {
-    return '슬리피지는 0-100bp 범위로 입력하세요.';
+    return { message: '슬리피지는 0-100bp 범위로 입력하세요.', focusName: 'slippageBps' };
   }
   return null;
 }
@@ -3082,6 +3105,7 @@ function CostFields({ values, change }: { values: CostAssumptions; change: (valu
       <label className="field">
         {label}
         <input
+          name={key}
           type="number"
           min={min}
           max={max}
@@ -3221,13 +3245,21 @@ function useResultFocus(result: unknown) {
 }
 
 /** DEMO 합성 봉 백테스트 패널 (v1 SMA 및 v2 종가 기반 다중 규칙 지원). */
-function DemoBacktest({ strategyDraft }: { strategyDraft: StrategyTransferDraft | null }) {
+function DemoBacktest({
+  strategyDraft,
+  ruleForm,
+  setRuleForm,
+  costs,
+  setCosts,
+}: {
+  strategyDraft: StrategyTransferDraft | null;
+  ruleForm: RuleFormState;
+  setRuleForm: (next: RuleFormState) => void;
+  costs: CostAssumptions;
+  setCosts: (next: CostAssumptions) => void;
+}) {
   const { state, act, available, busy } = useWorkbench();
   const [selection, setSelection] = useState<string | null>(() => strategyDraft?.code ?? null);
-  const [costs, setCosts] = useState<CostAssumptions>(defaultCosts);
-  const [ruleForm, setRuleForm] = useState<RuleFormState>(() =>
-    strategyDraft ? formFromRule(strategyDraft.rule, strategyDraft.overlay) : defaultRuleForm(),
-  );
   const [calculation, setCalculation] = useState<{
     code: string;
     summary: string;
@@ -3268,7 +3300,8 @@ function DemoBacktest({ strategyDraft }: { strategyDraft: StrategyTransferDraft 
     }
     const costError = validateCosts(costs);
     if (costError) {
-      setError(costError);
+      setError(costError.message);
+      event.currentTarget.querySelector<HTMLInputElement>(`[name="${costError.focusName}"]`)?.focus();
       return;
     }
     if (!isDemoRuleSupported(ruleForm)) {
@@ -3385,9 +3418,7 @@ function DemoBacktest({ strategyDraft }: { strategyDraft: StrategyTransferDraft 
   );
 }
 
-type BacktestSelection =
-  | { costs: CostAssumptions; ruleForm: RuleFormState; focus: 'policy' | 'run' }
-  | { saved: Experiment };
+type BacktestSelection = { focus: 'policy' | 'run' } | { saved: Experiment };
 
 /** 백테스트 최상위 페이지 (`/backtest`). */
 export function Backtest() {
@@ -3407,9 +3438,20 @@ export function Backtest() {
     (runId === null || (params.get('source') === 'stored' && z.uuid().safeParse(runId).success));
   const locState = location.state as { backtestSelection?: string; strategyDraft?: unknown } | null;
   const strategyDraft = parseTransferDraft(locState?.strategyDraft);
+  const [ruleForm, setRuleForm] = useState<RuleFormState>(() =>
+    strategyDraft ? formFromRule(strategyDraft.rule, strategyDraft.overlay) : defaultRuleForm(),
+  );
+  const [costs, setCosts] = useState<CostAssumptions>(defaultCosts);
 
   function select(nextSource: string, nextRun?: string, selection?: BacktestSelection) {
     if (valid && nextSource === source && nextRun === undefined && !selection) return;
+    if (selection && 'saved' in selection) {
+      const savedInput = selection.saved.snapshot.input;
+      setCosts(costsOf(savedInput));
+      setRuleForm(
+        formFromRule(ruleFromExperimentInput(savedInput), 'overlay' in savedInput ? savedInput.overlay : undefined),
+      );
+    }
     const next = new URLSearchParams(params);
     next.set('source', nextSource);
     next.delete('run');
@@ -3448,7 +3490,7 @@ export function Backtest() {
           type="button"
           className={'button ' + (helpOpen ? 'primary' : 'secondary')}
           aria-expanded={helpOpen}
-          aria-controls={helpPanelId}
+          aria-controls={helpOpen ? helpPanelId : undefined}
           onClick={() => setHelpOpen(open => !open)}
         >
           <BookOpen size={15} aria-hidden="true" />
@@ -3461,13 +3503,23 @@ export function Backtest() {
           백테스트 주소의 출처 또는 수집 ID가 올바르지 않습니다. 데이터 출처를 직접 선택하세요.
         </p>
       ) : source === 'demo' ? (
-        <DemoBacktest strategyDraft={strategyDraft} />
+        <DemoBacktest
+          strategyDraft={strategyDraft}
+          ruleForm={ruleForm}
+          setRuleForm={setRuleForm}
+          costs={costs}
+          setCosts={setCosts}
+        />
       ) : (
         <StoredBacktest
           key={runId ?? 'default'}
           requested={runId}
           initial={initial}
           strategyDraft={strategyDraft}
+          ruleForm={ruleForm}
+          setRuleForm={setRuleForm}
+          costs={costs}
+          setCosts={setCosts}
           select={(id, selection) => select('stored', id, selection)}
         />
       )}
@@ -3480,17 +3532,25 @@ function StoredBacktest({
   requested,
   initial,
   strategyDraft,
+  ruleForm,
+  setRuleForm,
+  costs,
+  setCosts,
   select,
 }: {
   requested: string | null;
   initial: BacktestSelection | null;
   strategyDraft: StrategyTransferDraft | null;
+  ruleForm: RuleFormState;
+  setRuleForm: (next: RuleFormState) => void;
+  costs: CostAssumptions;
+  setCosts: (next: CostAssumptions) => void;
   select: (id: string, selection: BacktestSelection) => void;
 }) {
   const { act, available, busy } = useWorkbench();
   const navigate = useNavigate();
   const saved = initial && 'saved' in initial ? initial.saved : null;
-  const draft = initial && 'costs' in initial ? initial : null;
+  const focusTarget = initial && 'focus' in initial ? initial.focus : undefined;
   const input = saved?.snapshot.input;
   const [runs, setRuns] = useState<DailyRun[] | null>(null);
   const [experiments, setExperiments] = useState<z.infer<typeof experimentListSchema>['experiments']>([]);
@@ -3498,15 +3558,6 @@ function StoredBacktest({
   const [savedId, setSavedId] = useState(saved?.id ?? '');
   const [from, setFrom] = useState(input?.from ?? '');
   const [to, setTo] = useState(input?.to ?? '');
-  const [costs, setCosts] = useState<CostAssumptions>(() => costsOf(input ?? draft?.costs ?? defaultCosts));
-  const [ruleForm, setRuleForm] = useState<RuleFormState>(() => {
-    if (input) {
-      return formFromRule(ruleFromExperimentInput(input), 'overlay' in input ? input.overlay : undefined);
-    }
-    if (draft) return draft.ruleForm;
-    if (strategyDraft) return formFromRule(strategyDraft.rule, strategyDraft.overlay);
-    return defaultRuleForm();
-  });
   const [experiment, setExperiment] = useState<Experiment | null>(saved);
   const [replay, setReplay] = useState('');
   const [loading, setLoading] = useState(true);
@@ -3520,7 +3571,7 @@ function StoredBacktest({
   const resultRef = useResultFocus(experiment);
   const policySelect = useRef<HTMLSelectElement>(null);
   const runSelect = useRef<HTMLSelectElement>(null);
-  const focusAfterSelection = useRef(draft?.focus);
+  const focusAfterSelection = useRef(focusTarget);
 
   useEffect(() => {
     if (!loading && !listError && focusAfterSelection.current) {
@@ -3597,7 +3648,7 @@ function StoredBacktest({
       : '선택 기간에 장기 기간 + 2봉 이상이 필요합니다. 실행하면 입력·비용 가정과 결과를 함께 저장합니다.';
 
   function chooseRun(id: string | undefined, focus: 'policy' | 'run') {
-    if (id && id !== selected) select(id, { costs, ruleForm, focus });
+    if (id && id !== selected) select(id, { focus });
   }
   function clearResult() {
     setExperiment(null);
@@ -3653,7 +3704,8 @@ function StoredBacktest({
     }
     const costError = validateCosts(costs);
     if (costError) {
-      setError(costError);
+      setError(costError.message);
+      event.currentTarget.querySelector<HTMLInputElement>(`[name="${costError.focusName}"]`)?.focus();
       return;
     }
     try {

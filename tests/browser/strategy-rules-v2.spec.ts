@@ -562,12 +562,13 @@ test('전략 스튜디오와 백테스트 상단 사용방법 도움말 패널�
     const toggle = page.getByRole('button', { name: '사용방법 도움말', exact: true });
     await expect(toggle).toBeVisible();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    const panelId = await toggle.getAttribute('aria-controls');
-    expect(panelId).toBeTruthy();
+    await expect(toggle).not.toHaveAttribute('aria-controls');
 
     // 도움말 열기
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const panelId = await toggle.getAttribute('aria-controls');
+    expect(panelId).toBeTruthy();
     const helpRegion = page.getByRole('region', { name: '전략 스튜디오 및 백테스트 사용방법 도움말' });
     await expect(helpRegion).toBeVisible();
     await expect(helpRegion).toHaveAttribute('id', panelId!);
@@ -669,10 +670,11 @@ test('전략 스튜디오와 백테스트 상단 사용방법 도움말 패널�
     await expect(tabs.nth(2)).toBeFocused();
     await expect(tabs.nth(2)).toHaveAttribute('aria-selected', 'true');
 
-    // 닫기 버튼으로 패널 접힘 및 토글 버튼 포커스 복귀 확인
+    // 닫기 버튼으로 패널 접힘 및 토글 버튼 포커스 복귀·dangling aria-controls 제거 확인
     await helpRegion.getByRole('button', { name: '닫기', exact: true }).click();
     await expect(helpRegion).toHaveCount(0);
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).not.toHaveAttribute('aria-controls');
     await expect(toggle).toBeFocused();
   }
 });
@@ -1134,5 +1136,198 @@ test('10종 도움말 사전·문맥 가이드 동적 전환·지원 환경별 �
     }));
     expect(overflow.scrollWidth).toBeLessThanOrEqual(390);
     expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.innerWidth);
+  }
+});
+
+test('백테스트 데이터 출처(DEMO ↔ 저장 일봉) 전환 시 편집 중인 규칙·파라미터·비용이 보존되고 비용 오류 시 초점이 이동한다', async ({ page }) => {
+  const fixture = v2DailyFixture('005930');
+  await page.route('**/api/state', route => route.fulfill({ json: snapshot() }));
+  await page.route('**/api/data/daily', route => route.fulfill({ json: { runs: [fixture.run] } }));
+  await page.route('**/api/backtest/experiments', route => route.fulfill({ json: { experiments: [] } }));
+  const posts: string[] = [];
+  page.on('request', req => {
+    if (req.method() === 'POST') posts.push(new URL(req.url()).pathname);
+  });
+
+  // Major 1: 저장 일봉에서 MACD 규칙·파라미터·비용 편집 → DEMO 전환 → 저장 일봉 복귀 시 보존
+  await page.goto('/backtest');
+  await waitWorkbenchReady(page);
+  await expect(page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true })).toBeEnabled();
+
+  await page.getByRole('combobox', { name: '전략 규칙', exact: true }).selectOption('macd_momentum');
+  await page.getByLabel('단기 EMA (봉)').fill('11');
+  await page.getByLabel('장기 EMA (봉)').fill('28');
+  await page.getByLabel('MACD > 0 (제로선 위에서만 매수)').check();
+  await page.getByLabel('초기 자금 (원)').fill('25000000');
+
+  const sourceSelect = page.getByLabel('데이터 출처');
+  await sourceSelect.selectOption('demo');
+  await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('macd_momentum');
+  await expect(page.getByLabel('단기 EMA (봉)')).toHaveValue('11');
+  await expect(page.getByLabel('장기 EMA (봉)')).toHaveValue('28');
+  await expect(page.getByLabel('MACD > 0 (제로선 위에서만 매수)')).toBeChecked();
+  await expect(page.getByLabel('초기 자금 (원)')).toHaveValue('25000000');
+
+  // Minor 2 (DEMO): 비용 범위 오류 시 POST 차단 및 해당 입력 포커스 이동
+  const demoRun = page.getByRole('button', { name: '백테스트 실행', exact: true });
+  await page.getByLabel('초기 자금 (원)').fill('1');
+  await demoRun.click();
+  await expect(page.getByRole('main').getByRole('alert')).toContainText('초기 자금은 100,000원 이상');
+  await expect(page.getByLabel('초기 자금 (원)')).toBeFocused();
+
+  await page.getByLabel('초기 자금 (원)').fill('25000000');
+  await page.getByLabel('수수료 (bp, 1bp = 0.01%)').fill('150');
+  await demoRun.click();
+  await expect(page.getByRole('main').getByRole('alert')).toContainText('수수료는 0-100bp 범위');
+  await expect(page.getByLabel('수수료 (bp, 1bp = 0.01%)')).toBeFocused();
+
+  await page.getByLabel('수수료 (bp, 1bp = 0.01%)').fill('1.5');
+  await page.getByLabel('슬리피지 (bp)').fill('-1');
+  await demoRun.click();
+  await expect(page.getByRole('main').getByRole('alert')).toContainText('슬리피지는 0-100bp 범위');
+  await expect(page.getByLabel('슬리피지 (bp)')).toBeFocused();
+  await page.getByLabel('슬리피지 (bp)').fill('5');
+
+  // DEMO에서 ADX로 변경한 뒤 다시 저장 일봉으로 전환해도 유지 확인
+  await page.getByRole('combobox', { name: '전략 규칙', exact: true }).selectOption('adx_dmi_trend');
+  await page.getByLabel('DI 기간 (봉)').fill('18');
+  await page.getByLabel('ADX 기준').fill('32');
+
+  await sourceSelect.selectOption('stored');
+  await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('adx_dmi_trend');
+  await expect(page.getByLabel('DI 기간 (봉)')).toHaveValue('18');
+  await expect(page.getByLabel('ADX 기준')).toHaveValue('32');
+  await expect(page.getByLabel('초기 자금 (원)')).toHaveValue('25000000');
+
+  // Minor 2 (저장 일봉): 초기 자금 범위 오류 시 POST 차단 및 포커스 이동
+  await page.getByLabel('초기 자금 (원)').fill('1');
+  await page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true }).click();
+  await expect(page.getByRole('main').getByRole('alert')).toContainText('초기 자금은 100,000원 이상');
+  await expect(page.getByLabel('초기 자금 (원)')).toBeFocused();
+
+  expect(posts).toEqual([]);
+});
+
+test('KIS 모의 다중 규칙 전략은 /settings/trading/strategy에서 실제 규칙명을 표시하고 레거시 SMA 변질 복사를 차단한다', async ({ page }) => {
+  const state = snapshot();
+  state.strategies = [
+    {
+      id: 'kis-macd-chandelier',
+      name: 'KIS MACD 샹들리에',
+      code: '005930',
+      fast: 5,
+      slow: 20,
+      qty: 2,
+      active: false,
+      lastSignal: 'hold',
+      lastTick: -1,
+      environment: 'kis-paper',
+      revision: 1,
+      rule: { kind: 'macd_momentum', fastPeriod: 12, slowPeriod: 26, signalPeriod: 9, requireZeroLineAbove: false },
+      overlay: { chandelier: { atrPeriod: 14, atrMultiplier: 3 } },
+    },
+    {
+      id: 'kis-basic-sma',
+      name: 'KIS 기본 SMA',
+      code: '005930',
+      fast: 5,
+      slow: 20,
+      qty: 1,
+      active: false,
+      lastSignal: 'hold',
+      lastTick: -1,
+      environment: 'kis-paper',
+      revision: 1,
+      rule: { kind: 'ma_crossover', maType: 'sma', fast: 5, slow: 20 },
+    },
+  ];
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.route('**/api/trading-settings', route =>
+    route.fulfill({ json: { active: null, plans: {}, canFix: false } }),
+  );
+
+  // Major 2: 다중 규칙 전략 선택 시 5/20 교차 오표시 금지, 실제 규칙명 표시 및 레거시 복사 폼 차단
+  await page.goto('/settings/trading/strategy/1?strategy=kis-macd-chandelier');
+  await waitWorkbenchReady(page);
+  await expect(page.getByLabel('저장 KIS 전략')).toHaveValue('kis-macd-chandelier');
+  await expect(page.getByRole('main')).toContainText('MACD 히스토그램 · 샹들리에 ATR(14)×3');
+  await expect(page.getByRole('main')).not.toContainText('5/20 교차');
+  await expect(page.getByRole('main')).toContainText('백테스트 전용 규칙');
+  await expect(page.getByRole('button', { name: '종목·수량·교차 주기로 새 전략 만들기' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: '전략 스튜디오에서 편집·복제' })).toHaveAttribute(
+    'href',
+    '/strategies?environment=kis-paper',
+  );
+
+  // 기본 SMA 전략으로 전환하면 5/20 교차 요약과 빠른 생성 버튼이 정상 복원됨
+  await page.getByLabel('저장 KIS 전략').selectOption('kis-basic-sma');
+  await expect(page.getByRole('main')).toContainText('5/20 교차');
+  await expect(page.getByRole('button', { name: '종목·수량·교차 주기로 새 전략 만들기' })).toBeVisible();
+});
+
+test('활성 프리셋 재클릭 시 evidence가 유지되고 샹들리에·거래량 필터 활성 시 DEMO 배지가 동적으로 경고 전환된다', async ({ page }) => {
+  const { Store } = await import('../../server/store.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const store = new Store(':memory:');
+  const fixture = v2DailyFixture('005930');
+  store.saveDaily(fixture.run, fixture.bars);
+
+  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4314, 4337]);
+  await new Promise<void>(resolve => server.listen(4337, '127.0.0.1', resolve));
+
+  await page.route('**/api/**', async route => {
+    const response = await route.fetch({ url: route.request().url().replace(':4314', ':4337') });
+    await route.fulfill({ response });
+  });
+
+  try {
+    // 1. MACD 기본 프리셋 일봉 백테스트 → '이 설정으로 전략 만들기'로 evidence 연결
+    await page.goto('/backtest');
+    await waitWorkbenchReady(page);
+    await expect(page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true })).toBeEnabled();
+    await page.getByRole('combobox', { name: '전략 규칙', exact: true }).selectOption('macd_momentum');
+    await page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true }).click();
+    const result = page.getByRole('region', { name: '저장 일봉 실험 결과' });
+    await expect(result).toBeVisible();
+    await result.getByText('재현 입력·출처 확인', { exact: true }).click();
+    const hash = (await result.getByTestId('experiment-hash').textContent())?.trim() ?? '';
+
+    await result.getByRole('button', { name: '이 설정으로 전략 만들기', exact: true }).click();
+    await expect(page).toHaveURL(/\/strategies#strategy-editor$/);
+    const evidenceBanner = page.locator('.studio-evidence');
+    await expect(evidenceBanner).toBeVisible();
+    await expect(evidenceBanner).toContainText(hash.slice(0, 8));
+
+    // Minor 1: 이미 활성화된 '기본' 프리셋 버튼 재클릭 시 evidence 배지 유지
+    const basicBtn = page.getByRole('button', { name: '기본', exact: true });
+    await expect(basicBtn).toHaveAttribute('aria-pressed', 'true');
+    await basicBtn.click();
+    await expect(evidenceBanner).toBeVisible();
+    await expect(evidenceBanner).toContainText(hash.slice(0, 8));
+
+    // Minor 3: MACD(DEMO 지원)에서 샹들리에 켜면 DEMO 배지가 '현재 설정 제한 (저장 일봉 필요)' 경고 톤으로 전환 + evidence 해제
+    const envBadges = page.getByLabel('환경별 사용 가능 여부');
+    await expect(envBadges).toContainText('DEMO · 지원');
+    await page.getByLabel('샹들리에 ATR 청산 오버레이 사용').check();
+    await expect(envBadges).toContainText('DEMO · 현재 설정 제한 (저장 일봉 필요)');
+    await expect(envBadges.locator('.badge.warning')).toContainText('DEMO · 현재 설정 제한 (저장 일봉 필요)');
+    await expect(evidenceBanner).toHaveCount(0);
+
+    // 샹들리에 해제 시 원래 'DEMO · 지원' 복귀
+    await page.getByLabel('샹들리에 ATR 청산 오버레이 사용').uncheck();
+    await expect(envBadges).toContainText('DEMO · 지원');
+
+    // Minor 3: ma_crossover 거래량 필터 입력 시에도 DEMO 배지가 경고 톤으로 전환
+    await page.getByRole('combobox', { name: '전략 규칙', exact: true }).selectOption('ma_crossover');
+    await expect(envBadges).toContainText('DEMO · 거래량 필터 끔');
+    await page.getByLabel('최소 상대 거래량 (배, 선택)').fill('1.5');
+    await expect(envBadges).toContainText('DEMO · 현재 설정 제한 (저장 일봉 필요)');
+    await page.getByLabel('최소 상대 거래량 (배, 선택)').fill('');
+    await expect(envBadges).toContainText('DEMO · 거래량 필터 끔');
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
   }
 });
