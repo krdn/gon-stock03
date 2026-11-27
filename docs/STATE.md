@@ -1,5 +1,7 @@
 # 작업 인수인계
 
+- **저장 일봉 돌파·변동성 사이징** [#240 PR 3A-1과 UI 입력 계약](tasks/240-strategy-rules-phase3a.md)
+
 - **Research.tsx 모듈 분리 리팩터링** [#238 작업 기록](tasks/238-research-modularize.md) (Item #90 · `src/pages/Research.tsx`를 순수 헬퍼와 `src/components/research/*` 서브컴포넌트로 분리, `tests/**` 무수정 단위 354/354·E2E 336/336 통과)
 - **확정 일봉 전략 7종** [#235와 PR 2A·PR 2B 작업](tasks/235-strategy-rules.md)
 - **전략 스튜디오 일봉 규칙** [#231](https://github.com/krdn/gon-stock03/issues/231) · [PR 1A·PR 1B 작업과 계약](tasks/231-strategy-rules.md)

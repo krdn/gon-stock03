@@ -13,7 +13,7 @@ import {
 export type StrategyEnvironment = 'demo' | 'kis-paper';
 
 /** 지원하는 전략 규칙 종류 유니온. */
-export type RuleKind = StrategyRule['kind'];
+export type RuleKind = (typeof RULE_KINDS)[number];
 
 /** 규칙 프리셋 단계 키. */
 export type PresetKey = 'conservative' | 'basic' | 'aggressive';
@@ -61,6 +61,7 @@ export type StrategyTransferDraft = z.infer<typeof strategyTransferSchema>;
 /** 규칙·오버레이 입력 폼 상태 (빈 입력·재편집을 안전하게 유지하기 위해 문자열로 보관). */
 export interface RuleFormState {
   kind: RuleKind;
+  unsupportedDailyInput?: boolean;
   maType: 'sma' | 'ema';
   fast: string;
   slow: string;
@@ -284,6 +285,8 @@ export function formFromRule(rule?: StrategyRule, overlay?: ExitOverlay): RuleFo
     base.atrPeriod = String(overlay.chandelier.atrPeriod);
     base.atrMultiplier = String(overlay.chandelier.atrMultiplier);
   }
+  if (overlay?.volatilityParity) base.unsupportedDailyInput = true;
+  if (rule?.kind === 'volatility_breakout') return {...base, unsupportedDailyInput:true};
   if (!rule) return base;
   base.kind = rule.kind;
   switch (rule.kind) {
@@ -543,6 +546,7 @@ export function badNumberMessage(input: HTMLInputElement): string {
 export function buildRuleAndOverlay(
   form: RuleFormState,
 ): { ok: true; rule: StrategyRule; overlay?: ExitOverlay } | { ok: false; error: string; focusName?: string } {
+  if (form.unsupportedDailyInput) return {ok:false, error:'이 저장 일봉 실험은 현재 폼에서 편집할 수 없습니다.'};
   let rawRule: unknown;
   switch (form.kind) {
     case 'ma_crossover': {

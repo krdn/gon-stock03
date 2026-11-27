@@ -1,4 +1,4 @@
-import { assertCloseOnly, evaluateClose, warmup, type StrategyRule, type ExitOverlay, type RuleBar } from '../shared/strategy-rules.ts';
+import { breakoutEntry, assertCloseOnly, evaluateClose, warmup, type StrategyRule, type ExitOverlay, type RuleBar } from '../shared/strategy-rules.ts';
 import { randomUUID } from 'node:crypto';
 import { equity, type State, type BacktestInput, type BacktestResult, type Event } from '../shared/model.ts';
 import type { DailyPrice } from '../shared/market-data.ts';
@@ -144,6 +144,15 @@ function simulate(prices: number[], executionPrices: number[], input: BacktestIn
 }
 
 interface RuleSimulation { capital:number; feeBps:number; slippageBps:number; rule:StrategyRule; overlay?:ExitOverlay }
+function allocationWeight(prior: readonly RuleBar[], parity: NonNullable<ExitOverlay['volatilityParity']>) {
+  const window = prior.slice(-parity.volLookback - 1);
+  const returns = window.slice(1).map((b,i) => b.close / window[i].close - 1);
+  const mean = returns.reduce((sum,r) => sum + r, 0) / returns.length;
+  const variance = returns.reduce((sum,r) => sum + (r - mean) ** 2, 0) / returns.length;
+  const annualVolPct = Math.sqrt(variance) * Math.sqrt(252) * 100;
+  const cap = parity.maxAllocationPct / 100;
+  return annualVolPct > 0 ? Math.min(cap, parity.targetAnnualVolPct / annualVolPct) : cap;
+}
 export function backtestRules(bars: RuleBar[], executions: number[], input: RuleSimulation, environment:'demo'|'daily') {
   if (environment === 'demo') assertCloseOnly(input.rule,input.overlay);
   const required = warmup(input.rule,input.overlay) + 1;
@@ -162,18 +171,27 @@ export function backtestRules(bars: RuleBar[], executions: number[], input: Rule
   const equity:number[] = [], trades:(BacktestResult['trades'][number] & {reason:string})[] = [];
   for (let i = 0; i < bars.length; i++) {
     const holding = qty ? {barsHeld:i-entry, entryPrice, trailStop} : undefined;
-    const decision = evaluateClose(bars.slice(0,i),input.rule,holding,input.overlay);
+    const prior = bars.slice(0,i);
+    const target = input.rule.kind === 'volatility_breakout' && !holding && i >= required - 1
+      ? breakoutEntry(prior,bars[i],input.rule) : undefined;
+    const decision = target === undefined ? evaluateClose(prior,input.rule,holding,input.overlay)
+      : {signal:'buy' as const,reason:'전일 변동폭 기준 당일 목표가 상향 돌파',trailStop:undefined};
     trailStop = decision.trailStop;
     const {signal:side, reason} = decision;
     if ((side === 'buy' && !qty) || (side === 'sell' && qty)) {
-      const price = executions[i] * (1 + (side === 'buy' ? 1 : -1) * input.slippageBps / 10000);
-      const units = side === 'buy' ? unitsAt(cash,price) : qty;
+      const reference = target ?? executions[i];
+      const price = reference * (1 + (side === 'buy' ? 1 : -1) * input.slippageBps / 10000);
+      let units = side === 'buy' ? unitsAt(cash,price) : qty;
+      if (side === 'buy' && input.overlay?.volatilityParity) {
+        const budget = cash * allocationWeight(prior,input.overlay.volatilityParity);
+        units = Math.min(units,unitsAt(budget,price));
+      }
       if (units > 0) {
         const cost = fee(units * price,input.feeBps);
         if (side === 'buy') {cash -= units * price + cost; qty = units; entry = i; entryPrice = price;}
         else {cash += units * price - cost; qty = 0;}
         trailStop = undefined;
-        fees += cost; slippageCost += Math.abs(price-executions[i]) * units;
+        fees += cost; slippageCost += Math.abs(price-reference) * units;
         trades.push({bar:i,side,price,qty:units,fee:cost,...(environment === 'daily' && {date:bars[i].date,signalDate:bars[i-1].date}),reason});
       }
     }
@@ -184,6 +202,6 @@ export function backtestRules(bars: RuleBar[], executions: number[], input: Rule
   }
   const finalEquity = equity.at(-1)!;
   return {equity,trades,finalEquity,returnPct:(finalEquity/input.capital-1)*100,maxDrawdown,fees,slippageCost,
-    source:environment === 'daily' ? `KIS 저장 일봉 ${bars.length}봉 · 다음 봉 시가 체결 가정 · 세금 미포함` : `합성 ${bars.length}봉 · 다음 봉 종가 체결 가정 · 세금 미포함`,
+    source:input.rule.kind === 'volatility_breakout' ? `KIS 저장 일봉 ${bars.length}봉 · 당일 목표가 매수·이후 시가 청산 가정 · 세금 미포함` : environment === 'daily' ? `KIS 저장 일봉 ${bars.length}봉 · 다음 봉 시가 체결 가정 · 세금 미포함` : `합성 ${bars.length}봉 · 다음 봉 종가 체결 가정 · 세금 미포함`,
     benchmark:{returnPct:(benchValue/input.capital-1)*100,maxDrawdown:benchDrawdown,finalEquity:benchValue}};
 }
