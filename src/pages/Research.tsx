@@ -6,7 +6,7 @@ import { Badge, Chart, Panel, Stat } from '../components/ui';
 import { won, type Strategy } from '../../shared/model';
 import { codeSchema } from '../../shared/contracts';
 import { dailyRunsSchema } from '../../shared/data-inventory';
-import { masterCodeSchema, type DailyRun } from '../../shared/market-data';
+import { marketDate, masterCodeSchema, type DailyRun } from '../../shared/market-data';
 import {
   experimentListSchema,
   experimentSchema,
@@ -231,6 +231,21 @@ function matchedPreset(form: RuleFormState): PresetKey | null {
     }
   }
   return null;
+}
+
+/** `noValidate` 폼에서 불완전 숫자(`1e` 등 `validity.badInput`) 입력 필드를 검출한다. */
+function findBadNumberInput(form: HTMLFormElement | null): HTMLInputElement | null {
+  if (!form) return null;
+  for (const input of form.querySelectorAll<HTMLInputElement>('input[type="number"]')) {
+    if (!input.disabled && input.validity.badInput) return input;
+  }
+  return null;
+}
+
+/** 불완전 숫자 입력 필드에 대한 한글 오류 문구를 생성한다. */
+function badNumberMessage(input: HTMLInputElement): string {
+  const label = input.closest('label')?.childNodes[0]?.textContent?.trim();
+  return label ? `${label} 항목에 올바른 숫자를 입력하세요.` : '숫자 입력 형식이 올바르지 않습니다.';
 }
 
 /** 폼 상태에서 스키마 검증을 거친 규칙·오버레이를 조립한다. */
@@ -1285,6 +1300,12 @@ function StrategyEditor({
       focusField('name');
       return;
     }
+    const badInput = findBadNumberInput(e.currentTarget);
+    if (badInput) {
+      setDraft(prev => ({ ...prev, formError: badNumberMessage(badInput) }));
+      badInput.focus();
+      return;
+    }
     if (
       ruleForm.kind === 'ma_crossover' &&
       ruleForm.fast !== '' &&
@@ -1298,19 +1319,6 @@ function StrategyEditor({
     if (!built.ok) {
       setDraft(prev => ({ ...prev, formError: built.error }));
       focusField(built.focusName);
-      return;
-    }
-    if (
-      environment === 'kis-paper' &&
-      built.rule.kind === 'ma_crossover' &&
-      built.rule.maType === 'sma' &&
-      !built.rule.regimePeriod &&
-      !built.rule.minRelativeVolume &&
-      !built.overlay?.chandelier &&
-      built.rule.slow > 100
-    ) {
-      setDraft(prev => ({ ...prev, formError: 'KIS 모의 기본 SMA 계약은 장기 기간 100 이하만 지원합니다.' }));
-      focusField('slow');
       return;
     }
     const parsedQty = Number(qty);
@@ -1349,6 +1357,12 @@ function StrategyEditor({
 
   function openInBacktest() {
     setDraft(prev => ({ ...prev, attempted: true, formError: '' }));
+    const badInput = findBadNumberInput(formRef.current);
+    if (badInput) {
+      setDraft(prev => ({ ...prev, formError: badNumberMessage(badInput) }));
+      badInput.focus();
+      return;
+    }
     if (
       ruleForm.kind === 'ma_crossover' &&
       ruleForm.fast !== '' &&
@@ -1461,7 +1475,8 @@ function StrategyEditor({
         )}
         {kisSlowExceeded && (
           <p className="studio-warning" role="status">
-            KIS 모의 기본 SMA 계약은 장기 기간 100 이하만 지원합니다. 저장 일봉 백테스트는 120봉까지 검증할 수 있습니다.
+            KIS 모의 기본 SMA 계약은 장기 기간 100 이하만 실시간 시작을 지원합니다. 101-120 구간은 정지 상태로 저장하거나
+            저장 일봉 백테스트로 검증할 수 있습니다.
           </p>
         )}
         {formError && !invalidPeriods && (
@@ -1696,6 +1711,12 @@ function DemoBacktest({ strategyDraft }: { strategyDraft: StrategyTransferDraft 
     event.preventDefault();
     clearCalc();
     if (!code || busy || !available) return;
+    const badInput = findBadNumberInput(event.currentTarget);
+    if (badInput) {
+      setError(badNumberMessage(badInput));
+      badInput.focus();
+      return;
+    }
     const built = buildRuleAndOverlay(ruleForm);
     if (!built.ok) {
       setError(built.error);
@@ -2020,12 +2041,37 @@ function StoredBacktest({
     event.preventDefault();
     if (!run || !eligible || locked || listError || !available) return;
     clearResult();
-    if (!from || !to) {
-      setError('시작일과 종료일을 입력하세요.');
+    const fromInput = event.currentTarget.querySelector<HTMLInputElement>('input[name="from"]');
+    const toInput = event.currentTarget.querySelector<HTMLInputElement>('input[name="to"]');
+    if (fromInput?.validity.badInput || !marketDate.safeParse(from).success) {
+      setError('시작일을 올바르게 입력하세요.');
+      fromInput?.focus();
+      return;
+    }
+    if (toInput?.validity.badInput || !marketDate.safeParse(to).success) {
+      setError('종료일을 올바르게 입력하세요.');
+      toInput?.focus();
+      return;
+    }
+    if (from < run.from || from > run.to) {
+      setError(`시작일은 수집 구간(${dateInput(run.from)} ~ ${dateInput(run.to)}) 안에서 선택하세요.`);
+      fromInput?.focus();
+      return;
+    }
+    if (to < run.from || to > run.to) {
+      setError(`종료일은 수집 구간(${dateInput(run.from)} ~ ${dateInput(run.to)}) 안에서 선택하세요.`);
+      toInput?.focus();
       return;
     }
     if (from > to) {
       setError('시작일은 종료일보다 늦을 수 없습니다.');
+      fromInput?.focus();
+      return;
+    }
+    const badInput = findBadNumberInput(event.currentTarget);
+    if (badInput) {
+      setError(badNumberMessage(badInput));
+      badInput.focus();
       return;
     }
     const built = buildRuleAndOverlay(ruleForm);
@@ -2257,6 +2303,7 @@ function StoredBacktest({
                 <label className="field">
                   시작일
                   <input
+                    name="from"
                     type="date"
                     required
                     value={dateInput(from)}
@@ -2268,6 +2315,7 @@ function StoredBacktest({
                 <label className="field">
                   종료일
                   <input
+                    name="to"
                     type="date"
                     required
                     value={dateInput(to)}

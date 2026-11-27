@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { strategyInput } from '../../shared/contracts';
 import type { DailyRun, StoredBar } from '../../shared/market-data';
 import { emptyStatus } from '../../shared/status';
 import { snapshot } from '../snapshot';
@@ -371,10 +372,64 @@ test('음수 필터·무효 오버레이 입력은 백테스트 이동과 실행
   await page.getByLabel('최소 상대 거래량 (배, 선택)').fill('-1');
   await page.getByRole('button', { name: '백테스트 실행', exact: true }).click();
   await expect(page.getByRole('main').getByRole('alert')).toContainText('최소 상대 거래량은 0-5 범위');
+
+  // Minor 1e (2차 보완): 선택 숫자 필터에 불완전 숫자('1e', validity.badInput) 입력 시 빈 필터 묵살·v1 전송 없이 차단
+  const demoVol = page.getByLabel('최소 상대 거래량 (배, 선택)');
+  await demoVol.fill('');
+  await demoVol.focus();
+  await page.keyboard.type('1e');
+  await page.getByRole('button', { name: '백테스트 실행', exact: true }).click();
+  await expect(page.getByRole('main').getByRole('alert')).toContainText('올바른 숫자를 입력하세요.');
+  await expect(demoVol).toBeFocused();
+
+  // /strategies에서도 불완전 숫자('1e') 입력 시 백테스트 이동 차단
+  await page.goto('/strategies');
+  await waitWorkbenchReady(page);
+  const stratVol = page.getByLabel('최소 상대 거래량 (배, 선택)');
+  await stratVol.focus();
+  await page.keyboard.type('1e');
+  await page.getByRole('button', { name: '이 설정으로 백테스트', exact: true }).click();
+  await expect(page).toHaveURL(/\/strategies$/);
+  await expect(page.getByRole('alert')).toContainText('올바른 숫자를 입력하세요.');
+  await expect(stratVol).toBeFocused();
   expect(posts).toEqual([]);
 });
 
-test('KIS 모의 실시간 준비 상태에서도 미지원 규칙 카드는 시작 버튼을 비활성화하고 기본 SMA 장기 100 초과 저장을 차단한다', async ({ page }) => {
+test('저장 일봉 백테스트에서 수집 구간(run.from-run.to) 밖 날짜 입력은 POST 없이 경고와 초점으로 차단한다', async ({ page }) => {
+  const fixture = v2DailyFixture('005930');
+  await page.route('**/api/state', route => route.fulfill({ json: snapshot() }));
+  await page.route('**/api/data/daily', route => route.fulfill({ json: { runs: [fixture.run] } }));
+  await page.route('**/api/backtest/experiments', route => route.fulfill({ json: { experiments: [] } }));
+  const dailyPosts: string[] = [];
+  page.on('request', req => {
+    if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/backtest/daily') {
+      dailyPosts.push(new URL(req.url()).pathname);
+    }
+  });
+
+  await page.goto('/backtest');
+  await waitWorkbenchReady(page);
+  const executeBtn = page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true });
+  await expect(executeBtn).toBeEnabled();
+
+  // 시작일이 run.from(2026-01-05) 이전인 경우 차단 + 시작일 포커스
+  const fromInput = page.getByLabel('시작일', { exact: true });
+  const toInput = page.getByLabel('종료일', { exact: true });
+  await fromInput.fill('2025-12-31');
+  await executeBtn.click();
+  await expect(page.getByRole('main').getByRole('alert')).toContainText('시작일은 수집 구간');
+  await expect(fromInput).toBeFocused();
+
+  // 시작일 복원 후 종료일이 run.to 이후인 경우 차단 + 종료일 포커스
+  await fromInput.fill('2026-01-05');
+  await toInput.fill('2026-12-31');
+  await executeBtn.click();
+  await expect(page.getByRole('main').getByRole('alert')).toContainText('종료일은 수집 구간');
+  await expect(toInput).toBeFocused();
+  expect(dailyPosts).toEqual([]);
+});
+
+test('KIS 모의 실시간 준비 상태에서도 미지원 규칙 카드는 시작 버튼을 비활성화하고 기본 SMA 5/110은 정지 저장 후 시작만 차단한다', async ({ page }) => {
   const state = snapshot();
   const now = new Date().toISOString();
   state.status.observedAt = now;
@@ -448,9 +503,23 @@ test('KIS 모의 실시간 준비 상태에서도 미지원 규칙 카드는 시
     });
   });
 
-  const posts: string[] = [];
-  page.on('request', req => {
-    if (req.method() === 'POST') posts.push(new URL(req.url()).pathname);
+  const savedBodies: unknown[] = [];
+  await page.route('**/api/strategies', async route => {
+    const parsed = strategyInput.parse(route.request().postDataJSON());
+    savedBodies.push(parsed);
+    const id = 'kis-sma-110';
+    state.strategies.push({
+      ...parsed,
+      id,
+      active: false,
+      lastSignal: 'hold',
+      lastTick: -1,
+      revision: 1,
+      run: 0,
+      evaluations: [],
+    });
+    state.revision += 1;
+    await route.fulfill({ json: { id, revision: 1 } });
   });
 
   await page.goto('/strategies?environment=kis-paper');
@@ -466,10 +535,21 @@ test('KIS 모의 실시간 준비 상태에서도 미지원 규칙 카드는 시
   await expect(emaCard.getByRole('button', { name: '전략 시작', exact: true })).toBeDisabled();
   await expect(emaCard).toContainText('전략 시작 차단');
 
-  // Minor 3b: KIS 기본 SMA 장기 기간 110 입력 시 상한(100) 안내 표시 및 저장 차단
+  // Major (2차 보완): KIS 기본 SMA 5/110은 정지 상태로 저장 허용 + 저장 카드의 전략 시작 버튼만 blocked로 비활성화
+  await page.getByLabel('전략 이름').fill('KIS 장기 110 SMA');
+  await page.getByLabel('대상 종목').selectOption('005930');
+  await page.getByLabel('단기 평균 (이벤트)').fill('5');
   await page.getByLabel('장기 평균 (이벤트)').fill('110');
-  await expect(page.getByText(/KIS 모의 기본 SMA 계약은 장기 기간 100 이하만 지원/)).toBeVisible();
+  await expect(page.getByText(/101-120 구간은 정지 상태로 저장/)).toBeVisible();
   await page.getByRole('button', { name: '전략 저장', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('KIS 모의 기본 SMA 계약은 장기 기간 100 이하만 지원합니다.');
-  expect(posts).toEqual([]);
+
+  expect(savedBodies).toHaveLength(1);
+  const slow110Card = page.locator('.studio-card').filter({
+    has: page.getByRole('heading', { name: 'KIS 장기 110 SMA', exact: true }),
+  });
+  await expect(slow110Card).toBeVisible();
+  await expect(slow110Card).toContainText('정지');
+  await expect(slow110Card).toContainText('전략 시작 차단');
+  await expect(slow110Card).toContainText('장기 기간 100 이하만 지원');
+  await expect(slow110Card.getByRole('button', { name: '전략 시작', exact: true })).toBeDisabled();
 });
