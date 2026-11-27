@@ -553,3 +553,128 @@ test('KIS 모의 실시간 준비 상태에서도 미지원 규칙 카드는 시
   await expect(slow110Card).toContainText('장기 기간 100 이하만 지원');
   await expect(slow110Card.getByRole('button', { name: '전략 시작', exact: true })).toBeDisabled();
 });
+
+test('전략 스튜디오와 백테스트 상단 사용방법 도움말 패널의 4탭 전환·키보드 접근성·닫기가 동작한다', async ({ page }) => {
+  for (const route of ['/strategies', '/backtest', '/backtest?source=demo']) {
+    await page.goto(route);
+    await waitWorkbenchReady(page);
+
+    const toggle = page.getByRole('button', { name: '사용방법 도움말', exact: true });
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    const panelId = await toggle.getAttribute('aria-controls');
+    expect(panelId).toBeTruthy();
+
+    // 도움말 열기
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const helpRegion = page.getByRole('region', { name: '전략 스튜디오 및 백테스트 사용방법 도움말' });
+    await expect(helpRegion).toBeVisible();
+    await expect(helpRegion).toHaveAttribute('id', panelId!);
+
+    const tablist = helpRegion.getByRole('tablist', { name: '도움말 주제' });
+    const tabs = tablist.getByRole('tab');
+    await expect(tabs).toHaveCount(4);
+
+    // 1번 탭(처음부터 따라하기) 기본 선택 및 /data#inventory-daily 내부 링크 확인
+    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+    await expect(helpRegion.getByRole('tabpanel')).toContainText('1단계');
+    await expect(helpRegion.getByRole('link', { name: '데이터 상태 (/data)' })).toHaveAttribute(
+      'href',
+      '/data#inventory-daily',
+    );
+
+    // 키보드 화살표(ArrowRight / ArrowLeft / End / Home)로 4개 탭 전환 확인
+    await tabs.nth(0).focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(tabs.nth(1)).toBeFocused();
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(helpRegion.getByRole('tabpanel')).toContainText('ma_crossover');
+    await expect(helpRegion.getByRole('tabpanel')).toContainText('donchian_breakout');
+    await expect(helpRegion.getByRole('tabpanel')).toContainText('rsi2_pullback');
+    await expect(helpRegion.getByRole('tabpanel')).toContainText('chandelier');
+
+    await page.keyboard.press('ArrowRight');
+    await expect(tabs.nth(2)).toBeFocused();
+    await expect(tabs.nth(2)).toHaveAttribute('aria-selected', 'true');
+    await expect(helpRegion.getByRole('tabpanel')).toContainText('최대 낙폭 (MDD)');
+    await expect(helpRegion.getByRole('tabpanel')).toContainText('SHA256');
+
+    await page.keyboard.press('ArrowRight');
+    await expect(tabs.nth(3)).toBeFocused();
+    await expect(tabs.nth(3)).toHaveAttribute('aria-selected', 'true');
+    await expect(helpRegion.getByRole('tabpanel')).toContainText('검증 실험 연결 배지가 왜 사라졌나요?');
+
+    await page.keyboard.press('Home');
+    await expect(tabs.nth(0)).toBeFocused();
+    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+
+    await page.keyboard.press('End');
+    await expect(tabs.nth(3)).toBeFocused();
+    await expect(tabs.nth(3)).toHaveAttribute('aria-selected', 'true');
+
+    await page.keyboard.press('ArrowLeft');
+    await expect(tabs.nth(2)).toBeFocused();
+    await expect(tabs.nth(2)).toHaveAttribute('aria-selected', 'true');
+
+    // 닫기 버튼으로 패널 접힘 및 토글 버튼 포커스 복귀 확인
+    await helpRegion.getByRole('button', { name: '닫기', exact: true }).click();
+    await expect(helpRegion).toHaveCount(0);
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).toBeFocused();
+  }
+});
+
+test('RuleConfigSection 문맥별 입력 항목 설명이 선택 규칙 변경에 따라 갱신되고 모바일 390px에서 넘치지 않는다', async ({ page }) => {
+  for (const route of ['/strategies', '/backtest']) {
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    await page.goto(route);
+    await waitWorkbenchReady(page);
+
+    const ruleSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
+    const helpDetails = page.locator('details.rule-field-help');
+    await expect(helpDetails).toBeVisible();
+    await expect(helpDetails.locator('summary')).toHaveText('현재 선택한 규칙(이동평균 교차) 입력 항목 설명 보기');
+
+    // 접이식 가이드 열기 및 이동평균 교차 항목 설명 확인
+    await helpDetails.locator('summary').click();
+    await expect(helpDetails).toContainText('단기 / 장기 평균');
+    await expect(helpDetails).toContainText('장기 추세 필터 (선택)');
+    await expect(helpDetails).toContainText('샹들리에 ATR 청산 오버레이 (선택 사항)');
+
+    // 돈키안 돌파로 전환 시 제목과 설명 내용 즉시 갱신 확인
+    await ruleSelect.selectOption('donchian_breakout');
+    await expect(helpDetails.locator('summary')).toHaveText('현재 선택한 규칙(돈키안 돌파) 입력 항목 설명 보기');
+    await expect(helpDetails).toContainText('진입 고가 기간');
+    await expect(helpDetails).toContainText('청산 저가 기간');
+    await expect(helpDetails).toContainText('최소 거래량 배수');
+
+    // RSI 단기 눌림목으로 전환 + 샹들리에 체크 시 갱신 확인
+    await ruleSelect.selectOption('rsi2_pullback');
+    await expect(helpDetails.locator('summary')).toHaveText('현재 선택한 규칙(RSI 단기 눌림목) 입력 항목 설명 보기');
+    await expect(helpDetails).toContainText('장기 추세선');
+    await expect(helpDetails).toContainText('RSI 기간 & 과매도 기준');
+    await expect(helpDetails).toContainText('청산 단기선 & 최대 보유 기간');
+
+    await page.getByLabel('샹들리에 ATR 청산 오버레이 사용').check();
+    await expect(helpDetails).toContainText('샹들리에 ATR 청산 오버레이 (사용 중)');
+
+    // 모바일 390px 뷰포트에서 상단 도움말(4개 탭 전체)과 문맥별 입력 항목 설명을 연 상태로 가로 넘침 없음 확인
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('button', { name: '사용방법 도움말', exact: true }).click();
+    const helpRegion = page.getByRole('region', { name: '전략 스튜디오 및 백테스트 사용방법 도움말' });
+    await expect(helpRegion).toBeVisible();
+
+    const tabs = helpRegion.getByRole('tab');
+    for (let i = 0; i < 4; i++) {
+      await tabs.nth(i).click();
+      await expect(tabs.nth(i)).toHaveAttribute('aria-selected', 'true');
+      const overflow = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        innerWidth: window.innerWidth,
+      }));
+      expect(overflow.scrollWidth).toBeLessThanOrEqual(390);
+      expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.innerWidth);
+    }
+  }
+});

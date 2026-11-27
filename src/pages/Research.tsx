@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { FlaskConical, Link2, Play, Plus, Square } from 'lucide-react';
+import { BookOpen, FlaskConical, Link2, Play, Plus, Square, X } from 'lucide-react';
 import { useWorkbench } from '../context';
 import { Badge, Chart, Panel, Stat } from '../components/ui';
 import { won, type Strategy } from '../../shared/model';
@@ -87,6 +87,346 @@ const PRESET_ENTRIES: { key: PresetKey; label: string }[] = [
   { key: 'basic', label: '기본' },
   { key: 'aggressive', label: '공격적' },
 ];
+
+type HelpTabId = 'workflow' | 'dictionary' | 'results' | 'faq';
+
+interface FieldHelpItem {
+  term: string;
+  range: string;
+  description: string;
+}
+
+const HELP_TABS: { id: HelpTabId; label: string }[] = [
+  { id: 'workflow', label: '처음부터 따라하기' },
+  { id: 'dictionary', label: '전략·입력 항목 사전' },
+  { id: 'results', label: '백테스트 결과·비용' },
+  { id: 'faq', label: '환경별 차이·FAQ' },
+];
+
+/** 규칙별 입력 항목 상세 안내 (상단 도움말 사전과 `RuleConfigSection` 문맥 가이드가 공유). */
+const RULE_FIELD_HELP: Record<RuleKind, { summary: string; fields: FieldHelpItem[] }> = {
+  ma_crossover: {
+    summary: '단기 이동평균과 장기 이동평균의 교차(골든·데드크로스)로 추세 전환을 포착합니다.',
+    fields: [
+      {
+        term: '단기 / 장기 평균',
+        range: '단기 2-60 · 장기 3-120 (단기 < 장기)',
+        description:
+          '단기선이 장기선을 위로 뚫을 때(골든크로스) 매수, 아래로 뚫을 때(데드크로스) 매도합니다. 기간 숫자를 줄이면 신호가 빨라지지만 속임수(잦은 매매)가 늘고, 늘리면 큰 추세만 느리게 잡습니다.',
+      },
+      {
+        term: '평균 방식 (SMA vs EMA)',
+        range: 'SMA · EMA 선택',
+        description:
+          'SMA는 기간 내 모든 날을 같은 비중으로 평균 내고, EMA는 최근 가격에 더 큰 비중을 두어 추세 전환에 빠르게 반응합니다.',
+      },
+      {
+        term: '장기 추세 필터 (선택)',
+        range: '20-240봉 (비우면 미사용)',
+        description:
+          '예: 60을 넣으면 오늘 종가가 60일 평균선 위에 있는 상승 추세일 때만 매수해 하락장 매수를 막습니다.',
+      },
+      {
+        term: '최소 상대 거래량 (선택)',
+        range: '0-5배 (비우면 미사용)',
+        description:
+          '예: 1.5를 넣으면 오늘 거래량이 직전 20일 평균 거래량의 1.5배 이상 터진 날에만 매수합니다.',
+      },
+    ],
+  },
+  donchian_breakout: {
+    summary: '가격 채널 돌파와 거래량 확인을 결합한 터틀 트레이딩 방식입니다.',
+    fields: [
+      {
+        term: '진입 고가 기간',
+        range: '10-120봉',
+        description: '직전 N일 최고가를 종가로 돌파할 때 매수합니다(터틀 트레이딩 방식).',
+      },
+      {
+        term: '청산 저가 기간',
+        range: '3-60봉 (진입 기간 미만)',
+        description: '직전 M일 최저가 아래로 내려가면 매도합니다. 진입 기간보다 짧게 설정해 이익을 지킵니다.',
+      },
+      {
+        term: '최소 거래량 배수',
+        range: '0.5-5배 초과',
+        description:
+          '돌파 당일 거래량이 직전 20일 평균 거래량 × 배수를 초과해야만 매수해 거래량 없는 가짜 돌파를 거릅니다.',
+      },
+    ],
+  },
+  rsi2_pullback: {
+    summary: '장기 상승 추세 종목이 단기 과매도로 눌렸을 때 반등을 노립니다.',
+    fields: [
+      {
+        term: '장기 추세선',
+        range: '60-240봉 (기본 200)',
+        description: '기본 200일선 위에 있는 장기 상승 종목만 골라 하락 추세 종목을 섣불리 사는 위험을 막습니다.',
+      },
+      {
+        term: 'RSI 기간 & 과매도 기준',
+        range: 'RSI 기간 2-5봉 · 기준 2-25 이하',
+        description:
+          '단기 급락 정도를 재는 민감한 지표입니다. 과매도 기준을 10에서 5로 낮추면 더 극단적으로 떨어진 날에만 신중하게 매수합니다.',
+      },
+      {
+        term: '청산 단기선 & 최대 보유 기간',
+        range: '청산선 3-10봉 · 보유 3-20봉',
+        description:
+          '주가가 단기 평균(예: 5일선)을 회복하거나 RSI가 70 이상으로 반등하면 즉시 익절하고, 반등이 늦어져도 최대 보유 기간이 되면 자동 매도합니다.',
+      },
+    ],
+  },
+};
+
+/** 샹들리에 ATR 청산 오버레이 입력 항목 안내. */
+const CHANDELIER_FIELD_HELP: FieldHelpItem[] = [
+  {
+    term: '추적 손절 원리',
+    range: '선택 오버레이 (고저가 필요)',
+    description:
+      '매수 후 도달한 최고가에서 하루 평균 변동폭(ATR) × 배수만큼 떨어지면 전략 매도 신호보다 먼저 팔아 큰 손실을 막습니다. 한 번 올라간 손절선은 내려가지 않습니다.',
+  },
+  {
+    term: 'ATR 기간 & ATR 배수',
+    range: 'ATR 기간 7-30봉 · 배수 1.5-5배',
+    description:
+      '배수를 줄이면(예: 2.0) 손절선이 촘촘해져 빨리 청산하고, 늘리면(예: 3.0-4.0) 흔들림을 견디며 추세를 길게 탑니다.',
+  },
+];
+
+/** `/strategies`와 `/backtest` 상단에서 열고 닫는 4탭 상세 사용방법 도움말 패널. */
+function ResearchHelpPanel({
+  panelId,
+  onClose,
+}: {
+  panelId: string;
+  onClose: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<HelpTabId>('workflow');
+  const tabRefs = useRef<Partial<Record<HelpTabId, HTMLButtonElement | null>>>({});
+
+  function moveTab(nextIndex: number) {
+    const normalized = (nextIndex + HELP_TABS.length) % HELP_TABS.length;
+    const nextTab = HELP_TABS[normalized].id;
+    setActiveTab(nextTab);
+    tabRefs.current[nextTab]?.focus();
+  }
+
+  function handleTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, index: number) {
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      moveTab(index + 1);
+    } else if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      moveTab(index - 1);
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      moveTab(0);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      moveTab(HELP_TABS.length - 1);
+    }
+  }
+
+  return (
+    <section
+      id={panelId}
+      className="panel research-help"
+      role="region"
+      aria-label="전략 스튜디오 및 백테스트 사용방법 도움말"
+    >
+      <div className="research-help-head">
+        <div>
+          <h2>전략 스튜디오 · 백테스트 사용방법</h2>
+          <p className="research-help-sub">
+            데이터 준비부터 규칙 선택, 백테스트 비교 검증, 전략 저장까지 순서와 항목 의미를 정리했습니다.
+          </p>
+        </div>
+        <button type="button" className="button secondary small-button" onClick={onClose}>
+          <X size={14} aria-hidden="true" />
+          닫기
+        </button>
+      </div>
+
+      <div className="research-help-tabs" role="tablist" aria-label="도움말 주제">
+        {HELP_TABS.map((tab, index) => {
+          const selected = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              ref={el => {
+                tabRefs.current[tab.id] = el;
+              }}
+              type="button"
+              role="tab"
+              id={`${panelId}-tab-${tab.id}`}
+              aria-selected={selected}
+              aria-controls={`${panelId}-panel-${tab.id}`}
+              tabIndex={selected ? 0 : -1}
+              className={'research-help-tab' + (selected ? ' active' : '')}
+              onClick={() => setActiveTab(tab.id)}
+              onKeyDown={event => handleTabKeyDown(event, index)}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div
+        id={`${panelId}-panel-${activeTab}`}
+        role="tabpanel"
+        aria-labelledby={`${panelId}-tab-${activeTab}`}
+        tabIndex={0}
+        className="research-help-body"
+      >
+        {activeTab === 'workflow' && (
+          <ol className="research-help-steps">
+            <li>
+              <span className="research-help-step-no">1단계</span>
+              <h3>데이터 준비</h3>
+              <p>
+                과거 일봉 실험을 위해{' '}
+                <Link className="text-link" to="/data#inventory-daily">
+                  데이터 상태 (/data)
+                </Link>
+                에서 종목의 KIS 일봉 수집과 달력 대조(<code>passed</code>)가 완료되어 있는지 확인합니다. 합성 봉 연습은
+                수집 없이 바로 가능합니다.
+              </p>
+            </li>
+            <li>
+              <span className="research-help-step-no">2단계</span>
+              <h3>규칙과 프리셋 선택</h3>
+              <p>
+                전략 스튜디오나 백테스트에서 전략 규칙(<code>이동평균 교차</code>, <code>돈키안 돌파</code>,{' '}
+                <code>RSI 단기 눌림목</code>)을 고르고 <strong>[보수적 / 기본 / 공격적]</strong> 프리셋 버튼으로 시작값을
+                채운 뒤 필요하면 <code>샹들리에 ATR 청산</code>을 켭니다.
+              </p>
+            </li>
+            <li>
+              <span className="research-help-step-no">3단계</span>
+              <h3>저장 전 백테스트 검증</h3>
+              <p>
+                바로 저장하지 않고 <strong>이 설정으로 백테스트</strong> 버튼을 눌러 과거 구간 수익률·최대낙폭(MDD)·체결
+                횟수를 <strong>단순 보유(가만히 들고 있었을 때)</strong>와 비교합니다.
+              </p>
+            </li>
+            <li>
+              <span className="research-help-step-no">4단계</span>
+              <h3>검증 배지 저장 및 실행</h3>
+              <p>
+                백테스트 결과 화면의 <strong>이 설정으로 전략 만들기</strong> 버튼을 눌러 돌아오면{' '}
+                <strong>검증 실험 연결</strong> 배지가 자동으로 붙습니다. 이름을 정해 저장한 뒤 DEMO 재생 또는 KIS 모의
+                계약 연결로 실행합니다.
+              </p>
+            </li>
+          </ol>
+        )}
+
+        {activeTab === 'dictionary' && (
+          <div className="research-help-grid">
+            {RULE_KINDS.map(kind => (
+              <article key={kind} className="research-help-card">
+                <h3>
+                  {STRATEGY_CATALOG[kind].title} <code>{kind}</code>
+                </h3>
+                <p className="research-help-card-note">{RULE_FIELD_HELP[kind].summary}</p>
+                <dl className="research-help-dl">
+                  {RULE_FIELD_HELP[kind].fields.map(item => (
+                    <div key={item.term}>
+                      <dt>
+                        {item.term} <small>{item.range}</small>
+                      </dt>
+                      <dd>{item.description}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </article>
+            ))}
+            <article className="research-help-card">
+              <h3>
+                샹들리에 ATR 청산 오버레이 <code>chandelier</code>
+              </h3>
+              <p className="research-help-card-note">
+                전략 기본 매도 신호와 별개로 변동성 기반 추적 손절선을 함께 적용하는 보호 장치입니다.
+              </p>
+              <dl className="research-help-dl">
+                {CHANDELIER_FIELD_HELP.map(item => (
+                  <div key={item.term}>
+                    <dt>
+                      {item.term} <small>{item.range}</small>
+                    </dt>
+                    <dd>{item.description}</dd>
+                  </div>
+                ))}
+              </dl>
+            </article>
+          </div>
+        )}
+
+        {activeTab === 'results' && (
+          <div className="research-help-grid">
+            <article className="research-help-card">
+              <h3>전략 vs 단순 보유(벤치마크) 비교 · 초과 수익률(%p)</h3>
+              <p>
+                첫날 시가에 사서 끝날까지 가만히 보유했을 때보다 전략이 몇 %p 더 벌었는지(또는 손실을 줄였는지) 보여줍니다.
+                전략 수익률이 양수여도 단순 보유보다 낮으면 초과 수익률이 음수로 표시됩니다.
+              </p>
+            </article>
+            <article className="research-help-card">
+              <h3>최대 낙폭 (MDD)</h3>
+              <p>
+                실험 기간 중 최고 평가자산 대비 가장 많이 하락했던 폭(%)입니다. 수익률이 비슷하다면 최대 낙폭이 낮은 전략이
+                손실 압박이 적어 더 안정적입니다.
+              </p>
+            </article>
+            <article className="research-help-card">
+              <h3>수수료(bp)와 슬리피지(bp)</h3>
+              <p>
+                <code>1bp = 0.01%</code>입니다. 슬리피지는 주문 시 호가 차이로 조금 더 비싸게 사고 싸게 팔리는 현실적
+                불리함을 반영합니다. 세금·배당·기업행사는 계산에 포함하지 않습니다.
+              </p>
+            </article>
+            <article className="research-help-card">
+              <h3>고정 입력 재현 검증 (SHA256)</h3>
+              <p>
+                저장된 실험의 데이터와 규칙이 위변조되지 않고 같은 결과를 내는지 암호 해시(SHA256)로 다시 계산해 확인합니다.
+                결과 화면의 재현 검증 버튼으로 언제든 일치 여부를 점검할 수 있습니다.
+              </p>
+            </article>
+          </div>
+        )}
+
+        {activeTab === 'faq' && (
+          <div className="research-help-faq">
+            <article className="research-help-card">
+              <h3>Q. 왜 돈키안 돌파나 샹들리에 청산은 DEMO에서 저장/실행이 안 되나요?</h3>
+              <p>
+                DEMO 합성 봉은 종가 하나만 생성합니다. 고가·저가·거래량이 꼭 필요한 전략과 샹들리에 청산은 실제 일봉
+                데이터가 있는 <strong>KIS 저장 일봉 백테스트</strong>에서만 정확히 계산할 수 있어 DEMO 저장을 차단합니다.
+              </p>
+            </article>
+            <article className="research-help-card">
+              <h3>Q. 왜 새로 만든 다중 전략이 KIS 모의에서 저장은 되는데 전략 시작 버튼이 잠겨 있나요?</h3>
+              <p>
+                KIS 모의 계좌에 실제 주문을 내보내는 실시간 장중 평가는 현재 기본 SMA(장기 100 이하)만 열려 있습니다.
+                다중 전략은 백테스트로 충분히 검증한 뒤 후속 장전 레벨 트리거 계약 단계에서 안전하게 열립니다.
+              </p>
+            </article>
+            <article className="research-help-card">
+              <h3>Q. 검증 실험 연결 배지가 왜 사라졌나요?</h3>
+              <p>
+                백테스트에서 넘어온 뒤 종목이나 규칙 숫자를 하나라도 바꾸면 검증받았던 원래 설정과 달라집니다. 허위 검증
+                표시를 막기 위해 설정이 바뀌는 즉시 배지가 자동 해제됩니다.
+              </p>
+            </article>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
 
 const evaluationLabels = {
   hold: '관망',
@@ -788,6 +1128,36 @@ function RuleConfigSection({
           </div>
         )}
       </div>
+
+      <details className="rule-field-help">
+        <summary>현재 선택한 규칙({catalog.title}) 입력 항목 설명 보기</summary>
+        <div className="rule-field-help-content">
+          <p className="rule-field-help-summary">{RULE_FIELD_HELP[form.kind].summary}</p>
+          <dl className="rule-field-help-list">
+            {RULE_FIELD_HELP[form.kind].fields.map(item => (
+              <div key={item.term}>
+                <dt>
+                  {item.term} <small>{item.range}</small>
+                </dt>
+                <dd>{item.description}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="rule-field-help-overlay-title">
+            샹들리에 ATR 청산 오버레이 ({form.useChandelier ? '사용 중' : '선택 사항'})
+          </p>
+          <dl className="rule-field-help-list">
+            {CHANDELIER_FIELD_HELP.map(item => (
+              <div key={item.term}>
+                <dt>
+                  {item.term} <small>{item.range}</small>
+                </dt>
+                <dd>{item.description}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </details>
     </div>
   );
 }
@@ -840,6 +1210,9 @@ export function Strategies() {
   const [editorDraft, setEditorDraft] = useState<StrategyEditorDraft>(() =>
     routerDraft ? editorDraftFromTransfer(routerDraft) : defaultEditorDraft(),
   );
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpPanelId = useId();
+  const helpToggleRef = useRef<HTMLButtonElement>(null);
   const consumedDraftKey = useRef(routerDraft ? location.key : '');
 
   useEffect(() => {
@@ -847,6 +1220,11 @@ export function Strategies() {
     consumedDraftKey.current = location.key;
     setEditorDraft(editorDraftFromTransfer(routerDraft));
   }, [routerDraft, location.key]);
+
+  function closeHelp() {
+    setHelpOpen(false);
+    helpToggleRef.current?.focus();
+  }
 
   return (
     <section className="strategy-studio" aria-label="전략 작업">
@@ -867,10 +1245,24 @@ export function Strategies() {
             <option value="kis-paper">KIS 모의 체결가 이벤트</option>
           </select>
         </label>
-        <Link className="button secondary" to={{ search: location.search, hash: '#strategy-editor' }}>
-          <Plus size={15} />새 전략 만들기
-        </Link>
+        <div className="studio-tools-actions">
+          <button
+            ref={helpToggleRef}
+            type="button"
+            className={'button ' + (helpOpen ? 'primary' : 'secondary')}
+            aria-expanded={helpOpen}
+            aria-controls={helpPanelId}
+            onClick={() => setHelpOpen(open => !open)}
+          >
+            <BookOpen size={15} aria-hidden="true" />
+            사용방법 도움말
+          </button>
+          <Link className="button secondary" to={{ search: location.search, hash: '#strategy-editor' }}>
+            <Plus size={15} />새 전략 만들기
+          </Link>
+        </div>
       </div>
+      {helpOpen && <ResearchHelpPanel panelId={helpPanelId} onClose={closeHelp} />}
       <StrategyStudio
         key={environment}
         environment={environment}
@@ -1848,6 +2240,9 @@ export function Backtest() {
   const location = useLocation();
   const transfer = useRef<{ key: string; selection: BacktestSelection } | null>(null);
   const { busy } = useWorkbench();
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpPanelId = useId();
+  const helpToggleRef = useRef<HTMLButtonElement>(null);
   const source = params.get('source') ?? 'stored';
   const runId = params.get('run');
   const valid =
@@ -1870,23 +2265,42 @@ export function Backtest() {
     setParams(next, { state: nextState });
   }
 
+  function closeHelp() {
+    setHelpOpen(false);
+    helpToggleRef.current?.focus();
+  }
+
   const initial =
     transfer.current && transfer.current.key === locState?.backtestSelection ? transfer.current.selection : null;
 
   return (
     <div className="bt-page">
-      <label className="field bt-source">
-        데이터 출처
-        <select disabled={busy} value={valid ? source : ''} onChange={event => select(event.target.value)}>
-          {!valid && (
-            <option value="" disabled>
-              출처를 다시 선택하세요
-            </option>
-          )}
-          <option value="stored">KIS 저장 일봉 · 과거 구간 실험</option>
-          <option value="demo">DEMO 합성 · 기능 검증</option>
-        </select>
-      </label>
+      <div className="bt-toolbar">
+        <label className="field bt-source">
+          데이터 출처
+          <select disabled={busy} value={valid ? source : ''} onChange={event => select(event.target.value)}>
+            {!valid && (
+              <option value="" disabled>
+                출처를 다시 선택하세요
+              </option>
+            )}
+            <option value="stored">KIS 저장 일봉 · 과거 구간 실험</option>
+            <option value="demo">DEMO 합성 · 기능 검증</option>
+          </select>
+        </label>
+        <button
+          ref={helpToggleRef}
+          type="button"
+          className={'button ' + (helpOpen ? 'primary' : 'secondary')}
+          aria-expanded={helpOpen}
+          aria-controls={helpPanelId}
+          onClick={() => setHelpOpen(open => !open)}
+        >
+          <BookOpen size={15} aria-hidden="true" />
+          사용방법 도움말
+        </button>
+      </div>
+      {helpOpen && <ResearchHelpPanel panelId={helpPanelId} onClose={closeHelp} />}
       {!valid ? (
         <p className="bt-warning" role="alert">
           백테스트 주소의 출처 또는 수집 ID가 올바르지 않습니다. 데이터 출처를 직접 선택하세요.

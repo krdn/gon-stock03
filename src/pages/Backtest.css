@@ -1,5 +1,7 @@
 .bt-page { min-width: 0; }
-.bt-page .bt-source { max-width: 32rem; margin-bottom: 10px; }
+.bt-toolbar { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 10px 14px; margin-bottom: 12px; }
+.bt-page .bt-source { flex: 1 1 240px; max-width: 32rem; margin-bottom: 0; }
+.bt-toolbar .button { align-self: flex-end; }
 .bt-nav { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 16px; margin-bottom: 12px; font-size: 13px; }
 .bt-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: start; gap: 16px; }
 .bt-grid > *, .bt-output, .bt-result, .bt-page .field, .bt-page select { min-width: 0; }
@@ -12,6 +14,11 @@
 .bt-page select, .bt-page input { width: 100%; min-width: 0; }
 .bt-page input[type="checkbox"] { width: 16px; }
 .bt-page :is(.panel p, details) { margin: 9px 0; line-height: 1.55; }
+.bt-page .research-help .research-help-sub { margin: 4px 0 0; }
+.bt-page .research-help :is(.research-help-steps p, .research-help-card p) { margin: 0; }
+.bt-page .research-help .research-help-card-note { margin: 0 0 8px; }
+.bt-page .rule-field-help .rule-field-help-summary { margin: 0 0 8px; }
+.bt-page .rule-field-help .rule-field-help-overlay-title { margin: 10px 0 6px; }
 .bt-page .bt-note { color: var(--muted); font-size: 13px; }
 .bt-warning { padding: 9px 12px; border-left: 3px solid #ba7212; background: #fff4da; color: #593900; }
 .bt-draft-banner {
@@ -46,4 +53,6 @@
 @media (max-width: 520px) {
   .bt-pickers, .bt-benchmark-grid { grid-template-columns: minmax(0, 1fr); }
   .bt-page .panel { padding: 15px; }
+  .bt-toolbar .bt-source { flex: 1 1 100%; max-width: none; }
+  .bt-toolbar .button { width: 100%; }
 }
