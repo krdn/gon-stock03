@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {dailyFixture} from './backtest-fixture.ts';
@@ -109,12 +110,12 @@ test('DEMO 종가 전략 저장·계산 및 OHLCV 거부, KIS 시작 게이트�
       assert.equal((await post('strategies',{...base,...spec})).status,200);
       assert.equal((await post('backtest',{code:base.code,...costs,...spec})).status,200);
     }
-    const newRules = phaseTwo.map(kind => ({rule:STRATEGY_CATALOG[kind].presets.basic}));
-    for (const spec of [...newRules.filter(({rule})=>!STRATEGY_CATALOG[rule.kind].environments.demo),{rule:channel},{rule:{...rule,minRelativeVolume:1}},{rule,overlay}]) {
+    const newRules = ([...phaseTwo,"volatility_breakout"] as const).map(kind => ({rule:STRATEGY_CATALOG[kind].presets.basic}));
+    for (const spec of [...newRules.filter(({rule})=>!STRATEGY_CATALOG[rule.kind].environments.demo),{rule:channel},{rule:{...rule,minRelativeVolume:1}},{rule,overlay},{rule,overlay:{volatilityParity:parity}}]) {
       assert.match((await post('strategies',{...base,...spec})).data.error,/종가만/);
       assert.match((await post('backtest',{code:base.code,...costs,...spec})).data.error,/종가만/);
     }
-    for (const spec of [...newRules,{rule:channel},{rule:{...rule,maType:'ema'}},{rule:{...rule,regimePeriod:20}},{rule:{...rule,minRelativeVolume:1}},{rule,overlay}]) {
+    for (const spec of [...newRules,{rule:channel},{rule:{...rule,maType:'ema'}},{rule:{...rule,regimePeriod:20}},{rule:{...rule,minRelativeVolume:1}},{rule,overlay},{rule,overlay:{volatilityParity:parity}}]) {
       const saved = await post('strategies',{...base,...spec,environment:'kis-paper'});
       assert.equal(saved.status,200);
       const id = store.read().strategies.at(-1)!.id;
@@ -229,4 +230,127 @@ test('Wilder 방향 지표는 정확히 2n봉에서 첫 ADX와 그 직후 값을
   assert.ok(Math.abs(prev.adx-seed)<1e-10);
   assert.ok(Math.abs(adx-(seed+(100-seed)/period))<1e-10);
   assert.ok(plusDI > prev.plusDI && minusDI === 0 && prev.minusDI === 0);
+});
+
+test('기준 커밋의 일봉 v1·v2 10종·샹들리에 실험 ID와 결과를 재생한다', () => {
+  const {run, bars, input} = dailyFixture();
+  const history = Array.from({length:240}, (_, i) => {
+    const date = new Date(Date.UTC(2025,0,i+1)).toISOString().slice(0,10).replaceAll('-', '');
+    const bar = bars[i % bars.length];
+    return {...bar, date};
+  });
+  const dates = history.map(b => b.date);
+  const range = {from:dates[0], to:dates.at(-1)!};
+  const store = new Store(':memory:');
+  try {
+    store.saveDaily({...run,...range,calendar:{...run.calendar!,dates}},history);
+    const {fast,slow,...common} = {...input,...range};
+    const kinds = ['ma_crossover','donchian_breakout','rsi2_pullback',...phaseTwo] as const;
+    const specs = [{...common,fast,slow}, ...kinds.map(kind => ({...common,rule:STRATEGY_CATALOG[kind].presets.basic})), {...common,rule,overlay}];
+    const digest = createHash('sha256');
+    for (const spec of specs) {
+      const experiment = createExperiment(store,spec);
+      assert.ok(replayExperiment(store,experiment.id).matches);
+      digest.update(JSON.stringify([experiment.id,experiment.result]));
+    }
+    assert.equal(digest.digest('hex'),'df416d735fd533651079a02a844b7b93be85d5772a245dd0d883bcee3a62df2a');
+  } finally { store.close(); }
+});
+
+const breakoutRule = {...STRATEGY_CATALOG.volatility_breakout.presets.basic, noiseLookback:5, trendMaPeriod:5, holdDays:2};
+const parity = {volLookback:10,targetAnnualVolPct:20,maxAllocationPct:40};
+const breakoutBars = Array.from({length:16}, (_,i) => ({
+  date:String(i), open:100+i, high:103+i, low:99+i, close:102+i,
+}));
+function runBreakout(bars = breakoutBars, rule = breakoutRule, extra: Parameters<typeof backtestRules>[2]['overlay'] = undefined, capital = costs.capital) {
+  return backtestRules(bars,bars.map(b=>b.open),{...costs,capital,rule,overlay:extra},'daily');
+}
+
+test('돌파는 준비 봉 직후 목표가에서 매수하고 보유 기한 시가에 한 번만 청산한다', () => {
+  const {trades} = runBreakout();
+  const price = 107 * 1.0005;
+  const qty = Math.floor(costs.capital / (price * 1.001));
+  assert.deepEqual(trades[0],{bar:5,date:'5',signalDate:'4',side:'buy',reason:'전일 변동폭 기준 당일 목표가 상향 돌파',
+    price,qty,fee:Math.ceil(qty * price * 0.001)});
+  assert.deepEqual(trades.slice(1,3).map(t=>[t.side,t.bar,t.reason]),[
+    ['sell',7,'목표 보유 기간 경과 시가 청산'],['buy',8,'전일 변동폭 기준 당일 목표가 상향 돌파']]);
+  assert.equal(trades[1].price,107 * 0.9995);
+  assert.throws(()=>runBreakout(breakoutBars.slice(0,5)),/최소 6봉/);
+  const edge = breakoutBars.slice(0,6).map(b=>({...b}));
+  edge[5].high=107;
+  assert.equal(runBreakout(edge).trades.length,1);
+  edge[5].high-=0.001;
+  assert.equal(runBreakout(edge).trades.length,0);
+  edge[5].high=200;
+  edge[4]={...edge[4],open:106,high:106,low:106,close:106};
+  assert.equal(runBreakout(edge).trades.length,0);
+  edge[4]={...breakoutBars[4],close:100,low:99};
+  assert.equal(runBreakout(edge).trades.length,0);
+});
+
+test('적응형 노이즈는 직전 확정 OHLC만 사용하고 폭 0인 봉은 0.5다', () => {
+  const bars = breakoutBars.map(b=>({...b}));
+  bars[1]={...bars[1],open:102,close:102,high:102,low:102};
+  bars[2].close = bars[2].open; // noise=1, other four=0.5
+  const adaptive = {...breakoutRule,useAdaptiveNoise:true,k:1};
+  const original = runBreakout(bars,adaptive);
+  assert.equal(original.trades[0].price,(105+0.6*4)*1.0005);
+  bars[5].low=1; bars[5].close=2;
+  assert.deepEqual(runBreakout(bars.slice(0,6),adaptive).trades[0],original.trades[0]);
+});
+
+test('샹들리에는 진입 봉 확정 후 보유 기한보다 우선하여 다음 시가에 청산한다', () => {
+  const bars = breakoutBars.map(b=>({...b}));
+  bars[7].high=240;
+  const {trades} = runBreakout(bars,{...breakoutRule,holdDays:1},overlay);
+  assert.deepEqual(trades.slice(0,2).map(t=>[t.bar,t.reason]),[
+    [7,'전일 변동폭 기준 당일 목표가 상향 돌파'],[8,'샹들리에 추적 손절선 도달']]);
+  assert.equal(trades.filter(t=>t.bar===8).length,1);
+});
+
+test('패리티는 체결 전 확정 수익률의 모집단 변동성과 수수료를 반영한다', () => {
+  const bars = breakoutBars.map(b=>({...b}));
+  let close=100;
+  for (let i=0;i<=10;i++) {
+    if (i) close *= i%2 ? 0.9 : 1.2;
+    bars[i]={...bars[i],open:close,high:close+1,low:close-1,close};
+  }
+  const {trades} = runBreakout(bars,breakoutRule,{volatilityParity:parity});
+  const price = 112 * 1.0005;
+  const annualVolPct = 0.15*Math.sqrt(252)*100;
+  assert.equal(trades[0].bar,11);
+  assert.equal(trades[0].qty,Math.floor(costs.capital * (20/annualVolPct) / (price*1.001)));
+  bars[11].close=50; bars[11].low=1;
+  assert.deepEqual(runBreakout(bars.slice(0,12),breakoutRule,{volatilityParity:parity}).trades,trades.slice(0,1));
+  const capped = runBreakout(breakoutBars,breakoutRule,{volatilityParity:parity}).trades[0];
+  assert.equal(capped.qty,Math.floor(costs.capital * 0.4 / (capped.price*1.001)));
+  assert.equal(runBreakout(breakoutBars,breakoutRule,{volatilityParity:parity},150).trades.length,0);
+});
+
+test('돌파·패리티 입력은 엄격하고 선택 오버레이 생략을 보존한다', () => {
+  for (const invalid of [{k:0.09},{k:1.01},{useAdaptiveNoise:1},{noiseLookback:4},{trendMaPeriod:201},{holdDays:1.1},{extra:0}])
+    assert.equal(strategyRuleSchema.safeParse({...breakoutRule,...invalid}).success,false);
+  for (const invalid of [{volLookback:9},{volLookback:60.1},{maxAllocationPct:9},{maxAllocationPct:101},{targetAnnualVolPct:61},{extra:true}])
+    assert.equal(exitOverlaySchema.safeParse({volatilityParity:{...parity,...invalid}}).success,false);
+  assert.throws(()=>exitOverlaySchema.parse({volatilityParity:{...parity,targetAnnualVolPct:4}}),/목표 변동성은 5% 이상이어야 합니다/);
+  assert.deepEqual(exitOverlaySchema.parse({}),{});
+  assert.equal(warmup(breakoutRule,{...overlay,volatilityParity:parity}),11);
+});
+
+test('수익률 분산 0에서는 현금 한도를 쓰고 기존 종가 전략도 매수 수량만 줄인다', () => {
+  const bars = breakoutBars.map((b,i) => {
+    const close = i === 0 ? 90 : 100;
+    return {...b,open:close,high:close+2,low:close-2,close};
+  });
+  const first = runBreakout(bars,{...breakoutRule,trendMaPeriod:12},{volatilityParity:parity}).trades[0];
+  assert.equal(first.bar,12);
+  assert.equal(first.qty,Math.floor(costs.capital*0.4/(first.price*1.001)));
+  const maBars = [...Array<number>(12).fill(100),110,105].map(close=>({close,open:close-1}));
+  const run = (sized:boolean) => backtestRules(maBars,maBars.map(b=>b.open),{
+    ...costs,rule,overlay:sized ? {volatilityParity:parity} : undefined,
+  },'daily').trades[0];
+  const normal = run(false), sized = run(true);
+  assert.equal(sized.bar,13);
+  assert.equal(sized.price,normal.price);
+  assert.ok(sized.qty>0 && sized.qty<normal.qty);
 });

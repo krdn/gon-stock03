@@ -3,6 +3,8 @@ import { bollinger, dmi, macd, atr, averageVolume, ema, rollingHighest, rollingL
 
 const period = (min: number, max: number) => z.int().min(min).max(max);
 export const strategyRuleSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('volatility_breakout'), k: z.number().min(0.1).max(1), useAdaptiveNoise: z.boolean(),
+    noiseLookback: period(5,60), trendMaPeriod: period(5,200), holdDays: period(1,10) }),
   z.strictObject({ kind: z.literal('ma_crossover'), maType: z.enum(['sma','ema']), fast: period(2,60), slow: period(3,120),
     regimePeriod: period(20,240).nullish(), minRelativeVolume: z.number().min(0).max(5).optional() }).refine(v => v.fast < v.slow, '단기 기간은 장기 기간보다 작아야 합니다.'),
   z.strictObject({ kind: z.literal('donchian_breakout'), entryLookback: period(10,120), exitLookback: period(3,60), volumeMultiplier: z.number().min(0.5).max(5) })
@@ -26,7 +28,10 @@ export const strategyRuleSchema = z.discriminatedUnion('kind', [
     maPeriod: period(10, 60), buyDisparity: z.number().min(85).max(97), sellDisparity: z.number().min(98).max(105), stopLossPct: z.number().min(2).max(10) })
     .refine(v => v.buyDisparity < v.sellDisparity, '매수 이격도는 매도 이격도보다 작아야 합니다.'),
 ]);
-export const exitOverlaySchema = z.strictObject({ chandelier: z.strictObject({ atrPeriod: period(7,30), atrMultiplier: z.number().min(1.5).max(5) }).optional() });
+export const exitOverlaySchema = z.strictObject({
+  volatilityParity: z.strictObject({ volLookback: period(10,60),
+    targetAnnualVolPct: z.number().min(5,'목표 변동성은 5% 이상이어야 합니다.').max(60), maxAllocationPct: z.number().min(10).max(100) }).optional(),
+  chandelier: z.strictObject({ atrPeriod: period(7,30), atrMultiplier: z.number().min(1.5).max(5) }).optional() });
 export type StrategyRule = z.infer<typeof strategyRuleSchema>;
 export type ExitOverlay = z.infer<typeof exitOverlaySchema>;
 export interface RuleBar { close: number; open?: number; high?: number; low?: number; volume?: number; date?: string }
@@ -34,6 +39,7 @@ export interface Holding { barsHeld: number; entryPrice?: number; trailStop?: nu
 export function warmup(rule: StrategyRule, overlay?: ExitOverlay) {
   let n: number;
   switch (rule.kind) {
+    case 'volatility_breakout': n = Math.max(rule.noiseLookback, rule.trendMaPeriod); break;
     case 'macd_momentum': n = rule.slowPeriod + rule.signalPeriod + 10; break;
     case 'adx_dmi_trend': n = 2 * rule.diPeriod; break;
     case 'bollinger_squeeze': n = Math.max(rule.period + rule.squeezeLookback, 21); break;
@@ -45,14 +51,14 @@ export function warmup(rule: StrategyRule, overlay?: ExitOverlay) {
     case 'donchian_breakout': n = Math.max(rule.entryLookback, 20) + 1; break;
     case 'rsi2_pullback': n = Math.max(rule.longTrendMa, rule.exitShortMa, rule.rsiPeriod + 1); break;
   }
-  return Math.max(n, overlay?.chandelier?.atrPeriod ?? 0);
+  return Math.max(n, overlay?.chandelier?.atrPeriod ?? 0, overlay?.volatilityParity ? overlay.volatilityParity.volLookback + 1 : 0);
 }
 export function assertCloseOnly(rule?: StrategyRule, overlay?: ExitOverlay) {
-  if (overlay?.chandelier || (rule && STRATEGY_CATALOG[rule.kind].environments.demo === false) || (rule?.kind === 'ma_crossover' && rule.minRelativeVolume))
+  if (overlay?.volatilityParity || overlay?.chandelier || (rule && STRATEGY_CATALOG[rule.kind].environments.demo === false) || (rule?.kind === 'ma_crossover' && rule.minRelativeVolume))
     throw new Error('DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙은 저장 일봉 백테스트에서 사용하세요.');
 }
 export function assertRealtimeRule(rule?: StrategyRule, overlay?: ExitOverlay) {
-  if (overlay?.chandelier || (rule && (rule.kind !== 'ma_crossover' || rule.maType !== 'sma' || rule.regimePeriod || rule.minRelativeVolume)))
+  if (overlay?.volatilityParity || overlay?.chandelier || (rule && (rule.kind !== 'ma_crossover' || rule.maType !== 'sma' || rule.regimePeriod || rule.minRelativeVolume)))
     throw new Error('신규 다중 전략 규칙의 KIS 장중 실시간 평가는 장전 레벨 트리거 계약 연결 후 활성화됩니다.');
 }
 function required(bar: RuleBar, field: 'open'|'high'|'low'|'volume') {
@@ -61,6 +67,18 @@ function required(bar: RuleBar, field: 'open'|'high'|'low'|'volume') {
   return value;
 }
 const toHlc = (b: RuleBar) => ({close:b.close, high:required(b,'high'), low:required(b,'low')});
+export function breakoutEntry(prior: readonly RuleBar[], today: RuleBar, rule: Extract<StrategyRule,{kind:'volatility_breakout'}>) {
+  const prev = prior.at(-1)!;
+  const range = required(prev,'high') - required(prev,'low');
+  if (range <= 0 || prev.close <= sma(prior.slice(-rule.trendMaPeriod).map(b => b.close), rule.trendMaPeriod)) return;
+  const k = rule.useAdaptiveNoise ? sma(prior.slice(-rule.noiseLookback).map(b => {
+    const width = required(b,'high') - required(b,'low');
+    return width > 0 ? 1 - Math.abs(required(b,'open') - b.close) / width : 0.5;
+  }), rule.noiseLookback) : rule.k;
+  const open = required(today,'open'), target = open + k * range;
+  if (required(today,'high') >= target) return Math.max(open,target);
+}
+
 export function evaluateClose(bars: readonly RuleBar[], rule: StrategyRule, holding?: Holding, overlay?: ExitOverlay) {
   let trailStop = holding?.trailStop;
   const decision = (signal: 'buy'|'sell'|'hold', reason: string) => ({signal, reason, trailStop});
@@ -74,6 +92,9 @@ export function evaluateClose(bars: readonly RuleBar[], rule: StrategyRule, hold
     if (last.close <= trailStop) return decision('sell','샹들리에 추적 손절선 도달');
   }
   switch (rule.kind) {
+    case 'volatility_breakout':
+      if (holding && holding.barsHeld >= rule.holdDays) return decision('sell','목표 보유 기간 경과 시가 청산');
+      break;
     case 'macd_momentum': {
       const {value, hist, prevHist} = macd(closes, rule.fastPeriod, rule.slowPeriod, rule.signalPeriod);
       if (prevHist >= 0 && hist < 0) return decision('sell','MACD 히스토그램 하향 반전');
@@ -183,7 +204,13 @@ export function evaluateClose(bars: readonly RuleBar[], rule: StrategyRule, hold
 const maPreset = (fast:number,slow:number): StrategyRule => ({kind:'ma_crossover',maType:'sma',fast,slow});
 const channel = (entryLookback:number,exitLookback:number,volumeMultiplier:number): StrategyRule => ({kind:'donchian_breakout',entryLookback,exitLookback,volumeMultiplier});
 const pullback = (oversoldThreshold:number,longTrendMa:number): StrategyRule => ({kind:'rsi2_pullback',rsiPeriod:2,oversoldThreshold,longTrendMa,exitShortMa:5,maxHoldingDays:10});
+const breakout = (k:number,useAdaptiveNoise:boolean,noiseLookback:number,trendMaPeriod:number,holdDays:number) =>
+  ({kind:'volatility_breakout',k,useAdaptiveNoise,noiseLookback,trendMaPeriod,holdDays} as const);
 export const STRATEGY_CATALOG = {
+  volatility_breakout: {title:'윌리엄스 변동성 돌파', buyWhen:'상승 추세에서 당일 가격이 시가 대비 전일 변동폭의 k배 목표가를 돌파하면 사요.',
+    sellWhen:'설정한 보유 거래일이 지나면 다음 시가에 팔아요.', cautionRegime:'윗꼬리가 잦은 횡보장에서는 돌파 직후 되밀릴 수 있어요.',
+    fields:['open','high','low','close'], environments:{daily:true,demo:false,kisPaper:false},
+    presets:{conservative:breakout(0.6,true,20,60,1), basic:breakout(0.5,false,20,20,1), aggressive:breakout(0.4,false,10,5,2)}},
   ma_crossover:{title:'이동평균 교차',buyWhen:'단기선이 장기선을 위로 넘을 때 사요.', sellWhen:'단기선이 장기선 아래로 내려가면 팔아요.', cautionRegime:'횡보장에서는 교차가 자주 반복돼요.',
     fields:['close'],optionalFields:['volume'], environments:{daily:true,demo:'거래량 필터 끔',kisPaper:'필터 없는 SMA'}, presets:{conservative:maPreset(20,60),basic:maPreset(5,20),aggressive:maPreset(3,10)}},
   donchian_breakout:{title:'돈키안 돌파',buyWhen:'거래량이 늘면서 이전 고점에 도달하면 사요.',sellWhen:'종가가 최근 저점까지 내려오면 팔아요.',cautionRegime:'횡보장에서는 돌파 직후 되밀릴 수 있어요.',
