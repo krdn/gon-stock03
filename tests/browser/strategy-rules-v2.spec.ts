@@ -1241,12 +1241,53 @@ test('KIS 모의 다중 규칙 전략은 /settings/trading/strategy에서 실제
       rule: { kind: 'ma_crossover', maType: 'sma', fast: 5, slow: 20 },
     },
   ];
+  const posts: string[] = [];
+  page.on('request', req => {
+    if (req.method() === 'POST') posts.push(new URL(req.url()).pathname);
+  });
+
   await page.route('**/api/state', route => route.fulfill({ json: state }));
   await page.route('**/api/trading-settings', route =>
-    route.fulfill({ json: { active: null, plans: {}, canFix: false } }),
+    route.fulfill({
+      json: {
+        active: null,
+        canFix: true,
+        plans: {
+          strategy: {
+            draft: {
+              id: 'draft-macd-1',
+              runId: 'run-macd-1',
+              fixed: false,
+              symbol: '005930',
+              fast: 5,
+              slow: 20,
+              qty: 2,
+              limits: {
+                manualQty: 5,
+                maxOrder: 1000000,
+                maxPosition: 4000000,
+                dailyLoss: 300000,
+                halted: false,
+              },
+              terms: {
+                kind: 'strategy',
+                strategyId: 'kis-macd-chandelier',
+                revision: 1,
+                startsAt: '2099-01-05T00:00:00.000Z',
+                endsAt: '2099-01-05T02:00:00.000Z',
+                maxOrderAmount: 100000,
+                maxAttempts: 1,
+                maxTotalAmount: 100000,
+                sellPolicy: 'deny',
+              },
+            },
+          },
+        },
+      },
+    }),
   );
 
-  // Major 2: 다중 규칙 전략 선택 시 5/20 교차 오표시 금지, 실제 규칙명 표시 및 레거시 복사 폼 차단
+  // Major 2 (1단계): 다중 규칙 전략 선택 시 5/20 교차 오표시 금지, 실제 규칙명 표시, 레거시 복사 차단 및 한도·조건으로 비활성화
   await page.goto('/settings/trading/strategy/1?strategy=kis-macd-chandelier');
   await waitWorkbenchReady(page);
   await expect(page.getByLabel('저장 KIS 전략')).toHaveValue('kis-macd-chandelier');
@@ -1254,15 +1295,46 @@ test('KIS 모의 다중 규칙 전략은 /settings/trading/strategy에서 실제
   await expect(page.getByRole('main')).not.toContainText('5/20 교차');
   await expect(page.getByRole('main')).toContainText('백테스트 전용 규칙');
   await expect(page.getByRole('button', { name: '종목·수량·교차 주기로 새 전략 만들기' })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: '전략 스튜디오에서 편집·복제' })).toHaveAttribute(
-    'href',
-    '/strategies?environment=kis-paper',
-  );
+  await expect(page.getByRole('button', { name: '한도·조건으로', exact: true })).toBeDisabled();
 
-  // 기본 SMA 전략으로 전환하면 5/20 교차 요약과 빠른 생성 버튼이 정상 복원됨
+  // Major 2 (2단계 직접 진입): 초안 저장 및 검토 비활성화 + 실제 규칙명 경고 + 1단계 복귀 링크
+  await page.goto('/settings/trading/strategy/2?strategy=kis-macd-chandelier');
+  await waitWorkbenchReady(page);
+  await expect(page.getByRole('main')).toContainText('MACD 히스토그램 · 샹들리에 ATR(14)×3');
+  await expect(page.getByRole('link', { name: '대상·기간(1단계)으로 돌아가기' })).toHaveAttribute(
+    'href',
+    '/settings/trading/strategy/1?strategy=kis-macd-chandelier',
+  );
+  await expect(page.getByRole('button', { name: '초안 저장 및 검토', exact: true })).toBeDisabled();
+
+  // Major 2 (3단계 직접 진입): 저장 대상 5/20 오표시 없음, 실제 규칙명 표시 및 고정 버튼 비활성화
+  await page.goto('/settings/trading/strategy/3?strategy=kis-macd-chandelier');
+  await waitWorkbenchReady(page);
+  await expect(page.getByRole('main')).toContainText('저장 대상 005930 · MACD 히스토그램 · 샹들리에 ATR(14)×3 · 2주');
+  await expect(page.getByRole('main')).not.toContainText('5/20');
+  await expect(page.getByRole('button', { name: '다음 실행 고정', exact: true })).toBeDisabled();
+  expect(posts).toEqual([]);
+
+  // Minor 1: 1단계에서 '전략 스튜디오에서 이 설정으로 새 전략 만들기' 클릭 시 선택 다중 규칙·오버레이 초안이 채워져 열림
+  await page.goto('/settings/trading/strategy/1?strategy=kis-macd-chandelier');
+  await waitWorkbenchReady(page);
+  await page.getByRole('link', { name: '전략 스튜디오에서 이 설정으로 새 전략 만들기' }).first().click();
+  await expect(page).toHaveURL(/\/strategies\?environment=kis-paper#strategy-editor$/);
+  await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('macd_momentum');
+  await expect(page.getByLabel('단기 EMA (봉)')).toHaveValue('12');
+  await expect(page.getByLabel('장기 EMA (봉)')).toHaveValue('26');
+  await expect(page.getByLabel('시그널 EMA (봉)')).toHaveValue('9');
+  await expect(page.getByLabel('샹들리에 ATR 청산 오버레이 사용')).toBeChecked();
+  await expect(page.getByLabel('ATR 기간 (봉)')).toHaveValue('14');
+  await expect(page.getByLabel('ATR 배수')).toHaveValue('3');
+
+  // 기본 SMA 전략으로 전환하면 5/20 교차 요약·빠른 생성 버튼·한도·조건으로 버튼이 정상 복원됨
+  await page.goto('/settings/trading/strategy/1?strategy=kis-macd-chandelier');
+  await waitWorkbenchReady(page);
   await page.getByLabel('저장 KIS 전략').selectOption('kis-basic-sma');
   await expect(page.getByRole('main')).toContainText('5/20 교차');
   await expect(page.getByRole('button', { name: '종목·수량·교차 주기로 새 전략 만들기' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '한도·조건으로', exact: true })).toBeEnabled();
 });
 
 test('활성 프리셋 재클릭 시 evidence가 유지되고 샹들리에·거래량 필터 활성 시 DEMO 배지가 동적으로 경고 전환된다', async ({ page }) => {
@@ -1325,6 +1397,68 @@ test('활성 프리셋 재클릭 시 evidence가 유지되고 샹들리에·거�
     await expect(envBadges).toContainText('DEMO · 현재 설정 제한 (저장 일봉 필요)');
     await page.getByLabel('최소 상대 거래량 (배, 선택)').fill('');
     await expect(envBadges).toContainText('DEMO · 거래량 필터 끔');
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
+  }
+});
+
+test('다른 수집 기록의 저장 실험을 불러와 폼을 수정한 뒤 브라우저 뒤로→앞으로 이동해도 stale 결과와 전략 만들기 버튼이 재결합되지 않는다', async ({ page }) => {
+  const { Store } = await import('../../server/store.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const store = new Store(':memory:');
+  const fixtureA = v2DailyFixture('005930');
+  const fixtureB = v2DailyFixture('00A123');
+  store.saveDaily(fixtureA.run, fixtureA.bars);
+  store.saveDaily(fixtureB.run, fixtureB.bars);
+
+  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4314, 4338]);
+  await new Promise<void>(resolve => server.listen(4338, '127.0.0.1', resolve));
+
+  await page.route('**/api/**', async route => {
+    const response = await route.fetch({ url: route.request().url().replace(':4314', ':4338') });
+    await route.fulfill({ response });
+  });
+
+  try {
+    // 1. 수집 기록 A(005930)에서 MACD 기본 실험 저장
+    await page.goto('/backtest');
+    await waitWorkbenchReady(page);
+    await expect(page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true })).toBeEnabled();
+    await page.getByLabel('일봉 수집 기록').selectOption(fixtureA.run.id);
+    await page.getByRole('combobox', { name: '전략 규칙', exact: true }).selectOption('macd_momentum');
+    await page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true }).click();
+    const result = page.getByRole('region', { name: '저장 일봉 실험 결과' });
+    await expect(result).toBeVisible();
+
+    // 2. 수집 기록 B(00A123)로 이동한 뒤 저장 실험 목록에서 A 실험을 불러옴(cross-run transfer.current 경로)
+    await page.getByLabel('일봉 수집 기록').selectOption(fixtureB.run.id);
+    await expect(page).toHaveURL(new RegExp(`run=${fixtureB.run.id}`));
+    const savedSelect = page.getByLabel('저장 실험');
+    const expOptionValue = await savedSelect.locator('option', { hasText: '005930' }).getAttribute('value');
+    expect(expOptionValue).toBeTruthy();
+    await savedSelect.selectOption(expOptionValue!);
+    await page.getByRole('button', { name: '저장 실험 불러오기', exact: true }).click();
+
+    await expect(page).toHaveURL(new RegExp(`run=${fixtureA.run.id}`));
+    await expect(result).toBeVisible();
+    await expect(result.getByRole('button', { name: '이 설정으로 전략 만들기', exact: true })).toBeVisible();
+
+    // 3. 파라미터를 수정해 결과를 해제한 뒤 브라우저 뒤로(B) → 앞으로(A) 이동
+    await page.getByLabel('단기 EMA (봉)').fill('8');
+    await expect(result).toHaveCount(0);
+
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`run=${fixtureB.run.id}`));
+    await page.goForward();
+    await expect(page).toHaveURL(new RegExp(`run=${fixtureA.run.id}`));
+
+    // 4. 수정된 파라미터(8)가 유지되고 이전 저장 실험 결과와 '이 설정으로 전략 만들기'가 재결합되지 않음을 확인
+    await expect(page.getByLabel('단기 EMA (봉)')).toHaveValue('8');
+    await expect(result).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '이 설정으로 전략 만들기', exact: true })).toHaveCount(0);
   } finally {
     server.closeAllConnections();
     await new Promise<void>(resolve => server.close(() => resolve()));

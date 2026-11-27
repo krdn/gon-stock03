@@ -292,6 +292,22 @@ function Editor({
   const locked = busy || checking || !available || base !== id;
   const selected = terms.kind === 'strategy' ? strategies.find((s) => s.id === terms.strategyId) : undefined;
   const selectedUnsupported = Boolean(selected && !isKisContractSupported(selected));
+  const savedStrategyId = initial?.terms.kind === 'strategy' ? initial.terms.strategyId : undefined;
+  const savedStrategy = savedStrategyId ? strategies.find((s) => s.id === savedStrategyId) : undefined;
+  const studioDraftState = selected
+    ? {
+        backtestDraft: {
+          code: selected.code,
+          rule: selected.rule ?? {
+            kind: 'ma_crossover' as const,
+            maType: 'sma' as const,
+            fast: selected.fast,
+            slow: selected.slow,
+          },
+          ...(selected.overlay ? { overlay: selected.overlay } : {}),
+        },
+      }
+    : undefined;
   const mismatch = available && terms.kind === 'strategy' && (!selected || selected.revision !== terms.revision);
   const parsedTerms = tradingTerms.safeParse(terms);
   const saved = !!initial && parsedTerms.success &&
@@ -322,6 +338,10 @@ function Editor({
   async function advance(e: FormEvent) {
     e.preventDefault();
     if (locked) return;
+    if (selectedUnsupported) {
+      setError('백테스트 전용 다중 규칙·오버레이·장기 100 초과 전략은 KIS 모의 실시간 계약으로 진행하거나 저장할 수 없습니다.');
+      return;
+    }
     if (mismatch) {
       setError('현재 revision의 저장 전략을 다시 선택하세요.');
       return;
@@ -414,6 +434,17 @@ function Editor({
       <form onSubmit={advance}>
         <fieldset className="plan-fields" disabled={locked}>
           {step > 1 && mismatch && <p role="alert">저장 전략을 확인할 수 없거나 revision이 변경됐습니다. 대상·기간에서 다시 선택하세요.</p>}
+          {step > 1 && selectedUnsupported && selected && (
+            <div role="alert" className="plan-phase">
+              <p>
+                선택한 전략({selected.name} · {formatTradingStrategyRule(selected)})은 백테스트 전용 규칙(또는 기본 SMA
+                장기 100 초과·필터·오버레이 포함)으로 KIS 모의 실시간 시작 계약 대상이 아닙니다.
+              </p>
+              <p>
+                <Link to={home + '/strategy/1' + locationSearch()}>대상·기간(1단계)으로 돌아가기</Link>
+              </p>
+            </div>
+          )}
           {step === 1 && terms.kind === 'once' && (
             <>
               <label className="field">
@@ -537,8 +568,11 @@ function Editor({
                   {selectedUnsupported && (
                     <p role="status">
                       이 전략은 백테스트 전용 규칙(또는 기본 SMA 장기 100 초과·필터·오버레이 포함)으로 KIS 모의 실시간
-                      시작 계약 대상이 아닙니다. 규칙 편집·복제는{' '}
-                      <Link to="/strategies?environment=kis-paper">전략 스튜디오</Link>에서 진행하세요.
+                      시작 계약 대상이 아닙니다. 이 설정을 바탕으로 새 전략을 만들려면{' '}
+                      <Link to="/strategies?environment=kis-paper#strategy-editor" state={studioDraftState}>
+                        전략 스튜디오에서 이 설정으로 새 전략 만들기
+                      </Link>
+                      를 이용하세요.
                     </p>
                   )}
                 </>
@@ -557,7 +591,9 @@ function Editor({
               {selectedUnsupported ? (
                 <p className="muted">
                   다중 규칙·오버레이 전략은 기본 SMA 빠른 복사 대상이 아닙니다.{' '}
-                  <Link to="/strategies?environment=kis-paper">전략 스튜디오에서 편집·복제</Link>
+                  <Link to="/strategies?environment=kis-paper#strategy-editor" state={studioDraftState}>
+                    전략 스튜디오에서 이 설정으로 새 전략 만들기
+                  </Link>
                 </p>
               ) : (
                 <>
@@ -821,7 +857,11 @@ function Editor({
               </div>
               {saved && initial?.symbol && (
                 <p>
-                  저장 대상 {initial.symbol} · {initial.fast}/{initial.slow} · {initial.qty}주
+                  저장 대상 {initial.symbol} ·{' '}
+                  {savedStrategy && !isKisContractSupported(savedStrategy)
+                    ? formatTradingStrategyRule(savedStrategy)
+                    : `${initial.fast}/${initial.slow}`}{' '}
+                  · {initial.qty}주
                 </p>
               )}
               {initial?.limits && (
@@ -855,7 +895,7 @@ function Editor({
             {(step < 3 || !initial?.fixed || !saved) && (
               <button
                 className="button primary"
-                disabled={mismatch || (step === 3 && (!data.canFix || !saved || limitsChanged))}
+                disabled={mismatch || selectedUnsupported || (step === 3 && (!data.canFix || !saved || limitsChanged))}
               >
                 {['한도·조건으로', '초안 저장 및 검토', '다음 실행 고정'][step - 1]}
               </button>

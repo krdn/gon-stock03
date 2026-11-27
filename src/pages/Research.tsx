@@ -3443,6 +3443,20 @@ export function Backtest() {
   );
   const [costs, setCosts] = useState<CostAssumptions>(defaultCosts);
 
+  function invalidateTransfer() {
+    transfer.current = null;
+  }
+
+  function handleRuleFormChange(next: RuleFormState) {
+    transfer.current = null;
+    setRuleForm(next);
+  }
+
+  function handleCostsChange(next: CostAssumptions) {
+    transfer.current = null;
+    setCosts(next);
+  }
+
   function select(nextSource: string, nextRun?: string, selection?: BacktestSelection) {
     if (valid && nextSource === source && nextRun === undefined && !selection) return;
     if (selection && 'saved' in selection) {
@@ -3506,9 +3520,9 @@ export function Backtest() {
         <DemoBacktest
           strategyDraft={strategyDraft}
           ruleForm={ruleForm}
-          setRuleForm={setRuleForm}
+          setRuleForm={handleRuleFormChange}
           costs={costs}
-          setCosts={setCosts}
+          setCosts={handleCostsChange}
         />
       ) : (
         <StoredBacktest
@@ -3517,9 +3531,10 @@ export function Backtest() {
           initial={initial}
           strategyDraft={strategyDraft}
           ruleForm={ruleForm}
-          setRuleForm={setRuleForm}
+          setRuleForm={handleRuleFormChange}
           costs={costs}
-          setCosts={setCosts}
+          setCosts={handleCostsChange}
+          onInvalidateTransfer={invalidateTransfer}
           select={(id, selection) => select('stored', id, selection)}
         />
       )}
@@ -3536,6 +3551,7 @@ function StoredBacktest({
   setRuleForm,
   costs,
   setCosts,
+  onInvalidateTransfer,
   select,
 }: {
   requested: string | null;
@@ -3545,11 +3561,25 @@ function StoredBacktest({
   setRuleForm: (next: RuleFormState) => void;
   costs: CostAssumptions;
   setCosts: (next: CostAssumptions) => void;
+  onInvalidateTransfer: () => void;
   select: (id: string, selection: BacktestSelection) => void;
 }) {
   const { act, available, busy } = useWorkbench();
   const navigate = useNavigate();
-  const saved = initial && 'saved' in initial ? initial.saved : null;
+  const rawSaved = initial && 'saved' in initial ? initial.saved : null;
+  const savedMatchesForm =
+    rawSaved !== null &&
+    costs.capital === rawSaved.snapshot.input.capital &&
+    costs.feeBps === rawSaved.snapshot.input.feeBps &&
+    costs.slippageBps === rawSaved.snapshot.input.slippageBps &&
+    isSameRuleForm(
+      ruleForm,
+      formFromRule(
+        ruleFromExperimentInput(rawSaved.snapshot.input),
+        'overlay' in rawSaved.snapshot.input ? rawSaved.snapshot.input.overlay : undefined,
+      ),
+    );
+  const saved = savedMatchesForm ? rawSaved : null;
   const focusTarget = initial && 'focus' in initial ? initial.focus : undefined;
   const input = saved?.snapshot.input;
   const [runs, setRuns] = useState<DailyRun[] | null>(null);
@@ -3651,6 +3681,7 @@ function StoredBacktest({
     if (id && id !== selected) select(id, { focus });
   }
   function clearResult() {
+    onInvalidateTransfer();
     setExperiment(null);
     setReplay('');
     setReplayError('');
