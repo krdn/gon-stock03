@@ -1,3 +1,5 @@
+import { assertCloseOnly } from '../shared/strategy-rules.ts';
+import { backtestRules } from './engine.ts';
 import { MarketDataSync } from './market-sync.ts';
 import { scopeNotice } from '../shared/market-data.ts';
 import { analyzeCollectedDocuments, collectPublicDocuments } from './morning-analysis.ts';
@@ -23,7 +25,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z, ZodError } from 'zod';
-import { backtestInput, codeSchema, eventReadInput, haltInput, idInput, journalInput, orderInput, configuredPaperOrderInput, paperOrderInput, paperQuantitySetting, paperRecoveryInput, riskInput, storageErrorMessage, strategyInput } from '../shared/contracts.ts';
+import { ruleBacktestInput, backtestInput, codeSchema, eventReadInput, haltInput, idInput, journalInput, orderInput, configuredPaperOrderInput, paperOrderInput, paperQuantitySetting, paperRecoveryInput, riskInput, storageErrorMessage, strategyInput } from '../shared/contracts.ts';
 import { advanceTick, backtest, cancelOrder, halt, placeOrder, record } from './engine.ts';
 import { recordConnection, recordKisEvent } from './events.ts';
 import { KisClient, KisFailure } from './kis.ts';
@@ -418,9 +420,9 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
         if (path === '/api/backtest/daily') { json(res, 200, { experiment: createExperiment(store, input), message: '저장 일봉의 입력과 결과를 보존했습니다.' }); return; }
         if (path === '/api/backtest/replay') { const replay = replayExperiment(store, idInput.parse(input).id); json(res, 200, { ...replay, message: replay.matches ? '고정 입력 재현 결과가 일치합니다.' : '재현 불일치: 엔진·저장 결과를 점검하세요.', warning: !replay.matches }); return; }
         if (path === '/api/backtest') {
-          const config = backtestInput.parse(input); const instrument = store.read().instruments.find(s => s.code === config.code);
+          const config = (input && typeof input === 'object' && 'rule' in input ? ruleBacktestInput : backtestInput).parse(input); const instrument = store.read().instruments.find(s => s.code === config.code);
           if (!instrument) throw new Error('지원하지 않는 종목입니다.');
-          json(res, 200, { result: backtest(instrument.history, config), message: '합성 데이터 백테스트를 계산했습니다.' }); return;
+          json(res, 200, { result: 'rule' in config ? backtestRules(instrument.history.map(close => ({close})), instrument.history, config, 'demo') : backtest(instrument.history, config), message: '합성 데이터 백테스트를 계산했습니다.' }); return;
         }
         if (path === '/api/risk/halt' && haltInput.parse(input).halted) realtime.stop();
         const result = store.update(state => {
@@ -439,6 +441,7 @@ export function makeServer(store: Store, kis = KisClient.fromEnvironment(), port
             }
             case '/api/strategies': {
               const strategy = strategyInput.parse(input);
+              if (strategy.environment === 'demo') assertCloseOnly(strategy.rule, strategy.overlay);
               if (!state.instruments.some(s => s.code === strategy.code) &&
                   !(strategy.environment === 'kis-paper' && store.masterData().instruments.some(s => s.code === strategy.code && s.tradingHalted === false && s.liquidation === false && ['ST','EF'].includes(s.group)))) throw new Error('지원하지 않는 종목입니다.');
               if (state.strategies.length >= 30) throw new Error('전략은 최대 30개까지 저장할 수 있습니다.');

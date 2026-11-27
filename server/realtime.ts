@@ -1,3 +1,4 @@
+import { assertRealtimeRule } from '../shared/strategy-rules.ts';
 import type { MorningReport } from '../shared/morning.ts';
 import { krxHours, sessionBounds, type ExchangeNotice } from '../shared/trading-policy.ts';
 import { createDecipheriv, createHash, randomUUID } from 'node:crypto';
@@ -503,7 +504,7 @@ export class Realtime {
     try { this.store.update(state => {
       const strategy = state.strategies.find(s => s.id === id && s.environment === 'kis-paper');
       if (!strategy) throw new Error('KIS 전략을 찾지 못했습니다.');
-      if (active) { this.assertReady(strategy.code); this.paper.checkStrategyStart(strategy); }
+      if (active) { assertRealtimeRule(strategy.rule, strategy.overlay); this.assertReady(strategy.code); this.paper.checkStrategyStart(strategy); }
       if (strategy.active === active) return;
       strategy.active = active; strategy.run = (strategy.run ?? 0) + 1;
       if (active) {
