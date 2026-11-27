@@ -13,3 +13,11 @@ HIGH 지적은 달력 확인과 주문 출처의 signalBarDate 영속화로 처�
 총괄이 허용한 매매설정 호환 수정은 계약 지원과 SMA 빠른 복사 판정을 분리한다. 비기본 규칙의 고정 요약은 저장 조건을 표시한다. 3B-2는 전략 스튜디오 시작 버튼·안내·도움말을 이 입력 계약에 연결한다.
 
 최종 구현으로 npm run typecheck, npm run build, npm test(368/368), 격리 4314 전체 Playwright(340/340)를 통과했다. 외부 수정분 리뷰도 claude-opus-5-5가 반환됐고 이전 HIGH 해소를 확인했다. 제출 후 전략을 삭제하는 API는 없으며 현재 카탈로그에서 이동평균 KIS 배지는 전용 문자열이다. SHA별 원격 결론은 [브랜치 Actions](https://github.com/krdn/gon-stock03/actions?query=branch%3Akrdn%2Fstrategy-rules-phase3b-pr1) 및 Draft PR 본문의 최종 HEAD를 기준으로 확인한다.
+
+## PR 3B-2 (UI·매매설정·도움말·E2E 연동)
+
+- `src/pages/research-rule-form.ts`의 `kisRealtimeBlockReason`·`isKisRealtimeFormSupported`를 `shared/strategy-rules.ts` `assertRealtimeRule`과 100% 정합화했다.
+- `RuleConfigSection.tsx`·`StrategyEditor.tsx`·`StrategyCard.tsx`에 확정 일봉 기반 배지(`KIS 모의: 확정 일봉 기반`)·안내 문구와 미지원 3종(윌리엄스 돌파, 변동성 패리티, 무필터 기본 SMA 장기 101-120) 경고·시작 차단을 반영했다.
+- `TradingSettings.tsx`에서 종가 확정형 10종 + 샹들리에 전략의 1-3단계 진행·고정, 전 단계 및 목차·활성 계약 실제 규칙 요약(`신호 규칙`), 확정 일봉 전용 원장 안내 문구, 레거시 SMA 빠른 복사 차단을 연결했다.
+- `ResearchHelpPanel.tsx` 4탭·13카드 사전·문맥별 가이드 전체를 3단계 B 계약에 맞게 갱신했다.
+- 검증: `npm run typecheck`, `npm run build`, `npm test` 368/368, 격리 포트 4314 `npm run test:e2e` 341/341(27개 spec) 전수 통과, Orca 내장 브라우저(`/strategies`, `/backtest`, `/settings/trading/strategy` 데스크톱·390px 모바일 `scrollWidth <= 390`·키보드 포커스·차단 상태·콘솔 오류 0건) 실측 후 임시 4314 서버 종료 및 포트 해제 확인. 실계좌·KIS 모의 주문 전송 및 4303/4304 운영 서버 반영은 미실행.

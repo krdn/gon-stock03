@@ -8,6 +8,7 @@ import { Badge, Panel } from '../ui';
 import {
   evaluationLabels,
   evaluationTime,
+  isKisConfirmedDailyStrategy,
   kisRealtimeBlockReason,
   signalLabels,
 } from '../../pages/research-rule-form';
@@ -19,6 +20,7 @@ export function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: bo
   const quoteAge = realtime?.lastQuoteAt ? serverNow - Date.parse(realtime.lastQuoteAt) : Infinity;
   const freshQuote = quoteAge >= 0 && quoteAge <= (realtime?.quoteSeconds ?? 5) * 1000;
   const kisRuleBlock = kis ? kisRealtimeBlockReason(s.rule, s.overlay, s.slow) : '';
+  const kisConfirmedDaily = kis && isKisConfirmedDailyStrategy(s.rule, s.overlay, s.slow);
   let blocked = '';
   if (state.risk.halted) blocked = '긴급정지 켜짐';
   else if (kis) {
@@ -48,6 +50,7 @@ export function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: bo
           {s.name}
         </h3>
         <div className="studio-card-badges">
+          {kisConfirmedDaily && <Badge tone="teal">KIS 모의: 확정 일봉 기반</Badge>}
           {s.evidence && (
             <Badge tone="teal">
               검증 실험 연결 · {s.evidence.experimentId.slice(0, 8)}

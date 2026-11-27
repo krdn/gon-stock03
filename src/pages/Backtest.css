@@ -16,6 +16,8 @@
 .bt-page :is(.panel p, details) { margin: 9px 0; line-height: 1.55; }
 .bt-page .rule-selector-wrap .rule-selector-field { margin-bottom: 4px; }
 .bt-page .rule-selector-meta { margin: 0; }
+.bt-page .rule-guide .rule-kis-note,
+.bt-page .rule-guide .rule-kis-warning { margin: 8px 0 0; }
 .bt-page .research-help .research-help-sub { margin: 4px 0 0; }
 .bt-page .research-help :is(.research-help-steps p, .research-help-card p) { margin: 0; }
 .bt-page .research-help .research-help-env-line { margin: 0 0 6px; }

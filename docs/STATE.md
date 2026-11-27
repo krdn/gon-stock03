@@ -1,6 +1,6 @@
 # 작업 인수인계
 
-- **확정 일봉 KIS 모의 전략 계약** [#243 PR 3B-1 · PR 3B-2 인계](tasks/243-strategy-rules-phase3b.md)
+- **확정 일봉 KIS 모의 전략 계약** [#243 PR 3B-1 · PR 3B-2 UI·매매설정·도움말·E2E 연동](tasks/243-strategy-rules-phase3b.md)
 - **저장 일봉 돌파·변동성 사이징** [#240 PR 3A-1·PR 3A-2 작업과 UI 입력 계약](tasks/240-strategy-rules-phase3a.md)
 
 - **Research.tsx 모듈 분리 리팩터링** [#238 작업 기록](tasks/238-research-modularize.md) (Item #90 · `src/pages/Research.tsx`를 순수 헬퍼와 `src/components/research/*` 서브컴포넌트로 분리, `tests/**` 무수정 단위 354/354·E2E 336/336 통과)

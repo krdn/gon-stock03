@@ -209,10 +209,13 @@ test('전략 스튜디오 ↔ 저장 일봉 백테스트 v2 왕복·벤치마크
     await expect(page.getByLabel('샹들리에 ATR 청산 오버레이 사용')).toBeChecked();
     await expect(page.getByText(hash.slice(0, 8))).toBeVisible();
 
-    // KIS 모의 환경으로 전환 시 초안·evidence가 유지되며 저장 가능
+    // KIS 모의 환경으로 전환 시 초안·evidence가 유지되며 확정 일봉 기반 안내와 함께 저장 가능
     await page.getByLabel('전략 환경').selectOption('kis-paper');
     await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('donchian_breakout');
-    await expect(page.getByText(/장전 레벨 트리거 계약 연결 후 활성화/)).toBeVisible();
+    await expect(page.getByLabel('환경별 사용 가능 여부')).toContainText('KIS 모의: 확정 일봉 기반');
+    await expect(
+      page.getByText('전용 원장에 고정된 직전 KRX 개장일 확정 일봉 신호로 당일 1회 집행합니다.'),
+    ).toBeVisible();
     await expect(page.getByText(hash.slice(0, 8))).toBeVisible();
 
     await page.getByLabel('전략 이름').fill('검증된 돈키안 샹들리에');
@@ -222,9 +225,11 @@ test('전략 스튜디오 ↔ 저장 일봉 백테스트 v2 왕복·벤치마크
       has: page.getByRole('heading', { name: '검증된 돈키안 샹들리에', exact: true }),
     });
     await expect(savedCard).toBeVisible();
+    await expect(savedCard).toContainText('KIS 모의: 확정 일봉 기반');
     await expect(savedCard).toContainText(`검증 실험 연결 · ${hash.slice(0, 8)}`);
     await expect(savedCard).toContainText('돈키안 돌파');
     await expect(savedCard).toContainText('ATR(10)×2.5');
+    await expect(savedCard).not.toContainText('저장 일봉 백테스트 전용');
     await expect(savedCard.getByRole('button', { name: '전략 시작', exact: true })).toBeDisabled();
 
     // 모바일 390px에서 전략 스튜디오 가로 넘침 없음 확인
@@ -430,7 +435,7 @@ test('저장 일봉 백테스트에서 수집 구간(run.from-run.to) 밖 날짜
   expect(dailyPosts).toEqual([]);
 });
 
-test('KIS 모의 실시간 준비 상태에서도 미지원 규칙 카드는 시작 버튼을 비활성화하고 기본 SMA 5/110은 정지 저장 후 시작만 차단한다', async ({ page }) => {
+test('KIS 모의 실시간 준비 상태에서 종가 확정형+샹들리에 카드는 시작 가능하고 미지원 3종(돌파·패리티·기본 SMA 101-120)만 차단한다', async ({ page }) => {
   const state = snapshot();
   const now = new Date().toISOString();
   state.status.observedAt = now;
@@ -465,7 +470,7 @@ test('KIS 모의 실시간 준비 상태에서도 미지원 규칙 카드는 시
     },
     {
       id: 'kis-donchian',
-      name: 'KIS 미지원 돈키안',
+      name: 'KIS 확정 일봉 돈키안',
       code: '005930',
       fast: 5,
       slow: 20,
@@ -480,7 +485,7 @@ test('KIS 모의 실시간 준비 상태에서도 미지원 규칙 카드는 시
     },
     {
       id: 'kis-ema',
-      name: 'KIS 미지원 EMA',
+      name: 'KIS 확정 일봉 EMA',
       code: '005930',
       fast: 5,
       slow: 20,
@@ -491,6 +496,57 @@ test('KIS 모의 실시간 준비 상태에서도 미지원 규칙 카드는 시
       environment: 'kis-paper',
       revision: 1,
       rule: { kind: 'ma_crossover', maType: 'ema', fast: 5, slow: 20 },
+    },
+    {
+      id: 'kis-macd-chandelier',
+      name: 'KIS 확정 일봉 MACD 샹들리에',
+      code: '005930',
+      fast: 5,
+      slow: 20,
+      qty: 1,
+      active: false,
+      lastSignal: 'hold',
+      lastTick: -1,
+      environment: 'kis-paper',
+      revision: 1,
+      rule: { kind: 'macd_momentum', fastPeriod: 12, slowPeriod: 26, signalPeriod: 9, requireZeroLineAbove: false },
+      overlay: { chandelier: { atrPeriod: 14, atrMultiplier: 3 } },
+    },
+    {
+      id: 'kis-vb',
+      name: 'KIS 미지원 윌리엄스 돌파',
+      code: '005930',
+      fast: 5,
+      slow: 20,
+      qty: 1,
+      active: false,
+      lastSignal: 'hold',
+      lastTick: -1,
+      environment: 'kis-paper',
+      revision: 1,
+      rule: {
+        kind: 'volatility_breakout',
+        k: 0.5,
+        useAdaptiveNoise: false,
+        noiseLookback: 20,
+        trendMaPeriod: 20,
+        holdDays: 1,
+      },
+    },
+    {
+      id: 'kis-sma-parity',
+      name: 'KIS 미지원 SMA 패리티',
+      code: '005930',
+      fast: 5,
+      slow: 20,
+      qty: 1,
+      active: false,
+      lastSignal: 'hold',
+      lastTick: -1,
+      environment: 'kis-paper',
+      revision: 1,
+      rule: { kind: 'ma_crossover', maType: 'sma', fast: 5, slow: 20 },
+      overlay: { volatilityParity: { volLookback: 20, targetAnnualVolPct: 20, maxAllocationPct: 100 } },
     },
   ];
   await page.route('**/api/state', route => {
@@ -508,7 +564,7 @@ test('KIS 모의 실시간 준비 상태에서도 미지원 규칙 카드는 시
   await page.route('**/api/strategies', async route => {
     const parsed = strategyInput.parse(route.request().postDataJSON());
     savedBodies.push(parsed);
-    const id = 'kis-sma-110';
+    const id = `kis-saved-${savedBodies.length}`;
     state.strategies.push({
       ...parsed,
       id,
@@ -527,31 +583,69 @@ test('KIS 모의 실시간 준비 상태에서도 미지원 규칙 카드는 시
   await waitWorkbenchReady(page);
 
   const smaCard = page.locator('.studio-card').filter({ has: page.getByRole('heading', { name: 'KIS 기본 SMA', exact: true }) });
-  const donchianCard = page.locator('.studio-card').filter({ has: page.getByRole('heading', { name: 'KIS 미지원 돈키안', exact: true }) });
-  const emaCard = page.locator('.studio-card').filter({ has: page.getByRole('heading', { name: 'KIS 미지원 EMA', exact: true }) });
+  const donchianCard = page.locator('.studio-card').filter({ has: page.getByRole('heading', { name: 'KIS 확정 일봉 돈키안', exact: true }) });
+  const emaCard = page.locator('.studio-card').filter({ has: page.getByRole('heading', { name: 'KIS 확정 일봉 EMA', exact: true }) });
+  const macdCard = page.locator('.studio-card').filter({ has: page.getByRole('heading', { name: 'KIS 확정 일봉 MACD 샹들리에', exact: true }) });
+  const vbCard = page.locator('.studio-card').filter({ has: page.getByRole('heading', { name: 'KIS 미지원 윌리엄스 돌파', exact: true }) });
+  const parityCard = page.locator('.studio-card').filter({ has: page.getByRole('heading', { name: 'KIS 미지원 SMA 패리티', exact: true }) });
 
+  // 지원: 기본 SMA + 종가 확정형 10종 + 샹들리에 → 전략 시작 활성화
   await expect(smaCard.getByRole('button', { name: '전략 시작', exact: true })).toBeEnabled();
-  await expect(donchianCard.getByRole('button', { name: '전략 시작', exact: true })).toBeDisabled();
-  await expect(donchianCard).toContainText('전략 시작 차단');
-  await expect(emaCard.getByRole('button', { name: '전략 시작', exact: true })).toBeDisabled();
-  await expect(emaCard).toContainText('전략 시작 차단');
+  await expect(donchianCard).toContainText('KIS 모의: 확정 일봉 기반');
+  await expect(donchianCard.getByRole('button', { name: '전략 시작', exact: true })).toBeEnabled();
+  await expect(emaCard).toContainText('KIS 모의: 확정 일봉 기반');
+  await expect(emaCard.getByRole('button', { name: '전략 시작', exact: true })).toBeEnabled();
+  await expect(macdCard).toContainText('KIS 모의: 확정 일봉 기반');
+  await expect(macdCard.getByRole('button', { name: '전략 시작', exact: true })).toBeEnabled();
 
-  // Major (2차 보완): KIS 기본 SMA 5/110은 정지 상태로 저장 허용 + 저장 카드의 전략 시작 버튼만 blocked로 비활성화
+  // 미지원 ①·②: 윌리엄스 돌파, 변동성 패리티 → 전략 시작 비활성화 + 차단 사유
+  await expect(vbCard.getByRole('button', { name: '전략 시작', exact: true })).toBeDisabled();
+  await expect(vbCard).toContainText('전략 시작 차단');
+  await expect(vbCard).toContainText('윌리엄스 변동성 돌파와 변동성 패리티 수량 조절은 저장 일봉 백테스트 전용입니다.');
+  await expect(parityCard.getByRole('button', { name: '전략 시작', exact: true })).toBeDisabled();
+  await expect(parityCard).toContainText('전략 시작 차단');
+  await expect(parityCard).toContainText('윌리엄스 변동성 돌파와 변동성 패리티 수량 조절은 저장 일봉 백테스트 전용입니다.');
+
+  // RuleConfigSection 배지·안내: MACD+샹들리에(확정 일봉 기반) → 저장 후 카드 시작 활성 확인
+  const envBadges = page.getByLabel('환경별 사용 가능 여부');
+  const ruleSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
+  await ruleSelect.selectOption('macd_momentum');
+  await page.getByLabel('샹들리에 ATR 청산 오버레이 사용').check();
+  await expect(envBadges.locator('.badge.teal')).toContainText(['KIS 모의: 확정 일봉 기반']);
+  await expect(
+    page.getByText('전용 원장에 고정된 직전 KRX 개장일 확정 일봉 신호로 당일 1회 집행합니다.'),
+  ).toBeVisible();
+  await page.getByLabel('전략 이름').fill('신규 MACD 샹들리에');
+  await page.getByLabel('대상 종목').selectOption('005930');
+  await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+  const savedMacdCard = page.locator('.studio-card').filter({
+    has: page.getByRole('heading', { name: '신규 MACD 샹들리에', exact: true }),
+  });
+  await expect(savedMacdCard).toBeVisible();
+  await expect(savedMacdCard).toContainText('KIS 모의: 확정 일봉 기반');
+  await expect(savedMacdCard.getByRole('button', { name: '전략 시작', exact: true })).toBeEnabled();
+
+  // 미지원 ③: 기본 무필터 SMA 5/110은 경고 배지 표시 + 정지 상태 저장 허용 + 저장 카드의 전략 시작 버튼만 blocked로 비활성화
+  await page.getByLabel('샹들리에 ATR 청산 오버레이 사용').uncheck();
+  await ruleSelect.selectOption('ma_crossover');
   await page.getByLabel('전략 이름').fill('KIS 장기 110 SMA');
   await page.getByLabel('대상 종목').selectOption('005930');
   await page.getByLabel('단기 평균 (이벤트)').fill('5');
   await page.getByLabel('장기 평균 (이벤트)').fill('110');
+  await expect(
+    envBadges.locator('.badge.warning').filter({ hasText: 'KIS 모의 · 시작 제한 (정지 저장만 가능)' }),
+  ).toBeVisible();
   await expect(page.getByText(/101-120 구간은 정지 상태로 저장/)).toBeVisible();
   await page.getByRole('button', { name: '전략 저장', exact: true }).click();
 
-  expect(savedBodies).toHaveLength(1);
+  expect(savedBodies).toHaveLength(2);
   const slow110Card = page.locator('.studio-card').filter({
     has: page.getByRole('heading', { name: 'KIS 장기 110 SMA', exact: true }),
   });
   await expect(slow110Card).toBeVisible();
   await expect(slow110Card).toContainText('정지');
   await expect(slow110Card).toContainText('전략 시작 차단');
-  await expect(slow110Card).toContainText('장기 기간 100 이하만 지원');
+  await expect(slow110Card).toContainText('실시간 체결가 기본 SMA의 장기 기간은 100 이하여야 합니다.');
   await expect(slow110Card.getByRole('button', { name: '전략 시작', exact: true })).toBeDisabled();
 });
 
@@ -654,9 +748,15 @@ test('전략 스튜디오와 백테스트 상단 사용방법 도움말 패널�
     await expect(tabs.nth(3)).toHaveAttribute('aria-selected', 'true');
     await expect(allTabPanels.nth(2)).toBeHidden();
     await expect(allTabPanels.nth(3)).toBeVisible();
+    await expect(activePanel).toContainText('H0STCNT0');
+    await expect(activePanel).toContainText('종가 확정형 10종');
+    await expect(activePanel).toContainText('19 샹들리에 청산');
+    await expect(activePanel).toContainText('고정 이후 추가 수집한 일봉은 기존 전용 원장에 자동 반영되지 않습니다');
+    await expect(activePanel).toContainText('05 윌리엄스 변동성 돌파');
+    await expect(activePanel).toContainText('20 변동성 패리티');
     await expect(activePanel).toContainText('101-120');
     await expect(activePanel).toContainText('정지 상태(active=false) 저장과 저장 일봉 백테스트는 가능하지만');
-    await expect(activePanel).toContainText('KIS 실시간 시작 계약 상한(100 이하)에 따라 전략 시작은 차단');
+    await expect(activePanel).toContainText('KIS 실시간 시작 계약 상한(100 이하)에 따라 전략 시작과 계약 고정은 차단');
     await expect(activePanel).toContainText('검증 실험 연결 배지가 왜 사라졌나요?');
 
     await page.keyboard.press('Home');
@@ -978,7 +1078,7 @@ test('DEMO 종가 전용 분기: MACD·%B는 백테스트/저장 성공하고 �
   expect(demoPayloads).toHaveLength(2);
 });
 
-test('신규 7종 저장 일봉 백테스트 실행 및 /strategies ↔ /backtest 왕복·evidence 배지·KIS 모의 정지 저장 및 시작 비활성화', async ({ page }) => {
+test('신규 7종 저장 일봉 백테스트 실행 및 /strategies ↔ /backtest 왕복·evidence 배지·KIS 모의 확정 일봉 기반 저장', async ({ page }) => {
   const { Store } = await import('../../server/store.ts');
   const { makeServer } = await import('../../server/http.ts');
   const { KisClient } = await import('../../server/kis.ts');
@@ -1046,9 +1146,10 @@ test('신규 7종 저장 일봉 백테스트 실행 및 /strategies ↔ /backtes
     await expect(page.getByLabel('손절 기준 (%)')).toHaveValue('5');
     await expect(page.getByText(hash.slice(0, 8))).toBeVisible();
 
-    // KIS 모의 전환 시 초안·evidence 유지 + 정지 저장 허용 + 카드 시작 버튼 비활성화
+    // KIS 모의 전환 시 초안·evidence 유지 + 확정 일봉 기반 배지 표시 + 저장 허용
     await page.getByLabel('전략 환경').selectOption('kis-paper');
     await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('disparity_reversion');
+    await expect(page.getByLabel('환경별 사용 가능 여부')).toContainText('KIS 모의: 확정 일봉 기반');
     await expect(page.getByText(hash.slice(0, 8))).toBeVisible();
     await page.getByLabel('전략 이름').fill('검증된 이격도 복원');
     await page.getByRole('button', { name: '전략 저장', exact: true }).click();
@@ -1057,12 +1158,13 @@ test('신규 7종 저장 일봉 백테스트 실행 및 /strategies ↔ /backtes
       has: page.getByRole('heading', { name: '검증된 이격도 복원', exact: true }),
     });
     await expect(savedCard).toBeVisible();
+    await expect(savedCard).toContainText('KIS 모의: 확정 일봉 기반');
     await expect(savedCard).toContainText(`검증 실험 연결 · ${hash.slice(0, 8)}`);
     await expect(savedCard).toContainText('이격도 복원');
     await expect(savedCard).toContainText('≤ 93% / ≥ 99.5%');
     await expect(savedCard).toContainText('-5%');
     await expect(savedCard).toContainText('정지');
-    await expect(savedCard).toContainText('전략 시작 차단');
+    await expect(savedCard).not.toContainText('저장 일봉 백테스트 전용');
     await expect(savedCard.getByRole('button', { name: '전략 시작', exact: true })).toBeDisabled();
   } finally {
     server.closeAllConnections();
@@ -1210,7 +1312,9 @@ test('백테스트 데이터 출처(DEMO ↔ 저장 일봉) 전환 시 편집 �
   expect(posts).toEqual([]);
 });
 
-test('KIS 모의 다중 규칙 전략은 /settings/trading/strategy에서 실제 규칙명을 표시하고 레거시 SMA 변질 복사를 차단한다', async ({ page }) => {
+test('KIS 모의 확정 일봉 다중 규칙 전략은 /settings/trading/strategy 1→2→3단계·초안 저장·재열기·요약 배너를 정상 통과하고 레거시 SMA 변질 복사를 차단한다', async ({ page }) => {
+  const confirmedDailyNotice =
+    '고정 시점의 검증 완료 일봉을 전용 원장에 복사하여 세션 직전 개장일 봉과 일치할 때 당일 1회 집행하며, 고정 이후 추가 수집한 일봉은 기존 전용 원장에 자동 반영되지 않습니다.';
   const state = snapshot();
   state.strategies = [
     {
@@ -1243,73 +1347,97 @@ test('KIS 모의 다중 규칙 전략은 /settings/trading/strategy에서 실제
       rule: { kind: 'ma_crossover', maType: 'sma', fast: 5, slow: 20 },
     },
   ];
+  let savedPlan: import('../../shared/trading-plan').PlanRecord | undefined;
+  let activeContract: import('../../shared/trading-plan').TradingTerms | null = null;
   const posts: string[] = [];
-  page.on('request', req => {
-    if (req.method() === 'POST') posts.push(new URL(req.url()).pathname);
-  });
 
   await page.route('**/api/state', route => route.fulfill({ json: state }));
   await page.route('**/api/trading-settings', route =>
     route.fulfill({
       json: {
-        active: null,
-        canFix: true,
-        plans: {
-          strategy: {
-            draft: {
-              id: 'draft-macd-1',
-              rule: state.strategies[0].rule,
-              overlay: state.strategies[0].overlay,
-              runId: 'run-macd-1',
-              fixed: false,
-              symbol: '005930',
-              fast: 5,
-              slow: 20,
-              qty: 2,
-              limits: planLimits(state),
-              terms: {
-                kind: 'strategy',
-                strategyId: 'kis-macd-chandelier',
-                revision: 1,
-                startsAt: '2099-01-05T00:00:00.000Z',
-                endsAt: '2099-01-05T02:00:00.000Z',
-                maxOrderAmount: 100000,
-                maxAttempts: 1,
-                maxTotalAmount: 100000,
-                sellPolicy: 'deny',
-              },
-            },
-          },
-        },
+        active: activeContract,
+        canFix: !activeContract,
+        plans: activeContract ? {} : savedPlan ? { strategy: savedPlan } : {},
       },
     }),
   );
+  await page.route('**/api/trading-settings/draft', async route => {
+    posts.push('/api/trading-settings/draft');
+    const body = route.request().postDataJSON() as { terms: import('../../shared/trading-plan').TradingTerms };
+    const strategy = state.strategies.find(
+      s => body.terms.kind === 'strategy' && s.id === body.terms.strategyId,
+    )!;
+    savedPlan = {
+      draft: {
+        id: '11111111-2222-4333-8444-555555555555',
+        runId: 'run-macd-1',
+        fixed: false,
+        symbol: strategy.code,
+        fast: strategy.fast,
+        slow: strategy.slow,
+        qty: strategy.qty,
+        rule: strategy.rule,
+        overlay: strategy.overlay,
+        limits: planLimits(state),
+        terms: body.terms,
+      },
+    };
+    await route.fulfill({ json: { plan: savedPlan } });
+  });
 
-  // Major 2 (1단계): 다중 규칙 전략 선택 시 5/20 교차 오표시 금지, 실제 규칙명 표시, 레거시 복사 차단 및 한도·조건 진행
+  // 1단계: 실제 규칙 요약·확정 일봉 안내·5/20 교차 오표시 없음·레거시 복사 차단·한도·조건으로 활성
   await page.goto('/settings/trading/strategy/1?strategy=kis-macd-chandelier');
   await waitWorkbenchReady(page);
   await expect(page.getByLabel('저장 KIS 전략')).toHaveValue('kis-macd-chandelier');
   await expect(page.getByRole('main')).toContainText('MACD 히스토그램 · 샹들리에 ATR(14)×3');
+  await expect(page.getByRole('main')).toContainText(confirmedDailyNotice);
   await expect(page.getByRole('main')).not.toContainText('5/20 교차');
-  await expect(page.getByRole('main')).not.toContainText('백테스트 전용 규칙');
+  await expect(page.getByRole('main')).not.toContainText('계약 대상이 아닙니다');
   await expect(page.getByRole('button', { name: '종목·수량·교차 주기로 새 전략 만들기' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '한도·조건으로', exact: true })).toBeEnabled();
 
-  // Major 2 (2단계 직접 진입): 실제 규칙명과 초안 저장 가능 여부
-  await page.goto('/settings/trading/strategy/2?strategy=kis-macd-chandelier');
-  await waitWorkbenchReady(page);
+  await page.getByLabel('시작 (KST)').fill('2099-01-05T09:00');
+  await page.getByLabel('종료 (KST)').fill('2099-01-05T11:00');
+  await page.getByRole('button', { name: '한도·조건으로', exact: true }).click();
+
+  // 2단계: 실제 규칙 요약 및 초안 저장 진행
+  await expect(page).toHaveURL(/\/settings\/trading\/strategy\/2/);
   await expect(page.getByRole('main')).toContainText('MACD 히스토그램 · 샹들리에 ATR(14)×3');
   await expect(page.getByRole('button', { name: '초안 저장 및 검토', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: '초안 저장 및 검토', exact: true }).click();
 
-  // Major 2 (3단계 직접 진입): 저장 대상 5/20 오표시 없음, 실제 규칙명 표시 및 고정 가능
-  await page.goto('/settings/trading/strategy/3?strategy=kis-macd-chandelier');
-  await waitWorkbenchReady(page);
+  // 3단계: 저장 대상 실제 규칙 요약·검토 표 신호 규칙 행·5/20 오표시 없음·확정 일봉 안내·재열기 유지
+  await expect(page).toHaveURL(/\/settings\/trading\/strategy\/3/);
   await expect(page.getByRole('main')).toContainText('저장 대상 005930 · MACD 히스토그램 · 샹들리에 ATR(14)×3 · 2주');
+  await expect(page.getByRole('row', { name: /신호 규칙/ })).toContainText('MACD 히스토그램 · 샹들리에 ATR(14)×3');
+  await expect(page.getByRole('main')).toContainText(confirmedDailyNotice);
   await expect(page.getByRole('main')).not.toContainText('5/20');
   await expect(page.getByRole('button', { name: '다음 실행 고정', exact: true })).toBeEnabled();
-  expect(posts).toEqual([]);
+  expect(posts).toEqual(['/api/trading-settings/draft']);
 
-  // Minor 1: 1단계에서 '전략 스튜디오에서 이 설정으로 새 전략 만들기' 클릭 시 선택 다중 규칙·오버레이 초안이 채워져 열림
+  // 재열기(reload) 후에도 3단계 요약·확정 일봉 안내가 동일하게 유지됨
+  await page.reload();
+  await waitWorkbenchReady(page);
+  await expect(page.getByRole('main')).toContainText('저장 대상 005930 · MACD 히스토그램 · 샹들리에 ATR(14)×3 · 2주');
+  await expect(page.getByRole('row', { name: /신호 규칙/ })).toContainText('MACD 히스토그램 · 샹들리에 ATR(14)×3');
+  await expect(page.getByRole('main')).toContainText(confirmedDailyNotice);
+  await expect(page.getByRole('main')).not.toContainText('5/20');
+
+  // 상단 저장 계약 목차 배너 및 활성 계약(읽기 전용)에서도 실제 규칙 요약 표시
+  await page.goto('/settings/trading');
+  await waitWorkbenchReady(page);
+  await expect(page.getByRole('link', { name: /다음 전략 계약/ })).toContainText('MACD 히스토그램 · 샹들리에 ATR(14)×3');
+
+  activeContract = savedPlan!.draft.terms;
+  await page.reload();
+  await waitWorkbenchReady(page);
+  await expect(page.getByText('전용 실행 원장 · 읽기 전용')).toBeVisible();
+  await expect(page.getByRole('main')).toContainText('MACD 히스토그램 · 샹들리에 ATR(14)×3');
+  await expect(page.getByRole('main')).toContainText(confirmedDailyNotice);
+  await expect(page.getByRole('main')).not.toContainText('5/20');
+  activeContract = null;
+
+  // 1단계에서 '전략 스튜디오에서 이 설정으로 새 전략 만들기' 클릭 시 선택 다중 규칙·오버레이 초안이 채워져 열림
   await page.goto('/settings/trading/strategy/1?strategy=kis-macd-chandelier');
   await waitWorkbenchReady(page);
   await page.getByRole('link', { name: '전략 스튜디오에서 이 설정으로 새 전략 만들기' }).first().click();
@@ -1688,11 +1816,16 @@ test('3A-2: volatility_breakout 및 SMA+volatilityParity는 DEMO 저장·백테�
   const envBadges = page.getByLabel('환경별 사용 가능 여부');
   const ruleSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
 
-  // ma_crossover 기본 SMA + volatilityParity 체크 → 동적 경고 배지 & 저장 차단
+  // ma_crossover 기본 SMA + volatilityParity 체크 → DEMO·KIS 동적 경고 배지 & 저장 차단
   await expect(envBadges).toContainText('DEMO · 거래량 필터 끔');
   const parityCheck = page.getByLabel('20 변동성 패리티 · 목표 변동성 수량 조절 오버레이 (선택)');
   await parityCheck.check();
-  await expect(envBadges.locator('.badge.warning')).toContainText('DEMO · 현재 설정 제한 (저장 일봉 필요)');
+  await expect(
+    envBadges.locator('.badge.warning').filter({ hasText: 'DEMO · 현재 설정 제한 (저장 일봉 필요)' }),
+  ).toBeVisible();
+  await expect(
+    envBadges.locator('.badge.warning').filter({ hasText: 'KIS 모의 · 시작 제한 (정지 저장만 가능)' }),
+  ).toBeVisible();
   await page.getByLabel('전략 이름').fill('DEMO 패리티 차단');
   await page.getByRole('button', { name: '전략 저장', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('DEMO는 종가만 제공합니다');
@@ -1701,9 +1834,12 @@ test('3A-2: volatility_breakout 및 SMA+volatilityParity는 DEMO 저장·백테�
   await parityCheck.uncheck();
   await expect(envBadges).toContainText('DEMO · 거래량 필터 끔');
 
-  // volatility_breakout 선택 → DEMO 미지원 배지 & 저장 차단
+  // volatility_breakout 선택 → DEMO 미지원·KIS 시작 제한 배지 & 저장 차단
   await ruleSelect.selectOption('volatility_breakout');
   await expect(envBadges).toContainText('DEMO · 미지원');
+  await expect(
+    envBadges.locator('.badge.warning').filter({ hasText: 'KIS 모의 · 시작 제한 (정지 저장만 가능)' }),
+  ).toBeVisible();
   await page.getByLabel('전략 이름').fill('DEMO 돌파 차단');
   await page.getByRole('button', { name: '전략 저장', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('DEMO는 종가만 제공합니다');
@@ -1715,9 +1851,18 @@ test('3A-2: volatility_breakout 및 SMA+volatilityParity는 DEMO 저장·백테�
   await expect(btRun).toBeEnabled();
 
   await page.getByLabel('20 변동성 패리티 · 목표 변동성 수량 조절 오버레이 (선택)').check();
-  await expect(page.getByLabel('환경별 사용 가능 여부').locator('.badge.warning')).toContainText(
-    'DEMO · 현재 설정 제한 (저장 일봉 필요)',
-  );
+  await expect(
+    page
+      .getByLabel('환경별 사용 가능 여부')
+      .locator('.badge.warning')
+      .filter({ hasText: 'DEMO · 현재 설정 제한 (저장 일봉 필요)' }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByLabel('환경별 사용 가능 여부')
+      .locator('.badge.warning')
+      .filter({ hasText: 'KIS 모의 · 시작 제한 (정지 저장만 가능)' }),
+  ).toBeVisible();
   await btRun.click();
   await expect(page.getByRole('main').getByRole('alert')).toContainText('DEMO는 종가만 제공합니다');
 
@@ -1729,7 +1874,7 @@ test('3A-2: volatility_breakout 및 SMA+volatilityParity는 DEMO 저장·백테�
   expect(posts).toEqual([]);
 });
 
-test('3A-2: TradingSettings는 volatility_breakout 및 SMA+volatilityParity를 1-3단계 전면 차단하고 실제 요약·스튜디오 초안을 전달한다', async ({ page }) => {
+test('3B-2: TradingSettings는 미지원 3종(volatility_breakout, SMA+volatilityParity, 기본 무필터 SMA slow>100)을 1-3단계 전면 차단하고 실제 요약·스튜디오 초안을 전달한다', async ({ page }) => {
   const state = snapshot();
   state.strategies = [
     {
@@ -1769,28 +1914,46 @@ test('3A-2: TradingSettings는 volatility_breakout 및 SMA+volatilityParity를 1
       rule: { kind: 'ma_crossover', maType: 'sma', fast: 5, slow: 20 },
       overlay: { volatilityParity: { volLookback: 20, targetAnnualVolPct: 20, maxAllocationPct: 80 } },
     },
+    {
+      id: 'kis-sma-110',
+      name: 'KIS 기본 SMA 5/110',
+      code: '005930',
+      fast: 5,
+      slow: 110,
+      qty: 1,
+      active: false,
+      lastSignal: 'hold',
+      lastTick: -1,
+      environment: 'kis-paper',
+      revision: 1,
+      rule: { kind: 'ma_crossover', maType: 'sma', fast: 5, slow: 110 },
+    },
   ];
   const posts: string[] = [];
   page.on('request', req => {
     if (req.method() === 'POST') posts.push(new URL(req.url()).pathname);
   });
 
+  let activeDraftStrategyId = 'kis-sma-parity';
   await page.route('**/api/state', route => route.fulfill({ json: state }));
-  await page.route('**/api/trading-settings', route =>
-    route.fulfill({
+  await page.route('**/api/trading-settings', route => {
+    const target = state.strategies.find(s => s.id === activeDraftStrategyId)!;
+    return route.fulfill({
       json: {
         active: null,
         canFix: true,
         plans: {
           strategy: {
             draft: {
-              id: 'draft-sma-parity',
-              runId: 'run-sma-parity',
+              id: 'draft-blocked-strategy',
+              runId: 'run-blocked-strategy',
               fixed: false,
-              symbol: '005930',
-              fast: 5,
-              slow: 20,
-              qty: 2,
+              symbol: target.code,
+              fast: target.fast,
+              slow: target.slow,
+              qty: target.qty,
+              rule: target.rule,
+              overlay: target.overlay,
               limits: {
                 manualQty: 5,
                 maxOrder: 1000000,
@@ -1800,7 +1963,7 @@ test('3A-2: TradingSettings는 volatility_breakout 및 SMA+volatilityParity를 1
               },
               terms: {
                 kind: 'strategy',
-                strategyId: 'kis-sma-parity',
+                strategyId: target.id,
                 revision: 1,
                 startsAt: '2099-01-05T00:00:00.000Z',
                 endsAt: '2099-01-05T02:00:00.000Z',
@@ -1813,13 +1976,14 @@ test('3A-2: TradingSettings는 volatility_breakout 및 SMA+volatilityParity를 1
           },
         },
       },
-    }),
-  );
+    });
+  });
 
   // 1. SMA + volatilityParity: 1-3단계 차단 및 실제 규칙·오버레이 요약 표시(5/20 교차 오표시 없음)
   await page.goto('/settings/trading/strategy/1?strategy=kis-sma-parity');
   await waitWorkbenchReady(page);
   await expect(page.getByRole('main')).toContainText('이동평균 교차 (SMA 5/20) · 변동성 패리티(20일 · 목표 20% · 최대 80%)');
+  await expect(page.getByRole('main')).toContainText('윌리엄스 변동성 돌파와 변동성 패리티 수량 조절은 저장 일봉 백테스트 전용입니다.');
   await expect(page.getByRole('main')).not.toContainText('5/20 교차');
   await expect(page.getByRole('button', { name: '한도·조건으로', exact: true })).toBeDisabled();
 
@@ -1835,7 +1999,26 @@ test('3A-2: TradingSettings는 volatility_breakout 및 SMA+volatilityParity를 1
   );
   await expect(page.getByRole('button', { name: '다음 실행 고정', exact: true })).toBeDisabled();
 
-  // 2. volatility_breakout + volatilityParity: 1단계 요약·차단 및 스튜디오 초안 전달 확인
+  // 2. 무필터 기본 SMA slow > 100 (5/110): 1-3단계 전면 차단 및 차단 사유 확인
+  activeDraftStrategyId = 'kis-sma-110';
+  await page.goto('/settings/trading/strategy/1?strategy=kis-sma-110');
+  await waitWorkbenchReady(page);
+  await expect(page.getByRole('main')).toContainText('이동평균 교차 (SMA 5/110)');
+  await expect(page.getByRole('main')).toContainText('실시간 체결가 기본 SMA의 장기 기간은 100 이하여야 합니다.');
+  await expect(page.getByRole('button', { name: '한도·조건으로', exact: true })).toBeDisabled();
+
+  await page.goto('/settings/trading/strategy/2?strategy=kis-sma-110');
+  await waitWorkbenchReady(page);
+  await expect(page.getByRole('main')).toContainText('실시간 체결가 기본 SMA의 장기 기간은 100 이하여야 합니다.');
+  await expect(page.getByRole('button', { name: '초안 저장 및 검토', exact: true })).toBeDisabled();
+
+  await page.goto('/settings/trading/strategy/3?strategy=kis-sma-110');
+  await waitWorkbenchReady(page);
+  await expect(page.getByRole('main')).toContainText('저장 대상 005930 · 이동평균 교차 (SMA 5/110) · 1주');
+  await expect(page.getByRole('button', { name: '다음 실행 고정', exact: true })).toBeDisabled();
+
+  // 3. volatility_breakout + volatilityParity: 1단계 요약·차단 및 스튜디오 초안 전달 확인
+  activeDraftStrategyId = 'kis-vb-parity';
   await page.goto('/settings/trading/strategy/1?strategy=kis-vb-parity');
   await waitWorkbenchReady(page);
   await expect(page.getByRole('main')).toContainText('윌리엄스 변동성 돌파 · 변동성 패리티(20일 · 목표 15% · 최대 60%)');
@@ -1873,14 +2056,22 @@ test('3A-2: 도움말 13카드 사전·volatility_breakout·volatilityParity 문
     await expect(vbCard).toHaveCount(1);
     await expect(vbCard).toContainText('돌파 계수 k 0.5 / 적응형 노이즈 꺼짐 / 노이즈 20봉 / 추세 SMA 20봉 / 보유 1일');
     await expect(vbCard).toContainText('수익 미보장');
-    await expect(vbCard).toContainText('DEMO에서는 사용할 수 없습니다');
+    await expect(vbCard).toContainText('DEMO에서는 사용할 수 없고 KIS 모의에서는 정지 상태(active=false) 저장만 가능하며 시작·계약 고정은 차단됩니다.');
     await expect(vbCard).toContainText('max(시가, 목표가)');
+
+    const macdCard = cards.filter({ has: page.locator('code', { hasText: /^macd_momentum$/ }) });
+    await expect(macdCard).toContainText('KIS 모의(확정 일봉 기반 당일 1회)');
+    await expect(macdCard).toContainText('계약 고정 후 추가 수집 일봉 자동 미반영');
+
+    const chandelierCard = cards.filter({ has: page.locator('code', { hasText: /^chandelier$/ }) });
+    await expect(chandelierCard).toContainText('KIS 모의(확정 일봉 기반 당일 1회, 종가형 10종 결합)');
+    await expect(chandelierCard).toContainText('계약 고정 후 추가 수집 일봉 자동 미반영');
 
     const parityCard = cards.filter({ has: page.locator('code', { hasText: /^volatilityParity$/ }) });
     await expect(parityCard).toHaveCount(1);
     await expect(parityCard).toContainText('20 변동성 패리티 · RMS 포지션 사이징');
     await expect(parityCard).toContainText('관측 기간 20봉 / 목표 연환산 변동성 20% / 최대 배정 비중 100%');
-    await expect(parityCard).toContainText('DEMO에서는 사용할 수 없습니다');
+    await expect(parityCard).toContainText('DEMO에서는 사용할 수 없으며, KIS 모의에서는 정지 상태(active=false) 저장만 가능하고 시작·계약 고정은 차단됩니다.');
 
     // 문맥 가이드 전환 확인
     await page.getByRole('combobox', { name: '전략 규칙', exact: true }).selectOption('volatility_breakout');

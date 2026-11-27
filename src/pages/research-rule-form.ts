@@ -3,7 +3,9 @@ import { backtestResultSchema, type Experiment } from '../../shared/backtest';
 import { masterCodeSchema } from '../../shared/market-data';
 import {
   STRATEGY_CATALOG,
+  assertRealtimeRule,
   exitOverlaySchema,
+  isBasicRealtimeSma,
   strategyRuleSchema,
   type ExitOverlay,
   type StrategyRule,
@@ -945,45 +947,72 @@ export function isDemoRuleSupported(form: RuleFormState): boolean {
   return true;
 }
 
-/** KIS 모의 실시간 평가 및 계약(`strategyContractSchema`, slow <= 100)에서 즉시 시작 가능한 규칙인지 확인한다. */
-export function kisRealtimeBlockReason(rule?: StrategyRule, overlay?: ExitOverlay, slow?: number): string {
-  if (overlay?.chandelier || overlay?.volatilityParity) {
-    return '신규 다중 전략 규칙·오버레이는 장전 레벨 트리거 계약 연결 후 실시간 시작 가능합니다.';
-  }
-  if (!rule) {
-    return (slow ?? 0) > 100 ? 'KIS 모의 기본 SMA 계약은 장기 기간 100 이하만 지원합니다.' : '';
-  }
-  if (rule.kind !== 'ma_crossover' || rule.maType !== 'sma' || rule.regimePeriod || rule.minRelativeVolume) {
-    return '신규 다중 전략 규칙·오버레이는 장전 레벨 트리거 계약 연결 후 실시간 시작 가능합니다.';
-  }
-  if (rule.slow > 100) {
-    return 'KIS 모의 기본 SMA 계약은 장기 기간 100 이하만 지원합니다.';
-  }
-  return '';
+/** 폼 상태가 필터·오버레이 없는 기본 SMA인지 판정한다(`shared/strategy-rules` `unfilteredSma`와 동일 기준). */
+function isFormUnfilteredSma(form: RuleFormState): boolean {
+  return (
+    form.kind === 'ma_crossover' &&
+    form.maType === 'sma' &&
+    form.regimePeriod.trim() === '' &&
+    (form.minRelativeVolume.trim() === '' || Number(form.minRelativeVolume) <= 0)
+  );
 }
 
-/** 폼 상태에서 KIS 모의 기본 SMA 장기 기간 계약 상한(100) 초과 여부를 판정한다. */
+/** KIS 모의 계약·실시간 시작 차단 사유를 반환한다(`shared/strategy-rules` `assertRealtimeRule`과 100% 일치). */
+export function kisRealtimeBlockReason(rule?: StrategyRule, overlay?: ExitOverlay, slow?: number): string {
+  try {
+    assertRealtimeRule(rule, overlay, slow);
+    return '';
+  } catch (error) {
+    return error instanceof Error ? error.message : 'KIS 모의 실시간 시작을 지원하지 않는 규칙입니다.';
+  }
+}
+
+/** 저장 전략이 KIS 모의 확정 일봉 기반(종가 확정형 10종 + 선택 샹들리에)인지 판정한다. */
+export function isKisConfirmedDailyStrategy(
+  rule?: StrategyRule,
+  overlay?: ExitOverlay,
+  slow?: number,
+): boolean {
+  return kisRealtimeBlockReason(rule, overlay, slow) === '' && !isBasicRealtimeSma(rule, overlay, slow);
+}
+
+/** 폼 상태에서 KIS 모의 기본 무필터 SMA 장기 기간 계약 상한(100) 초과 여부를 판정한다. */
 export function isKisBasicSmaSlowExceeded(form: RuleFormState): boolean {
   return (
     !form.useChandelier &&
     !form.useVolatilityParity &&
-    form.kind === 'ma_crossover' &&
-    form.maType === 'sma' &&
-    form.regimePeriod.trim() === '' &&
-    (form.minRelativeVolume.trim() === '' || Number(form.minRelativeVolume) <= 0) &&
+    isFormUnfilteredSma(form) &&
     form.slow.trim() !== '' &&
     Number(form.slow) > 100
   );
 }
 
-/** 폼 상태에서 KIS 모의 실시간 즉시 시작 가능 여부를 판정한다. */
+/** 폼 상태에서 KIS 모의 계약·시작 지원 여부를 판정한다(`assertRealtimeRule`과 100% 일치). */
 export function isKisRealtimeFormSupported(form: RuleFormState): boolean {
-  if (form.useChandelier || form.useVolatilityParity) return false;
-  if (form.kind !== 'ma_crossover') return false;
-  if (form.maType !== 'sma') return false;
-  if (form.regimePeriod.trim() !== '') return false;
-  if (form.minRelativeVolume.trim() !== '' && Number(form.minRelativeVolume) > 0) return false;
+  if (form.kind === 'volatility_breakout' || form.useVolatilityParity) return false;
+  if (isKisBasicSmaSlowExceeded(form)) return false;
   return true;
+}
+
+/** 폼 상태의 KIS 모의 실행 모드를 분류한다. */
+export type KisFormExecutionMode = 'realtime-tick' | 'confirmed-daily' | 'unsupported';
+
+/** 폼 상태에서 KIS 모의 실행 모드를 반환한다. */
+export function kisFormExecutionMode(form: RuleFormState): KisFormExecutionMode {
+  if (!isKisRealtimeFormSupported(form)) return 'unsupported';
+  if (!form.useChandelier && isFormUnfilteredSma(form)) return 'realtime-tick';
+  return 'confirmed-daily';
+}
+
+/** 폼 상태에서 KIS 모의 시작 제한 사유를 반환한다(지원 설정이면 빈 문자열). */
+export function kisFormBlockReason(form: RuleFormState): string {
+  if (form.kind === 'volatility_breakout' || form.useVolatilityParity) {
+    return '윌리엄스 변동성 돌파와 변동성 패리티 수량 조절은 저장 일봉 백테스트 전용입니다.';
+  }
+  if (isKisBasicSmaSlowExceeded(form)) {
+    return '실시간 체결가 기본 SMA의 장기 기간은 100 이하여야 합니다.';
+  }
+  return '';
 }
 
 /** 저장된 실험 입력에서 표준 StrategyRule을 추출한다. */
