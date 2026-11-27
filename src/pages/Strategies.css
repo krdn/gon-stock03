@@ -43,6 +43,14 @@
 
 /* 다중 전략 규칙 안내·프리셋·오버레이 공통 스타일 */
 .rule-config { min-width: 0; margin: 6px 0 10px; }
+.rule-selector-wrap { margin-bottom: 10px; min-width: 0; }
+.rule-selector-wrap .rule-selector-field { margin-bottom: 4px; min-width: 0; }
+.rule-selector-field select { width: 100%; max-width: 100%; min-width: 0; }
+.rule-selector-meta { margin: 0; font-size: 11px; color: var(--muted); line-height: 1.45; }
+.rule-option-row {
+  margin: 4px 0 10px; padding: 8px 10px; border-radius: 6px;
+  border: 1px solid #e2ebe8; background: #f8fbfa;
+}
 .rule-guide {
   margin: 8px 0 10px; padding: 10px 12px; border-radius: 6px;
   background: #f5f8f7; border: 1px solid #e1eae7; font-size: 12px; line-height: 1.55;
@@ -51,6 +59,7 @@
 .rule-guide-lines li { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 8px; align-items: baseline; }
 .rule-guide-lines strong { color: #195e55; font-size: 11px; }
 .rule-env-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.rule-env-badges .badge.warning { background: #fff0e7; color: #8c351e; font-weight: 600; }
 .rule-presets {
   display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
   gap: 8px; margin: 0 0 10px;
@@ -81,10 +90,17 @@
 .rule-field-help-content {
   margin-top: 8px; padding-top: 8px; border-top: 1px solid #e2ebe8;
 }
+.rule-field-help-env {
+  margin: 0 0 6px; font-size: 11px; font-weight: 600; color: #195e55; line-height: 1.45;
+}
 .rule-field-help-summary { margin: 0 0 6px; color: #3d515c; font-size: 12px; }
 .rule-field-help-preset {
   margin: 0 0 8px; padding: 5px 8px; border-radius: 4px;
   background: #edf5f2; color: #195e55; font-size: 11px; line-height: 1.5;
+}
+.rule-field-help-exec {
+  margin: 0 0 8px; padding: 6px 8px; border-radius: 4px;
+  background: #f3f7f6; border-left: 2px solid #8eb5ad; color: #314651; font-size: 11px; line-height: 1.5;
 }
 .rule-field-help-overlay-title {
   margin: 10px 0 6px; padding-top: 8px; border-top: 1px dashed #d6e2de;
@@ -150,10 +166,17 @@
   margin-left: 4px; padding: 1px 5px; border-radius: 4px;
   background: #eaf1ef; color: #145b52; font-size: 11px; font-weight: 500;
 }
+.research-help .research-help-env-line {
+  margin: 0 0 6px; font-size: 11px; font-weight: 600; color: #195e55; line-height: 1.45;
+}
 .research-help .research-help-card-note { margin: 0 0 8px; color: #4c5f6b; }
 .research-help .research-help-preset {
   margin: 0 0 8px; padding: 5px 8px; border-radius: 4px;
   background: #edf5f2; color: #195e55; font-size: 11px; line-height: 1.5;
+}
+.research-help .research-help-exec-note {
+  margin: 0 0 8px; padding: 6px 8px; border-radius: 4px;
+  background: #f3f7f6; border-left: 2px solid #8eb5ad; color: #314651; font-size: 11px; line-height: 1.5;
 }
 .research-help-dl { margin: 0; display: grid; gap: 8px; }
 .research-help-dl > div { min-width: 0; }

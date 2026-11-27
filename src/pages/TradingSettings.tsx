@@ -11,6 +11,7 @@ import {
   type TradingTerms,
 } from '../../shared/trading-plan';
 import { won, type Strategy } from '../../shared/model';
+import { STRATEGY_CATALOG, assertRealtimeRule } from '../../shared/strategy-rules';
 import { Panel } from '../components/ui';
 import { PaperQuantitySetting } from '../components/PaperQuantitySetting';
 import { RiskLimitSettings } from '../components/RiskLimitSettings';
@@ -22,6 +23,41 @@ import './trading-settings-v2.css';
 
 const home = '/settings/trading';
 const titles = { general: '일반 주문·위험', once: '다음 한정 실행', strategy: '다음 전략 계약' };
+
+/** KIS 모의 실시간 시작 계약(`assertRealtimeRule` + 기본 SMA 장기 100 이하) 지원 여부. */
+function isKisContractSupported(strategy: Strategy): boolean {
+  try {
+    assertRealtimeRule(strategy.rule, strategy.overlay);
+  } catch {
+    return false;
+  }
+  const slow = strategy.rule?.kind === 'ma_crossover' ? strategy.rule.slow : strategy.slow;
+  return slow <= 100;
+}
+
+/** 저장 전략의 실제 규칙·필터·오버레이 요약을 반환한다(다중 규칙을 5/20 교차로 오표시하지 않음). */
+function formatTradingStrategyRule(strategy: Strategy): string {
+  const { rule, overlay } = strategy;
+  const parts: string[] = [];
+  if (!rule) {
+    parts.push(`${strategy.fast}/${strategy.slow} 교차`);
+  } else if (rule.kind === 'ma_crossover') {
+    const basic = isKisContractSupported(strategy);
+    if (basic) {
+      parts.push(`${rule.fast}/${rule.slow} 교차`);
+    } else {
+      parts.push(`${STRATEGY_CATALOG.ma_crossover.title} (${rule.maType.toUpperCase()} ${rule.fast}/${rule.slow})`);
+      if (rule.regimePeriod) parts.push(`추세선 ${rule.regimePeriod}봉`);
+      if (rule.minRelativeVolume) parts.push(`상대거래량 ${rule.minRelativeVolume}배+`);
+    }
+  } else {
+    parts.push(STRATEGY_CATALOG[rule.kind].title);
+  }
+  if (overlay?.chandelier) {
+    parts.push(`샹들리에 ATR(${overlay.chandelier.atrPeriod})×${overlay.chandelier.atrMultiplier}`);
+  }
+  return parts.join(' · ');
+}
 const stages = ['대상·기간', '한도·조건', '검토·고정'];
 const kst = (value: string) =>
   Number.isFinite(Date.parse(value)) ? new Date(Date.parse(value) + 9 * 3600000).toISOString().slice(0, 16) : '';
@@ -255,6 +291,23 @@ function Editor({
   }, [step]);
   const locked = busy || checking || !available || base !== id;
   const selected = terms.kind === 'strategy' ? strategies.find((s) => s.id === terms.strategyId) : undefined;
+  const selectedUnsupported = Boolean(selected && !isKisContractSupported(selected));
+  const savedStrategyId = initial?.terms.kind === 'strategy' ? initial.terms.strategyId : undefined;
+  const savedStrategy = savedStrategyId ? strategies.find((s) => s.id === savedStrategyId) : undefined;
+  const studioDraftState = selected
+    ? {
+        backtestDraft: {
+          code: selected.code,
+          rule: selected.rule ?? {
+            kind: 'ma_crossover' as const,
+            maType: 'sma' as const,
+            fast: selected.fast,
+            slow: selected.slow,
+          },
+          ...(selected.overlay ? { overlay: selected.overlay } : {}),
+        },
+      }
+    : undefined;
   const mismatch = available && terms.kind === 'strategy' && (!selected || selected.revision !== terms.revision);
   const parsedTerms = tradingTerms.safeParse(terms);
   const saved = !!initial && parsedTerms.success &&
@@ -285,6 +338,10 @@ function Editor({
   async function advance(e: FormEvent) {
     e.preventDefault();
     if (locked) return;
+    if (selectedUnsupported) {
+      setError('백테스트 전용 다중 규칙·오버레이·장기 100 초과 전략은 KIS 모의 실시간 계약으로 진행하거나 저장할 수 없습니다.');
+      return;
+    }
     if (mismatch) {
       setError('현재 revision의 저장 전략을 다시 선택하세요.');
       return;
@@ -377,6 +434,17 @@ function Editor({
       <form onSubmit={advance}>
         <fieldset className="plan-fields" disabled={locked}>
           {step > 1 && mismatch && <p role="alert">저장 전략을 확인할 수 없거나 revision이 변경됐습니다. 대상·기간에서 다시 선택하세요.</p>}
+          {step > 1 && selectedUnsupported && selected && (
+            <div role="alert" className="plan-phase">
+              <p>
+                선택한 전략({selected.name} · {formatTradingStrategyRule(selected)})은 백테스트 전용 규칙(또는 기본 SMA
+                장기 100 초과·필터·오버레이 포함)으로 KIS 모의 실시간 시작 계약 대상이 아닙니다.
+              </p>
+              <p>
+                <Link to={home + '/strategy/1' + locationSearch()}>대상·기간(1단계)으로 돌아가기</Link>
+              </p>
+            </div>
+          )}
           {step === 1 && terms.kind === 'once' && (
             <>
               <label className="field">
@@ -477,7 +545,10 @@ function Editor({
                   value={terms.strategyId}
                   onChange={(e) => {
                     const s = strategies.find((v) => v.id === e.target.value);
-                    if (s) edit({ ...terms, strategyId: s.id, revision: s.revision ?? 1 });
+                    if (s) {
+                      if (!isKisContractSupported(s)) setNewStrategy(null);
+                      edit({ ...terms, strategyId: s.id, revision: s.revision ?? 1 });
+                    }
                   }}
                 >
                   <option value="">전략 선택</option>
@@ -489,10 +560,22 @@ function Editor({
                 </select>
               </label>
               {available && selected && (
-                <p>
-                  {selected.code} · revision {selected.revision} · {selected.fast}/{selected.slow} 교차 · {selected.qty}
-                  주
-                </p>
+                <>
+                  <p>
+                    {selected.code} · revision {selected.revision} · {formatTradingStrategyRule(selected)} ·{' '}
+                    {selected.qty}주
+                  </p>
+                  {selectedUnsupported && (
+                    <p role="status">
+                      이 전략은 백테스트 전용 규칙(또는 기본 SMA 장기 100 초과·필터·오버레이 포함)으로 KIS 모의 실시간
+                      시작 계약 대상이 아닙니다. 이 설정을 바탕으로 새 전략을 만들려면{' '}
+                      <Link to="/strategies?environment=kis-paper#strategy-editor" state={studioDraftState}>
+                        전략 스튜디오에서 이 설정으로 새 전략 만들기
+                      </Link>
+                      를 이용하세요.
+                    </p>
+                  )}
+                </>
               )}
               {mismatch && (
                 <p role="status">
@@ -505,72 +588,83 @@ function Editor({
                   )}
                 </p>
               )}
-              <button
-                type="button"
-                className="button secondary"
-                onClick={() =>
-                  setNewStrategy(
-                    newStrategy
-                      ? null
-                      : {
-                          name: selected ? selected.name + ' 복사' : '모의 교차 전략',
-                          code: selected?.code ?? '005930',
-                          qty: selected?.qty ?? 1,
-                          fast: selected?.fast ?? 2,
-                          slow: selected?.slow ?? 3,
-                        },
-                  )
-                }
-              >
-                {newStrategy ? '전략 입력 닫기' : '종목·수량·교차 주기로 새 전략 만들기'}
-              </button>
-              {newStrategy && (
-                <fieldset className="plan-fields">
-                  <legend>새 KIS 전략</legend>
-                  <label className="field">
-                    전략 이름
-                    <input
-                      value={newStrategy.name}
-                      onChange={(e) => setNewStrategy({ ...newStrategy, name: e.target.value })}
-                    />
-                  </label>
-                  <label className="field">
-                    전략 종목코드
-                    <input
-                      maxLength={6}
-                      value={newStrategy.code}
-                      onChange={(e) => setNewStrategy({ ...newStrategy, code: e.target.value })}
-                    />
-                  </label>
-                  {(['qty', 'fast', 'slow'] as const).map((k, i) => (
-                    <NumberField
-                      key={k}
-                      label={['신호당 수량 (주)', '단기 주기', '장기 주기'][i]}
-                      value={newStrategy[k]}
-                      min={[1, 2, 3][i]}
-                      max={[10000, 60, 100][i]}
-                      onChange={(value) => setNewStrategy({ ...newStrategy, [k]: value })}
-                    />
-                  ))}
+              {selectedUnsupported ? (
+                <p className="muted">
+                  다중 규칙·오버레이 전략은 기본 SMA 빠른 복사 대상이 아닙니다.{' '}
+                  <Link to="/strategies?environment=kis-paper#strategy-editor" state={studioDraftState}>
+                    전략 스튜디오에서 이 설정으로 새 전략 만들기
+                  </Link>
+                </p>
+              ) : (
+                <>
                   <button
                     type="button"
                     className="button secondary"
-                    onClick={async () => {
-                      try {
-                        const result = await act<{ id: string; revision: number }>('strategies', {
-                          ...newStrategy,
-                          environment: 'kis-paper',
-                        });
-                        edit({ ...terms, strategyId: result.id, revision: result.revision });
-                        setNewStrategy(null);
-                      } catch (e) {
-                        setError(e instanceof Error ? e.message : '전략 저장 실패');
-                      }
-                    }}
+                    onClick={() =>
+                      setNewStrategy(
+                        newStrategy
+                          ? null
+                          : {
+                              name: selected ? selected.name + ' 복사' : '모의 교차 전략',
+                              code: selected?.code ?? '005930',
+                              qty: selected?.qty ?? 1,
+                              fast: selected?.fast ?? 2,
+                              slow: selected?.slow ?? 3,
+                            },
+                      )
+                    }
                   >
-                    정지 상태로 저장하고 선택
+                    {newStrategy ? '전략 입력 닫기' : '종목·수량·교차 주기로 새 전략 만들기'}
                   </button>
-                </fieldset>
+                  {newStrategy && (
+                    <fieldset className="plan-fields">
+                      <legend>새 KIS 전략</legend>
+                      <label className="field">
+                        전략 이름
+                        <input
+                          value={newStrategy.name}
+                          onChange={(e) => setNewStrategy({ ...newStrategy, name: e.target.value })}
+                        />
+                      </label>
+                      <label className="field">
+                        전략 종목코드
+                        <input
+                          maxLength={6}
+                          value={newStrategy.code}
+                          onChange={(e) => setNewStrategy({ ...newStrategy, code: e.target.value })}
+                        />
+                      </label>
+                      {(['qty', 'fast', 'slow'] as const).map((k, i) => (
+                        <NumberField
+                          key={k}
+                          label={['신호당 수량 (주)', '단기 주기', '장기 주기'][i]}
+                          value={newStrategy[k]}
+                          min={[1, 2, 3][i]}
+                          max={[10000, 60, 100][i]}
+                          onChange={(value) => setNewStrategy({ ...newStrategy, [k]: value })}
+                        />
+                      ))}
+                      <button
+                        type="button"
+                        className="button secondary"
+                        onClick={async () => {
+                          try {
+                            const result = await act<{ id: string; revision: number }>('strategies', {
+                              ...newStrategy,
+                              environment: 'kis-paper',
+                            });
+                            edit({ ...terms, strategyId: result.id, revision: result.revision });
+                            setNewStrategy(null);
+                          } catch (e) {
+                            setError(e instanceof Error ? e.message : '전략 저장 실패');
+                          }
+                        }}
+                      >
+                        정지 상태로 저장하고 선택
+                      </button>
+                    </fieldset>
+                  )}
+                </>
               )}
               {(['startsAt', 'endsAt'] as const).map((field, i) => (
                 <label className="field" key={field}>
@@ -763,7 +857,11 @@ function Editor({
               </div>
               {saved && initial?.symbol && (
                 <p>
-                  저장 대상 {initial.symbol} · {initial.fast}/{initial.slow} · {initial.qty}주
+                  저장 대상 {initial.symbol} ·{' '}
+                  {savedStrategy && !isKisContractSupported(savedStrategy)
+                    ? formatTradingStrategyRule(savedStrategy)
+                    : `${initial.fast}/${initial.slow}`}{' '}
+                  · {initial.qty}주
                 </p>
               )}
               {initial?.limits && (
@@ -797,7 +895,7 @@ function Editor({
             {(step < 3 || !initial?.fixed || !saved) && (
               <button
                 className="button primary"
-                disabled={mismatch || (step === 3 && (!data.canFix || !saved || limitsChanged))}
+                disabled={mismatch || selectedUnsupported || (step === 3 && (!data.canFix || !saved || limitsChanged))}
               >
                 {['한도·조건으로', '초안 저장 및 검토', '다음 실행 고정'][step - 1]}
               </button>
