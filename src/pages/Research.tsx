@@ -6,7 +6,7 @@ import { Badge, Chart, Panel, Stat } from '../components/ui';
 import { won, type Strategy } from '../../shared/model';
 import { codeSchema } from '../../shared/contracts';
 import { dailyRunsSchema } from '../../shared/data-inventory';
-import type { DailyRun } from '../../shared/market-data';
+import { masterCodeSchema, type DailyRun } from '../../shared/market-data';
 import {
   experimentListSchema,
   experimentSchema,
@@ -53,7 +53,7 @@ const evidenceSchema = z.strictObject({
 type StrategyEvidence = z.infer<typeof evidenceSchema>;
 
 const strategyTransferSchema = z.object({
-  code: codeSchema,
+  code: masterCodeSchema,
   rule: strategyRuleSchema,
   overlay: exitOverlaySchema.optional(),
   evidence: evidenceSchema.optional(),
@@ -241,8 +241,11 @@ function buildRuleAndOverlay(
   if (form.kind === 'ma_crossover') {
     const fast = Number(form.fast);
     const slow = Number(form.slow);
-    if (!Number.isInteger(fast) || !Number.isInteger(slow)) {
-      return { ok: false, error: '단기·장기 기간은 정수로 입력하세요.', focusName: 'fast' };
+    if (form.fast.trim() === '' || !Number.isInteger(fast) || fast < 2 || fast > 60) {
+      return { ok: false, error: '단기 기간은 2-60 사이의 정수로 입력하세요.', focusName: 'fast' };
+    }
+    if (form.slow.trim() === '' || !Number.isInteger(slow) || slow < 3 || slow > 120) {
+      return { ok: false, error: '장기 기간은 3-120 사이의 정수로 입력하세요.', focusName: 'slow' };
     }
     if (fast >= slow) {
       return { ok: false, error: '단기 기간은 장기 기간보다 작아야 합니다.', focusName: 'fast' };
@@ -255,28 +258,66 @@ function buildRuleAndOverlay(
       fast,
       slow,
     };
-    if (trimmedRegime !== '') maRule.regimePeriod = Number(trimmedRegime);
-    if (trimmedVol !== '' && Number(trimmedVol) > 0) maRule.minRelativeVolume = Number(trimmedVol);
+    if (trimmedRegime !== '') {
+      const regime = Number(trimmedRegime);
+      if (!Number.isInteger(regime) || regime < 20 || regime > 240) {
+        return { ok: false, error: '장기 추세 필터는 20-240 사이의 정수로 입력하세요.', focusName: 'regimePeriod' };
+      }
+      maRule.regimePeriod = regime;
+    }
+    if (trimmedVol !== '') {
+      const vol = Number(trimmedVol);
+      if (!Number.isFinite(vol) || vol < 0 || vol > 5) {
+        return { ok: false, error: '최소 상대 거래량은 0-5 범위의 숫자로 입력하세요.', focusName: 'minRelativeVolume' };
+      }
+      if (vol > 0) maRule.minRelativeVolume = vol;
+    }
     rawRule = maRule;
   } else if (form.kind === 'donchian_breakout') {
     const entryLookback = Number(form.entryLookback);
     const exitLookback = Number(form.exitLookback);
     const volumeMultiplier = Number(form.volumeMultiplier);
-    if (!Number.isInteger(entryLookback) || !Number.isInteger(exitLookback)) {
-      return { ok: false, error: '진입·청산 기간은 정수로 입력하세요.', focusName: 'entryLookback' };
+    if (form.entryLookback.trim() === '' || !Number.isInteger(entryLookback) || entryLookback < 10 || entryLookback > 120) {
+      return { ok: false, error: '진입 고가 기간은 10-120 사이의 정수로 입력하세요.', focusName: 'entryLookback' };
+    }
+    if (form.exitLookback.trim() === '' || !Number.isInteger(exitLookback) || exitLookback < 3 || exitLookback > 60) {
+      return { ok: false, error: '청산 저가 기간은 3-60 사이의 정수로 입력하세요.', focusName: 'exitLookback' };
     }
     if (exitLookback >= entryLookback) {
       return { ok: false, error: '청산 기간은 진입 기간보다 작아야 합니다.', focusName: 'exitLookback' };
     }
+    if (form.volumeMultiplier.trim() === '' || !Number.isFinite(volumeMultiplier) || volumeMultiplier < 0.5 || volumeMultiplier > 5) {
+      return { ok: false, error: '최소 거래량 배수는 0.5-5 범위의 숫자로 입력하세요.', focusName: 'volumeMultiplier' };
+    }
     rawRule = { kind: 'donchian_breakout', entryLookback, exitLookback, volumeMultiplier };
   } else {
+    const rsiPeriod = Number(form.rsiPeriod);
+    const oversoldThreshold = Number(form.oversoldThreshold);
+    const longTrendMa = Number(form.longTrendMa);
+    const exitShortMa = Number(form.exitShortMa);
+    const maxHoldingDays = Number(form.maxHoldingDays);
+    if (form.rsiPeriod.trim() === '' || !Number.isInteger(rsiPeriod) || rsiPeriod < 2 || rsiPeriod > 5) {
+      return { ok: false, error: 'RSI 기간은 2-5 사이의 정수로 입력하세요.', focusName: 'rsiPeriod' };
+    }
+    if (form.oversoldThreshold.trim() === '' || !Number.isFinite(oversoldThreshold) || oversoldThreshold < 2 || oversoldThreshold > 25) {
+      return { ok: false, error: '과매도 기준은 2-25 범위의 숫자로 입력하세요.', focusName: 'oversoldThreshold' };
+    }
+    if (form.longTrendMa.trim() === '' || !Number.isInteger(longTrendMa) || longTrendMa < 60 || longTrendMa > 240) {
+      return { ok: false, error: '장기 추세선은 60-240 사이의 정수로 입력하세요.', focusName: 'longTrendMa' };
+    }
+    if (form.exitShortMa.trim() === '' || !Number.isInteger(exitShortMa) || exitShortMa < 3 || exitShortMa > 10) {
+      return { ok: false, error: '청산 단기선은 3-10 사이의 정수로 입력하세요.', focusName: 'exitShortMa' };
+    }
+    if (form.maxHoldingDays.trim() === '' || !Number.isInteger(maxHoldingDays) || maxHoldingDays < 3 || maxHoldingDays > 20) {
+      return { ok: false, error: '최대 보유 기간은 3-20 사이의 정수로 입력하세요.', focusName: 'maxHoldingDays' };
+    }
     rawRule = {
       kind: 'rsi2_pullback',
-      rsiPeriod: Number(form.rsiPeriod),
-      oversoldThreshold: Number(form.oversoldThreshold),
-      longTrendMa: Number(form.longTrendMa),
-      exitShortMa: Number(form.exitShortMa),
-      maxHoldingDays: Number(form.maxHoldingDays),
+      rsiPeriod,
+      oversoldThreshold,
+      longTrendMa,
+      exitShortMa,
+      maxHoldingDays,
     };
   }
 
@@ -287,14 +328,19 @@ function buildRuleAndOverlay(
 
   let overlay: ExitOverlay | undefined;
   if (form.useChandelier) {
+    const atrPeriod = Number(form.atrPeriod);
+    const atrMultiplier = Number(form.atrMultiplier);
+    if (form.atrPeriod.trim() === '' || !Number.isInteger(atrPeriod) || atrPeriod < 7 || atrPeriod > 30) {
+      return { ok: false, error: '샹들리에 청산 ATR 기간은 7-30 사이의 정수로 입력하세요.', focusName: 'atrPeriod' };
+    }
+    if (form.atrMultiplier.trim() === '' || !Number.isFinite(atrMultiplier) || atrMultiplier < 1.5 || atrMultiplier > 5) {
+      return { ok: false, error: '샹들리에 청산 ATR 배수는 1.5-5 범위의 숫자로 입력하세요.', focusName: 'atrMultiplier' };
+    }
     const parsedOverlay = exitOverlaySchema.safeParse({
-      chandelier: {
-        atrPeriod: Number(form.atrPeriod),
-        atrMultiplier: Number(form.atrMultiplier),
-      },
+      chandelier: { atrPeriod, atrMultiplier },
     });
     if (!parsedOverlay.success) {
-      return { ok: false, error: '샹들리에 청산은 ATR 기간 7-30, 배수 1.5-5 범위로 입력하세요.' };
+      return { ok: false, error: '샹들리에 청산은 ATR 기간 7-30, 배수 1.5-5 범위로 입력하세요.', focusName: 'atrPeriod' };
     }
     overlay = parsedOverlay.data;
   }
@@ -327,11 +373,34 @@ function isDemoRuleSupported(form: RuleFormState): boolean {
   return true;
 }
 
-/** KIS 모의 실시간 평가에서 즉시 시작 가능한 규칙 조합인지 확인한다. */
-function isKisRealtimeSupported(rule?: StrategyRule, overlay?: ExitOverlay): boolean {
-  if (overlay?.chandelier) return false;
-  if (!rule) return true;
-  return rule.kind === 'ma_crossover' && rule.maType === 'sma' && !rule.regimePeriod && !rule.minRelativeVolume;
+/** KIS 모의 실시간 평가 및 계약(`strategyContractSchema`, slow <= 100)에서 즉시 시작 가능한 규칙인지 확인한다. */
+function kisRealtimeBlockReason(rule?: StrategyRule, overlay?: ExitOverlay, slow?: number): string {
+  if (overlay?.chandelier) {
+    return '신규 다중 전략 규칙·오버레이는 장전 레벨 트리거 계약 연결 후 실시간 시작 가능합니다.';
+  }
+  if (!rule) {
+    return (slow ?? 0) > 100 ? 'KIS 모의 기본 SMA 계약은 장기 기간 100 이하만 지원합니다.' : '';
+  }
+  if (rule.kind !== 'ma_crossover' || rule.maType !== 'sma' || rule.regimePeriod || rule.minRelativeVolume) {
+    return '신규 다중 전략 규칙·오버레이는 장전 레벨 트리거 계약 연결 후 실시간 시작 가능합니다.';
+  }
+  if (rule.slow > 100) {
+    return 'KIS 모의 기본 SMA 계약은 장기 기간 100 이하만 지원합니다.';
+  }
+  return '';
+}
+
+/** 폼 상태에서 KIS 모의 기본 SMA 장기 기간 계약 상한(100) 초과 여부를 판정한다. */
+function isKisBasicSmaSlowExceeded(form: RuleFormState): boolean {
+  return (
+    !form.useChandelier &&
+    form.kind === 'ma_crossover' &&
+    form.maType === 'sma' &&
+    form.regimePeriod.trim() === '' &&
+    (form.minRelativeVolume.trim() === '' || Number(form.minRelativeVolume) <= 0) &&
+    form.slow.trim() !== '' &&
+    Number(form.slow) > 100
+  );
 }
 
 /** 폼 상태에서 KIS 모의 실시간 즉시 시작 가능 여부를 판정한다. */
@@ -708,13 +777,62 @@ function RuleConfigSection({
   );
 }
 
+/** 환경 전환 시에도 편집값과 해제된 evidence 상태를 보존하는 전략 에디터 초안 상태. */
+interface StrategyEditorDraft {
+  name: string;
+  code: string;
+  ruleForm: RuleFormState;
+  evidence?: StrategyEvidence;
+  qty: string;
+  attempted: boolean;
+  formError: string;
+  draftSourceCode?: string;
+}
+
+function defaultEditorDraft(): StrategyEditorDraft {
+  return {
+    name: '나의 이동평균 전략',
+    code: '069500',
+    ruleForm: defaultRuleForm(),
+    evidence: undefined,
+    qty: '1',
+    attempted: false,
+    formError: '',
+    draftSourceCode: undefined,
+  };
+}
+
+function editorDraftFromTransfer(draft: StrategyTransferDraft): StrategyEditorDraft {
+  return {
+    name: `${STRATEGY_CATALOG[draft.rule.kind].title} 전략`,
+    code: draft.code,
+    ruleForm: formFromRule(draft.rule, draft.overlay),
+    evidence: draft.evidence,
+    qty: '1',
+    attempted: false,
+    formError: '',
+    draftSourceCode: draft.code,
+  };
+}
+
 /** 전략 스튜디오 최상위 페이지 (`/strategies`). */
 export function Strategies() {
   const [params, setParams] = useSearchParams();
   const { busy, available } = useWorkbench();
   const environment = params.get('environment') === 'kis-paper' ? 'kis-paper' : 'demo';
   const location = useLocation();
-  const backtestDraft = parseTransferDraft((location.state as { backtestDraft?: unknown } | null)?.backtestDraft);
+  const routerDraft = parseTransferDraft((location.state as { backtestDraft?: unknown } | null)?.backtestDraft);
+  const [editorDraft, setEditorDraft] = useState<StrategyEditorDraft>(() =>
+    routerDraft ? editorDraftFromTransfer(routerDraft) : defaultEditorDraft(),
+  );
+  const consumedDraftKey = useRef(routerDraft ? location.key : '');
+
+  useEffect(() => {
+    if (!routerDraft || consumedDraftKey.current === location.key) return;
+    consumedDraftKey.current = location.key;
+    setEditorDraft(editorDraftFromTransfer(routerDraft));
+  }, [routerDraft, location.key]);
+
   return (
     <section className="strategy-studio" aria-label="전략 작업">
       <div className="studio-tools">
@@ -726,7 +844,8 @@ export function Strategies() {
             onChange={e => {
               const next = new URLSearchParams(params);
               next.set('environment', e.target.value);
-              setParams(next, backtestDraft ? { state: { backtestDraft } } : undefined);
+              setEditorDraft(prev => ({ ...prev, attempted: false, formError: '' }));
+              setParams(next);
             }}
           >
             <option value="demo">DEMO 합성 봉</option>
@@ -740,8 +859,8 @@ export function Strategies() {
       <StrategyStudio
         key={environment}
         environment={environment}
-        backtestDraft={backtestDraft}
-        draftKey={location.key}
+        editorDraft={editorDraft}
+        setEditorDraft={setEditorDraft}
       />
     </section>
   );
@@ -749,12 +868,12 @@ export function Strategies() {
 
 function StrategyStudio({
   environment,
-  backtestDraft,
-  draftKey,
+  editorDraft,
+  setEditorDraft,
 }: {
   environment: StrategyEnvironment;
-  backtestDraft: StrategyTransferDraft | null;
-  draftKey: string;
+  editorDraft: StrategyEditorDraft;
+  setEditorDraft: React.Dispatch<React.SetStateAction<StrategyEditorDraft>>;
 }) {
   const kis = environment === 'kis-paper';
   const { state, act, busy, available, server, status } = useWorkbench();
@@ -885,7 +1004,12 @@ function StrategyStudio({
           )}
         </details>
       </div>
-      <StrategyEditor environment={environment} onSaved={setSavedId} backtestDraft={backtestDraft} draftKey={draftKey} />
+      <StrategyEditor
+        environment={environment}
+        onSaved={setSavedId}
+        draft={editorDraft}
+        setDraft={setEditorDraft}
+      />
     </div>
   );
 }
@@ -896,10 +1020,12 @@ function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: boolean }
   const instrument = state.instruments.find(i => i.code === s.code);
   const quoteAge = realtime?.lastQuoteAt ? serverNow - Date.parse(realtime.lastQuoteAt) : Infinity;
   const freshQuote = quoteAge >= 0 && quoteAge <= (realtime?.quoteSeconds ?? 5) * 1000;
+  const kisRuleBlock = kis ? kisRealtimeBlockReason(s.rule, s.overlay, s.slow) : '';
   let blocked = '';
   if (state.risk.halted) blocked = '긴급정지 켜짐';
   else if (kis) {
-    if (!realtime?.fresh || !realtime.ordersAllowed) blocked = realtime?.message || '실시간 상태 미확인';
+    if (kisRuleBlock) blocked = kisRuleBlock;
+    else if (!realtime?.fresh || !realtime.ordersAllowed) blocked = realtime?.message || '실시간 상태 미확인';
     else if (!freshQuote) blocked = '현재 시세 유효 시간 확인 필요';
     else if (realtime.code !== s.code) blocked = '실시간 대조 종목이 전략과 다릅니다.';
   }
@@ -916,7 +1042,6 @@ function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: boolean }
   const [stopping, setStopping] = useState(false);
   const unit = kis ? '이벤트' : '봉';
   const rule = s.rule;
-  const kisRulePending = kis && !isKisRealtimeSupported(s.rule, s.overlay);
 
   return (
     <Panel className="studio-card">
@@ -1010,10 +1135,8 @@ function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: boolean }
           회당 <b>{s.qty}주</b>
         </span>
       </div>
-      {kisRulePending && (
-        <p className="studio-warning">
-          신규 규칙·오버레이는 장전 레벨 트리거 계약 연결 후 KIS 실시간 시작이 활성화됩니다.
-        </p>
+      {kisRuleBlock && (
+        <p className="studio-warning">{kisRuleBlock}</p>
       )}
       {kis && (
         <Link className="text-link" to={`/settings/trading/strategy?strategy=${encodeURIComponent(s.id)}`}>
@@ -1102,39 +1225,18 @@ function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: boolean }
 function StrategyEditor({
   environment,
   onSaved,
-  backtestDraft,
-  draftKey,
+  draft,
+  setDraft,
 }: {
   environment: StrategyEnvironment;
   onSaved: (id: string) => void;
-  backtestDraft: StrategyTransferDraft | null;
-  draftKey: string;
+  draft: StrategyEditorDraft;
+  setDraft: React.Dispatch<React.SetStateAction<StrategyEditorDraft>>;
 }) {
   const { state, act, busy, available, server, status } = useWorkbench();
   const navigate = useNavigate();
-  const [name, setName] = useState(() =>
-    backtestDraft ? `${STRATEGY_CATALOG[backtestDraft.rule.kind].title} 전략` : '나의 이동평균 전략',
-  );
-  const [code, setCode] = useState(() => backtestDraft?.code ?? '069500');
-  const [ruleForm, setRuleForm] = useState<RuleFormState>(() =>
-    backtestDraft ? formFromRule(backtestDraft.rule, backtestDraft.overlay) : defaultRuleForm(),
-  );
-  const [evidence, setEvidence] = useState<StrategyEvidence | undefined>(() => backtestDraft?.evidence);
-  const [qty, setQty] = useState('1');
-  const [attempted, setAttempted] = useState(false);
-  const [formError, setFormError] = useState('');
-  const appliedDraftKey = useRef(backtestDraft ? draftKey : '');
-
-  useEffect(() => {
-    if (!backtestDraft || appliedDraftKey.current === draftKey) return;
-    appliedDraftKey.current = draftKey;
-    setName(`${STRATEGY_CATALOG[backtestDraft.rule.kind].title} 전략`);
-    setCode(backtestDraft.code);
-    setRuleForm(formFromRule(backtestDraft.rule, backtestDraft.overlay));
-    setEvidence(backtestDraft.evidence);
-    setAttempted(false);
-    setFormError('');
-  }, [backtestDraft, draftKey]);
+  const formRef = useRef<HTMLFormElement>(null);
+  const { name, code, ruleForm, evidence, qty, attempted, formError, draftSourceCode } = draft;
 
   const instruments = server ? state.instruments : [];
   const noSelection = !available
@@ -1154,33 +1256,67 @@ function StrategyEditor({
   const unit = environment === 'kis-paper' ? '이벤트' : '봉';
   const demoUnsupported = environment === 'demo' && !isDemoRuleSupported(ruleForm);
   const kisUnsupported = environment === 'kis-paper' && !isKisRealtimeFormSupported(ruleForm);
+  const kisSlowExceeded = environment === 'kis-paper' && isKisBasicSmaSlowExceeded(ruleForm);
+  const alphanumericDraftCode = Boolean(draftSourceCode && !codeSchema.safeParse(draftSourceCode).success);
+
+  function focusField(fieldName?: string) {
+    if (!fieldName) return;
+    formRef.current?.querySelector<HTMLInputElement>(`[name="${fieldName}"]`)?.focus();
+  }
 
   function handleRuleChange(next: RuleFormState) {
-    setRuleForm(next);
-    setFormError('');
-    setEvidence(undefined);
+    setDraft(prev => ({ ...prev, ruleForm: next, formError: '', evidence: undefined }));
   }
 
   function handleCodeChange(nextCode: string) {
-    setCode(nextCode);
-    setFormError('');
-    if (evidence && backtestDraft?.code !== nextCode) setEvidence(undefined);
+    setDraft(prev => ({
+      ...prev,
+      code: nextCode,
+      formError: '',
+      evidence: prev.evidence && prev.draftSourceCode !== nextCode ? undefined : prev.evidence,
+    }));
   }
 
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setAttempted(true);
-    setFormError('');
-    if (ruleForm.kind === 'ma_crossover' && Number(ruleForm.fast) >= Number(ruleForm.slow)) {
-      e.currentTarget.querySelector<HTMLInputElement>('[name="fast"]')?.focus();
+    setDraft(prev => ({ ...prev, attempted: true, formError: '' }));
+    if (!name.trim()) {
+      setDraft(prev => ({ ...prev, formError: '전략 이름을 입력하세요.' }));
+      focusField('name');
+      return;
+    }
+    if (
+      ruleForm.kind === 'ma_crossover' &&
+      ruleForm.fast !== '' &&
+      ruleForm.slow !== '' &&
+      Number(ruleForm.fast) >= Number(ruleForm.slow)
+    ) {
+      focusField('fast');
       return;
     }
     const built = buildRuleAndOverlay(ruleForm);
     if (!built.ok) {
-      setFormError(built.error);
-      if (built.focusName) {
-        e.currentTarget.querySelector<HTMLInputElement>(`[name="${built.focusName}"]`)?.focus();
-      }
+      setDraft(prev => ({ ...prev, formError: built.error }));
+      focusField(built.focusName);
+      return;
+    }
+    if (
+      environment === 'kis-paper' &&
+      built.rule.kind === 'ma_crossover' &&
+      built.rule.maType === 'sma' &&
+      !built.rule.regimePeriod &&
+      !built.rule.minRelativeVolume &&
+      !built.overlay?.chandelier &&
+      built.rule.slow > 100
+    ) {
+      setDraft(prev => ({ ...prev, formError: 'KIS 모의 기본 SMA 계약은 장기 기간 100 이하만 지원합니다.' }));
+      focusField('slow');
+      return;
+    }
+    const parsedQty = Number(qty);
+    if (qty.trim() === '' || !Number.isInteger(parsedQty) || parsedQty < 1 || parsedQty > 10000) {
+      setDraft(prev => ({ ...prev, formError: '회당 수량은 1-10000 사이의 정수로 입력하세요.' }));
+      focusField('qty');
       return;
     }
     const compatFast = built.rule.kind === 'ma_crossover' ? built.rule.fast : 5;
@@ -1190,7 +1326,7 @@ function StrategyEditor({
       code,
       fast: compatFast,
       slow: compatSlow,
-      qty: Number(qty),
+      qty: parsedQty,
       environment,
       rule: built.rule,
     };
@@ -1198,7 +1334,13 @@ function StrategyEditor({
     if (evidence) payload.evidence = evidence;
     try {
       const saved = await act<{ id: string }>('strategies', payload);
-      setEvidence(undefined);
+      setDraft(prev => ({
+        ...prev,
+        evidence: undefined,
+        draftSourceCode: undefined,
+        attempted: false,
+        formError: '',
+      }));
       onSaved(saved.id);
     } catch {
       /* 워크스페이스 상단 알림이 서버 오류를 표시하고 초안을 유지합니다. */
@@ -1206,14 +1348,27 @@ function StrategyEditor({
   }
 
   function openInBacktest() {
-    setAttempted(true);
-    setFormError('');
-    const built = buildRuleAndOverlay(ruleForm);
-    if (!built.ok) {
-      setFormError(built.error);
+    setDraft(prev => ({ ...prev, attempted: true, formError: '' }));
+    if (
+      ruleForm.kind === 'ma_crossover' &&
+      ruleForm.fast !== '' &&
+      ruleForm.slow !== '' &&
+      Number(ruleForm.fast) >= Number(ruleForm.slow)
+    ) {
+      focusField('fast');
       return;
     }
-    const targetCode = validCode ? code : instruments[0]?.code ?? code;
+    const built = buildRuleAndOverlay(ruleForm);
+    if (!built.ok) {
+      setDraft(prev => ({ ...prev, formError: built.error }));
+      focusField(built.focusName);
+      return;
+    }
+    const targetCode = validCode
+      ? code
+      : masterCodeSchema.safeParse(code).success
+        ? code
+        : instruments[0]?.code ?? code;
     const strategyDraft: StrategyTransferDraft = {
       code: targetCode,
       rule: built.rule,
@@ -1231,10 +1386,16 @@ function StrategyEditor({
       <p className="studio-meta">
         {environment === 'kis-paper' ? 'KIS 모의' : 'DEMO'} · 새 전략은 revision 1, 정지 상태로 저장됩니다.
       </p>
-      <form onSubmit={save}>
+      <form ref={formRef} onSubmit={save} noValidate>
         <label className="field">
           전략 이름
-          <input value={name} onChange={e => setName(e.target.value)} required maxLength={60} />
+          <input
+            name="name"
+            value={name}
+            onChange={e => setDraft(prev => ({ ...prev, name: e.target.value, formError: '' }))}
+            required
+            maxLength={60}
+          />
         </label>
         <label className="field">
           대상 종목
@@ -1252,9 +1413,11 @@ function StrategyEditor({
             ))}
           </select>
         </label>
-        {available && backtestDraft && !validCode && (
+        {available && draftSourceCode && !validCode && (
           <p className="studio-warning" role="status">
-            백테스트 종목({backtestDraft.code})이 현재 전략 목록에 없어 대상 종목을 다시 선택해야 합니다.
+            {alphanumericDraftCode
+              ? `백테스트 종목(${draftSourceCode})은 영숫자 코드로 전략 저장(숫자 6자리 종목) 대상이 아닙니다. 규칙·오버레이 설정은 유지되므로 대상 종목을 선택해 저장하세요.`
+              : `백테스트 종목(${draftSourceCode})이 현재 전략 목록에 없어 대상 종목을 다시 선택해야 합니다.`}
           </p>
         )}
 
@@ -1274,7 +1437,11 @@ function StrategyEditor({
             <span>
               <strong>검증 실험 연결</strong> · <code>{evidence.experimentId.slice(0, 8)}</code>
             </span>
-            <button type="button" className="text-link" onClick={() => setEvidence(undefined)}>
+            <button
+              type="button"
+              className="text-link"
+              onClick={() => setDraft(prev => ({ ...prev, evidence: undefined }))}
+            >
               연결 해제
             </button>
           </div>
@@ -1292,7 +1459,12 @@ function StrategyEditor({
             연결 후 활성화됩니다.
           </p>
         )}
-        {formError && (
+        {kisSlowExceeded && (
+          <p className="studio-warning" role="status">
+            KIS 모의 기본 SMA 계약은 장기 기간 100 이하만 지원합니다. 저장 일봉 백테스트는 120봉까지 검증할 수 있습니다.
+          </p>
+        )}
+        {formError && !invalidPeriods && (
           <p className="studio-warning" role="alert">
             {formError}
           </p>
@@ -1300,7 +1472,15 @@ function StrategyEditor({
 
         <label className="field">
           회당 수량 (주)
-          <input type="number" min="1" max="10000" value={qty} onChange={e => setQty(e.target.value)} required />
+          <input
+            name="qty"
+            type="number"
+            min="1"
+            max="10000"
+            value={qty}
+            onChange={e => setDraft(prev => ({ ...prev, qty: e.target.value, formError: '' }))}
+            required
+          />
         </label>
 
         <button disabled={!available || busy || !validCode} className="button primary wide">
@@ -1325,6 +1505,19 @@ const pricePolicy = (value: string) => (value === 'raw' ? '원주가' : '수정�
 
 function costsOf({ capital, feeBps, slippageBps }: CostAssumptions): CostAssumptions {
   return { capital, feeBps, slippageBps };
+}
+
+function validateCosts(costs: CostAssumptions): string | null {
+  if (!Number.isInteger(costs.capital) || costs.capital < 100000 || costs.capital > 100000000) {
+    return '초기 자금은 100,000원 이상 100,000,000원 이하의 정수로 입력하세요.';
+  }
+  if (!Number.isFinite(costs.feeBps) || costs.feeBps < 0 || costs.feeBps > 100) {
+    return '수수료는 0-100bp 범위로 입력하세요.';
+  }
+  if (!Number.isFinite(costs.slippageBps) || costs.slippageBps < 0 || costs.slippageBps > 100) {
+    return '슬리피지는 0-100bp 범위로 입력하세요.';
+  }
+  return null;
 }
 
 function CostFields({ values, change }: { values: CostAssumptions; change: (values: CostAssumptions) => void }) {
@@ -1499,13 +1692,21 @@ function DemoBacktest({ strategyDraft }: { strategyDraft: StrategyTransferDraft 
     setError('');
   }
 
-  async function run(event: React.FormEvent) {
+  async function run(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     clearCalc();
     if (!code || busy || !available) return;
     const built = buildRuleAndOverlay(ruleForm);
     if (!built.ok) {
       setError(built.error);
+      if (built.focusName) {
+        event.currentTarget.querySelector<HTMLInputElement>(`[name="${built.focusName}"]`)?.focus();
+      }
+      return;
+    }
+    const costError = validateCosts(costs);
+    if (costError) {
+      setError(costError);
       return;
     }
     try {
@@ -1543,7 +1744,7 @@ function DemoBacktest({ strategyDraft }: { strategyDraft: StrategyTransferDraft 
             전략 스튜디오 초안 적용 · {formatRuleSummary(strategyDraft.rule, strategyDraft.overlay)}
           </p>
         )}
-        <form onSubmit={run} onChange={clearCalc}>
+        <form onSubmit={run} onChange={clearCalc} noValidate>
           <fieldset className="backtest-fields" disabled={busy}>
             <label className="field">
               대상
@@ -1815,10 +2016,14 @@ function StoredBacktest({
     setError('');
   }
 
-  async function execute(event: React.FormEvent) {
+  async function execute(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!run || !eligible || locked || listError || !available) return;
     clearResult();
+    if (!from || !to) {
+      setError('시작일과 종료일을 입력하세요.');
+      return;
+    }
     if (from > to) {
       setError('시작일은 종료일보다 늦을 수 없습니다.');
       return;
@@ -1826,6 +2031,14 @@ function StoredBacktest({
     const built = buildRuleAndOverlay(ruleForm);
     if (!built.ok) {
       setError(built.error);
+      if (built.focusName) {
+        event.currentTarget.querySelector<HTMLInputElement>(`[name="${built.focusName}"]`)?.focus();
+      }
+      return;
+    }
+    const costError = validateCosts(costs);
+    if (costError) {
+      setError(costError);
       return;
     }
     try {
@@ -1973,6 +2186,7 @@ function StoredBacktest({
           )}
           <form
             onSubmit={execute}
+            noValidate
             onChange={event => {
               const control = event.nativeEvent.target;
               if (control !== runSelect.current && control !== policySelect.current) clearResult();
