@@ -2,6 +2,8 @@
 
 Node 24와 npm을 사용한다. 프로젝트 루트에서 실행한다.
 
+[Orca 개발 서버 실행 및 테스트 가이드](orca-dev-testing.md)
+
 ```bash
 npm ci
 npm run dev
