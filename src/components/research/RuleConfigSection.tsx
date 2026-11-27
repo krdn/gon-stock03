@@ -58,8 +58,9 @@ export function RuleConfigSection({
       : kisMode === 'realtime-tick'
         ? 'KIS 모의 · 실시간 체결가'
         : 'KIS 모의 · 시작 제한 (정지 저장만 가능)';
-  const fastLabel = mode === 'strategy' ? `단기 평균 (${unit})` : '단기 (봉)';
-  const slowLabel = mode === 'strategy' ? `장기 평균 (${unit})` : '장기 (봉)';
+  const effectiveUnit = kisMode === 'realtime-tick' ? unit : '봉';
+  const fastLabel = mode === 'strategy' ? `단기 평균 (${effectiveUnit})` : '단기 (봉)';
+  const slowLabel = mode === 'strategy' ? `장기 평균 (${effectiveUnit})` : '장기 (봉)';
   const update = (patch: Partial<RuleFormState>) => onChange({ ...form, ...patch });
 
   return (

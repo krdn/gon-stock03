@@ -13,6 +13,7 @@ import {
   isKisBasicSmaSlowExceeded,
   isKisRealtimeFormSupported,
   isSameRuleForm,
+  kisFormExecutionMode,
   type RuleFormState,
   type StrategyEditorDraft,
   type StrategyEnvironment,
@@ -52,7 +53,8 @@ export function StrategyEditor({
     ruleForm.fast !== '' &&
     ruleForm.slow !== '' &&
     Number(ruleForm.fast) >= Number(ruleForm.slow);
-  const unit = environment === 'kis-paper' ? '이벤트' : '봉';
+  const unit =
+    environment === 'kis-paper' && kisFormExecutionMode(ruleForm) === 'realtime-tick' ? '이벤트' : '봉';
   const demoUnsupported = environment === 'demo' && !isDemoRuleSupported(ruleForm);
   const kisSlowExceeded = environment === 'kis-paper' && isKisBasicSmaSlowExceeded(ruleForm);
   const kisUnsupported = environment === 'kis-paper' && !isKisRealtimeFormSupported(ruleForm) && !kisSlowExceeded;

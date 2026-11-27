@@ -7,11 +7,13 @@ import {
   planLimits,
   type PlanKind,
   type PlanRecord,
+  type PlanVersion,
   type TradingSettingsData,
   type TradingTerms,
 } from '../../shared/trading-plan';
 import { won, type Strategy } from '../../shared/model';
-import { STRATEGY_CATALOG, assertRealtimeRule, isBasicRealtimeSma } from '../../shared/strategy-rules';
+import { assertRealtimeRule, isBasicRealtimeSma, type StrategyRule } from '../../shared/strategy-rules';
+import { formatRuleSummary } from './research-rule-form';
 import { Panel } from '../components/ui';
 import { PaperQuantitySetting } from '../components/PaperQuantitySetting';
 import { RiskLimitSettings } from '../components/RiskLimitSettings';
@@ -48,37 +50,34 @@ function isKisConfirmedDaily(strategy: Pick<Strategy, 'rule' | 'overlay' | 'slow
   return isKisContractSupported(strategy) && !isBasicRealtimeSma(strategy.rule, strategy.overlay, strategy.slow);
 }
 
-/** 저장 전략의 실제 규칙·필터·오버레이 요약을 반환한다(다중 규칙을 5/20 교차로 오표시하지 않음). */
+/** 저장된 계획 스냅샷에서 규칙·오버레이·기간 조건을 복원한다(레거시 기본 SMA 스냅샷을 현재 전략으로 덮어쓰지 않음). */
+function snapshotStrategyConditions(
+  plan: PlanVersion | undefined,
+  fallback: Strategy | undefined,
+): Pick<Strategy, 'rule' | 'overlay' | 'fast' | 'slow'> | undefined {
+  if (plan?.fast && plan.slow) {
+    return { rule: plan.rule, overlay: plan.overlay, fast: plan.fast, slow: plan.slow };
+  }
+  if (plan?.rule) {
+    return { rule: plan.rule, overlay: plan.overlay, fast: fallback?.fast ?? 5, slow: fallback?.slow ?? 20 };
+  }
+  return fallback;
+}
+
+/** 저장 전략의 실제 규칙·파라미터·오버레이 요약을 반환한다(다중 규칙을 5/20 교차로 오표시하지 않음). */
 function formatTradingStrategyRule(strategy: Pick<Strategy, 'rule' | 'overlay' | 'fast' | 'slow'>): string {
-  const { rule, overlay } = strategy;
-  const parts: string[] = [];
-  if (!rule) {
-    parts.push(
-      isBasicRealtimeSma(rule, overlay, strategy.slow)
-        ? `${strategy.fast}/${strategy.slow} 교차`
-        : `${STRATEGY_CATALOG.ma_crossover.title} (SMA ${strategy.fast}/${strategy.slow})`,
-    );
-  } else if (rule.kind === 'ma_crossover') {
-    const basic = isBasicRealtimeSma(rule, overlay, strategy.slow);
-    if (basic) {
-      parts.push(`${rule.fast}/${rule.slow} 교차`);
-    } else {
-      parts.push(`${STRATEGY_CATALOG.ma_crossover.title} (${rule.maType.toUpperCase()} ${rule.fast}/${rule.slow})`);
-      if (rule.regimePeriod) parts.push(`추세선 ${rule.regimePeriod}봉`);
-      if (rule.minRelativeVolume) parts.push(`상대거래량 ${rule.minRelativeVolume}배+`);
-    }
-  } else {
-    parts.push(STRATEGY_CATALOG[rule.kind].title);
+  if (isBasicRealtimeSma(strategy.rule, strategy.overlay, strategy.slow)) {
+    const fast = strategy.rule?.kind === 'ma_crossover' ? strategy.rule.fast : strategy.fast;
+    const slow = strategy.rule?.kind === 'ma_crossover' ? strategy.rule.slow : strategy.slow;
+    return `${fast}/${slow} 교차`;
   }
-  if (overlay?.chandelier) {
-    parts.push(`샹들리에 ATR(${overlay.chandelier.atrPeriod})×${overlay.chandelier.atrMultiplier}`);
-  }
-  if (overlay?.volatilityParity) {
-    parts.push(
-      `변동성 패리티(${overlay.volatilityParity.volLookback}일 · 목표 ${overlay.volatilityParity.targetAnnualVolPct}% · 최대 ${overlay.volatilityParity.maxAllocationPct}%)`,
-    );
-  }
-  return parts.join(' · ');
+  const rule: StrategyRule = strategy.rule ?? {
+    kind: 'ma_crossover',
+    maType: 'sma',
+    fast: strategy.fast,
+    slow: strategy.slow,
+  };
+  return formatRuleSummary(rule, strategy.overlay);
 }
 const stages = ['대상·기간', '한도·조건', '검토·고정'];
 const kst = (value: string) =>
@@ -323,16 +322,11 @@ function Editor({
   const selectedConfirmedDaily = Boolean(selected && isKisConfirmedDaily(selected));
   const savedStrategyId = initial?.terms.kind === 'strategy' ? initial.terms.strategyId : undefined;
   const savedStrategy = savedStrategyId ? strategies.find((s) => s.id === savedStrategyId) : undefined;
-  const savedConditions = initial?.fast && initial.slow && (initial.rule || initial.overlay)
-    ? { rule: initial.rule, overlay: initial.overlay, fast: initial.fast, slow: initial.slow }
-    : savedStrategy ?? selected;
+  const savedConditions = snapshotStrategyConditions(initial, savedStrategy ?? selected);
   const previousPlan = record?.previous;
   const previousStrategyId = previousPlan?.terms.kind === 'strategy' ? previousPlan.terms.strategyId : undefined;
-  const previousConditions = previousPlan?.fast && previousPlan.slow && (previousPlan.rule || previousPlan.overlay)
-    ? { rule: previousPlan.rule, overlay: previousPlan.overlay, fast: previousPlan.fast, slow: previousPlan.slow }
-    : previousStrategyId
-      ? strategies.find((s) => s.id === previousStrategyId)
-      : undefined;
+  const previousFallback = previousStrategyId ? strategies.find((s) => s.id === previousStrategyId) : undefined;
+  const previousConditions = snapshotStrategyConditions(previousPlan, previousFallback);
   const studioDraftState = selected
     ? {
         backtestDraft: {
@@ -1119,10 +1113,7 @@ export function TradingSettings() {
           const planStrategy = planStrategyId
             ? state.strategies.find((s) => s.id === planStrategyId && s.environment === 'kis-paper')
             : undefined;
-          const planConditions =
-            plan?.fast && plan.slow && (plan.rule || plan.overlay)
-              ? { rule: plan.rule, overlay: plan.overlay, fast: plan.fast, slow: plan.slow }
-              : planStrategy;
+          const planConditions = snapshotStrategyConditions(plan ?? undefined, planStrategy);
           const planRuleSummary = planConditions ? formatTradingStrategyRule(planConditions) : '';
           return (
             <Link className="panel plan-link" key={k} to={home + '/' + destination}>

@@ -456,16 +456,20 @@ test('실제 매매설정 화면이 확정 일봉 다중 전략(MACD+샹들리�
       '고정 시점의 검증 완료 일봉을 전용 원장에 복사하여 세션 직전 개장일 봉과 일치할 때 당일 1회 집행하며, 고정 이후 추가 수집한 일봉은 기존 전용 원장에 자동 반영되지 않습니다.';
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`http://127.0.0.1:${port}/settings/trading/strategy/1?strategy=kis-macd-chandelier`);
-    await expect(page.getByRole('main')).toContainText('MACD 히스토그램 · 샹들리에 ATR(14)×3');
+    await expect(page.getByRole('main')).toContainText('MACD 히스토그램 (12/26/9) · 샹들리에 ATR(14)×3');
     await expect(page.getByRole('main')).toContainText(notice);
     await expect(page.getByRole('main')).not.toContainText('5/20 교차');
     await page.getByLabel('시작 (KST)').fill('2099-01-05T09:00');
     await page.getByLabel('종료 (KST)').fill('2099-01-05T11:00');
     await page.getByRole('button', { name: '한도·조건으로', exact: true }).click();
-    await expect(page.getByRole('main')).toContainText('MACD 히스토그램 · 샹들리에 ATR(14)×3');
+    await expect(page.getByRole('main')).toContainText('MACD 히스토그램 (12/26/9) · 샹들리에 ATR(14)×3');
     await page.getByRole('button', { name: '초안 저장 및 검토', exact: true }).click();
-    await expect(page.getByRole('main')).toContainText('저장 대상 005930 · MACD 히스토그램 · 샹들리에 ATR(14)×3 · 2주');
-    await expect(page.getByRole('row', { name: /신호 규칙/ })).toContainText('MACD 히스토그램 · 샹들리에 ATR(14)×3');
+    await expect(page.getByRole('main')).toContainText(
+      '저장 대상 005930 · MACD 히스토그램 (12/26/9) · 샹들리에 ATR(14)×3 · 2주',
+    );
+    await expect(page.getByRole('row', { name: /신호 규칙/ })).toContainText(
+      'MACD 히스토그램 (12/26/9) · 샹들리에 ATR(14)×3',
+    );
     await expect(page.getByRole('main')).toContainText(notice);
     await expect(page.getByRole('main')).not.toContainText('5/20');
     await page.getByRole('button', { name: '다음 실행 고정', exact: true }).click();

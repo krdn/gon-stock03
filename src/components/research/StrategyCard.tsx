@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Play, Square } from 'lucide-react';
 import { type Strategy } from '../../../shared/model';
-import { STRATEGY_CATALOG } from '../../../shared/strategy-rules';
+import { STRATEGY_CATALOG, isBasicRealtimeSma } from '../../../shared/strategy-rules';
 import { useWorkbench } from '../../context';
 import { Badge, Panel } from '../ui';
 import {
@@ -40,7 +40,7 @@ export function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: bo
   const evaluations = s.evaluations ?? [];
   const [historyOpen, setHistoryOpen] = useState(false);
   const [stopping, setStopping] = useState(false);
-  const unit = kis ? '이벤트' : '봉';
+  const unit = kis && isBasicRealtimeSma(s.rule, s.overlay, s.slow) ? '이벤트' : '봉';
   const rule = s.rule;
 
   return (
