@@ -12,6 +12,7 @@ import {
   isDemoRuleSupported,
   isKisBasicSmaSlowExceeded,
   isKisRealtimeFormSupported,
+  isKisTickSmaForm,
   isSameRuleForm,
   type RuleFormState,
   type StrategyEditorDraft,
@@ -52,10 +53,10 @@ export function StrategyEditor({
     ruleForm.fast !== '' &&
     ruleForm.slow !== '' &&
     Number(ruleForm.fast) >= Number(ruleForm.slow);
-  const unit = environment === 'kis-paper' ? '이벤트' : '봉';
+  const unit = environment === 'kis-paper' && isKisTickSmaForm(ruleForm) ? '이벤트' : '봉';
   const demoUnsupported = environment === 'demo' && !isDemoRuleSupported(ruleForm);
-  const kisUnsupported = environment === 'kis-paper' && !isKisRealtimeFormSupported(ruleForm);
   const kisSlowExceeded = environment === 'kis-paper' && isKisBasicSmaSlowExceeded(ruleForm);
+  const kisUnsupported = environment === 'kis-paper' && !isKisRealtimeFormSupported(ruleForm) && !kisSlowExceeded;
   const alphanumericDraftCode = Boolean(draftSourceCode && !codeSchema.safeParse(draftSourceCode).success);
 
   function focusField(fieldName?: string) {
@@ -264,14 +265,14 @@ export function StrategyEditor({
         )}
         {kisUnsupported && (
           <p className="studio-warning" role="status">
-            신규 다중 전략 규칙과 오버레이(샹들리에 청산·변동성 패리티)는 KIS 모의 저장은 가능하지만, 장중 실시간 평가는
-            장전 레벨 트리거 계약 연결 후 활성화됩니다.
+            윌리엄스 변동성 돌파와 변동성 패리티 수량 조절은 저장 일봉 백테스트 전용입니다. KIS 모의에는 정지 상태로만
+            저장할 수 있으며 전략 시작·계약 고정은 차단됩니다.
           </p>
         )}
         {kisSlowExceeded && (
           <p className="studio-warning" role="status">
-            KIS 모의 기본 SMA 계약은 장기 기간 100 이하만 실시간 시작을 지원합니다. 101-120 구간은 정지 상태로 저장하거나
-            저장 일봉 백테스트로 검증할 수 있습니다.
+            실시간 체결가 기본 SMA의 장기 기간은 100 이하여야 합니다. 101-120 구간은 정지 상태로 저장하거나 저장 일봉
+            백테스트로 검증할 수 있습니다.
           </p>
         )}
         {formError && !invalidPeriods && (

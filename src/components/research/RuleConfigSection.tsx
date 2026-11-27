@@ -6,7 +6,10 @@ import {
   applyPreset,
   environmentAvailabilityText,
   isDemoRuleSupported,
+  isKisTickSmaForm,
   isSameRuleForm,
+  kisFormBlockReason,
+  kisFormExecutionMode,
   matchedPreset,
   type RuleFormState,
   type RuleKind,
@@ -47,8 +50,18 @@ export function RuleConfigSection({
     : demoFormSupported
       ? environmentAvailabilityText(catalog.environments.demo)
       : '현재 설정 제한 (저장 일봉 필요)';
-  const fastLabel = mode === 'strategy' ? `단기 평균 (${unit})` : '단기 (봉)';
-  const slowLabel = mode === 'strategy' ? `장기 평균 (${unit})` : '장기 (봉)';
+  const kisMode = kisFormExecutionMode(form);
+  const kisBlockReason = kisFormBlockReason(form);
+  const kisBadgeTone = kisMode === 'unsupported' ? 'warning' : 'teal';
+  const kisBadgeLabel =
+    kisMode === 'confirmed-daily'
+      ? 'KIS 모의: 확정 일봉 기반'
+      : kisMode === 'realtime-tick'
+        ? 'KIS 모의 · 실시간 체결가'
+        : 'KIS 모의 · 시작 제한 (정지 저장만 가능)';
+  const effectiveUnit = isKisTickSmaForm(form) ? unit : '봉';
+  const fastLabel = mode === 'strategy' ? `단기 평균 (${effectiveUnit})` : '단기 (봉)';
+  const slowLabel = mode === 'strategy' ? `장기 평균 (${effectiveUnit})` : '장기 (봉)';
   const update = (patch: Partial<RuleFormState>) => onChange({ ...form, ...patch });
 
   return (
@@ -95,10 +108,18 @@ export function RuleConfigSection({
             저장 일봉 · {environmentAvailabilityText(catalog.environments.daily)}
           </Badge>
           <Badge tone={demoBadgeTone}>DEMO · {demoBadgeText}</Badge>
-          <Badge tone={catalog.environments.kisPaper ? 'teal' : 'neutral'}>
-            KIS 모의 · {environmentAvailabilityText(catalog.environments.kisPaper)}
-          </Badge>
+          <Badge tone={kisBadgeTone}>{kisBadgeLabel}</Badge>
         </div>
+        {kisMode === 'confirmed-daily' && (
+          <p className="rule-kis-note">
+            전용 원장에 고정된 직전 KRX 개장일 확정 일봉 신호로 당일 1회 집행합니다.
+          </p>
+        )}
+        {kisMode === 'unsupported' && (
+          <p className="rule-kis-warning">
+            KIS 모의 시작 제한 · {kisBlockReason} 정지 상태(active=false) 저장만 가능하며 시작·계약 고정은 차단됩니다.
+          </p>
+        )}
       </div>
 
       <div className="rule-presets" role="group" aria-label="규칙 프리셋">

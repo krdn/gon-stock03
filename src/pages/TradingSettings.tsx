@@ -7,11 +7,13 @@ import {
   planLimits,
   type PlanKind,
   type PlanRecord,
+  type PlanVersion,
   type TradingSettingsData,
   type TradingTerms,
 } from '../../shared/trading-plan';
 import { won, type Strategy } from '../../shared/model';
-import { STRATEGY_CATALOG, assertRealtimeRule, isBasicRealtimeSma } from '../../shared/strategy-rules';
+import { assertRealtimeRule, isBasicRealtimeSma, type StrategyRule } from '../../shared/strategy-rules';
+import { formatRuleSummary } from './research-rule-form';
 import { Panel } from '../components/ui';
 import { PaperQuantitySetting } from '../components/PaperQuantitySetting';
 import { RiskLimitSettings } from '../components/RiskLimitSettings';
@@ -24,47 +26,58 @@ import './trading-settings-v2.css';
 const home = '/settings/trading';
 const titles = { general: '일반 주문·위험', once: '다음 한정 실행', strategy: '다음 전략 계약' };
 
-/** KIS 모의 실시간 시작 계약(`assertRealtimeRule` + 기본 SMA 장기 100 이하) 지원 여부. */
-function isKisContractSupported(strategy: Strategy): boolean {
+/** 확정 일봉 기반 KIS 모의 계약 고정 시 전용 원장 복사·비자동 반영 안내 문구. */
+const CONFIRMED_DAILY_CONTRACT_NOTICE =
+  '고정 시점의 검증 완료 일봉을 전용 원장에 복사하여 세션 직전 개장일 봉과 일치할 때 당일 1회 집행하며, 고정 이후 추가 수집한 일봉은 기존 전용 원장에 자동 반영되지 않습니다.';
+
+/** KIS 모의 계약 차단 사유를 반환한다(`shared/strategy-rules` `assertRealtimeRule`과 동일 기준). */
+function kisContractBlockReason(strategy: Pick<Strategy, 'rule' | 'overlay' | 'slow'>): string {
   try {
     assertRealtimeRule(strategy.rule, strategy.overlay, strategy.slow);
-  } catch {
-    return false;
+    return '';
+  } catch (error) {
+    return error instanceof Error ? error.message : '선택한 전략은 KIS 모의 계약 대상이 아닙니다.';
   }
-  return true;
 }
 
-/** 저장 전략의 실제 규칙·필터·오버레이 요약을 반환한다(다중 규칙을 5/20 교차로 오표시하지 않음). */
+/** KIS 모의 계약(`assertRealtimeRule`) 지원 여부. */
+function isKisContractSupported(strategy: Pick<Strategy, 'rule' | 'overlay' | 'slow'>): boolean {
+  return kisContractBlockReason(strategy) === '';
+}
+
+/** 확정 일봉 기반 KIS 모의 전략(종가 확정형 10종 + 선택 샹들리에) 여부. */
+function isKisConfirmedDaily(strategy: Pick<Strategy, 'rule' | 'overlay' | 'slow'>): boolean {
+  return isKisContractSupported(strategy) && !isBasicRealtimeSma(strategy.rule, strategy.overlay, strategy.slow);
+}
+
+/** 저장된 계획 스냅샷에서 규칙·오버레이·기간 조건을 복원한다(레거시 기본 SMA 스냅샷을 현재 전략으로 덮어쓰지 않음). */
+function snapshotStrategyConditions(
+  plan: PlanVersion | undefined,
+  fallback: Strategy | undefined,
+): Pick<Strategy, 'rule' | 'overlay' | 'fast' | 'slow'> | undefined {
+  if (plan?.fast && plan.slow) {
+    return { rule: plan.rule, overlay: plan.overlay, fast: plan.fast, slow: plan.slow };
+  }
+  if (plan?.rule) {
+    return { rule: plan.rule, overlay: plan.overlay, fast: fallback?.fast ?? 5, slow: fallback?.slow ?? 20 };
+  }
+  return fallback;
+}
+
+/** 저장 전략의 실제 규칙·파라미터·오버레이 요약을 반환한다(다중 규칙을 5/20 교차로 오표시하지 않음). */
 function formatTradingStrategyRule(strategy: Pick<Strategy, 'rule' | 'overlay' | 'fast' | 'slow'>): string {
-  const { rule, overlay } = strategy;
-  const parts: string[] = [];
-  if (!rule) {
-    parts.push(
-      isBasicRealtimeSma(rule, overlay, strategy.slow)
-        ? `${strategy.fast}/${strategy.slow} 교차`
-        : `${STRATEGY_CATALOG.ma_crossover.title} (SMA ${strategy.fast}/${strategy.slow})`,
-    );
-  } else if (rule.kind === 'ma_crossover') {
-    const basic = isBasicRealtimeSma(rule, overlay, strategy.slow);
-    if (basic) {
-      parts.push(`${rule.fast}/${rule.slow} 교차`);
-    } else {
-      parts.push(`${STRATEGY_CATALOG.ma_crossover.title} (${rule.maType.toUpperCase()} ${rule.fast}/${rule.slow})`);
-      if (rule.regimePeriod) parts.push(`추세선 ${rule.regimePeriod}봉`);
-      if (rule.minRelativeVolume) parts.push(`상대거래량 ${rule.minRelativeVolume}배+`);
-    }
-  } else {
-    parts.push(STRATEGY_CATALOG[rule.kind].title);
+  if (isBasicRealtimeSma(strategy.rule, strategy.overlay, strategy.slow)) {
+    const fast = strategy.rule?.kind === 'ma_crossover' ? strategy.rule.fast : strategy.fast;
+    const slow = strategy.rule?.kind === 'ma_crossover' ? strategy.rule.slow : strategy.slow;
+    return `${fast}/${slow} 교차`;
   }
-  if (overlay?.chandelier) {
-    parts.push(`샹들리에 ATR(${overlay.chandelier.atrPeriod})×${overlay.chandelier.atrMultiplier}`);
-  }
-  if (overlay?.volatilityParity) {
-    parts.push(
-      `변동성 패리티(${overlay.volatilityParity.volLookback}일 · 목표 ${overlay.volatilityParity.targetAnnualVolPct}% · 최대 ${overlay.volatilityParity.maxAllocationPct}%)`,
-    );
-  }
-  return parts.join(' · ');
+  const rule: StrategyRule = strategy.rule ?? {
+    kind: 'ma_crossover',
+    maType: 'sma',
+    fast: strategy.fast,
+    slow: strategy.slow,
+  };
+  return formatRuleSummary(rule, strategy.overlay);
 }
 const stages = ['대상·기간', '한도·조건', '검토·고정'];
 const kst = (value: string) =>
@@ -105,7 +118,7 @@ function defaults(kind: PlanKind, strategy?: Strategy): TradingTerms {
         policy: defaultStrategyPolicy(),
       };
 }
-function description(t: TradingTerms): [string, string][] {
+function description(t: TradingTerms, ruleSummary?: string): [string, string][] {
   const p = t.policy;
   const rows: [string, string][] =
     t.kind === 'once'
@@ -123,6 +136,7 @@ function description(t: TradingTerms): [string, string][] {
         ]
       : [
           ['저장 전략', t.strategyId + ' · revision ' + t.revision],
+          ...(ruleSummary ? [['신호 규칙', ruleSummary] as [string, string]] : []),
           ['시작', localTime(t.startsAt)],
           ['종료', localTime(t.endsAt)],
           ['주문당 금액', won(t.maxOrderAmount) + '원'],
@@ -183,21 +197,25 @@ function Comparison({
   next,
   previous,
   source = '이전 고정본',
+  nextRuleSummary,
+  previousRuleSummary,
 }: {
   next: TradingTerms;
   previous?: TradingTerms;
   source?: string;
+  nextRuleSummary?: string;
+  previousRuleSummary?: string;
 }) {
-  const before = new Map(previous ? description(previous) : []);
-  const rows = new Map(description(next));
+  const before = new Map(previous ? description(previous, previousRuleSummary) : []);
+  const rows = new Map(description(next, nextRuleSummary));
   const primary = new Set([
     '실행일', '종목', '주문 방식', '수량 상한', '금액 상한', '기존 보유 종목 매수', '잔량 취소', '지정가 기준',
-    '고정 단가', '매수 단가 상한', '저장 전략', '시작', '종료', '주문당 금액', '총 시도', '누적 금액',
+    '고정 단가', '매수 단가 상한', '저장 전략', '신호 규칙', '시작', '종료', '주문당 금액', '총 시도', '누적 금액',
     '매도 범위', '전략 주문 방식', '실행 시간창', '원 신호 유효시간', '시세 유효시간',
   ]);
   const standard = new Map(description(next.kind === 'once'
     ? { ...next, policy: defaultOncePolicy(next.date) }
-    : { ...next, policy: defaultStrategyPolicy() }));
+    : { ...next, policy: defaultStrategyPolicy() }, nextRuleSummary));
   const keys = [...new Set([...rows.keys(), ...before.keys()])];
   const emphasized = [...primary].filter(key => rows.has(key) || before.has(key));
   emphasized.push(...keys.filter(key => !primary.has(key) && (
@@ -299,12 +317,16 @@ function Editor({
   }, [step]);
   const locked = busy || checking || !available || base !== id;
   const selected = terms.kind === 'strategy' ? strategies.find((s) => s.id === terms.strategyId) : undefined;
-  const selectedUnsupported = Boolean(selected && !isKisContractSupported(selected));
+  const selectedBlockReason = selected ? kisContractBlockReason(selected) : '';
+  const selectedUnsupported = Boolean(selectedBlockReason);
+  const selectedConfirmedDaily = Boolean(selected && isKisConfirmedDaily(selected));
   const savedStrategyId = initial?.terms.kind === 'strategy' ? initial.terms.strategyId : undefined;
   const savedStrategy = savedStrategyId ? strategies.find((s) => s.id === savedStrategyId) : undefined;
-  const savedConditions = initial?.fast && initial.slow && (initial.rule || initial.overlay)
-    ? { rule: initial.rule, overlay: initial.overlay, fast: initial.fast, slow: initial.slow }
-    : savedStrategy;
+  const savedConditions = snapshotStrategyConditions(initial, savedStrategy ?? selected);
+  const previousPlan = record?.previous;
+  const previousStrategyId = previousPlan?.terms.kind === 'strategy' ? previousPlan.terms.strategyId : undefined;
+  const previousFallback = previousStrategyId ? strategies.find((s) => s.id === previousStrategyId) : undefined;
+  const previousConditions = snapshotStrategyConditions(previousPlan, previousFallback);
   const studioDraftState = selected
     ? {
         backtestDraft: {
@@ -325,6 +347,23 @@ function Editor({
     JSON.stringify(tradingTerms.safeParse(initial.terms).data) === JSON.stringify(parsedTerms.data);
   const limitsChanged =
     available && !!initial && !initial.fixed && JSON.stringify(initial.limits) !== JSON.stringify(planLimits(state));
+  const reviewConditions = saved && savedConditions ? savedConditions : selected;
+  const reviewConfirmedDaily = Boolean(reviewConditions && isKisConfirmedDaily(reviewConditions));
+  const nextRuleSummary =
+    terms.kind === 'strategy' && reviewConditions ? formatTradingStrategyRule(reviewConditions) : undefined;
+  const previousTerms = copied ?? record?.previous?.terms;
+  const copiedStrategy =
+    copied?.kind === 'strategy' ? strategies.find((s) => s.id === copied.strategyId) : undefined;
+  const previousRuleSummary =
+    previousTerms?.kind === 'strategy'
+      ? copied
+        ? copiedStrategy
+          ? formatTradingStrategyRule(copiedStrategy)
+          : undefined
+        : previousConditions
+          ? formatTradingStrategyRule(previousConditions)
+          : undefined
+      : undefined;
   function edit(t: TradingTerms) {
     if (!t.policy)
       t = t.kind === 'once' ? { ...t, policy: defaultOncePolicy(t.date) } : { ...t, policy: defaultStrategyPolicy() };
@@ -350,7 +389,7 @@ function Editor({
     e.preventDefault();
     if (locked) return;
     if (selectedUnsupported) {
-      setError('백테스트 전용 다중 규칙·오버레이·장기 100 초과 전략은 KIS 모의 실시간 계약으로 진행하거나 저장할 수 없습니다.');
+      setError(`${selectedBlockReason} KIS 모의 계약으로 진행하거나 저장할 수 없습니다.`);
       return;
     }
     if (mismatch) {
@@ -451,8 +490,8 @@ function Editor({
           {step > 1 && selectedUnsupported && selected && (
             <div role="alert" className="plan-phase">
               <p>
-                선택한 전략({selected.name} · {formatTradingStrategyRule(selected)})은 백테스트 전용 규칙(또는 기본 SMA
-                장기 100 초과·필터·오버레이 포함)으로 KIS 모의 실시간 시작 계약 대상이 아닙니다.
+                선택한 전략({selected.name} · {formatTradingStrategyRule(selected)})은 KIS 모의 계약 대상이 아닙니다.{' '}
+                {selectedBlockReason}
               </p>
               <p>
                 <Link to={home + '/strategy/1' + locationSearch()}>대상·기간(1단계)으로 돌아가기</Link>
@@ -579,10 +618,15 @@ function Editor({
                     {selected.code} · revision {selected.revision} · {formatTradingStrategyRule(selected)} ·{' '}
                     {selected.qty}주
                   </p>
+                  {selectedConfirmedDaily && (
+                    <p role="status">
+                      확정 일봉 기반 계약 · {CONFIRMED_DAILY_CONTRACT_NOTICE}
+                    </p>
+                  )}
                   {selectedUnsupported && (
                     <p role="status">
-                      이 전략은 백테스트 전용 규칙(또는 기본 SMA 장기 100 초과·필터·오버레이 포함)으로 KIS 모의 실시간
-                      시작 계약 대상이 아닙니다. 이 설정을 바탕으로 새 전략을 만들려면{' '}
+                      이 전략은 KIS 모의 계약 대상이 아닙니다. {selectedBlockReason} 이 설정을 바탕으로 새 전략을
+                      만들려면{' '}
                       <Link to="/strategies?environment=kis-paper#strategy-editor" state={studioDraftState}>
                         전략 스튜디오에서 이 설정으로 새 전략 만들기
                       </Link>
@@ -849,7 +893,11 @@ function Editor({
                 <summary>주문 방식·신호·응답 정책</summary>
                 <TradingPolicyFields terms={terms} edit={edit} />
               </details>
-              <p>교차 신호가 없으면 대상 단계에서 종목·수량·교차 주기를 바꾼 새 전략을 저장하고 선택하세요.</p>
+              <p>
+                {selectedConfirmedDaily
+                  ? '확정 일봉 신호가 없거나 규칙을 바꾸려면 전략 스튜디오에서 새 전략을 저장한 뒤 대상 단계에서 다시 선택하세요.'
+                  : '교차 신호가 없으면 대상 단계에서 종목·수량·교차 주기를 바꾼 새 전략을 저장하고 선택하세요.'}
+              </p>
             </>
           )}
           {step === 3 && (
@@ -878,6 +926,11 @@ function Editor({
                   · {initial.qty}주
                 </p>
               )}
+              {terms.kind === 'strategy' && !selectedUnsupported && reviewConfirmedDaily && (
+                <p role="status">
+                  확정 일봉 기반 계약 · {CONFIRMED_DAILY_CONTRACT_NOTICE}
+                </p>
+              )}
               {initial?.limits && (
                 <div className="plan-snapshot">
                   {saved && terms.kind === 'once' && <p><strong>적용 상한</strong> {Math.min(initial.limits.manualQty, terms.maxQty)}주
@@ -894,8 +947,10 @@ function Editor({
               {limitsChanged && <p role="alert">공통 한도가 변경됐습니다. 한도·조건 단계에서 다시 저장하세요.</p>}
               <Comparison
                 next={terms}
-                previous={copied ?? record?.previous?.terms}
+                previous={previousTerms}
                 source={copied ? '복사한 실행 조건' : '이전 고정본'}
+                nextRuleSummary={nextRuleSummary}
+                previousRuleSummary={previousRuleSummary}
               />
             </>
           )}
@@ -988,10 +1043,19 @@ export function TradingSettings() {
     return <Navigate replace to={home} />;
   if (!data.active && (section === 'once' || section === 'strategy') && stage === '3' && !data.plans[section])
     return <Navigate replace to={home + '/' + section + '/1' + loc.search} state={loc.state} />;
-  if (data.active)
+  if (data.active) {
+    const activeStrategyId = data.active.kind === 'strategy' ? data.active.strategyId : undefined;
+    const activeStrategy = activeStrategyId
+      ? state.strategies.find((s) => s.id === activeStrategyId && s.environment === 'kis-paper')
+      : undefined;
+    const activeRuleSummary = activeStrategy ? formatTradingStrategyRule(activeStrategy) : undefined;
+    const activeConfirmedDaily = Boolean(activeStrategy && isKisConfirmedDaily(activeStrategy));
     return (
       <Panel title="현재 실행 조건">
         <p>전용 실행 원장 · 읽기 전용</p>
+        {activeConfirmedDaily && (
+          <p className="muted">확정 일봉 기반 계약 · {CONFIRMED_DAILY_CONTRACT_NOTICE}</p>
+        )}
         {data.active.kind === 'once' && !data.active.policy && (
           <p className="muted">
             {data.active.orderType === 'limit'
@@ -1014,7 +1078,7 @@ export function TradingSettings() {
           </Link>
         )}
         <dl>
-          {description(data.active).map(([k, v]) => (
+          {description(data.active, activeRuleSummary).map(([k, v]) => (
             <div className="check-row" key={k}>
               <dt>{k}</dt>
               <dd>{v}</dd>
@@ -1037,6 +1101,7 @@ export function TradingSettings() {
         )}
       </Panel>
     );
+  }
   if (!section)
     return (
       <div className="plan-menu">
@@ -1044,6 +1109,12 @@ export function TradingSettings() {
           const Icon = [SlidersHorizontal, ClipboardList, Workflow][i];
           const plan = k === 'general' ? null : data.plans[k]?.draft;
           const destination = plan ? k + '/3' : k;
+          const planStrategyId = plan?.terms.kind === 'strategy' ? plan.terms.strategyId : undefined;
+          const planStrategy = planStrategyId
+            ? state.strategies.find((s) => s.id === planStrategyId && s.environment === 'kis-paper')
+            : undefined;
+          const planConditions = snapshotStrategyConditions(plan ?? undefined, planStrategy);
+          const planRuleSummary = planConditions ? formatTradingStrategyRule(planConditions) : '';
           return (
             <Link className="panel plan-link" key={k} to={home + '/' + destination}>
               <Icon size={22} />
@@ -1054,7 +1125,7 @@ export function TradingSettings() {
                     ? available
                       ? `저장 즉시 적용 · 수동 ${state.paperManualMaxQty ?? DEFAULT_PAPER_MAX_QTY}주 · 주문당 ${won(state.risk.maxOrder)}원`
                       : '현재 한도 미확인'
-                    : `${plan?.fixed ? '고정 완료 · 실행 대기' : plan ? '저장된 초안 · 고정 전' : '초안 없음'} · ${plan?.terms.kind === 'once' ? plan.terms.code + ' · ' + plan.terms.maxQty + '주 · ' + won(plan.terms.maxAmount) + '원' : plan?.terms.kind === 'strategy' ? plan.terms.maxAttempts + '회 · 합산 ' + won(plan.terms.maxTotalAmount) + '원' : '다음 실행 조건 준비'}`}
+                    : `${plan?.fixed ? '고정 완료 · 실행 대기' : plan ? '저장된 초안 · 고정 전' : '초안 없음'} · ${plan?.terms.kind === 'once' ? plan.terms.code + ' · ' + plan.terms.maxQty + '주 · ' + won(plan.terms.maxAmount) + '원' : plan?.terms.kind === 'strategy' ? (planRuleSummary ? planRuleSummary + ' · ' : '') + plan.terms.maxAttempts + '회 · 합산 ' + won(plan.terms.maxTotalAmount) + '원' : '다음 실행 조건 준비'}`}
                 </small>
               </span>
               <ChevronRight size={18} />

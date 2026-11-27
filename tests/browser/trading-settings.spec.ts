@@ -406,3 +406,87 @@ test('끝 슬래시를 붙여 연 한정 설정은 대상 단계로 열리며 En
   await expect(page).toHaveURL(/once\/2\?from=paper&code=069500$/);
   expect(writes).toEqual([]);
 });
+
+test('실제 매매설정 화면이 확정 일봉 다중 전략(MACD+샹들리에)을 1-3단계로 저장·고정하고 전용 원장 안내를 표시한다', async ({ page }) => {
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const { Store } = await import('../../server/store.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { readPreparedRun } = await import('../../server/trading-plans.ts');
+  const dir = mkdtempSync(join(tmpdir(), 'trading-confirmed-daily-'));
+  const store = new Store(join(dir, 'general.sqlite'));
+  const rule = {
+    kind: 'macd_momentum' as const,
+    fastPeriod: 12,
+    slowPeriod: 26,
+    signalPeriod: 9,
+    requireZeroLineAbove: false,
+  };
+  const overlay = { chandelier: { atrPeriod: 14, atrMultiplier: 3 } };
+  store.update(s => {
+    s.strategies.push({
+      id: 'kis-macd-chandelier',
+      name: '실제 격리 MACD 샹들리에',
+      environment: 'kis-paper',
+      code: '005930',
+      fast: 5,
+      slow: 20,
+      qty: 2,
+      revision: 1,
+      active: false,
+      lastSignal: 'hold',
+      lastTick: -1,
+      rule,
+      overlay,
+    });
+  });
+  let brokerCalls = 0;
+  const client = new KisClient({ key: 'fixture', secret: 'fixture', account: '00000000', product: '01' }, async () => {
+    brokerCalls++;
+    throw Error('unexpected broker call');
+  });
+  const port = Number(process.env.TRADING_SETTINGS_CONFIRMED_DAILY_PORT ?? 4388);
+  const server = makeServer(store, client, [port]);
+  server.listen(port, '127.0.0.1');
+  await once(server, 'listening');
+  try {
+    const notice =
+      '고정 시점의 검증 완료 일봉을 전용 원장에 복사하여 세션 직전 개장일 봉과 일치할 때 당일 1회 집행하며, 고정 이후 추가 수집한 일봉은 기존 전용 원장에 자동 반영되지 않습니다.';
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`http://127.0.0.1:${port}/settings/trading/strategy/1?strategy=kis-macd-chandelier`);
+    await expect(page.getByRole('main')).toContainText('MACD 히스토그램 (12/26/9) · 샹들리에 ATR(14)×3');
+    await expect(page.getByRole('main')).toContainText(notice);
+    await expect(page.getByRole('main')).not.toContainText('5/20 교차');
+    await page.getByLabel('시작 (KST)').fill('2099-01-05T09:00');
+    await page.getByLabel('종료 (KST)').fill('2099-01-05T11:00');
+    await page.getByRole('button', { name: '한도·조건으로', exact: true }).click();
+    await expect(page.getByRole('main')).toContainText('MACD 히스토그램 (12/26/9) · 샹들리에 ATR(14)×3');
+    await page.getByRole('button', { name: '초안 저장 및 검토', exact: true }).click();
+    await expect(page.getByRole('main')).toContainText(
+      '저장 대상 005930 · MACD 히스토그램 (12/26/9) · 샹들리에 ATR(14)×3 · 2주',
+    );
+    await expect(page.getByRole('row', { name: /신호 규칙/ })).toContainText(
+      'MACD 히스토그램 (12/26/9) · 샹들리에 ATR(14)×3',
+    );
+    await expect(page.getByRole('main')).toContainText(notice);
+    await expect(page.getByRole('main')).not.toContainText('5/20');
+    await page.getByRole('button', { name: '다음 실행 고정', exact: true }).click();
+    await expect(page.getByText('고정 완료 · 실행 대기')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= 390)).toBe(true);
+    const strat = store.tradingPlan('strategy')!.draft;
+    expect(strat.fixed).toBe(true);
+    const prepared = readPreparedRun(
+      join(dir, 'trading-runs', 'strategy-' + strat.id, 'strategy-' + strat.runId + '.json'),
+      'strategy',
+    );
+    expect('contractId' in prepared.config && prepared.config.rule).toEqual(rule);
+    expect('contractId' in prepared.config && prepared.config.overlay).toEqual(overlay);
+    expect(brokerCalls).toBe(0);
+  } finally {
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

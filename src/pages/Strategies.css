@@ -60,6 +60,8 @@
 .rule-guide-lines strong { color: #195e55; font-size: 11px; }
 .rule-env-badges { display: flex; flex-wrap: wrap; gap: 6px; }
 .rule-env-badges .badge.warning { background: #fff0e7; color: #8c351e; font-weight: 600; }
+.rule-kis-note { margin: 8px 0 0; font-size: 11px; color: #135951; line-height: 1.5; }
+.rule-kis-warning { margin: 8px 0 0; font-size: 11px; color: #8c351e; font-weight: 500; line-height: 1.5; }
 .rule-presets {
   display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
   gap: 8px; margin: 0 0 10px;
