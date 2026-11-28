@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { won } from '../../../shared/model';
 import { dailyRunsSchema } from '../../../shared/data-inventory';
 import { marketDate, type DailyRun } from '../../../shared/market-data';
-import { experimentListSchema, experimentSchema, type Experiment } from '../../../shared/backtest';
+import { singleExperimentListSchema as experimentListSchema, singleExperimentSchema as experimentSchema, type SingleExperiment as Experiment } from '../../../shared/backtest';
 import { STRATEGY_CATALOG, warmup } from '../../../shared/strategy-rules';
 import { useWorkbench } from '../../context';
 import { Chart, Panel } from '../ui';

@@ -1,5 +1,6 @@
+import type {PortfolioRule} from '../../shared/portfolio-rules';
 import { z } from 'zod';
-import { backtestResultSchema, type Experiment } from '../../shared/backtest';
+import { backtestResultSchema, type SingleExperiment as Experiment } from '../../shared/backtest';
 import { masterCodeSchema } from '../../shared/market-data';
 import {
   STRATEGY_CATALOG,
@@ -958,7 +959,7 @@ function isFormUnfilteredSma(form: RuleFormState): boolean {
 }
 
 /** KIS 모의 계약·실시간 시작 차단 사유를 반환한다(`shared/strategy-rules` `assertRealtimeRule`과 100% 일치). */
-export function kisRealtimeBlockReason(rule?: StrategyRule, overlay?: ExitOverlay, slow?: number): string {
+export function kisRealtimeBlockReason(rule?: PortfolioRule | StrategyRule, overlay?: ExitOverlay, slow?: number): string {
   try {
     assertRealtimeRule(rule, overlay, slow);
     return '';
@@ -969,7 +970,7 @@ export function kisRealtimeBlockReason(rule?: StrategyRule, overlay?: ExitOverla
 
 /** 저장 전략이 KIS 모의 확정 일봉 기반(종가 확정형 10종 + 선택 샹들리에)인지 판정한다. */
 export function isKisConfirmedDailyStrategy(
-  rule?: StrategyRule,
+  rule?: PortfolioRule | StrategyRule,
   overlay?: ExitOverlay,
   slow?: number,
 ): boolean {
@@ -982,7 +983,7 @@ export function isKisTickSmaForm(form: RuleFormState): boolean {
 }
 
 /** 저장 전략이 KIS 모의 체결가 이벤트 단위를 사용하는 무필터·무오버레이 기본 SMA인지 판정한다(`slow` 상한과 무관). */
-export function isKisTickSmaRule(rule?: StrategyRule, overlay?: ExitOverlay): boolean {
+export function isKisTickSmaRule(rule?: PortfolioRule | StrategyRule, overlay?: ExitOverlay): boolean {
   if (overlay?.chandelier || overlay?.volatilityParity) return false;
   return (
     !rule ||

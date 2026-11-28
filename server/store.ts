@@ -512,7 +512,9 @@ export class Store {
         AND body->>'$.status.phase'!='loading'
     ) SELECT id FROM completed WHERE recency>1 AND usability>1
       AND NOT EXISTS (SELECT 1 FROM backtest_experiments
-        WHERE body->>'$.snapshot.input.runId'=completed.id OR body->>'$.snapshot.collection.id'=completed.id)`)
+        WHERE body->>'$.snapshot.input.runId'=completed.id OR body->>'$.snapshot.collection.id'=completed.id
+          OR EXISTS (SELECT 1 FROM json_each(body,'$.snapshot.input.runs') r WHERE r.value->>'$.runId'=completed.id)
+          OR EXISTS (SELECT 1 FROM json_each(body,'$.snapshot.legs') l WHERE l.value->>'$.collection.id'=completed.id))`)
       .all(run.code, run.adjustment);
     const removeBars = this.db.prepare('DELETE FROM daily_bars WHERE run_id=?');
     const removeRun = this.db.prepare('DELETE FROM daily_runs WHERE id=?');
@@ -541,7 +543,7 @@ export class Store {
   }
   experiments() { return this.db.prepare('SELECT body FROM backtest_experiments ORDER BY rowid DESC').all().map(row => {
     const experiment = JSON.parse(row.body as string) as Experiment;
-    return { id: experiment.id, createdAt: experiment.createdAt, input: experiment.snapshot.input, bars: experiment.snapshot.bars.length };
+    return { id: experiment.id, createdAt: experiment.createdAt, input: experiment.snapshot.input, bars: 'legs' in experiment.snapshot ? experiment.snapshot.legs[0].bars.length : experiment.snapshot.bars.length };
   }); }
   experiment(id: string): Experiment | undefined { const row = this.db.prepare('SELECT body FROM backtest_experiments WHERE id=?').get(id); return row ? JSON.parse(row.body as string) as Experiment : undefined; }
   saveExperiment(experiment: Experiment) { this.db.prepare('INSERT OR IGNORE INTO backtest_experiments VALUES (?,?)').run(experiment.id, JSON.stringify(experiment)); }

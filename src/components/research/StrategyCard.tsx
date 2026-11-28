@@ -1,3 +1,4 @@
+import {isPortfolioRule, PORTFOLIO_CATALOG} from '../../../shared/portfolio-rules';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Play, Square } from 'lucide-react';
@@ -65,7 +66,7 @@ export function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: bo
       <p className="studio-meta">
         {kis ? 'KIS 모의' : 'DEMO'} · revision {s.revision ?? 1} · {instrument?.name ?? s.code}
         {instrument && ' ' + s.code}
-        {rule && ` · ${STRATEGY_CATALOG[rule.kind].title}`}
+        {rule && ` · ${isPortfolioRule(rule) ? PORTFOLIO_CATALOG[rule.kind].title : STRATEGY_CATALOG[rule.kind].title}`}
       </p>
       <div className="studio-terms">
         {!rule || rule.kind === 'ma_crossover' ? (

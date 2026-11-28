@@ -1,10 +1,11 @@
+import {isPortfolioRule,portfolioOnly} from '../shared/portfolio-rules.ts';
 import { breakoutEntry, assertCloseOnly, evaluateClose, warmup, type StrategyRule, type ExitOverlay, type RuleBar } from '../shared/strategy-rules.ts';
 import { randomUUID } from 'node:crypto';
 import { equity, type State, type BacktestInput, type BacktestResult, type Event } from '../shared/model.ts';
 import type { DailyPrice } from '../shared/market-data.ts';
 import type { OrderInput } from '../shared/contracts.ts';
 
-const fee = (amount: number, bps = 1.5) => Math.ceil(amount * bps / 10000);
+export const fee = (amount: number, bps = 1.5) => Math.ceil(amount * bps / 10000);
 export function record(state: State, title: string, detail: string, level: Event['level'] = 'info', context: Pick<Event, 'environment' | 'target' | 'requestId'> = {}) {
   state.events.unshift({ id: randomUUID(), time: new Date().toISOString(), title, detail, level, read: false, ...context });
   state.events = state.events.slice(0, 1000);
@@ -87,6 +88,12 @@ export function advanceTick(state: State) {
   if (!state.risk.halted && state.startingEquity - equity(state) >= state.risk.dailyLoss) halt(state, true);
   for (const strategy of state.strategies) {
     if (strategy.environment === 'kis-paper' || !strategy.active || strategy.lastTick === state.tick || state.risk.halted) continue;
+    if (isPortfolioRule(strategy.rule)) {
+      strategy.active = false;
+      strategy.lastSignal = 'hold';
+      record(state,'전략 정지',portfolioOnly);
+      continue;
+    }
     strategy.lastTick = state.tick;
     const instrument = state.instruments.find(i => i.code === strategy.code)!;
     const position = state.positions.find(p => p.code === strategy.code);
@@ -153,16 +160,16 @@ function allocationWeight(prior: readonly RuleBar[], parity: NonNullable<ExitOve
   const cap = parity.maxAllocationPct / 100;
   return annualVolPct > 0 ? Math.min(cap, parity.targetAnnualVolPct / annualVolPct) : cap;
 }
+export function unitsAt(cash:number,price:number,feeBps:number) {
+  const units = Math.floor(cash / (price * (1 + feeBps / 10000)));
+  return units * price + fee(units * price,feeBps) > cash ? units - 1 : units;
+}
 export function backtestRules(bars: RuleBar[], executions: number[], input: RuleSimulation, environment:'demo'|'daily') {
   if (environment === 'demo') assertCloseOnly(input.rule,input.overlay);
   const required = warmup(input.rule,input.overlay) + 1;
   if (bars.length < required) throw new Error(`판정과 다음 봉 체결에 최소 ${required}봉이 필요합니다.`);
-  const unitsAt = (cash:number,price:number) => {
-    const units = Math.floor(cash / (price * (1 + input.feeBps / 10000)));
-    return units * price + fee(units * price,input.feeBps) > cash ? units - 1 : units;
-  };
   const benchPrice = executions[0] * (1 + input.slippageBps / 10000);
-  const benchQty = unitsAt(input.capital,benchPrice);
+  const benchQty = unitsAt(input.capital,benchPrice,input.feeBps);
   const benchCash = input.capital - (benchQty * benchPrice + fee(benchQty * benchPrice,input.feeBps));
   let benchPeak = input.capital, benchDrawdown = 0, benchValue = input.capital;
   let cash = input.capital, qty = 0, fees = 0, slippageCost = 0, peak = cash, maxDrawdown = 0, entry = 0;
@@ -181,10 +188,10 @@ export function backtestRules(bars: RuleBar[], executions: number[], input: Rule
     if ((side === 'buy' && !qty) || (side === 'sell' && qty)) {
       const reference = target ?? executions[i];
       const price = reference * (1 + (side === 'buy' ? 1 : -1) * input.slippageBps / 10000);
-      let units = side === 'buy' ? unitsAt(cash,price) : qty;
+      let units = side === 'buy' ? unitsAt(cash,price,input.feeBps) : qty;
       if (side === 'buy' && input.overlay?.volatilityParity) {
         const budget = cash * allocationWeight(prior,input.overlay.volatilityParity);
-        units = Math.min(units,unitsAt(budget,price));
+        units = Math.min(units,unitsAt(budget,price,input.feeBps));
       }
       if (units > 0) {
         const cost = fee(units * price,input.feeBps);
