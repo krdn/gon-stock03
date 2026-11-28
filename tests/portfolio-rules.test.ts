@@ -348,8 +348,8 @@ for (const rule of [sector,clenow]) test(rule.kind+' 단독 실험 참조 원장
 });
 
 test('4B-2 정식 편집기는 15·16 규칙의 왕복·프리셋·포맷·검증을 지원하고 다종목 오버레이를 생략한다',()=>{
-  assert.equal(RULE_KINDS.length,15);
-  for (const kind of ['dual_momentum','faber_gtaa','krx_sector_rs','clenow_momentum'] as const) {
+  assert.equal(RULE_KINDS.length,16);
+  for (const kind of ['dual_momentum','faber_gtaa','krx_sector_rs','clenow_momentum','price_regime'] as const) {
     assert.equal(isPortfolioKind(kind),true);
   }
   for (const rule of [sector,clenow]) {
@@ -448,7 +448,7 @@ test('가격 레짐은 대표 자산의 당일 포함 종가와 반올림 전 �
   }
 });
 
-test('가격 레짐의 정수 경계·strict 스키마 및 기존 편집기 차단', () => {
+test('가격 레짐의 정수 경계·strict 스키마 및 5-2 정식 16종 편집기 왕복·프리셋·포맷·검증', () => {
   for (const [key,min,max] of [
     ['trendSmaPeriod',20,250],['volLookback',10,60],['maxAnnualVolPct',5,80],['cautionExposurePct',0,100],
   ] as const) {
@@ -456,8 +456,55 @@ test('가격 레짐의 정수 경계·strict 스키마 및 기존 편집기 차�
     for (const value of [min-1,min+0.5,max+1]) assert.ok(!portfolioRuleSchema.safeParse({...regime,[key]:value}).success);
   }
   assert.ok(!portfolioRuleSchema.safeParse({...regime,smaPeriod:20}).success);
-  assert.throws(()=>formFromRule(regime),{message:'현재 편집기에서 지원하지 않는 다종목 규칙입니다.'});
-  assert.equal(parseTransferDraft({code:assets[0],rule:regime}),null);
+  assert.equal(RULE_KINDS.length,16);
+  assert.equal(isPortfolioKind('price_regime'),true);
+  const draft = parseTransferDraft({code:assets[0],rule:regime,overlay:{chandelier:{atrPeriod:14,atrMultiplier:3}}});
+  assert.ok(draft);
+  const editor = editorDraftFromTransfer(draft);
+  assert.equal(editor.code,assets[0]);
+  assert.equal(editor.ruleForm.kind,'price_regime');
+  assert.equal(editor.ruleForm.useChandelier,false);
+  assert.equal(editor.ruleForm.useVolatilityParity,false);
+  const form = formFromRule(regime);
+  assert.equal(matchedPreset(form),'basic');
+  const built = buildRuleAndOverlay(form);
+  assert.equal(built.ok,true);
+  if (built.ok) {
+    assert.deepEqual(built.rule,regime);
+    assert.equal(built.overlay,undefined);
+  }
+  for (const presetKey of ['conservative','basic','aggressive'] as const) {
+    const next = applyPreset(form,presetKey);
+    assert.equal(matchedPreset(next),presetKey);
+    const presetBuilt = buildRuleAndOverlay(next);
+    assert.equal(presetBuilt.ok,true);
+    if (presetBuilt.ok) {
+      assert.deepEqual(presetBuilt.rule,{kind:'price_regime',assets,safeAsset,...PORTFOLIO_CATALOG.price_regime.presets[presetKey]});
+    }
+  }
+  for (const [field,badValue,expectedError] of [
+    ['regimeTrendSmaPeriod','19','추세 SMA 기간은 20~250 사이의 정수여야 합니다.'],
+    ['regimeTrendSmaPeriod','20.5','추세 SMA 기간은 20~250 사이의 정수여야 합니다.'],
+    ['regimeVolLookback','61','변동성 관측 기간은 10~60 사이의 정수여야 합니다.'],
+    ['regimeMaxAnnualVolPct','4','최대 연변동성 한도는 5~80 사이의 정수(%)여야 합니다.'],
+    ['regimeCautionExposurePct','101','경계 위험 노출 비중은 0~100 사이의 정수(%)여야 합니다.'],
+    ['regimeRebalanceDays','4','리밸런싱 주기는 5~60 사이의 정수여야 합니다.'],
+  ] as const) {
+    const invalid = buildRuleAndOverlay({...form,[field]:badValue});
+    assert.equal(invalid.ok,false);
+    if (!invalid.ok) {
+      assert.equal(invalid.focusName,field);
+      assert.equal(invalid.error,expectedError);
+    }
+  }
+  assert.equal(
+    formatRuleSummary(regime),
+    '가격 레짐 (매크로 대용) (추세 SMA 200봉 · 변동성 20봉 ≤ 25% · 경계 50% · 리밸런싱 20봉 · 위험 069500/005930 · 안전 00088K)',
+  );
+  assert.equal(
+    formatRuleSummary({...regime,safeAsset:null}),
+    '가격 레짐 (매크로 대용) (추세 SMA 200봉 · 변동성 20봉 ≤ 25% · 경계 50% · 리밸런싱 20봉 · 위험 069500/005930 · 안전 현금)',
+  );
 });
 
 test('가격 레짐 첫 W봉 신호는 W+1봉 시가에 체결하고 260봉 원장은 pruning 후 재생된다', () => {

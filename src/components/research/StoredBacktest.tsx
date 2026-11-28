@@ -265,7 +265,10 @@ export function StoredBacktest({
       const code = raw.trim().toUpperCase();
       if (!code || seen.has(code) || !masterCodeSchema.safeParse(code).success) return;
       seen.add(code);
-      entries.push({ code, role: `위험 자산 ${idx + 1}` });
+      entries.push({
+        code,
+        role: idx === 0 && ruleForm.kind === 'price_regime' ? '위험 자산 1 (레짐 판정)' : `위험 자산 ${idx + 1}`,
+      });
     });
     const safeCode = ruleForm.portfolioSafeAsset.trim().toUpperCase();
     if (safeCode && !seen.has(safeCode) && masterCodeSchema.safeParse(safeCode).success) {

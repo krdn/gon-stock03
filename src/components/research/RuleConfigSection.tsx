@@ -188,6 +188,32 @@ export function RuleConfigSection({
       }
       return null;
     }
+    if (form.kind === 'price_regime') {
+      const trendSmaPeriod = Number(form.regimeTrendSmaPeriod);
+      const volLookback = Number(form.regimeVolLookback);
+      if (
+        form.regimeTrendSmaPeriod.trim() !== '' &&
+        Number.isInteger(trendSmaPeriod) &&
+        trendSmaPeriod >= 20 &&
+        trendSmaPeriod <= 250 &&
+        form.regimeVolLookback.trim() !== '' &&
+        Number.isInteger(volLookback) &&
+        volLookback >= 10 &&
+        volLookback <= 60
+      ) {
+        return portfolioWarmup({
+          kind: 'price_regime',
+          assets: ['069500', '005930'],
+          safeAsset: null,
+          trendSmaPeriod,
+          volLookback,
+          maxAnnualVolPct: 25,
+          cautionExposurePct: 50,
+          rebalanceDays: 20,
+        });
+      }
+      return null;
+    }
     return null;
   })();
 
@@ -212,7 +238,7 @@ export function RuleConfigSection({
             ))}
           </select>
         </label>
-        <p className="rule-selector-meta">15종 전략 지원 · 저장 일봉 15종(다종목 4종 포함) / DEMO 종가 전용 4종</p>
+        <p className="rule-selector-meta">16종 전략 지원 · 저장 일봉 16종(다종목 5종 포함) / DEMO 종가 전용 4종</p>
       </div>
 
       <div className="rule-guide" aria-label="규칙 요약 안내">
@@ -307,7 +333,9 @@ export function RuleConfigSection({
             {form.portfolioAssets.map((asset, index) => (
               <div key={index} className="rule-basket-row">
                 <label className="field">
-                  위험 자산 {index + 1}
+                  {form.kind === 'price_regime' && index === 0
+                    ? '위험 자산 1 (레짐 판정 기준 자산)'
+                    : `위험 자산 ${index + 1}`}
                   <input
                     name={`portfolioAsset-${index}`}
                     type="text"
@@ -359,7 +387,9 @@ export function RuleConfigSection({
                 ? '종가가 이동평균을 초과한 위험 자산에 각각 1/N 배분합니다. 대표 종목은 위험 자산 1과 자동 동기화됩니다.'
                 : form.kind === 'krx_sector_rs'
                   ? '양의 수익률·90% 이상 고점 유지 위험 자산 중 상대강도 상위 K종에 상한 이내 동일 비중을 배분합니다(동률 시 앞 순서 우선). 대표 종목은 위험 자산 1과 자동 동기화됩니다.'
-                  : '추세 SMA 초과·양의 회귀 모멘텀 상위 K종에 Wilder ATR 역변동성 비중을 배분합니다(동률 시 앞 순서 우선). 대표 종목은 위험 자산 1과 자동 동기화됩니다.'}
+                  : form.kind === 'clenow_momentum'
+                    ? '추세 SMA 초과·양의 회귀 모멘텀 상위 K종에 Wilder ATR 역변동성 비중을 배분합니다(동률 시 앞 순서 우선). 대표 종목은 위험 자산 1과 자동 동기화됩니다.'
+                    : '위험 자산 1이 레짐 판정 기준 자산(추세 SMA·실현 연변동성 계산)이며, 판정된 위험 노출을 위험 자산 전체에 균등 배분합니다. 대표 종목은 위험 자산 1과 자동 동기화됩니다.'}
           </p>
           <label className="field">
             안전자산 종목코드 (선택 · 비우면 현금 보유)
@@ -580,6 +610,79 @@ export function RuleConfigSection({
                   />
                 </label>
               </div>
+            </>
+          )}
+          {form.kind === 'price_regime' && (
+            <>
+              <div className="form-grid">
+                <label className="field">
+                  추세 SMA 기간 (봉)
+                  <input
+                    name="regimeTrendSmaPeriod"
+                    type="number"
+                    min="20"
+                    max="250"
+                    step="1"
+                    value={form.regimeTrendSmaPeriod}
+                    onChange={e => update({ regimeTrendSmaPeriod: e.target.value })}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  변동성 관측 기간 (봉)
+                  <input
+                    name="regimeVolLookback"
+                    type="number"
+                    min="10"
+                    max="60"
+                    step="1"
+                    value={form.regimeVolLookback}
+                    onChange={e => update({ regimeVolLookback: e.target.value })}
+                    required
+                  />
+                </label>
+              </div>
+              <div className="form-grid">
+                <label className="field">
+                  최대 연변동성 한도 (%)
+                  <input
+                    name="regimeMaxAnnualVolPct"
+                    type="number"
+                    min="5"
+                    max="80"
+                    step="1"
+                    value={form.regimeMaxAnnualVolPct}
+                    onChange={e => update({ regimeMaxAnnualVolPct: e.target.value })}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  경계 위험 노출 비중 (%)
+                  <input
+                    name="regimeCautionExposurePct"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={form.regimeCautionExposurePct}
+                    onChange={e => update({ regimeCautionExposurePct: e.target.value })}
+                    required
+                  />
+                </label>
+              </div>
+              <label className="field">
+                리밸런싱 주기 (봉)
+                <input
+                  name="regimeRebalanceDays"
+                  type="number"
+                  min="5"
+                  max="60"
+                  step="1"
+                  value={form.regimeRebalanceDays}
+                  onChange={e => update({ regimeRebalanceDays: e.target.value })}
+                  required
+                />
+              </label>
             </>
           )}
           {portfolioWarmupBars !== null && (

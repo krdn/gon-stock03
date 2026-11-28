@@ -497,6 +497,59 @@ export const RULE_FIELD_HELP: Record<RuleKind, RuleHelpEntry> = {
       },
     ],
   },
+  price_regime: {
+    summary:
+      '리밸런싱일 종가 기준 첫 번째 위험 자산(위험 자산 1)의 추세 SMA와 실현 연변동성으로 위험선호(100%)·경계(설정 노출 %)·위험회피(0%) 3상태를 판정해 위험 자산 균등 배분과 안전자산(또는 현금) 비중을 조절합니다.',
+    envBadge: '저장 일봉: 다종목 자산배분 (v3) · DEMO 미지원 · KIS 모의 정지 저장만 가능(시작·계약 고정 차단)',
+    basicPreset:
+      '추세 SMA 200봉 / 변동성 관측 20봉 / 최대 연변동성 25% / 경계 노출 50% / 리밸런싱 20봉 (보수적 200/60/20/30/20 · 공격적 100/20/35/70/10 · 위험 자산 2-6종 · 안전자산 선택)',
+    executionNote:
+      '매도·리밸런싱은 수익을 보장하지 않습니다(수익 미보장). 저장 일봉 다종목 백테스트(v3) 전용이며 DEMO 저장·합성 백테스트는 차단되고, KIS 모의에서는 정지 상태(active=false) 저장만 가능하며 시작·계약 고정은 차단됩니다(단일 종목 공통 오버레이 미지원). [원안 대비 변형 범위] 원안의 FRED 빈티지(당시 공개 경제지표)·중앙은행 발표 시각·금리/신용 레짐은 사용하지 않으며, 첫 번째 위험 자산(assets[0])의 저장 일봉 종가만으로 추세(종가 > 당일 포함 SMA, 같으면 위험회피)와 실현 변동성(직전 volLookback개 단순 수익률 모집단 표준편차×√252×100)을 판정해 위험선호 100%(변동성 <= 한도)·경계 cautionExposurePct%(변동성 > 한도)·위험회피 0%(종가 <= SMA)의 3상태 노출을 위험 자산들에 동일 비중(exposure / N)으로 나누고 잔여 비중(1 - exposure)을 안전자산(비우면 현금)에 배분합니다. 판정 자산은 별도 지수가 아닌 투자 대상 위험 자산 1이며, 타 전략의 진입 한도 오버레이로 적용되지 않고 리밸런싱일 사이에 레짐이 바뀌어도 비중을 조정하지 않습니다. 바스켓 전 종목 거래일 달력 100% 일치·다음 봉 시가 체결·매도 선행 후 정수 수량 매수·동일 비중 유지 시 소폭 축소 매도 가능·현금 부족 시 assets 뒤쪽 종목 수량 축소 가능·위험 자산 동일 비중 첫 시가 벤치마크·분배금/배당/세금 미포함·생존 편향에 유의하세요. 최소 준비 봉은 max(trendSmaPeriod, volLookback + 1) + 1봉(판정 max(trendSmaPeriod, volLookback + 1)봉 + 다음 봉 시가 체결 1봉, 기본 201봉 · 보수적 201봉 · 공격적 101봉)입니다.',
+    fields: [
+      {
+        term: '위험 자산 바스켓 (assets · 위험 자산 1이 레짐 판정 기준)',
+        range: '2-6개 종목코드 (6자리 영숫자 · 중복 금지 · 순서 보존)',
+        description:
+          '투자 대상 위험 자산 목록(N종)이며, 첫 번째 종목(위험 자산 1)의 저장 일봉 종가로만 추세·변동성 레짐을 판정합니다. 판정된 위험 노출(exposure)을 N개 위험 자산에 동일 비중(exposure / N)으로 배분하며 대표 종목(code)은 위험 자산 1과 자동 동기화됩니다.',
+      },
+      {
+        term: '안전자산 (safeAsset, 선택)',
+        range: '6자리 영숫자 코드 또는 비움 (assets와 중복 금지)',
+        description:
+          '경계·위험회피 구간에서 남는 미배정 비중(1 − 위험 노출)을 옮겨 담을 방어 자산입니다. 비워두면(null) 잔여 비중을 현금으로 보유합니다.',
+      },
+      {
+        term: '추세 SMA 기간 (trendSmaPeriod)',
+        range: '20-250 정수 (기본 200봉)',
+        description:
+          '위험 자산 1의 당일 포함 단순 이동평균(SMA) 기간입니다. 리밸런싱일 종가가 SMA를 초과(>)해야 위험선호·경계 판정을 진행하며, 종가가 SMA 이하(<=)이면 위험회피(0%)로 판정합니다.',
+      },
+      {
+        term: '변동성 관측 기간 (volLookback)',
+        range: '10-60 정수 (기본 20봉)',
+        description:
+          '위험 자산 1의 직전 volLookback개 단순 일간 수익률(C_i / C_{i-1} − 1, 필요 종가 volLookback + 1봉) 모집단 표준편차×√252×100으로 실현 연변동성을 계산합니다.',
+      },
+      {
+        term: '최대 연변동성 한도 (maxAnnualVolPct)',
+        range: '5-80 정수 % (기본 25%)',
+        description:
+          '상승 추세(종가 > SMA)에서 실현 연변동성이 이 한도 이하(<=)이면 위험선호(100%), 초과(>)하면 경계 노출(%)로 축소합니다.',
+      },
+      {
+        term: '경계 위험 노출 비중 (cautionExposurePct)',
+        range: '0-100 정수 % (기본 50%)',
+        description:
+          '상승 추세이지만 실현 연변동성이 한도를 초과한 경계 상태에서 위험 자산 전체에 배정할 총 위험 노출 비율입니다. 0%면 안전자산(또는 현금) 100%, 100%면 위험선호와 동일하게 배분합니다.',
+      },
+      {
+        term: '리밸런싱 주기 (rebalanceDays)',
+        range: '5-60 정수 (기본 20봉)',
+        description:
+          '첫 준비 완료 종가 이후 다음 레짐 판정·비중 재조정까지의 거래일 간격입니다. 리밸런싱 주기 사이에는 레짐이 변해도 비중을 바꾸지 않습니다.',
+      },
+    ],
+  },
 };
 
 /** 샹들리에 ATR 청산 오버레이 기본 초기값 안내. */
@@ -654,9 +707,10 @@ export function ResearchHelpPanel({
             <span className="research-help-step-no">2단계</span>
             <h3>규칙과 프리셋 선택</h3>
             <p>
-              전략 스튜디오나 백테스트에서 15종 전략 규칙(단일 종목 11종 + 다종목 자산배분 4종:{' '}
+              전략 스튜디오나 백테스트에서 16종 전략 규칙(단일 종목 11종 + 다종목 자산배분 5종:{' '}
               <code>13 ETF 듀얼 모멘텀</code>, <code>14 파버 GTAA</code>, <code>15 KRX 섹터 상대강도</code>,{' '}
-              <code>16 클레노우 회귀 모멘텀</code> · DEMO 종가 전용 4종: <code>이동평균 교차</code>,{' '}
+              <code>16 클레노우 회귀 모멘텀</code>, <code>18 가격 레짐 (매크로 대용)</code> · DEMO 종가 전용 4종:{' '}
+              <code>이동평균 교차</code>,{' '}
               <code>RSI 단기 눌림목</code>, <code>MACD 히스토그램</code>, <code>볼린저 %B 반등</code>) 중 하나를
               고르고 <strong>[보수적 / 기본 / 공격적]</strong> 프리셋 버튼으로 시작값을 채운 뒤 단일 종목 전략이면
               필요에 따라 <code>샹들리에 ATR 청산</code>이나 <code>변동성 패리티 · RMS 사이징</code> 오버레이를
@@ -685,7 +739,8 @@ export function ResearchHelpPanel({
               10종(EMA·필터 포함)과 <code>19 샹들리에 청산</code>은 전용 원장에 복사된 직전 KRX 개장일 확정 일봉으로
               당일 1회 집행합니다(<code>05 윌리엄스 변동성 돌파</code>·<code>13 ETF 듀얼 모멘텀</code>·
               <code>14 파버 GTAA</code>·<code>15 KRX 섹터 상대강도</code>·<code>16 클레노우 회귀 모멘텀</code>·
-              <code>20 변동성 패리티</code>·무필터 SMA 장기 101-120은 저장 일봉 백테스트 전용이며 정지 저장만 가능).
+              <code>18 가격 레짐 (매크로 대용)</code>·<code>20 변동성 패리티</code>·무필터 SMA 장기 101-120은 저장 일봉
+              백테스트 전용이며 정지 저장만 가능).
             </p>
           </li>
         </ol>
@@ -710,7 +765,9 @@ export function ResearchHelpPanel({
                     ? `15 ${ruleTitle(kind)}`
                     : kind === 'clenow_momentum'
                       ? `16 ${ruleTitle(kind)}`
-                      : ruleTitle(kind);
+                      : kind === 'price_regime'
+                        ? `18 ${ruleTitle(kind)}`
+                        : ruleTitle(kind);
             return (
               <article key={kind} className="research-help-card">
                 <h3>
@@ -841,7 +898,7 @@ export function ResearchHelpPanel({
             <h3>다종목 자산배분 (v3) 정산·벤치마크·유의사항</h3>
             <p>
               <code>13 ETF 듀얼 모멘텀</code>, <code>14 파버 GTAA</code>, <code>15 KRX 섹터 상대강도</code>,{' '}
-              <code>16 클레노우 회귀 모멘텀</code>은 저장 일봉 다종목 백테스트(
+              <code>16 클레노우 회귀 모멘텀</code>, <code>18 가격 레짐 (매크로 대용)</code>은 저장 일봉 다종목 백테스트(
               <code>daily-portfolio-next-open-v3</code>) 전용입니다. 바스켓 전 종목(위험 자산 2-6종 + 선택 안전자산)의
               거래일 달력이 100% 일치해야 하며, 리밸런싱일 다음 봉 시가에 슬리피지 전 시가 총평가액으로 목표 정수 수량을
               산출해 매도를 먼저 체결한 뒤 가용 현금 안에서 정수 수량만 매수하고 잔여 현금을 보유합니다. 동일 비중을
@@ -864,15 +921,16 @@ export function ResearchHelpPanel({
       >
         <div className="research-help-faq">
           <article className="research-help-card">
-            <h3>Q. 왜 15종 전략 중 일부와 오버레이 2종은 DEMO에서 저장/실행이 안 되나요?</h3>
+            <h3>Q. 왜 16종 전략 중 일부와 오버레이 2종은 DEMO에서 저장/실행이 안 되나요?</h3>
             <p>
               DEMO 합성 봉은 종가 하나만 생성하며 단일 종목 연습 전용입니다. 종가만 쓰는 단일 종목 4종(
               <code>이동평균 교차</code>(거래량 필터 끔), <code>RSI 단기 눌림목</code>, <code>MACD 히스토그램</code>,{' '}
               <code>볼린저 %B 반등</code>)만 DEMO 저장·백테스트를 지원합니다. 시가·고가·저가·거래량이 필요한 단일 종목
-              7종, 다종목 자산배분 4종(<code>13 ETF 듀얼 모멘텀</code>, <code>14 파버 GTAA</code>,{' '}
-              <code>15 KRX 섹터 상대강도</code>, <code>16 클레노우 회귀 모멘텀</code>), 이동평균 거래량 필터·
-              <code>샹들리에 청산</code>·<code>변동성 패리티</code> 오버레이는 실제 일봉 데이터가 있는{' '}
-              <strong>KIS 저장 일봉 백테스트</strong>에서만 계산할 수 있어 DEMO 저장·실행을 차단합니다.
+              7종, 다종목 자산배분 5종(<code>13 ETF 듀얼 모멘텀</code>, <code>14 파버 GTAA</code>,{' '}
+              <code>15 KRX 섹터 상대강도</code>, <code>16 클레노우 회귀 모멘텀</code>,{' '}
+              <code>18 가격 레짐 (매크로 대용)</code>), 이동평균 거래량 필터·<code>샹들리에 청산</code>·
+              <code>변동성 패리티</code> 오버레이는 실제 일봉 데이터가 있는 <strong>KIS 저장 일봉 백테스트</strong>에서만
+              계산할 수 있어 DEMO 저장·실행을 차단합니다.
             </p>
           </article>
           <article className="research-help-card">
@@ -885,10 +943,11 @@ export function ResearchHelpPanel({
               자동 반영되지 않습니다. 반면 <strong>05 윌리엄스 변동성 돌파</strong>,{' '}
               <strong>13 ETF 듀얼 모멘텀</strong>, <strong>14 파버 GTAA</strong>,{' '}
               <strong>15 KRX 섹터 상대강도</strong>, <strong>16 클레노우 회귀 모멘텀</strong>,{' '}
-              <strong>20 변동성 패리티 · RMS</strong>는 저장 일봉 백테스트 전용이라 KIS 모의에서는 정지 상태(
-              <code>active=false</code>) 저장만 가능하고 시작·계약 고정은 차단됩니다. 또한 기본 무필터 SMA라도 장기
-              기간이 <code>101-120</code>이면 <strong>정지 상태(active=false) 저장과 저장 일봉 백테스트는 가능하지만</strong>
-              , KIS 실시간 시작 계약 상한(100 이하)에 따라 <strong>전략 시작</strong>과 계약 고정은 차단됩니다.
+              <strong>18 가격 레짐 (매크로 대용)</strong>, <strong>20 변동성 패리티 · RMS</strong>는 저장 일봉 백테스트
+              전용이라 KIS 모의에서는 정지 상태(<code>active=false</code>) 저장만 가능하고 시작·계약 고정은 차단됩니다.
+              또한 기본 무필터 SMA라도 장기 기간이 <code>101-120</code>이면{' '}
+              <strong>정지 상태(active=false) 저장과 저장 일봉 백테스트는 가능하지만</strong>, KIS 실시간 시작 계약
+              상한(100 이하)에 따라 <strong>전략 시작</strong>과 계약 고정은 차단됩니다.
             </p>
           </article>
           <article className="research-help-card">
@@ -898,6 +957,26 @@ export function ResearchHelpPanel({
               <code>passed</code> 상태의 달력 대조 완료 KIS 저장 일봉이 필요하며, 선택한 기간의 거래일 달력이 전 종목
               100% 일치해야 합니다. 일부 종목이 미수집이면 데이터 상태 화면에서 먼저 수집하고, 공통 가능 기간
               (<code>[max(시작일), min(종료일, 수집일−1일)]</code>) 안에서 기간을 지정해 실행하세요.
+            </p>
+          </article>
+          <article className="research-help-card">
+            <h3>Q. 설계 문서의 20대 전략 중 08 갭·초반 거래량과 17 공시 드리프트·희석 차단 전략은 왜 목록에 없나요?</h3>
+            <p>
+              설계 문서의 20대 전략 중 <strong>18종 구현(단일 11 · 다종목 5 · 오버레이 2)</strong>을 제공하며, 아래
+              2종은 현재 저장 일봉 원장 아키텍처로 원안의 핵심 신호를 왜곡 없이 재현할 수 없어 아키텍처 제외로
+              분류했습니다.
+            </p>
+            <p>
+              <strong>08 갭·초반 거래량</strong>: 장 초반 분 단위 가격·누적 거래량으로 진입을 확인하는 전략이나 저장
+              스냅샷에는 일봉 OHLCV만 있어 시가 이후 거래량과 고저가 순서를 확정할 수 없으며, 종가 확인 후 다음 시가
+              체결로 바꾸면 원안의 당일 진입 근거가 사라지고 <code>02 돈키안 돌파</code>·<code>06 볼린저 스퀴즈</code>의
+              거래량 돌파와 중복되어 제외했습니다.
+            </p>
+            <p>
+              <strong>17 공시 드리프트·희석 차단</strong>: 공시 공개 시각과 분류(실적·유상증자·전환사채 등)가 필수이나
+              저장 스냅샷에 시점별 공시 원장이 없고 현재 수집하는 OpenDART 목록은 접수일·접수번호만 사용해 장중·장후
+              공개 시각을 확정할 수 없으며, 가격·거래량 급변 대용으로는 공시 여부 판별과 희석 차단을 구현할 수 없어
+              제외했습니다.
             </p>
           </article>
           <article className="research-help-card">
