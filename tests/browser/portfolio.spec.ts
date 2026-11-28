@@ -581,3 +581,70 @@ test('portfolio renders allocation bar, 3-card diagnostic hub for KIS and DEMO, 
   expect(mutations).toBe(0);
   expect(errors).toEqual([]);
 });
+
+test('portfolio guards unresolved KIS exposure, dailyLoss exact boundary, unheld buy-reservation exposure, and total fractional return rate', async ({ page }) => {
+  const state = portfolioState();
+  const now = state.status.lastSuccessAt!;
+  state.risk.maxPosition = 10_000;
+  state.risk.dailyLoss = 300_000;
+  state.connection.balance!.totalEquity = 100_000;
+
+  let mutations = 0;
+  page.on('request', req => { if (req.method() === 'POST') mutations++; });
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+
+  // 1) unresolvedCount > 0 (보유 0종목 및 보유 있음 모두): 확정 노출·보유·예약 없음 대신 '노출 미확인' 표시
+  state.connection.balance!.positions = [];
+  state.paperRisk = {
+    day: '20261120',
+    baselineEquity: 200_000,
+    unresolvedCount: 1,
+    orders: { observedAt: now, rows: [] },
+  };
+  await page.goto('/portfolio');
+  const hub = page.getByRole('region', { name: '포트폴리오 분석 및 위험·배분 진단 허브' });
+  await expect(hub).toContainText('한도 10,000원 · 노출 미확인 (불명·전송 중 주문 대조 필요)');
+  await expect(hub).not.toContainText('보유·예약 없음');
+  await expect(hub).toContainText('긴급정지 꺼짐 (KIS 손실·대조 미확인)');
+
+  state.connection.balance!.positions = [{ code: '005930', name: '삼성전자', qty: 2, average: 100, price: 150 }];
+  await page.reload();
+  await expect(hub).toContainText('한도 10,000원 · 노출 미확인 (불명·전송 중 주문 대조 필요)');
+
+  // 2) kisLoss === state.risk.dailyLoss 경계값(300,000 === 300,000) 정지 + 3) 미보유 종목(NAVER) 양수 매수 예약 단독 최대 노출
+  state.paperRisk = {
+    day: '20261120',
+    baselineEquity: 400_000,
+    unresolvedCount: 0,
+    orders: {
+      observedAt: now,
+      rows: [{ code: '035420', side: 'buy', price: 2000, remaining: 3, cancelled: false }],
+    },
+  };
+  await page.reload();
+  await expect(hub).toContainText('일일 손실 한도 도달 (신규 주문 정지)');
+  await expect(hub).not.toContainText('긴급정지 꺼짐 (정상)');
+  await expect(hub).toContainText('NAVER 6,000원 / 한도 10,000원 (60%)');
+  await expect(hub.getByRole('link', { name: /NAVER|삼성전자/ })).toHaveCount(0);
+
+  // 4) 미평가 종목 없이 100.4원 1주 -> 현재가 100원 단독 보유 시 행과 허브 총 투자 수익률 모두 -0.40% 표시
+  state.connection.balance!.positions = [{ code: '207940', name: '삼성바이오로직스', qty: 1, average: 100.4, price: 100 }];
+  state.paperRisk = {
+    day: '20261120',
+    baselineEquity: 100_000,
+    unresolvedCount: 0,
+    orders: { observedAt: now, rows: [] },
+  };
+  await page.reload();
+  const row = page.getByRole('row').filter({ hasText: '삼성바이오로직스' });
+  const rowPnl = row.getByRole('cell', { name: '0원', exact: true });
+  await expect(rowPnl).toBeVisible();
+  await expect(rowPnl).not.toHaveClass(/up|down/);
+  const rowRate = row.getByRole('cell', { name: '-0.40%', exact: true });
+  await expect(rowRate).toBeVisible();
+  await expect(rowRate).toHaveClass(/down/);
+  await expect(hub).toContainText('-0.40% (손익 0원)');
+  await expect(hub).toContainText('긴급정지 꺼짐 (정상)');
+
+  expect(mutations).toBe(0);
+});

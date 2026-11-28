@@ -337,8 +337,10 @@ export function Portfolio() {
   const maxExposureText = (() => {
     if (!available) return '로컬 상태 미확인';
     if (!portfolio) return `한도 ${won(state.risk.maxPosition)}원 · 노출 산출 불가`;
-    if (kis && (!currentBalance || !ordersKnown)) {
-      return `한도 ${won(state.risk.maxPosition)}원 · 노출 미확인 (잔고·주문 대조 필요)`;
+    if (kis && !kisRiskKnown) {
+      return !currentBalance || !ordersKnown
+        ? `한도 ${won(state.risk.maxPosition)}원 · 노출 미확인 (잔고·주문 대조 필요)`
+        : `한도 ${won(state.risk.maxPosition)}원 · 노출 미확인 (불명·전송 중 주문 대조 필요)`;
     }
     const activeBuyOrders: { code: string; price: number; remaining: number; name?: string }[] = kis
       ? (paperRisk?.orders?.rows ?? []).filter(o => !o.cancelled && o.remaining > 0 && o.side === 'buy')
