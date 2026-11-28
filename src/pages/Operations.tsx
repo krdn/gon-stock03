@@ -17,11 +17,31 @@ import { authenticationStatus } from '../../shared/status';
 type RiskExposureFilter = 'all' | 'warning' | 'reserved' | 'safe';
 type RiskExposureSort = 'default' | 'used-desc' | 'room-asc' | 'held-desc' | 'pending-desc';
 type RiskEventFilter = 'all' | 'halt' | 'block' | 'limit';
+type RiskMorningStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
-interface RiskMorningSummary {
+interface RiskMorningReportSummary {
+  id: string;
   day: string;
   dailyLoss: number;
   equity: number | null;
+  approvedAt: string | null;
+}
+
+interface RiskMorningRunSummary {
+  armed: boolean;
+  buyId: string | null;
+}
+
+interface RiskMorningSignalSummary {
+  at: string | null;
+  outcome: string;
+}
+
+interface RiskMorningPayload {
+  report: RiskMorningReportSummary | null;
+  run: RiskMorningRunSummary | null;
+  stoppedFlag: boolean;
+  signals: RiskMorningSignalSummary[];
 }
 
 const RISK_EVENT_TITLES = [
@@ -119,44 +139,92 @@ export function Risk() {
   const [exposureSort, setExposureSort] = useState<RiskExposureSort>('default');
   const exposureSearchRef = useRef<HTMLInputElement>(null);
   const [eventFilter, setEventFilter] = useState<RiskEventFilter>('all');
-  const [morningReport, setMorningReport] = useState<RiskMorningSummary | null>(null);
+  const [morningStatus, setMorningStatus] = useState<RiskMorningStatus>('idle');
+  const [morningData, setMorningData] = useState<RiskMorningPayload | null>(null);
 
   useEffect(() => {
     if (demo || !available) {
-      setMorningReport(null);
+      setMorningStatus('idle');
+      setMorningData(null);
       return;
     }
     const controller = new AbortController();
+    setMorningStatus(prev => (prev === 'loaded' ? prev : 'loading'));
     void fetch('/api/morning', { signal: controller.signal })
       .then(async res => {
-        if (!res.ok) return null;
+        if (!res.ok) throw new Error('morning_http_error');
         const data: unknown = await res.json();
-        const report = data && typeof data === 'object' ? (data as { report?: unknown }).report : null;
-        if (
-          report
-          && typeof report === 'object'
-          && typeof (report as { day?: unknown }).day === 'string'
-          && typeof (report as { dailyLoss?: unknown }).dailyLoss === 'number'
-          && Number.isFinite((report as { dailyLoss: number }).dailyLoss)
-          && (report as { dailyLoss: number }).dailyLoss > 0
-        ) {
-          const eq = (report as { equity?: unknown }).equity;
-          return {
-            day: (report as { day: string }).day,
-            dailyLoss: (report as { dailyLoss: number }).dailyLoss,
-            equity: typeof eq === 'number' && Number.isFinite(eq) ? eq : null,
-          } satisfies RiskMorningSummary;
+        if (!data || typeof data !== 'object') throw new Error('morning_invalid_payload');
+        const obj = data as {
+          report?: unknown;
+          run?: unknown;
+          stopped?: unknown;
+          signals?: unknown;
+        };
+        let parsedReport: RiskMorningReportSummary | null = null;
+        if (obj.report && typeof obj.report === 'object') {
+          const r = obj.report as {
+            id?: unknown;
+            day?: unknown;
+            dailyLoss?: unknown;
+            equity?: unknown;
+            approvedAt?: unknown;
+          };
+          if (
+            typeof r.id === 'string'
+            && r.id.length > 0
+            && typeof r.day === 'string'
+            && typeof r.dailyLoss === 'number'
+            && Number.isFinite(r.dailyLoss)
+            && r.dailyLoss > 0
+          ) {
+            parsedReport = {
+              id: r.id,
+              day: r.day,
+              dailyLoss: r.dailyLoss,
+              equity: typeof r.equity === 'number' && Number.isFinite(r.equity) ? r.equity : null,
+              approvedAt: typeof r.approvedAt === 'string' && r.approvedAt.trim() !== '' ? r.approvedAt : null,
+            };
+          }
         }
-        return null;
+        let parsedRun: RiskMorningRunSummary | null = null;
+        if (obj.run && typeof obj.run === 'object') {
+          const run = obj.run as { armed?: unknown; buyId?: unknown };
+          parsedRun = {
+            armed: Boolean(run.armed),
+            buyId: typeof run.buyId === 'string' ? run.buyId : null,
+          };
+        }
+        const parsedSignals: RiskMorningSignalSummary[] = Array.isArray(obj.signals)
+          ? obj.signals
+            .filter((item): item is { at?: unknown; outcome?: unknown } => Boolean(item && typeof item === 'object'))
+            .filter(item => typeof item.outcome === 'string')
+            .map(item => ({
+              at: typeof item.at === 'string' ? item.at : null,
+              outcome: item.outcome as string,
+            }))
+          : [];
+        return {
+          report: parsedReport,
+          run: parsedRun,
+          stoppedFlag: obj.stopped === true,
+          signals: parsedSignals,
+        } satisfies RiskMorningPayload;
       })
       .then(parsed => {
-        if (!controller.signal.aborted) setMorningReport(parsed);
+        if (!controller.signal.aborted) {
+          setMorningData(parsed);
+          setMorningStatus('loaded');
+        }
       })
       .catch(() => {
-        if (!controller.signal.aborted) setMorningReport(null);
+        if (!controller.signal.aborted) {
+          setMorningData(null);
+          setMorningStatus('error');
+        }
       });
     return () => controller.abort();
-  }, [demo, available, server?.instanceId, paperRisk?.day]);
+  }, [demo, available, server?.instanceId, paperRisk?.day, status.observedAt, connection.status.observedAt, state.events.length]);
 
   function closeHelp() {
     setHelpOpen(false);
@@ -196,14 +264,38 @@ export function Risk() {
   const currentEquity = demo ? equity(state) : connection.balance?.totalEquity;
   const loss = baseline != null && currentEquity != null ? Math.max(0, baseline - currentEquity) : null;
   const currentSeoulDay = riskSeoulDay(serverNow, paperRisk?.day);
-  const morningActive = !demo && available && morningReport !== null;
+  const morningReport = morningStatus === 'loaded' ? morningData?.report ?? null : null;
+  const morningRun = morningStatus === 'loaded' ? morningData?.run ?? null : null;
+  const morningActive = !demo
+    && available
+    && morningStatus === 'loaded'
+    && morningReport !== null
+    && morningReport.day === currentSeoulDay
+    && Boolean(morningReport.approvedAt)
+    && Boolean(morningRun?.armed)
+    && morningRun?.buyId === morningReport.id;
+  const morningSyncNote = !demo && available
+    ? morningStatus === 'loading'
+      ? '장전 상태 확인 중'
+      : morningStatus === 'error'
+        ? '장전 상태 미확인 (조회 실패)'
+        : ''
+    : '';
   const effectiveDailyLoss = morningActive ? Math.min(state.risk.dailyLoss, morningReport.dailyLoss) : state.risk.dailyLoss;
-  const morningBaseline = morningActive
-    ? (morningReport.day === currentSeoulDay ? (morningReport.equity ?? baseline) : baseline)
-    : null;
+  const morningBaseline = morningActive ? (morningReport.equity ?? baseline) : null;
   const morningLoss = morningActive && morningBaseline != null && currentEquity != null
     ? Math.max(0, morningBaseline - currentEquity)
     : null;
+  const morningOnlyBaseline = morningActive && baseline == null && morningLoss !== null;
+  const morningLatchedStop = morningActive && Boolean(
+    morningData?.stoppedFlag
+    || morningData?.signals.some(sig => {
+      if (!sig.outcome.includes('손실 한도로 새 매수를 중단')) return false;
+      if (!sig.at) return true;
+      const atMs = Date.parse(sig.at);
+      return !Number.isFinite(atMs) || !currentSeoulDay || riskSeoulDay(atMs) === currentSeoulDay;
+    }),
+  );
   const commonLossBlocked = loss !== null && loss >= state.risk.dailyLoss;
   const morningLossBlocked = morningActive && morningLoss !== null && morningLoss >= effectiveDailyLoss;
   const loading = status.phase === 'loading';
@@ -231,16 +323,19 @@ export function Risk() {
   const effectiveLimitNote = morningActive
     ? `실효 한도 ${won(effectiveDailyLoss)}원 · 공통 ${won(state.risk.dailyLoss)}원 / 장전 계획 ${won(morningReport.dailyLoss)}원`
     : '';
+  const morningStandaloneSuffix = morningOnlyBaseline ? ' · 일반 주문 기준은 첫 주문 전 대기' : '';
 
-  // 손실 한도 소진율 게이지 계산 (공통 한도 + KIS 장전 운용 계획 실효 한도 및 경계값 반영)
+  // 손실 한도 소진율 게이지 계산 (공통 한도 + KIS 장전 운용 계획 실효 한도·당일 래치·조회 상태 반영)
   const lossGauge = (() => {
     if (morningActive) {
       if (loss === null && morningLoss === null) {
         return {
           pct: 0,
           tone: 'neutral' as const,
-          label: '기준 대기',
-          summary: `첫 주문 검증 전 (손실 기준 미설정) · ${effectiveLimitNote}`,
+          label: morningLatchedStop ? '장전 당일 손실 정지 유지 (신규 매수 차단)' : '기준 대기',
+          summary: morningLatchedStop
+            ? `장전 당일 손실 정지 유지 (신규 매수 차단) · ${effectiveLimitNote}`
+            : `첫 주문 검증 전 (손실 기준 미설정) · ${effectiveLimitNote}`,
         };
       }
       if (commonLossBlocked) {
@@ -252,13 +347,24 @@ export function Risk() {
           summary: `소진율 ${pct}% · 잔여 허용 0원 · ${effectiveLimitNote}`,
         };
       }
+      if (morningLatchedStop) {
+        const currentMorningPct = morningLoss !== null && effectiveDailyLoss > 0
+          ? formatRiskPct(morningLoss / effectiveDailyLoss)
+          : 100;
+        return {
+          pct: 100,
+          tone: 'danger' as const,
+          label: '장전 당일 손실 정지 유지 (신규 매수 차단)',
+          summary: `${morningOnlyBaseline ? '장전 기준 ' : '장전 '}현재 소진율 ${currentMorningPct}% · 장전 당일 손실 정지 유지 (신규 매수 차단) · ${effectiveLimitNote}${morningStandaloneSuffix}`,
+        };
+      }
       if (morningLossBlocked) {
         const pct = effectiveDailyLoss > 0 ? formatRiskPct(morningLoss! / effectiveDailyLoss) : 100;
         return {
           pct: 100,
           tone: 'danger' as const,
           label: '한도 도달 차단 (장전 매수)',
-          summary: `장전 소진율 ${pct}% · 잔여 허용 0원 · ${effectiveLimitNote}`,
+          summary: `${morningOnlyBaseline ? '장전 기준 ' : '장전 '}소진율 ${pct}% · 잔여 허용 0원 · ${effectiveLimitNote}${morningStandaloneSuffix}`,
         };
       }
       const commonRatio = loss !== null && state.risk.dailyLoss > 0 ? loss / state.risk.dailyLoss : -1;
@@ -274,16 +380,17 @@ export function Risk() {
         pct: Math.min(100, activePct),
         tone: isWarn ? ('warn' as const) : ('safe' as const),
         label: isWarn ? '주의 (80% 이상)' : '안전 범위',
-        summary: `소진율 ${activePct}% · 잔여 허용 ${won(activeRoom)}원 · ${effectiveLimitNote}`,
+        summary: `${morningOnlyBaseline || useMorning ? '장전 기준 ' : ''}소진율 ${activePct}% · 잔여 허용 ${won(activeRoom)}원 · ${effectiveLimitNote}${morningStandaloneSuffix}`,
       };
     }
 
+    const syncSuffix = morningSyncNote ? ` · ${morningSyncNote}` : '';
     if (loss === null) {
       return {
         pct: 0,
         tone: 'neutral' as const,
-        label: '기준 대기',
-        summary: `첫 주문 검증 전 (손실 기준 미설정) · 한도 ${won(state.risk.dailyLoss)}원 대기`,
+        label: morningSyncNote ? morningSyncNote : '기준 대기',
+        summary: `첫 주문 검증 전 (손실 기준 미설정) · 한도 ${won(state.risk.dailyLoss)}원 대기${syncSuffix}`,
       };
     }
     if (state.risk.dailyLoss <= 0) {
@@ -291,7 +398,7 @@ export function Risk() {
         pct: 100,
         tone: 'danger' as const,
         label: '한도 도달 차단',
-        summary: '손실 한도 산출 불가 · 잔여 허용 0원',
+        summary: `손실 한도 산출 불가 · 잔여 허용 0원${syncSuffix}`,
       };
     }
     const ratio = loss / state.risk.dailyLoss;
@@ -302,7 +409,7 @@ export function Risk() {
         pct: 100,
         tone: 'danger' as const,
         label: '한도 도달 차단',
-        summary: `소진율 ${Math.min(100, pct)}% · 잔여 허용 ${won(room)}원`,
+        summary: `소진율 ${Math.min(100, pct)}% · 잔여 허용 ${won(room)}원${syncSuffix}`,
       };
     }
     if (ratio >= 0.8) {
@@ -310,31 +417,46 @@ export function Risk() {
         pct,
         tone: 'warn' as const,
         label: '주의 (80% 이상)',
-        summary: `소진율 ${pct}% · 잔여 허용 ${won(room)}원`,
+        summary: `소진율 ${pct}% · 잔여 허용 ${won(room)}원${syncSuffix}`,
       };
     }
     return {
       pct,
       tone: 'safe' as const,
       label: '안전 범위',
-      summary: `소진율 ${pct}% · 잔여 허용 ${won(room)}원`,
+      summary: `소진율 ${pct}% · 잔여 허용 ${won(room)}원${syncSuffix}`,
     };
   })();
 
-  // 카드 1 손실 소진율 · 잔여 여유 문구 (기준 미설정 시 0%/한도 여유 확정 오표시 방지)
+  // 카드 1 기준 자산 · 현재 평가자산 문구
+  const hubBaselineSummary = !known
+    ? `사용량 ${unavailableValue}`
+    : morningOnlyBaseline
+      ? `장전 기준 ${money(morningBaseline!)} · 현재 ${currentEquity == null ? '미확인' : money(currentEquity)} (일반 주문 기준은 첫 주문 전 대기)`
+      : morningActive && morningBaseline != null && baseline != null && morningBaseline !== baseline
+        ? `공통 기준 ${money(baseline)} · 장전 기준 ${money(morningBaseline)} · 현재 ${currentEquity == null ? '미확인' : money(currentEquity)}`
+        : `기준 ${baseline == null ? '미설정' : money(baseline)} · 현재 ${currentEquity == null ? '미확인' : money(currentEquity)}`;
+
+  // 카드 1 손실 소진율 · 잔여 여유 문구 (기준 미설정 시 정확 문구 출력, 장전 단독 기준/래치 구분)
   const hubLossSummary = (() => {
     if (!known) return `산출 대기 (${unavailableValue})`;
     if (morningActive) {
       if (loss === null && morningLoss === null) {
-        return `기준 미설정 (첫 주문 검증 전 산출 대기) · ${effectiveLimitNote}`;
+        return morningLatchedStop
+          ? `장전 당일 손실 정지 유지 (신규 매수 차단) · ${effectiveLimitNote}`
+          : '기준 미설정 (첫 주문 검증 전 산출 대기)';
       }
       if (commonLossBlocked) {
         const pct = state.risk.dailyLoss > 0 ? formatRiskPct(loss! / state.risk.dailyLoss) : 100;
         return `${pct}% 소진 · 잔여 여유 0원 · ${effectiveLimitNote}`;
       }
+      if (morningLatchedStop) {
+        const pct = morningLoss !== null && effectiveDailyLoss > 0 ? formatRiskPct(morningLoss / effectiveDailyLoss) : 100;
+        return `${morningOnlyBaseline ? '장전 기준 ' : '장전 '}현재 ${pct}% · 장전 당일 손실 정지 유지 (신규 매수 차단) · ${effectiveLimitNote}${morningStandaloneSuffix}`;
+      }
       if (morningLossBlocked) {
         const pct = effectiveDailyLoss > 0 ? formatRiskPct(morningLoss! / effectiveDailyLoss) : 100;
-        return `장전 ${pct}% 소진 · 잔여 여유 0원 · ${effectiveLimitNote}`;
+        return `${morningOnlyBaseline ? '장전 기준 ' : '장전 '}${pct}% 소진 · 잔여 여유 0원 · ${effectiveLimitNote}${morningStandaloneSuffix}`;
       }
       const commonRatio = loss !== null && state.risk.dailyLoss > 0 ? loss / state.risk.dailyLoss : -1;
       const morningRatio = morningLoss !== null && effectiveDailyLoss > 0 ? morningLoss / effectiveDailyLoss : -1;
@@ -344,14 +466,14 @@ export function Risk() {
       const activeRoom = useMorning
         ? Math.max(0, effectiveDailyLoss - morningLoss!)
         : Math.max(0, state.risk.dailyLoss - loss!);
-      return `${activePct}% 소진 · 잔여 여유 ${won(activeRoom)}원 · ${effectiveLimitNote}`;
+      return `${morningOnlyBaseline || useMorning ? '장전 기준 ' : ''}${activePct}% 소진 · 잔여 여유 ${won(activeRoom)}원 · ${effectiveLimitNote}${morningStandaloneSuffix}`;
     }
     if (loss === null) return '기준 미설정 (첫 주문 검증 전 산출 대기)';
     if (state.risk.dailyLoss <= 0) return '한도 산출 불가';
     return `${formatRiskPct(loss / state.risk.dailyLoss)}% 소진 · 잔여 여유 ${won(Math.max(0, state.risk.dailyLoss - loss))}원`;
   })();
 
-  // 카드 1 서킷브레이커 작동 상태
+  // 카드 1 서킷브레이커 작동 상태 (일반 주문 vs 장전 매수·매도 및 당일 래치 분리)
   const circuitBreakerStatus = !available
     ? `로컬 상태 ${unavailableValue}`
     : halted
@@ -359,14 +481,24 @@ export function Risk() {
       : !known
         ? '사용량 미확인 (차단 여부 대조 필요)'
         : commonLossBlocked
-          ? '일일 손실 한도 도달 (신규 주문 차단)'
-          : morningLossBlocked
-            ? '장전 손실 한도 도달 (장전 신규 매수 차단 · 공통 한도 내)'
-            : loss === null && (!morningActive || morningLoss === null)
-              ? '첫 주문 전 기준 미설정 (정상 감시 대기)'
-              : '정상 감시 중 (한도 내 허용)';
+          ? demo
+            ? '일일 손실 한도 도달 (신규 주문 차단)'
+            : '일일 손실 한도 도달 (일반 주문 신규 매수·매도 차단 · 장전 매도는 매도가능수량 내 허용)'
+          : morningLatchedStop
+            ? '장전 당일 손실 정지 유지 (신규 매수 차단 · 장전 매도는 매도가능수량 내 허용 · 일반 주문 공통 한도 내)'
+            : morningLossBlocked
+              ? '장전 손실 한도 도달 (장전 신규 매수 차단 · 장전 매도는 매도가능수량 내 허용 · 공통 한도 내)'
+              : morningSyncNote
+                ? loss === null
+                  ? `첫 주문 전 기준 미설정 (${morningSyncNote})`
+                  : `정상 감시 중 (일반 주문 한도 내 · ${morningSyncNote})`
+                : morningActive
+                  ? `${morningOnlyBaseline ? '장전 기준 감시 중 (일반 주문 기준은 첫 주문 전 대기)' : '정상 감시 중 (일반 주문 한도 내)'} · 장전 매수 한도 내 (장전 당일 정지 이력 확인 필요 · 장전 매도는 매도가능수량 내 허용)`
+                  : loss === null
+                    ? '첫 주문 전 기준 미설정 (정상 감시 대기)'
+                    : '정상 감시 중 (한도 내 허용)';
 
-  // 카드 3 공통 긴급정지 · 재개 게이트 일관 판정
+  // 카드 3 공통 긴급정지 · 재개 게이트 일관 판정 (일반 주문 vs 장전 매수·매도, 래치, 조회 상태 분리)
   const orderGateStatus = !available
     ? `제어 상태 ${unavailableValue}`
     : halted
@@ -380,12 +512,20 @@ export function Risk() {
         : !known
           ? '긴급정지 꺼짐 · 사용량 미확인 (잔고·주문 대조 필요)'
           : commonLossBlocked
-            ? '손실 한도 도달 · 신규 매수·매도 차단 (긴급정지 꺼짐)'
-            : !demo && morningLossBlocked
-              ? '장전 손실 한도 도달 · 장전 신규 매수 차단 (긴급정지 꺼짐)'
-              : loss === null && (!morningActive || morningLoss === null)
-                ? '정상 허용 (긴급정지 꺼짐 · 첫 주문 시 손실 기준 설정)'
-                : '정상 허용 (긴급정지 꺼짐 · 한도 내 주문 가능)';
+            ? demo
+              ? '손실 한도 도달 · 신규 매수·매도 차단 (긴급정지 꺼짐)'
+              : '손실 한도 도달 · 신규 매수·매도 차단 (긴급정지 꺼짐) · 일반 주문 차단 · 장전 매도는 매도가능수량 내 허용'
+            : !demo && morningLatchedStop
+              ? '장전 당일 손실 정지 유지 (신규 매수 차단 · 장전 매도는 매도가능수량 내 허용 · 긴급정지 꺼짐)'
+              : !demo && morningLossBlocked
+                ? '장전 손실 한도 도달 · 장전 신규 매수 차단 (긴급정지 꺼짐 · 장전 매도는 매도가능수량 내 허용)'
+                : morningSyncNote
+                  ? `${morningSyncNote} · 일반 주문 ${loss === null ? '첫 주문 시 손실 기준 설정' : '한도 내'} (긴급정지 꺼짐)`
+                  : !demo && morningActive
+                    ? `일반 주문 ${loss === null ? '첫 주문 시 손실 기준 설정' : '정상 허용'} · 장전 매수 한도 내 (장전 당일 정지 이력 확인 필요 · 장전 매도는 매도가능수량 내 허용)`
+                    : loss === null
+                      ? '정상 허용 (긴급정지 꺼짐 · 첫 주문 시 손실 기준 설정)'
+                      : '정상 허용 (긴급정지 꺼짐 · 한도 내 주문 가능)';
 
   // 종목별 사용량·노출률·잔여 한도 단일 계산 (표 및 진단 허브 공용)
   const exposureEntries = codes.map(code => {
@@ -652,11 +792,11 @@ export function Risk() {
           <dl className="risk-hub-list">
             <div>
               <dt>선택 환경 · 손실 기준</dt>
-              <dd>{demo ? '로컬 합성 · 시작 자산 기준' : `KIS REST · 거래일 ${paperRisk?.day ?? '미확인'} 첫 주문 기준${morningActive ? ' · 장전 운용 계획 병행' : ''}`}</dd>
+              <dd>{demo ? '로컬 합성 · 시작 자산 기준' : `KIS REST · 거래일 ${paperRisk?.day ?? '미확인'} 첫 주문 기준${morningActive ? ' · 장전 운용 계획 병행' : morningSyncNote ? ` · ${morningSyncNote}` : ''}`}</dd>
             </div>
             <div>
               <dt>기준 자산 · 현재 평가자산</dt>
-              <dd>{!known ? `사용량 ${unavailableValue}` : `기준 ${baseline == null ? '미설정' : money(baseline)} · 현재 ${currentEquity == null ? '미확인' : money(currentEquity)}`}</dd>
+              <dd>{hubBaselineSummary}</dd>
             </div>
             <div>
               <dt>손실 소진율 · 잔여 여유</dt>
