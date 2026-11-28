@@ -972,6 +972,27 @@ test('risk verifies KIS morning activation gates, refresh sync, 503 failure, sto
     await expect(card).not.toContainText('장전 매도는 매도가능수량 내 허용');
   }
 
+  // 5-d) 공통 한도 도달 + /api/morning 200 OK 비활성(run.armed: false) → 카드1·카드3 모두 일반 주문 차단 + '장전 계획 비활성' 병기
+  morningStatusCode = 200;
+  morningPayload = {
+    report: { id: 'rep-1', day: seoulDay, dailyLoss: 150000, equity: 750000, approvedAt: observedAt },
+    run: { armed: false, buyId: 'rep-1' },
+    signals: [],
+  };
+  const at5d = new Date(Date.parse(at5c) + 3500).toISOString();
+  state.status.observedAt = at5d;
+  state.status.lastSuccessAt = at5d;
+  state.revision++;
+  const commonWithInactiveMorning = page.waitForResponse('**/api/morning');
+  await page.clock.fastForward(3500);
+  await commonWithInactiveMorning;
+  await expect(hub).not.toContainText('장전 상태 확인 중');
+  await expect(card1).toContainText('일반 주문 신규 매수·매도 차단');
+  await expect(card1).toContainText('장전 계획 비활성');
+  await expect(card3).toContainText('손실 한도 도달 · 신규 매수·매도 차단 (긴급정지 꺼짐)');
+  await expect(card3).toContainText('일반 주문 차단');
+  await expect(card3).toContainText('장전 계획 비활성');
+
   // 6-a) 공통 baseline(1,000,000)과 장전 report.equity(1,100,000)가 다른 사례
   morningStatusCode = 200;
   state.connection.balance!.totalEquity = 950000; // 공통 손실 50k (<300k), 장전 손실 150k (>=150k)
@@ -980,7 +1001,7 @@ test('risk verifies KIS morning activation gates, refresh sync, 503 failure, sto
     run: { armed: true, buyId: 'rep-1' },
     signals: [],
   };
-  const at6 = new Date(Date.parse(at5c) + 3500).toISOString();
+  const at6 = new Date(Date.parse(at5d) + 3500).toISOString();
   state.status.observedAt = at6;
   state.status.lastSuccessAt = at6;
   state.revision++;
