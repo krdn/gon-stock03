@@ -16,6 +16,12 @@ Infisical 프로젝트(`5fdf34cd-9a4e-4992-a82f-1472fb0a61b5`)의 `dev` 환경 `
 | `KIS_CANO` | 모의 계좌번호 앞 8자리 | 숫자 8자리 (`^\d{8}$`) |
 | `KIS_ACNT_PRDT_CD` | 모의 계좌 상품코드 | 숫자 2자리 (`^\d{2}$`, 보통 `01`) |
 
+### OpenDART 선택 키
+
+일반 `npm run dev`에서 KIS 4개가 이미 셸에 있으면 조회를 생략한다. KIS 주입에 성공하면 기존 셸의 `OPENDART_API_KEY`를 보존하고, 머신 인증의 `dev /kis` 응답(Secret Import 포함)에 유효한 키가 있으면 함께 적용한다. 키가 비어 있으면 같은 인증 방식으로 공용 프로젝트 `890430d6-ff44-4317-9d91-64d912e0d67a`의 `dev /stock`을 조회한다. 다른 위치는 `INFISICAL_STOCK_PROJECT_ID`와 `INFISICAL_STOCK_PATH`로 각각 지정한다. 머신 인증은 대상 경로 읽기 권한이 필요하다. CLI 모드에서는 첫 KIS 조회 성공 후 선택 키만 별도로 요청한다. 권한 거부·시간 초과·응답 오류 시 KIS 설정을 유지하고 공시 수집은 RSS로 폴백한다.
+
+2026-11-27 수동 실키 호출로 OpenDART `list.json`에서 상장사 공시 285건을 5페이지에 걸쳐 수집했고 페이지 상한을 `dartGaps`에 기록했다. 자동 주입은 모의 전송으로 검증했으며 운영 자동 주입은 미측정이다.
+
 ## 2. 자동 주입 우선순위 (`npm run dev`)
 
 [scripts/dev.ts](../../scripts/dev.ts)와 [scripts/infisical-dev.ts](../../scripts/infisical-dev.ts)는 기동 시 아래 순서로 자격증명을 조회한다.
@@ -92,8 +98,8 @@ npm run dev
 
 - **단기 토큰 메모리 전용 사용**: `POST /api/v1/auth/universal-auth/login`으로 발급받은 Access Token은 파일에 저장하지 않고 메모리에서만 `GET /api/v4/secrets`(404 시 `/api/v3/secrets/raw` 폴백) 조회에 사용한다.
 - **자식 프로세스 환경 격리**:
-  - `dev:server`(`server/index.ts`)에는 KIS 4개 키만 전달하고 `INFISICAL_*` 변수는 모두 제거한다.
-  - `dev:web`(Vite)에는 `KIS_*`와 `INFISICAL_*` 변수를 모두 제거한다.
+  - `dev:server`(`server/index.ts`)에는 KIS 4개 키와 유효한 선택 키를 전달하고 `INFISICAL_*` 변수는 모두 제거한다.
+  - `dev:web`(Vite)에는 `KIS_*`·`INFISICAL_*`·`OPENDART_*` 변수를 모두 제거한다.
 - **파일·네트워크 검증**: 심볼릭 링크(`O_NOFOLLOW`), 그룹/타인 접근 권한(`0700`/`0600` 위반), 16KB 초과, 비-HTTPS(`http://`) 도메인, 정의되지 않은 JSON 키는 즉시 거부한다.
 - **Vite HTTP 노출 차단**: [vite.config.ts](../../vite.config.ts)의 `server.fs.deny`가 `.secrets/**` 및 `.local/**` 경로 요청을 HTTP `403`으로 차단한다.
 

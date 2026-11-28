@@ -23,6 +23,6 @@
 
 - **개발과 검증** · [Orca 4303/4304·격리 4314 가이드](operations/orca-dev-testing.md) · [PR #230](https://github.com/krdn/gon-stock03/pull/230) `6baa969`.
 - **장후 시세 동기화** · [#212 설계](plans/212-market-data-sync.md) · [운영·08:30 점검](operations/local.md#장후-시세-동기화). 11월 27일 15:40 KST 일회 실증(runId `96935494`, Orca Item #69 기록 e634)에서 마스터 갱신과 우선 범위 10/10종목 수집을 확인했다. 정기 실행과 범위 밖은 미검증이다.
-- **장전 운용** · [#197 장전 포트폴리오](tasks/197-morning.md) 실제 장중 운용 수용 대기 · [#205 브리핑·A2UI](tasks/205-morning-briefing.md) · [#218 스캔 재시도](https://github.com/krdn/gon-stock03/pull/222) · [#221 인벤토리](https://github.com/krdn/gon-stock03/issues/221). [#213 OpenDART](https://github.com/krdn/gon-stock03/pull/227) 실키 호출 미검증.
+- **장전 운용** · [#197 장전 포트폴리오](tasks/197-morning.md) 실제 장중 운용 수용 대기 · [#205 브리핑·A2UI](tasks/205-morning-briefing.md) · [#218 스캔 재시도](https://github.com/krdn/gon-stock03/pull/222) · [#221 인벤토리](https://github.com/krdn/gon-stock03/issues/221). [#213 OpenDART](https://github.com/krdn/gon-stock03/pull/227) 2026-11-27 수동 실키 호출로 OpenDART `list.json`에서 상장사 공시 285건을 5페이지에 걸쳐 수집했고 페이지 상한을 `dartGaps`에 기록했다. 자동 주입은 모의 전송으로 검증했으며 운영 자동 주입은 미측정이다. [#256 서버 전용 선택 키·권한 및 조회 경로](operations/kis-auto-injection.md#opendart-선택-키).
 - **기존 수용·운영** · [#149 UX 수용 범위](tasks/149-ui-ux-v2.md#위임에-따른-최종-수용) · [모의 버전 수용과 예외](verification/2026-11-20-paper-acceptance.md) · [KIS 자동 주입](operations/kis-auto-injection.md) · [기존 완료·잔여 작업과 재개 명령](verification/2026-11-17-consolidated-status.md).
 - 재개할 때 선택한 작업 기록·필수 자료·원격 이슈/PR/CI를 대조한다. 주문·취소·전략 실행에는 별도 승인이 필요하다.
