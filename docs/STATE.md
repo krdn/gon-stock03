@@ -1,5 +1,8 @@
 # 작업 인수인계
 
+- **5단계 가격 레짐·08/17 제외** [#252 코어와 PR 5-2 UI 인계](tasks/252-strategy-rules-phase5.md)
+- **4단계 B 완료** [#249 섹터 상대강도·클레노우 코어와 UI](tasks/249-strategy-rules-phase4b.md)
+
 - **다종목 포트폴리오** [#246 PR 4A-1 · PR 4A-2 UI·도움말·매매설정 차단·E2E 연동](tasks/246-strategy-rules-phase4a.md)
 - **확정 일봉 KIS 모의 전략 계약** [#243 PR 3B-1 · PR 3B-2 UI·매매설정·도움말·E2E 연동](tasks/243-strategy-rules-phase3b.md)
 - **저장 일봉 돌파·변동성 사이징** [#240 PR 3A-1·PR 3A-2 작업과 UI 입력 계약](tasks/240-strategy-rules-phase3a.md)
