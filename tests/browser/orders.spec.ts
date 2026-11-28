@@ -354,6 +354,13 @@ test('orders 4-tab WAI-ARIA help supports keyboard navigation, restores focus an
   const help = page.getByRole('region', { name: '주문·체결 사용방법 도움말' });
   await expect(help).toBeVisible();
 
+  // Minor 5: 토글 버튼 클릭 후 Tab 키로 도움말 패널 내부(닫기 버튼)로 자연 진입
+  await page.keyboard.press('Tab');
+  await expect(help.getByRole('button', { name: '닫기' })).toBeFocused();
+
+  // Minor 6: 거래일 필터링과 개인 식별자 자동 펼침 분리 안내
+  await expect(help).toContainText('해당 거래일 주문만 필터링되며');
+
   const tab1 = help.getByRole('tab', { name: '처음부터 따라하기' });
   const tab2 = help.getByRole('tab', { name: '상태·수량·체결 사전' });
   const tab3 = help.getByRole('tab', { name: '원장 대조·안전장치 사전' });
@@ -602,4 +609,120 @@ test('orders page has zero horizontal overflow across 1440, 768, 390 and 320 vie
     await page.setViewportSize({ width, height });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
+});
+
+test('DEMO guards unpriced fills, cancelled residual filledPrice, daily loss block, pending request conflict and clamped pagination', async ({ page }) => {
+  const conflictReqId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const state = snapshot();
+  state.startingEquity = 10_000_000;
+  state.cash = 9_600_000; // loss = 400,000 >= dailyLoss 300,000
+  state.positions = [];
+  state.risk.halted = false;
+  state.risk.dailyLoss = 300_000;
+
+  let orderCount = 45;
+  const makeOrders = (total: number) => [
+    // Major 1: filled without filledPrice (must NOT use fake limit price 999,000)
+    { id: 'filled-unpriced', requestId: 'req-unpriced', code: '005930', side: 'buy' as const, qty: 2, price: 999000, status: 'filled' as const, createdAt: '2026-11-15T01:00:00Z', filledAt: '2026-11-15T01:01:00Z', source: 'manual', fee: 300 },
+    // Major 1: cancelled order with stale filledPrice (must NOT expose 체결 금액 / 차액)
+    { id: 'cancelled-stale', requestId: 'req-cancelled-stale', code: '000660', side: 'sell' as const, qty: 1, price: 70000, filledPrice: 70000, status: 'cancelled' as const, createdAt: '2026-11-15T01:02:00Z', source: 'manual', fee: 0 },
+    // Major 3: same requestId as pending storage, but qty differs (5 vs 2)
+    { id: 'conflict-order', requestId: conflictReqId, code: '005930', side: 'buy' as const, qty: 5, price: 70000, status: 'pending' as const, createdAt: '2026-11-15T01:03:00Z', source: 'manual', fee: 0 },
+    ...Array.from({ length: Math.max(0, total - 3) }, (_, i) => ({
+      id: `pg-order-${i + 1}`,
+      requestId: `req-pg-${i + 1}`,
+      code: '005930',
+      side: 'buy' as const,
+      qty: 1,
+      price: 70000,
+      status: 'cancelled' as const,
+      createdAt: '2026-11-15T01:04:00Z',
+      source: 'manual',
+      fee: 0,
+    })),
+  ];
+
+  await page.clock.install();
+  await page.route('**/api/state', route => route.fulfill({
+    json: { ...state, orders: makeOrders(orderCount) },
+  }));
+  await page.addInitScript(input => {
+    sessionStorage.setItem('demo-order-pending', JSON.stringify(input));
+  }, {
+    code: '005930', side: 'buy', qty: 2, price: 70000, requestId: conflictReqId,
+  });
+
+  await page.goto('/orders');
+
+  // Major 1: unpriced filled order excluded from total + explicit note
+  const hub = page.getByRole('region', { name: '주문·체결 분석 및 원장 진단 허브' });
+  await expect(hub).toContainText('매수 체결 0원 · 매도 체결 0원 (체결가 미확인 1건 제외)');
+
+  // Major 1: cancelled row with residual filledPrice hides 체결 금액 / 지정가 대비 체결 차액
+  const cancelledRow = page.getByRole('table').getByRole('row').filter({ hasText: 'cancelled-stale' });
+  await cancelledRow.locator('summary').click();
+  await expect(cancelledRow).not.toContainText('체결 금액');
+  await expect(cancelledRow).not.toContainText('지정가 대비 체결 차액');
+
+  // Major 2: dailyLoss limit reached while halted=false -> 일일 손실 한도 도달 (차단)
+  await expect(hub).toContainText('일일 손실 한도 도달 (차단)');
+
+  // Major 3: same requestId with mismatched qty -> 요청 ID 충돌 경고
+  const pendingBanner = page.getByRole('region', { name: '보존된 DEMO 요청 원장 대조' });
+  await expect(pendingBanner).toContainText('요청 ID 충돌 (주문 조건 불일치) · 원장: 005930 매수 5주 × 70,000원');
+
+  // Minor 2: page clamped from 3 -> 2 when dataset shrinks, then clicking 이전 페이지 moves directly to page 1
+  const subToolbar = page.getByRole('region', { name: '주문 세부 필터 및 표시 제어' });
+  await expect(subToolbar).toContainText('1–20 / 총 45건');
+  await subToolbar.getByRole('button', { name: '다음 페이지' }).click();
+  await subToolbar.getByRole('button', { name: '다음 페이지' }).click();
+  await expect(subToolbar).toContainText('41–45 / 총 45건');
+
+  orderCount = 25;
+  await page.clock.fastForward(3500);
+  await expect(subToolbar).toContainText('21–25 / 총 25건');
+  await subToolbar.getByRole('button', { name: '이전 페이지' }).click();
+  await expect(subToolbar).toContainText('1–20 / 총 25건');
+});
+
+test('KIS ledger distinguishes missing vs inactive minimumRun and history exposes sub-filter counts, clear button and partial separation', async ({ page }) => {
+  await page.route('**/api/state', route => route.fulfill({ json: snapshot() }));
+
+  let minimumRunMode: 'missing' | 'inactive' = 'missing';
+  await page.route('**/api/kis/ledger', route => route.fulfill({
+    json: minimumRunMode === 'missing'
+      ? { orders: [paper] }
+      : { orders: [paper], minimumRun: { active: false } },
+  }));
+  await page.route('**/api/kis/history', route => route.fulfill({
+    json: {
+      sourceCount: 1,
+      unavailable: [],
+      orders: [
+        { ...paper, requestId: 'hist-partial-strat', side: 'buy', status: 'partial', filled: 1, remaining: 2, strategy: { id: 's1', revision: 1, event: 'e1', signal: 'buy' } },
+        { ...paper, requestId: 'hist-filled-manual', code: '000660', side: 'sell', status: 'filled', filled: 3, remaining: 0 },
+      ],
+    },
+  }));
+
+  // Minor 4: minimumRun undefined -> 미확인, active: false -> 비활성
+  await page.goto('/orders?view=kis');
+  const kisHub = page.getByRole('region', { name: '주문·체결 분석 및 원장 진단 허브' });
+  await expect(kisHub).toContainText('다음 한정 실행 계약미확인');
+
+  minimumRunMode = 'inactive';
+  await page.getByRole('button', { name: '원장 다시 읽기' }).click();
+  await expect(kisHub).toContainText('다음 한정 실행 계약비활성');
+
+  // Minor 1 & Minor 3: history sub-filter count + clear button + partial separation
+  await page.getByRole('button', { name: '지난 KIS 실행 기록', exact: true }).click();
+  const historyHub = page.getByRole('region', { name: '주문·체결 분석 및 원장 진단 허브' });
+  await expect(historyHub).toContainText('전량 체결 1건 · 부분체결 1건 · 취소·거부 0건 · 불명·미체결 0건');
+
+  const subToolbar = page.getByRole('region', { name: '주문 세부 필터 및 표시 제어' });
+  await subToolbar.getByRole('group', { name: '주문 출처 필터' }).getByRole('button', { name: '전략 주문' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '검색 결과 1건 / 전체 2건' })).toBeVisible();
+  await page.getByRole('button', { name: '조건 지우기' }).click();
+  await expect(page.getByRole('list', { name: '지난 주문 목록' }).getByRole('listitem')).toHaveCount(2);
+  await expect(subToolbar.getByRole('group', { name: '주문 출처 필터' }).getByRole('button', { name: '전체' })).toHaveAttribute('aria-pressed', 'true');
 });

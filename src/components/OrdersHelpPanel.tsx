@@ -52,7 +52,7 @@ export function OrdersHelpPanel({
   return (
     <section
       id={panelId}
-      className="panel orders-help"
+      className="orders-help"
       role="region"
       aria-label="주문·체결 사용방법 도움말"
     >
@@ -116,8 +116,10 @@ export function OrdersHelpPanel({
             <h3>다차원 필터 · 개인 식별자 검색</h3>
             <p>
               종목명·6자리 코드와 상태 필터에 더해 하단 세부 필터에서 매매 방향(매수·매도)과 주문 출처(수동·전략)를
-              조합합니다. 지난 실행 기록에서는 <code>requestId</code>, <code>brokerId</code>, 거래일(<code>YYYY-MM-DD</code>)로
-              검색하면 해당 주문 상세가 자동으로 펼쳐집니다.
+              조합합니다. 지난 실행 기록에서 거래일(<code>YYYY-MM-DD</code> 또는 <code>YYYYMMDD</code>)을 입력하면
+              해당 거래일 주문만 필터링되며, 개인 식별자인 <code>앱 요청 ID</code>(<code>requestId</code>)나{' '}
+              <code>증권사 주문번호</code>(<code>brokerId</code>)로 검색해 일치할 때만 해당 주문 상세가 자동으로
+              펼쳐집니다.
             </p>
           </li>
           <li>

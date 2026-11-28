@@ -18,8 +18,12 @@
 
 /* 4탭 WAI-ARIA 주문·체결 사용방법 도움말 패널 */
 .orders-help {
-  margin-bottom: 16px;
+  margin: 0 0 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
   border-left: 3px solid var(--teal);
+  border-radius: 8px;
+  background: #fbfdfd;
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -152,7 +156,7 @@
 }
 
 .current-orders .history-controls { margin: 10px 0; }
-.current-orders .order-counts, .current-orders .order-scope, .order-playback, .order-read-at {
+.current-orders .order-counts, .history-panel .order-counts, .current-orders .order-scope, .order-playback, .order-read-at {
   color: #475e69; font-size: 12px; line-height: 1.6;
 }
 .current-order-table { margin-top: 12px; }
