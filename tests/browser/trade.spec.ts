@@ -332,6 +332,7 @@ test('DEMO price quick adjust and max orderable quantity reflect fee, limits, an
 
 test('DEMO order impact simulation, chart range stats, holding/pending summary, and tick playback work', async ({ page }) => {
   const state = snapshot();
+  state.startingEquity += 100_000;
   state.positions[0].average = 70200.25;
   state.orders = [
     { id: 'p-b', requestId: 'p-b', code: '005930', side: 'buy', qty: 2, price: 70000, status: 'pending', createdAt: new Date().toISOString(), source: 'manual', fee: 0 },
@@ -349,14 +350,22 @@ test('DEMO order impact simulation, chart range stats, holding/pending summary, 
 
   const impact = page.getByLabel('DEMO 주문 영향 및 한도 진단');
   await page.getByLabel('주문 수량 (주)').fill('2');
+  // 매수 2주: 보유 30×72,800(2,184,000) + 미체결매수 140,000 + 신규 145,600 = 2,469,600원 (62%)
   await expect(impact).toContainText('30주 → 32주');
   await expect(impact).toContainText('체결 후 예상 평균 매입가');
-  await expect(impact).toContainText('종목별 최대 투자금 노출');
-  await expect(impact).toContainText('4,000,000원');
+  await expect(impact).toContainText('2,469,600원 / 4,000,000원 (62%)');
+  await expect(impact).toContainText('일일 손실 한도 여유액');
+  await expect(impact).toContainText('200,000원 / 300,000원');
 
+  // 매도 전환: 부분 매도 10주 -> 남는 보유 20×72,800(1,456,000) + 미체결매수 140,000 = 1,596,000원 (40%)
   await page.getByRole('button', { name: '매도', exact: true }).click();
   await expect(impact).toContainText('예상 실현손익 (수수료 반영)');
   await expect(impact).toContainText('+5,178원');
+  await page.getByLabel('주문 수량 (주)').fill('10');
+  await expect(impact).toContainText('1,596,000원 / 4,000,000원 (40%)');
+  // 전량 매도 30주 -> 남는 보유 0 + 미체결매수 140,000 = 140,000원 (4%)
+  await page.getByLabel('주문 수량 (주)').fill('30');
+  await expect(impact).toContainText('140,000원 / 4,000,000원 (4%)');
 
   const chartStats = page.getByLabel('합성 차트 구간 통계');
   await expect(chartStats).toContainText('구간 최고가');
@@ -378,7 +387,7 @@ test('DEMO trade with help open fits 320-1440px and preserves 390x844 input view
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/trade?mode=demo&code=000660');
   const priceInput = page.getByLabel('주문 가격 (원)');
-  await expect(priceInput).toBeInViewport();
+  await expect(priceInput).toBeInViewport({ ratio: 1 });
   await priceInput.focus();
   await page.keyboard.press('Tab');
   await expect(page.getByLabel('주문 수량 (주)')).toBeFocused();

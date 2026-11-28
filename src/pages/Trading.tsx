@@ -123,7 +123,9 @@ function TradeForm({ instrument }: { instrument: Instrument }) {
   const validNumbers = Number.isSafeInteger(numQty) && numQty >= 1 && numQty <= 100_000 && validPrice;
   const estimatedFee = validNumbers ? calcDemoFee(amount) : 0;
   const pendingExposure = state.orders.filter(o => o.status === 'pending' && o.side === 'buy' && o.code === instrument.code).reduce((sum, o) => sum + o.qty * o.price, 0);
-  const lossLimitHit = state.startingEquity - equity(state) >= state.risk.dailyLoss;
+  const currentDailyLoss = Math.max(0, state.startingEquity - equity(state));
+  const dailyLossRemaining = Math.max(0, state.risk.dailyLoss - currentDailyLoss);
+  const lossLimitHit = currentDailyLoss >= state.risk.dailyLoss;
   const inputError = !validNumbers ? '가격은 1~10,000,000원, 수량은 1~100,000주의 정수로 입력하세요.'
     : lossLimitHit ? '손실 한도를 초과했습니다.'
     : amount > state.risk.maxOrder ? '1회 주문 한도를 초과합니다.'
@@ -163,7 +165,13 @@ function TradeForm({ instrument }: { instrument: Instrument }) {
       : validNumbers && numQty > 0 ? formatSignedWon((numPrice - holdingAvg) * numQty - estimatedFee)
       : { text: '—', tone: '' as const })
     : null;
-  const projectedExposure = holding * instrument.price + pendingExposure + (side === 'buy' && validNumbers ? amount : 0);
+  const nextHolding = side === 'sell' ? Math.max(0, holding - (validNumbers ? numQty : 0)) : holding;
+  const projectedExposure = side === 'sell'
+    ? nextHolding * instrument.price + pendingExposure
+    : holding * instrument.price + pendingExposure + (validNumbers ? amount : 0);
+  const exposurePct = state.risk.maxPosition > 0
+    ? Math.round((projectedExposure / state.risk.maxPosition) * 100)
+    : 0;
 
   function review(e: React.FormEvent) {
     e.preventDefault(); if (blocked || busy || unresolved || sending.current || inputError) return;
@@ -256,13 +264,17 @@ function TradeForm({ instrument }: { instrument: Instrument }) {
                 <dt>체결 후 예상 평균 매입가</dt>
                 <dd>{projectedBuyAvg !== null ? `${projectedBuyAvg.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}원` : '—'}</dd>
               </div>
-            </> : <div>
+            </> : <div className="demo-impact-wide">
               <dt>예상 실현손익 (수수료 반영)</dt>
               <dd className={projectedSellPnl?.tone ?? ''}>{projectedSellPnl?.text ?? '—'}</dd>
             </div>}
             <div>
               <dt>종목별 최대 투자금 노출</dt>
-              <dd className={projectedExposure > state.risk.maxPosition ? 'trade-limit-over' : ''}>{won(projectedExposure)}원 / {won(state.risk.maxPosition)}원</dd>
+              <dd className={projectedExposure > state.risk.maxPosition ? 'trade-limit-over' : ''}>{won(projectedExposure)}원 / {won(state.risk.maxPosition)}원 ({exposurePct}%)</dd>
+            </div>
+            <div>
+              <dt>일일 손실 한도 여유액</dt>
+              <dd className={lossLimitHit ? 'trade-limit-over' : ''}>{won(dailyLossRemaining)}원 / {won(state.risk.dailyLoss)}원</dd>
             </div>
           </dl>
           <details className="trade-data-details">

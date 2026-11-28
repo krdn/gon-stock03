@@ -250,6 +250,7 @@ test('trade help panel toggles 4 WAI-ARIA tabs with keyboard and restores focus 
 test('live trade renders quote band metrics, trend/SMA summary, and explicit watchlist actions without extra initial POSTs', async ({ page }) => {
   const state = snapshot();
   state.status.staleAfterMs = 3_600_000;
+  state.watchlist = ['005930', '000660', '069500', '035420', '00088K'];
   const posts: { path: string; body: unknown }[] = [];
   page.on('request', r => {
     if (r.method() === 'POST') posts.push({ path: new URL(r.url()).pathname, body: r.postDataJSON() });
@@ -273,8 +274,16 @@ test('live trade renders quote band metrics, trend/SMA summary, and explicit wat
     if (code === '005930') {
       return route.fulfill({
         json: {
-          quote: { code, price: 182000, change: 1.25, upper: 234000, lower: 126000, tickSize: 100, stopped: false, volume: 12345678, sector: '전기전자', receivedAt: new Date().toISOString() },
+          quote: { code, price: 182000, change: 1.25, upper: 234000, lower: 126000, tickSize: 100, stopped: false, liquidation: false, volume: 12345678, sector: '전기전자', receivedAt: new Date().toISOString() },
           bars: bars65,
+        },
+      });
+    }
+    if (code === '035420') {
+      return route.fulfill({
+        json: {
+          quote: { code, price: 187200, change: 0, upper: 0, lower: 0, tickSize: 500, stopped: false, receivedAt: new Date().toISOString() },
+          bars: [{ date: '20261116', close: 187200 }, { date: '20261117', close: 187200 }],
         },
       });
     }
@@ -291,6 +300,7 @@ test('live trade renders quote band metrics, trend/SMA summary, and explicit wat
   await expect(metrics).toContainText('126,000원');
   await expect(metrics).toContainText('100원');
   await expect(metrics).toContainText('52%');
+  await expect(metrics.locator('.trade-band-meter')).toHaveCount(1);
   await expect(metrics).toContainText('12,345,678주');
   await expect(metrics).toContainText('전기전자 · 정상 거래');
 
@@ -304,16 +314,32 @@ test('live trade renders quote band metrics, trend/SMA summary, and explicit wat
 
   const chips = page.getByRole('group', { name: '관심종목 빠른 선택' });
   await expect(chips.getByRole('button', { name: /삼성전자/ })).toHaveAttribute('aria-pressed', 'true');
+  const nonNumericChip = chips.getByRole('button', { name: /00088K/ });
+  await expect(nonNumericChip).toBeDisabled();
+  await expect(nonNumericChip).toContainText('숫자 코드만 조회');
+
+  // liquidation 미제공(undefined) 시 '정리매매 미제공' 구분 확인
   await chips.getByRole('button', { name: /SK하이닉스/ }).click();
   await expect(page).toHaveURL(/code=000660/);
   await expect(page.getByLabel('실제 현재가')).toHaveText('210,000원');
+  await expect(metrics).toContainText('미제공 · 정리매매 미제공');
   await expect(trend).toContainText('표본 부족 (20거래일 미만)');
   await expect(trend).toContainText('표본 부족 (60거래일 미만)');
+
+  // 무효 가격제한폭(upper=0, lower=0) 시 '계산 불가' 표시 및 게이지 바 미노출 확인
+  await chips.getByRole('button', { name: /NAVER/ }).click();
+  await expect(page).toHaveURL(/code=035420/);
+  await expect(page.getByLabel('실제 현재가')).toHaveText('187,200원');
+  await expect(metrics).toContainText('계산 불가');
+  await expect(metrics.locator('.trade-band-meter')).toHaveCount(0);
+  await expect(metrics).not.toContainText('상단 여유');
+  await expect(metrics).not.toContainText('하단 여유');
 
   const watchToggle = page.getByRole('button', { name: '관심종목 해제', exact: true });
   await watchToggle.click();
   await expect(page.getByRole('button', { name: '관심종목 등록', exact: true })).toBeVisible();
   expect(posts.some(p => p.path === '/api/watchlist')).toBe(true);
+  expect(posts.filter(p => p.path === '/api/kis/market').every(p => /^\d{6}$/.test((p.body as { code: string }).code))).toBe(true);
 });
 
 test('live trade workspace diagnostic hub renders KIS holdings, paperRisk fallback, links, and fits 320-1440px', async ({ page }) => {

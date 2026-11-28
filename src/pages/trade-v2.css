@@ -453,7 +453,7 @@
 .demo-order-impact > div {
   min-width: 0;
 }
-.demo-order-impact > div:last-child {
+.demo-order-impact > div.demo-impact-wide {
   grid-column: 1 / -1;
 }
 .demo-order-impact dt {

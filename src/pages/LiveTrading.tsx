@@ -89,16 +89,20 @@ export function LiveTrading({ code }: { code: string }) {
       <div className="trade-watchlist-chips">
         {state.watchlist.map(wCode => {
           const item = state.instruments.find(row => row.code === wCode);
+          const isNumericCode = /^\d{6}$/.test(wCode);
           const active = wCode === code;
           return <button
             key={wCode}
             type="button"
             className={`trade-watch-chip${active ? ' active' : ''}`}
             aria-pressed={active}
-            onClick={() => choose(wCode)}
+            disabled={!isNumericCode}
+            title={!isNumericCode ? '실제 시세는 숫자 6자리 종목코드만 조회할 수 있습니다.' : undefined}
+            onClick={() => { if (isNumericCode) choose(wCode); }}
           >
             <span>{item ? item.name : wCode}</span>
             {item && <small>{wCode}</small>}
+            {!isNumericCode && <small>숫자 코드만 조회</small>}
           </button>;
         })}
       </div>
@@ -168,15 +172,21 @@ function LiveQuote({ code, validCode }: { code: string; validCode: boolean }) {
 
   // 호가·가격제한폭 요약 계산
   const quote = data?.quote;
-  const upperRoom = quote && quote.price > 0 ? formatSignedPct(((quote.upper - quote.price) / quote.price) * 100) : null;
-  const lowerRoom = quote && quote.price > 0 ? formatSignedPct(((quote.lower - quote.price) / quote.price) * 100) : null;
-  const bandSpan = quote ? quote.upper - quote.lower : 0;
-  const bandPct = quote && bandSpan > 0
-    ? Math.min(100, Math.max(0, Math.round(((quote.price - quote.lower) / bandSpan) * 100)))
-    : 0;
-  const tradeStateLabel = quote
-    ? (quote.stopped ? '거래정지' : quote.liquidation ? '정리매매 주의' : '정상 거래')
-    : '미제공';
+  const validBand = Boolean(quote && quote.lower > 0 && quote.upper > quote.lower && quote.price > 0);
+  const upperRoom = validBand && quote ? formatSignedPct(((quote.upper - quote.price) / quote.price) * 100) : null;
+  const lowerRoom = validBand && quote ? formatSignedPct(((quote.lower - quote.price) / quote.price) * 100) : null;
+  const bandPct = validBand && quote
+    ? Math.min(100, Math.max(0, Math.round(((quote.price - quote.lower) / (quote.upper - quote.lower)) * 100)))
+    : null;
+  const tradeStateLabel = !quote
+    ? '미제공'
+    : quote.stopped
+      ? '거래정지'
+      : quote.liquidation === true
+        ? '정리매매 주의'
+        : quote.liquidation === false
+          ? '정상 거래'
+          : '정리매매 미제공';
 
   // 선택 구간 일봉 추세 및 SMA 20/60 계산
   const trendSummary = (() => {
@@ -232,11 +242,11 @@ function LiveQuote({ code, validCode }: { code: string; validCode: boolean }) {
     {data && quote && <dl className="trade-quote-metrics" aria-label="실제 호가 및 가격제한폭 요약">
       <div>
         <dt>상한가</dt>
-        <dd>{won(quote.upper)}원{upperRoom && <small className={upperRoom.tone}> 상단 여유 {upperRoom.text}</small>}</dd>
+        <dd>{quote.upper > 0 ? <>{won(quote.upper)}원{upperRoom !== null && <small className={upperRoom.tone}> 상단 여유 {upperRoom.text}</small>}</> : '계산 불가'}</dd>
       </div>
       <div>
         <dt>하한가</dt>
-        <dd>{won(quote.lower)}원{lowerRoom && <small className={lowerRoom.tone}> 하단 여유 {lowerRoom.text}</small>}</dd>
+        <dd>{quote.lower > 0 ? <>{won(quote.lower)}원{lowerRoom !== null && <small className={lowerRoom.tone}> 하단 여유 {lowerRoom.text}</small>}</> : '계산 불가'}</dd>
       </div>
       <div>
         <dt>호가 단위</dt>
@@ -245,8 +255,10 @@ function LiveQuote({ code, validCode }: { code: string; validCode: boolean }) {
       <div>
         <dt>가격제한폭 위치</dt>
         <dd>
-          <span>{bandPct}%</span>
-          <div className="trade-band-meter" aria-hidden="true"><span style={{ width: `${bandPct}%` }} /></div>
+          {validBand && bandPct !== null ? <>
+            <span>{bandPct}%</span>
+            <div className="trade-band-meter" aria-hidden="true"><span style={{ width: `${bandPct}%` }} /></div>
+          </> : <span>계산 불가</span>}
         </dd>
       </div>
       <div>
