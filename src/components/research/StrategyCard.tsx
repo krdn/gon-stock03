@@ -333,7 +333,10 @@ export function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: bo
               추세 SMA <b>{rule.trendSmaPeriod}봉</b>
             </span>
             <span>
-              변동성 한도 <b>{rule.volLookback}봉 ≤ {rule.maxAnnualVolPct}%</b>
+              변동성 관측 <b>{rule.volLookback}봉</b>
+            </span>
+            <span>
+              연변동성 한도 <b>≤ {rule.maxAnnualVolPct}%</b>
             </span>
             <span>
               경계 노출 <b>{rule.cautionExposurePct}%</b>

@@ -1753,7 +1753,7 @@ export function formatRuleSummary(rule: AnyStrategyRule, overlay?: ExitOverlay):
       break;
     case 'price_regime':
       parts.push(
-        `${PORTFOLIO_CATALOG.price_regime.title} (추세 SMA ${rule.trendSmaPeriod}봉 · 변동성 ${rule.volLookback}봉 ≤ ${rule.maxAnnualVolPct}% · 경계 ${rule.cautionExposurePct}% · 리밸런싱 ${rule.rebalanceDays}봉 · 위험 ${rule.assets.join('/')} · 안전 ${rule.safeAsset ?? '현금'})`,
+        `${PORTFOLIO_CATALOG.price_regime.title} (추세 SMA ${rule.trendSmaPeriod}봉 · 변동성 관측 ${rule.volLookback}봉 · 연변동성 한도 ${rule.maxAnnualVolPct}% · 경계 ${rule.cautionExposurePct}% · 리밸런싱 ${rule.rebalanceDays}봉 · 위험 ${rule.assets.join('/')} · 안전 ${rule.safeAsset ?? '현금'})`,
       );
       break;
   }

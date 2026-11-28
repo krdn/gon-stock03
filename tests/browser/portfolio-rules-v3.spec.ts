@@ -2137,7 +2137,8 @@ test('5-2: 43거래일 원장에서 18 가격 레짐 프리셋 준비 봉 부족
     await expect(savedCard).toContainText('저장 일봉: 다종목 자산배분 (v3)');
     await expect(savedCard).toContainText('판정 자산(위험 1) 069500');
     await expect(savedCard).toContainText('추세 SMA 22봉');
-    await expect(savedCard).toContainText('변동성 한도 12봉 ≤ 30%');
+    await expect(savedCard).toContainText('변동성 관측 12봉');
+    await expect(savedCard).toContainText('연변동성 한도 ≤ 30%');
     await expect(savedCard).toContainText('경계 노출 40%');
     await expect(savedCard).toContainText('리밸런싱 7봉');
     await expect(savedCard).toContainText('069500 / 005930');
@@ -2230,7 +2231,7 @@ test('5-2: TradingSettings는 18 가격 레짐(price_regime) 1-3단계 직접 UR
   });
 
   const regimeSummary =
-    '가격 레짐 (매크로 대용) (추세 SMA 200봉 · 변동성 20봉 ≤ 25% · 경계 50% · 리밸런싱 20봉 · 위험 069500/005930 · 안전 00088K)';
+    '가격 레짐 (매크로 대용) (추세 SMA 200봉 · 변동성 관측 20봉 · 연변동성 한도 25% · 경계 50% · 리밸런싱 20봉 · 위험 069500/005930 · 안전 00088K)';
   for (const [step, btnName] of [
     [1, '한도·조건으로'],
     [2, '초안 저장 및 검토'],
@@ -2255,4 +2256,126 @@ test('5-2: TradingSettings는 18 가격 레짐(price_regime) 1-3단계 직접 UR
   await expect(page.getByLabel('경계 위험 노출 비중 (%)')).toHaveValue('50');
 
   expect(posts).toEqual([]);
+});
+
+test('5-2 1차 보완: 동일 바스켓 양방향 전환 시 레짐 판정 라벨 즉시 갱신 및 price_regime 체결 0건 문구 정밀 구분', async ({
+  page,
+}) => {
+  const { Store } = await import('../../server/store.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const store = new Store(':memory:');
+
+  // 43거래일 동일 달력:
+  // - 069500: 고가 변동성 상승(i=19에서 종가 > SMA20, 연변동성 > 25% → 레짐 경계; 1주 시가 > 120,000원)
+  // - 114800: 지속 하락(i=19에서 종가 <= SMA20 → 레짐 위험회피)
+  // - 005930: 고가 위험자산 2(1주 시가 > 130,000원)
+  // - 00088K: 고가 안전자산(1주 시가 > 150,000원)
+  const cautionCloses = [
+    ...Array.from({ length: 10 }, () => 120000),
+    115000, 130000, 118000, 134000, 120000, 138000, 124000, 142000, 128000, 150000,
+    ...Array.from({ length: 23 }, (_, i) => 148000 + i * 200),
+  ];
+  const runCaution = portfolioDailyFixture('069500', '19191919-1111-4111-8111-111111111111', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => cautionCloses[i],
+  });
+  const runRiskB = portfolioDailyFixture('005930', '19191919-2222-4222-8222-222222222222', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 130000 + i * 200,
+  });
+  const runRiskOff = portfolioDailyFixture('114800', '19191919-3333-4333-8333-333333333333', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 40000 - i * 350,
+  });
+  const runHighSafe = portfolioDailyFixture('00088K', '19191919-4444-4444-8444-444444444444', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 150000 + i * 50,
+  });
+  for (const fx of [runCaution, runRiskB, runRiskOff, runHighSafe]) store.saveDaily(fx.run, fx.bars);
+
+  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4314, 4355]);
+  await new Promise<void>(resolve => server.listen(4355, '127.0.0.1', resolve));
+
+  await page.route('**/api/**', async route => {
+    const response = await route.fetch({ url: route.request().url().replace(':4314', ':4355') });
+    await route.fulfill({ response });
+  });
+
+  try {
+    await page.goto('/backtest');
+    await waitWorkbenchReady(page);
+    const ruleSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
+    const basketRuns = page.getByLabel('바스켓 종목별 일봉 수집 기록');
+    const runBtn = page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true });
+    const result = page.getByRole('region', { name: '저장 일봉 실험 결과' });
+
+    // Minor 1: 동일 바스켓에서 dual_momentum → price_regime → dual_momentum 양방향 전환 시 레짐 판정 라벨 즉시 갱신
+    await ruleSelect.selectOption('dual_momentum');
+    await expect(basketRuns).toContainText('위험 자산 1 · 069500');
+    await expect(basketRuns).not.toContainText('레짐 판정');
+
+    await ruleSelect.selectOption('price_regime');
+    await expect(basketRuns).toContainText('위험 자산 1 (레짐 판정) · 069500');
+
+    await ruleSelect.selectOption('dual_momentum');
+    await expect(basketRuns).toContainText('위험 자산 1 · 069500');
+    await expect(basketRuns).not.toContainText('레짐 판정');
+
+    // Major 1: price_regime 체결 0건 3분기 + 위험회피/경계 노출 0% 구분 검증
+    await ruleSelect.selectOption('price_regime');
+    await page.locator('input[name="capital"]').fill('100000');
+    await page.getByLabel('추세 SMA 기간 (봉)').fill('20');
+    await page.getByLabel('변동성 관측 기간 (봉)').fill('10');
+    await page.getByLabel('최대 연변동성 한도 (%)').fill('25');
+    await page.getByLabel('리밸런싱 주기 (봉)').fill('25');
+
+    // ① 경계 노출 0% · 안전자산 비움 → 현금 유지
+    await page.getByLabel('경계 위험 노출 비중 (%)').fill('0');
+    await page.getByLabel('안전자산 종목코드 (선택 · 비우면 현금 보유)').fill('');
+    await runBtn.click();
+    await expect(result).toBeVisible();
+    await expect(result).toContainText('레짐 경계');
+    await expect(result).toContainText(
+      '준비 봉 충족 · 리밸런싱 판정 완료 (가격 레짐 경계 노출 0% 판정으로 현금 유지)',
+    );
+    await expect(result).not.toContainText('적격 위험 자산 없음');
+
+    // ② 경계 노출 0% · 고가 안전자산(150,000원+) → 안전자산 1주 시가 미만 체결 0건
+    await page.getByLabel('안전자산 종목코드 (선택 · 비우면 현금 보유)').fill('00088K');
+    await runBtn.click();
+    await expect(result).toBeVisible();
+    await expect(result).toContainText(
+      '준비 봉 충족 · 리밸런싱 판정 완료 (가격 레짐 경계 노출 0% 판정 · 안전자산 배정 예산이 수수료·슬리피지 포함 1주 시가 미만이어서 체결 0건)',
+    );
+    await expect(result).not.toContainText('적격 위험 자산 없음');
+
+    // ③ 경계 노출 50% · 고가 위험자산 2종 → 위험 노출 배정되었으나 1주 시가 미만 체결 0건
+    await page.getByLabel('경계 위험 노출 비중 (%)').fill('50');
+    await page.getByLabel('안전자산 종목코드 (선택 · 비우면 현금 보유)').fill('');
+    await runBtn.click();
+    await expect(result).toBeVisible();
+    await expect(result).toContainText(
+      '준비 봉 충족 · 리밸런싱 판정 완료 (가격 레짐 위험 노출이 배정되었으나 배정 예산이 수수료·슬리피지 포함 1주 시가 미만이어서 체결 0건)',
+    );
+    await expect(result).not.toContainText('적격 위험 자산 없음');
+
+    // ④ 위험회피(하락 종목 114800) · 안전자산 비움 → 위험회피 판정으로 현금 유지
+    await page.getByLabel('위험 자산 1 (레짐 판정 기준 자산)', { exact: true }).fill('114800');
+    await runBtn.click();
+    await expect(result).toBeVisible();
+    await expect(result).toContainText('레짐 위험회피');
+    await expect(result).toContainText(
+      '준비 봉 충족 · 리밸런싱 판정 완료 (가격 레짐 위험회피 판정으로 현금 유지)',
+    );
+    await expect(result).not.toContainText('적격 위험 자산 없음');
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
+  }
 });
