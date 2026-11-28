@@ -290,3 +290,111 @@ test('DEMO chart labels only the available samples and shows an empty chart stat
   await expect(page.getByText('합성 종가 표본이 부족합니다')).toBeVisible();
   await expect(page.getByRole('img', { name: /합성 .*봉 종가/ })).toHaveCount(0);
 });
+
+test('DEMO price quick adjust and max orderable quantity reflect fee, limits, and sellable shares', async ({ page }) => {
+  const state = snapshot();
+  state.startingEquity -= state.cash - 145600;
+  state.cash = 145600;
+  state.orders = [{
+    id: 'sell-r', requestId: 'sell-r', code: '005930', side: 'sell', qty: 24, price: 72800,
+    status: 'pending', createdAt: new Date().toISOString(), source: 'manual', fee: 0,
+  }];
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.goto('/trade?mode=demo&code=005930');
+
+  const priceInput = page.getByLabel('주문 가격 (원)');
+  const qtyInput = page.getByLabel('주문 수량 (주)');
+  const adjust = page.getByRole('group', { name: '주문 가격 빠른 조정' });
+  await expect(priceInput).toHaveValue('72800');
+  await adjust.getByRole('button', { name: '-1%', exact: true }).click();
+  await expect(priceInput).toHaveValue(String(Math.round(72800 * 0.99)));
+  await adjust.getByRole('button', { name: '현재가 적용', exact: true }).click();
+  await expect(priceInput).toHaveValue('72800');
+  await adjust.getByRole('button', { name: '+1%', exact: true }).click();
+  await expect(priceInput).toHaveValue(String(Math.round(72800 * 1.01)));
+  await adjust.getByRole('button', { name: '현재가 적용', exact: true }).click();
+
+  // 2주×72,800=145,600원은 수수료 22원 포함 시 현금 145,600원 초과 -> 최대 가능 1주
+  const maxBuy = page.getByRole('button', { name: '최대 가능 (1주)', exact: true });
+  await expect(maxBuy).toBeEnabled();
+  await maxBuy.click();
+  await expect(qtyInput).toHaveValue('1');
+  await expect(page.getByRole('button', { name: '매수 주문 확인' })).toBeEnabled();
+
+  // 매도 전환: 보유 30주 - 예약 매도 24주 = 6주 (6×72,800 <= 1회 한도 1,000,000원)
+  await page.getByRole('button', { name: '매도', exact: true }).click();
+  const maxSell = page.getByRole('button', { name: '최대 가능 (6주)', exact: true });
+  await expect(maxSell).toBeEnabled();
+  await maxSell.click();
+  await expect(qtyInput).toHaveValue('6');
+  await expect(page.getByRole('button', { name: '매도 주문 확인' })).toBeEnabled();
+});
+
+test('DEMO order impact simulation, chart range stats, holding/pending summary, and tick playback work', async ({ page }) => {
+  const state = snapshot();
+  state.startingEquity += 100_000;
+  state.positions[0].average = 70200.25;
+  state.orders = [
+    { id: 'p-b', requestId: 'p-b', code: '005930', side: 'buy', qty: 2, price: 70000, status: 'pending', createdAt: new Date().toISOString(), source: 'manual', fee: 0 },
+    { id: 'p-s', requestId: 'p-s', code: '005930', side: 'sell', qty: 3, price: 75000, status: 'pending', createdAt: new Date().toISOString(), source: 'manual', fee: 0 },
+  ];
+  let tickCalls = 0;
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.route('**/api/tick', route => {
+    tickCalls++;
+    state.tick += 1;
+    state.revision += 1;
+    return route.fulfill({ json: { state } });
+  });
+  await page.goto('/trade?mode=demo&code=005930');
+
+  const impact = page.getByLabel('DEMO 주문 영향 및 한도 진단');
+  await page.getByLabel('주문 수량 (주)').fill('2');
+  // 매수 2주: 보유 30×72,800(2,184,000) + 미체결매수 140,000 + 신규 145,600 = 2,469,600원 (62%)
+  await expect(impact).toContainText('30주 → 32주');
+  await expect(impact).toContainText('체결 후 예상 평균 매입가');
+  await expect(impact).toContainText('2,469,600원 / 4,000,000원 (62%)');
+  await expect(impact).toContainText('일일 손실 한도 여유액');
+  await expect(impact).toContainText('200,000원 / 300,000원');
+
+  // 매도 전환: 부분 매도 10주 -> 남는 보유 20×72,800(1,456,000) + 미체결매수 140,000 = 1,596,000원 (40%)
+  await page.getByRole('button', { name: '매도', exact: true }).click();
+  await expect(impact).toContainText('예상 실현손익 (수수료 반영)');
+  await expect(impact).toContainText('+5,178원');
+  await page.getByLabel('주문 수량 (주)').fill('10');
+  await expect(impact).toContainText('1,596,000원 / 4,000,000원 (40%)');
+  // 전량 매도 30주 -> 남는 보유 0 + 미체결매수 140,000 = 140,000원 (4%)
+  await page.getByLabel('주문 수량 (주)').fill('30');
+  await expect(impact).toContainText('140,000원 / 4,000,000원 (4%)');
+
+  const chartStats = page.getByLabel('합성 차트 구간 통계');
+  await expect(chartStats).toContainText('구간 최고가');
+  await expect(chartStats).toContainText('구간 최저가');
+  await expect(chartStats).toContainText('구간 등락률');
+  await expect(chartStats).toContainText('구간 평균가');
+
+  const posSummary = page.getByLabel('선택 종목 DEMO 보유 및 미체결 현황');
+  await expect(posSummary).toContainText('30주');
+  await expect(posSummary).toContainText('70,200.25원');
+  await expect(posSummary).toContainText('매수 대기 1건 · 매도 대기 1건');
+  await posSummary.getByRole('button', { name: '다음 데모 봉 재생', exact: true }).click();
+  await expect.poll(() => tickCalls).toBe(1);
+});
+
+test('DEMO trade with help open fits 320-1440px and preserves 390x844 input viewport and Tab order', async ({ page }) => {
+  const state = snapshot();
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/trade?mode=demo&code=000660');
+  const priceInput = page.getByLabel('주문 가격 (원)');
+  await expect(priceInput).toBeInViewport({ ratio: 1 });
+  await priceInput.focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByLabel('주문 수량 (주)')).toBeFocused();
+
+  await page.getByRole('button', { name: '사용방법 도움말', exact: true }).click();
+  for (const width of [320, 390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `demo-${width}`).toBe(true);
+  }
+});

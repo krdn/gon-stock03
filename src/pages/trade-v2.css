@@ -1,28 +1,398 @@
-.trade-quote-panel { max-width: 960px; }
-.trade-stock-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
-.trade-stock-picker .field { margin: 0; }
+/* 트레이딩 상단 환경 전환 + 사용방법 도움말 토글 바 */
+.trade-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 14px;
+  min-width: 0;
+}
+.trade-top-bar .trade-mode {
+  margin-bottom: 0;
+}
+.trade-help-toggle {
+  flex-shrink: 0;
+}
+
+/* 4탭 WAI-ARIA 트레이딩 사용방법 도움말 패널 */
+.trade-help {
+  margin-bottom: 16px;
+  border-left: 3px solid var(--teal);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.trade-help-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.trade-help-head h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+  color: #1a2d37;
+}
+.trade-help .trade-help-sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.trade-help-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.trade-help-tab {
+  min-height: 34px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #dce3e7;
+  background: #f7f9fa;
+  color: #394c57;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.trade-help-tab:hover {
+  background: #edf3f2;
+  color: #135951;
+}
+.trade-help-tab.active {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #fff;
+  font-weight: 600;
+}
+.trade-help-tab:focus-visible,
+.trade-help-body:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.trade-help-body {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #293b46;
+}
+.trade-help-body[hidden] {
+  display: none;
+}
+.trade-help-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.trade-help-steps li {
+  padding: 12px 14px;
+  border-radius: 7px;
+  border: 1px solid #e1eae7;
+  background: #f8fbfa;
+  min-width: 0;
+}
+.trade-help-step-no {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #e5f3ee;
+  color: #086a57;
+  font-size: 11px;
+  font-weight: 700;
+}
+.trade-help-steps h3,
+.trade-help-card h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #1b313c;
+}
+.trade-help .trade-help-steps p,
+.trade-help .trade-help-card p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #3c4f5a;
+}
+.trade-help-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.trade-help-faq {
+  display: grid;
+  gap: 10px;
+}
+.trade-help-card {
+  padding: 12px 14px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: #fafcfc;
+  min-width: 0;
+}
+.trade-help-card code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #eaf1ef;
+  color: #145b52;
+  font-size: 11px;
+}
+
+/* 실제 시세 패널 */
+.trade-quote-panel { max-width: 1040px; min-width: 0; }
+.trade-stock-picker { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 16px; min-width: 0; }
+.trade-stock-picker .field { margin: 0; min-width: 0; }
 .trade-stock-picker > .field { flex: 1 1 190px; }
-.trade-stock-picker details, .trade-data-details { font-size: 13px; color: var(--muted); }
+.trade-stock-picker details, .trade-data-details { font-size: 13px; color: var(--muted); min-width: 0; }
 .trade-stock-picker summary, .trade-data-details summary { cursor: pointer; padding: 7px 0; }
 .trade-stock-picker .button-row { align-items: end; margin-top: 6px; }
 .trade-stock-picker input { width: 9em; max-width: 100%; }
+.trade-watch-toggle.active {
+  border-color: #b7d7cd;
+  background: #eaf5f1;
+  color: #0e6658;
+}
+.trade-watch-toggle.active svg {
+  fill: #e5c97b;
+  color: #b3892d;
+}
+
+/* 관심종목 빠른 선택 칩 바 */
+.trade-watchlist-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+.trade-watchlist-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.trade-watchlist-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.trade-watch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid #dce3e7;
+  background: #f7f9fa;
+  color: #31444f;
+  font-size: 12px;
+  line-height: 1.3;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.trade-watch-chip small {
+  color: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.trade-watch-chip:hover {
+  background: #edf4f2;
+  border-color: #bdd5ce;
+}
+.trade-watch-chip.active {
+  background: #e5f3ee;
+  border-color: #087d72;
+  color: #086a57;
+  font-weight: 600;
+}
+.trade-watch-chip.active small {
+  color: #136d5d;
+}
+
 .trade-quote-source, .trade-quote-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
-.trade-quote-source { margin-top: 18px; font-size: 13px; }
+.trade-quote-source { margin-top: 16px; font-size: 13px; }
 .trade-quote-source strong { color: var(--teal); }
 .trade-quote-warning { color: #884919; font-weight: 600; }
 .trade-quote-panel .quote { margin: 6px 0; }
-.trade-quote-time, .trade-bars-caption, .trade-data-details p { font-size: 13px; line-height: 1.6; color: var(--muted); word-break: keep-all; }
+.trade-quote-time, .trade-bars-caption, .trade-data-details p { font-size: 13px; line-height: 1.6; color: var(--muted); word-break: keep-all; overflow-wrap: anywhere; }
 .trade-quote-actions { margin: 12px 0; }
 .trade-quote-actions .text-link { display: inline-flex; align-items: center; gap: 4px; padding: 8px 0; }
+
+/* KIS 호가·가격제한폭 6항목 요약 그리드 */
+.trade-quote-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin: 14px 0 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7faf9;
+  min-width: 0;
+}
+.trade-quote-metrics > div {
+  min-width: 0;
+}
+.trade-quote-metrics dt {
+  font-size: 11px;
+  color: var(--muted);
+}
+.trade-quote-metrics dd {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #20333e;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.trade-quote-metrics dd small {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 500;
+}
+.trade-band-meter {
+  margin-top: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #dce6e3;
+  overflow: hidden;
+}
+.trade-band-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--teal);
+}
+
 .trade-quote-panel .chart-toolbar { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px; }
 .trade-quote-panel .chart-axis { margin-top: 6px; }
-.trade-data-details { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 4px; }
-@media (max-width: 600px) {
-  .trade-stock-picker { gap: 6px 12px; }
-  .trade-stock-picker > .field { flex-basis: 155px; }
-  .trade-quote-panel .chart-toolbar { align-items: flex-start; flex-direction: column; }
+
+/* 선택 구간 일봉 추세 요약 */
+.trade-trend-summary {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafcfc;
+  min-width: 0;
 }
-.demo-trade-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 18px; }
+.trade-trend-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin: 0;
+  min-width: 0;
+}
+.trade-trend-grid > div {
+  min-width: 0;
+}
+.trade-trend-grid dt {
+  font-size: 11px;
+  color: var(--muted);
+}
+.trade-trend-grid dd {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #20333e;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.trade-trend-grid dd small {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* 선택 종목 KIS 모의 매매·워크스페이스 진단 허브 (3카드) */
+.trade-hub {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+.trade-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+.trade-hub-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7faf9;
+}
+.trade-hub-card h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #20333e;
+}
+.trade-hub-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+}
+.trade-hub-list > div {
+  min-width: 0;
+  padding-bottom: 7px;
+  border-bottom: 1px solid #e3eae7;
+}
+.trade-hub-list > div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.trade-hub-list dt {
+  font-size: 11px;
+  color: var(--muted);
+}
+.trade-hub-list dd {
+  margin: 3px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: #24333e;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.trade-hub-list dd.up { color: var(--red); }
+.trade-hub-list dd.down { color: var(--blue); }
+.trade-hub-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid #e3eae7;
+}
+.trade-hub-links .text-link {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.trade-data-details { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 4px; }
+
+/* DEMO 연습 레이아웃 */
+.demo-trade-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 18px; min-width: 0; }
+.demo-ticket { min-width: 0; }
 .demo-ticket .stock-heading { align-items: end; }
 .demo-ticket .stock-heading .field { margin: 0; }
 .demo-ticket .stock-heading .badge { margin-bottom: 12px; }
@@ -32,12 +402,189 @@
 .demo-ticket .side-tabs { margin: 12px 0; }
 .demo-ticket-inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .demo-ticket-inputs .field { margin: 0; min-width: 0; }
-.demo-ticket .quantity-buttons { margin-top: 8px; }
-.demo-ticket .order-total { margin-top: 12px; }
+
+/* DEMO 주문 가격 빠른 조정 바 */
+.trade-price-adjust {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+.trade-price-adjust button {
+  padding: 6px 8px;
+  border: 1px solid #dce3e7;
+  border-radius: 5px;
+  background: #f7f9fa;
+  color: #31444f;
+  font-size: 11px;
+  font-weight: 500;
+  min-width: 0;
+}
+.trade-price-adjust button:hover {
+  background: #edf3f2;
+  color: #0e6658;
+}
+
+.demo-ticket .quantity-buttons {
+  margin: 8px 0 12px;
+  flex-wrap: wrap;
+}
+.demo-ticket .quantity-buttons .trade-max-qty {
+  flex: 1.6 1 110px;
+  background: #edf5f2;
+  border-color: #c9dfd8;
+  color: #0e6658;
+  font-weight: 600;
+}
+.demo-ticket .order-total { margin-top: 8px; }
+
+/* DEMO 주문 영향 및 한도 사전 시뮬레이션 */
+.demo-order-impact {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 12px 0 0;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #f7faf9;
+  min-width: 0;
+}
+.demo-order-impact > div {
+  min-width: 0;
+}
+.demo-order-impact > div.demo-impact-wide {
+  grid-column: 1 / -1;
+}
+.demo-order-impact dt {
+  font-size: 11px;
+  color: var(--muted);
+}
+.demo-order-impact dd {
+  margin: 3px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #20333e;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.demo-order-impact dd.up { color: var(--red); }
+.demo-order-impact dd.down { color: var(--blue); }
+.demo-order-impact dd.trade-limit-over { color: var(--red); }
+
+/* 우측 DEMO 합성 차트 구간 통계 및 보유/미체결 현황 */
+.demo-chart-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 10px;
+  margin: 14px 0 0;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fafcfc;
+  min-width: 0;
+}
+.demo-chart-stats > div {
+  min-width: 0;
+}
+.demo-chart-stats dt {
+  font-size: 11px;
+  color: var(--muted);
+}
+.demo-chart-stats dd {
+  margin: 3px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #20333e;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.demo-chart-stats dd.up { color: var(--red); }
+.demo-chart-stats dd.down { color: var(--blue); }
+
+.demo-position-summary {
+  margin-top: 14px;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7faf9;
+  min-width: 0;
+}
+.demo-position-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.demo-position-head h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #20333e;
+}
+.demo-position-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 0;
+  min-width: 0;
+}
+.demo-position-grid > div {
+  min-width: 0;
+}
+.demo-position-grid dt {
+  font-size: 11px;
+  color: var(--muted);
+}
+.demo-position-grid dd {
+  margin: 3px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #20333e;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.demo-position-grid dd small {
+  font-size: 11px;
+  font-weight: 500;
+}
+
 .demo-ticket-result { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding-top: 12px; }
 .demo-ticket-result p { font-weight: 600; font-size: 14px; }
 .demo-ticket-result .text-link, .demo-paper-link { display: inline-flex; align-items: center; gap: 4px; padding: 8px 0; }
 .demo-paper-link { margin-top: 8px; }
+
 @media (max-width: 1000px) {
   .demo-trade-layout { grid-template-columns: minmax(0, 1fr); }
+  .trade-hub-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 900px) {
+  .trade-help-steps,
+  .trade-help-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .trade-quote-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .trade-trend-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .trade-stock-picker { gap: 6px 12px; align-items: stretch; }
+  .trade-stock-picker > .field { flex-basis: 155px; }
+  .trade-quote-panel .chart-toolbar { align-items: flex-start; flex-direction: column; }
+  .demo-chart-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .demo-position-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 520px) {
+  .trade-help { padding: 15px; }
+  .trade-help-tab { flex: 1 1 calc(50% - 6px); text-align: center; }
+  .trade-quote-metrics { grid-template-columns: minmax(0, 1fr); }
+  .demo-order-impact { grid-template-columns: minmax(0, 1fr); }
 }
