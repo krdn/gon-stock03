@@ -1,4 +1,4 @@
-import {editorDraftFromTransfer,formFromRule,parseTransferDraft} from '../src/pages/research-rule-form.ts';
+import {applyPreset,buildRuleAndOverlay,editorDraftFromTransfer,formatRuleSummary,formFromRule,isPortfolioKind,matchedPreset,parseTransferDraft,RULE_KINDS} from '../src/pages/research-rule-form.ts';
 import {advanceTick} from '../server/engine.ts';
 import {initialState} from '../shared/fixtures.ts';
 import assert from 'node:assert/strict';
@@ -346,11 +346,61 @@ for (const rule of [sector,clenow]) test(rule.kind+' 단독 실험 참조 원장
   } finally {store.close();}
 });
 
-test('4B-1 편집기는 신규 규칙의 저장 초안과 편집 진입을 차단한다',()=>{
-  for (const rule of [sector,clenow]) {
-    assert.equal(parseTransferDraft({code:assets[0],rule}),null);
-    assert.throws(()=>formFromRule(rule),/지원하지 않는/);
+test('4B-2 정식 편집기는 15·16 규칙의 왕복·프리셋·포맷·검증을 지원하고 다종목 오버레이를 생략한다',()=>{
+  assert.equal(RULE_KINDS.length,15);
+  for (const kind of ['dual_momentum','faber_gtaa','krx_sector_rs','clenow_momentum'] as const) {
+    assert.equal(isPortfolioKind(kind),true);
   }
+  for (const rule of [sector,clenow]) {
+    const draft = parseTransferDraft({code:assets[0],rule,overlay:{chandelier:{atrPeriod:14,atrMultiplier:3}}});
+    assert.ok(draft);
+    const editor = editorDraftFromTransfer(draft);
+    assert.equal(editor.code,assets[0]);
+    assert.equal(editor.ruleForm.kind,rule.kind);
+    assert.equal(editor.ruleForm.useChandelier,false);
+    assert.equal(editor.ruleForm.useVolatilityParity,false);
+    const form = formFromRule(rule);
+    assert.equal(matchedPreset(form),'conservative');
+    const built = buildRuleAndOverlay(form);
+    assert.equal(built.ok,true);
+    if (built.ok) {
+      assert.deepEqual(built.rule,rule);
+      assert.equal(built.overlay,undefined);
+    }
+    for (const presetKey of ['conservative','basic','aggressive'] as const) {
+      const next = applyPreset(form,presetKey);
+      assert.equal(matchedPreset(next),presetKey);
+      const presetBuilt = buildRuleAndOverlay(next);
+      assert.equal(presetBuilt.ok,true);
+      if (presetBuilt.ok) {
+        assert.deepEqual(presetBuilt.rule,{kind:rule.kind,assets,safeAsset,...PORTFOLIO_CATALOG[rule.kind].presets[presetKey]});
+      }
+    }
+  }
+  const rsInvalid = buildRuleAndOverlay({...formFromRule(sector),rsLookbackDays:'5'});
+  assert.equal(rsInvalid.ok,false);
+  if (!rsInvalid.ok) assert.equal(rsInvalid.focusName,'rsLookbackDays');
+  const rsTopKInvalid = buildRuleAndOverlay({...formFromRule(sector),rsTopK:'6'});
+  assert.equal(rsTopKInvalid.ok,false);
+  if (!rsTopKInvalid.ok) assert.equal(rsTopKInvalid.focusName,'rsTopK');
+  const clenowInvalid = buildRuleAndOverlay({...formFromRule(clenow),clenowAtrPeriod:'20.5'});
+  assert.equal(clenowInvalid.ok,false);
+  if (!clenowInvalid.ok) assert.equal(clenowInvalid.focusName,'clenowAtrPeriod');
+  const clenowRiskInvalid = buildRuleAndOverlay({...formFromRule(clenow),clenowRiskPerAssetBps:'101'});
+  assert.equal(clenowRiskInvalid.ok,false);
+  if (!clenowRiskInvalid.ok) assert.equal(clenowRiskInvalid.focusName,'clenowRiskPerAssetBps');
+  assert.equal(
+    formatRuleSummary(sector),
+    'KRX 섹터 상대강도 (관측 60봉 · 상위 2종 · 한도 40% · 리밸런싱 20봉 · 위험 069500/005930 · 안전 00088K)',
+  );
+  assert.equal(
+    formatRuleSummary({...sector,safeAsset:null}),
+    'KRX 섹터 상대강도 (관측 60봉 · 상위 2종 · 한도 40% · 리밸런싱 20봉 · 위험 069500/005930 · 안전 현금)',
+  );
+  assert.equal(
+    formatRuleSummary(clenow),
+    '클레노우 회귀 모멘텀 (회귀 120봉 · ATR 20봉 · 추세 SMA 200봉 · 상위 2종 · 위험예산 10bp · 리밸런싱 20봉 · 위험 069500/005930 · 안전 00088K)',
+  );
   const legacy = parseTransferDraft({code:assets[0],rule:dual,overlay:{chandelier:{atrPeriod:14,atrMultiplier:3}}});
   assert.ok(legacy);
   assert.equal(editorDraftFromTransfer(legacy).ruleForm.useChandelier,false);

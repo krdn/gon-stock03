@@ -591,7 +591,7 @@ test('4A-2: 도움말 15카드 사전·dual_momentum·faber_gtaa 문맥 가이�
     await helpRegion.getByRole('tab', { name: '전략·입력 항목 사전', exact: true }).click();
     const dictPanel = helpRegion.locator('[role="tabpanel"]:not([hidden])');
     const cards = dictPanel.locator('article.research-help-card');
-    await expect(cards).toHaveCount(15);
+    await expect(cards).toHaveCount(17);
 
     const dmCard = cards.filter({ has: page.locator('code', { hasText: /^dual_momentum$/ }) });
     await expect(dmCard).toHaveCount(1);
@@ -1214,6 +1214,607 @@ test('4A-2 3차 보완 Minor 1: 전략 카드 클릭 후 삭제된 strategyId를
     await expect(runBtn).toBeEnabled();
     await runBtn.click();
     expect(posts).toEqual([]);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
+  }
+});
+
+test('4B-2: 15종 전략 선택·15/16 프리셋·입력 범위 검증(role=alert+포커스)·17카드 도움말(원안 변형 고지)·390px 모바일 무넘침 검증', async ({
+  page,
+}) => {
+  const posts: string[] = [];
+  page.on('request', req => {
+    if (req.method() === 'POST') posts.push(new URL(req.url()).pathname);
+  });
+
+  for (const route of ['/strategies', '/backtest']) {
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    await page.goto(route);
+    await waitWorkbenchReady(page);
+
+    const ruleSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
+    const options = await ruleSelect.locator('option').evaluateAll(els => els.map(el => (el as HTMLOptionElement).value));
+    expect(options).toHaveLength(15);
+    expect(options).toEqual(expect.arrayContaining(['dual_momentum', 'faber_gtaa', 'krx_sector_rs', 'clenow_momentum']));
+    await expect(page.getByText('15종 전략 지원 · 저장 일봉 15종(다종목 4종 포함) / DEMO 종가 전용 4종')).toBeVisible();
+
+    // 15 KRX 섹터 상대강도 프리셋(보수적/기본/공격적) 및 최소 준비 봉 확인
+    await ruleSelect.selectOption('krx_sector_rs');
+    await expect(page.getByLabel('상대강도 관측 기간 (봉)')).toHaveValue('20');
+    await expect(page.getByLabel('상위 선정 종목 수 (K)')).toHaveValue('2');
+    await expect(page.getByLabel('종목당 최대 비중 상한 (%)')).toHaveValue('50');
+    await expect(page.getByLabel('리밸런싱 주기 (봉)')).toHaveValue('20');
+    await expect(page.getByText('최소 준비 봉: 22봉 (판정 21봉 + 다음 봉 시가 체결 1봉)')).toBeVisible();
+
+    await page.getByRole('button', { name: '보수적', exact: true }).click();
+    await expect(page.getByLabel('상대강도 관측 기간 (봉)')).toHaveValue('60');
+    await expect(page.getByLabel('종목당 최대 비중 상한 (%)')).toHaveValue('40');
+    await expect(page.getByText('최소 준비 봉: 62봉 (판정 61봉 + 다음 봉 시가 체결 1봉)')).toBeVisible();
+
+    await page.getByRole('button', { name: '공격적', exact: true }).click();
+    await expect(page.getByLabel('상대강도 관측 기간 (봉)')).toHaveValue('10');
+    await expect(page.getByLabel('상위 선정 종목 수 (K)')).toHaveValue('3');
+    await expect(page.getByLabel('종목당 최대 비중 상한 (%)')).toHaveValue('60');
+    await expect(page.getByLabel('리밸런싱 주기 (봉)')).toHaveValue('10');
+    await expect(page.getByText('최소 준비 봉: 12봉 (판정 11봉 + 다음 봉 시가 체결 1봉)')).toBeVisible();
+
+    // 16 클레노우 회귀 모멘텀 프리셋(보수적/기본/공격적) 및 최소 준비 봉 확인
+    await ruleSelect.selectOption('clenow_momentum');
+    await expect(page.getByLabel('회귀 모멘텀 기간 (봉)')).toHaveValue('90');
+    await expect(page.getByLabel('Wilder ATR 기간 (봉)')).toHaveValue('20');
+    await expect(page.getByLabel('종목 추세 SMA 기간 (봉)')).toHaveValue('100');
+    await expect(page.getByLabel('상위 선정 종목 수 (K)')).toHaveValue('2');
+    await expect(page.getByLabel('종목당 위험예산 (bp)')).toHaveValue('20');
+    await expect(page.getByLabel('리밸런싱 주기 (봉)')).toHaveValue('20');
+    await expect(page.getByText('최소 준비 봉: 101봉 (판정 100봉 + 다음 봉 시가 체결 1봉)')).toBeVisible();
+
+    await page.getByRole('button', { name: '보수적', exact: true }).click();
+    await expect(page.getByLabel('회귀 모멘텀 기간 (봉)')).toHaveValue('120');
+    await expect(page.getByLabel('종목 추세 SMA 기간 (봉)')).toHaveValue('200');
+    await expect(page.getByLabel('종목당 위험예산 (bp)')).toHaveValue('10');
+    await expect(page.getByText('최소 준비 봉: 201봉 (판정 200봉 + 다음 봉 시가 체결 1봉)')).toBeVisible();
+
+    await page.getByRole('button', { name: '공격적', exact: true }).click();
+    await expect(page.getByLabel('회귀 모멘텀 기간 (봉)')).toHaveValue('60');
+    await expect(page.getByLabel('Wilder ATR 기간 (봉)')).toHaveValue('14');
+    await expect(page.getByLabel('종목 추세 SMA 기간 (봉)')).toHaveValue('60');
+    await expect(page.getByLabel('상위 선정 종목 수 (K)')).toHaveValue('3');
+    await expect(page.getByLabel('종목당 위험예산 (bp)')).toHaveValue('35');
+    await expect(page.getByText('최소 준비 봉: 61봉 (판정 60봉 + 다음 봉 시가 체결 1봉)')).toBeVisible();
+
+    // 17카드 도움말 사전 및 원안 대비 변형 범위 고지 검증
+    const helpBtn = page.getByRole('button', { name: '사용방법 도움말', exact: true });
+    await expect(helpBtn).toHaveAttribute('aria-expanded', 'false');
+    await expect(helpBtn).not.toHaveAttribute('aria-controls');
+    await helpBtn.click();
+    await expect(helpBtn).toHaveAttribute('aria-expanded', 'true');
+    const helpRegion = page.getByRole('region', { name: '전략 스튜디오 및 백테스트 사용방법 도움말' });
+    await expect(helpRegion.locator('[role="tabpanel"]')).toHaveCount(4);
+    await helpRegion.getByRole('tab', { name: '전략·입력 항목 사전', exact: true }).click();
+
+    const dictPanel = helpRegion.locator('[role="tabpanel"]:not([hidden])');
+    const cards = dictPanel.locator('article.research-help-card');
+    await expect(cards).toHaveCount(17);
+
+    const rsCard = cards.filter({ has: page.locator('code', { hasText: /^krx_sector_rs$/ }) });
+    await expect(rsCard).toHaveCount(1);
+    await expect(rsCard).toContainText('15 KRX 섹터 상대강도');
+    await expect(rsCard).toContainText('동일 시점 섹터·ETF 구성비·중복 섹터 합산·섹터 잔여 한도는 미구현');
+    await expect(rsCard).toContainText('선정 위험자산별 상한(safeAsset 미적용)');
+
+    const clenowCard = cards.filter({ has: page.locator('code', { hasText: /^clenow_momentum$/ }) });
+    await expect(clenowCard).toHaveCount(1);
+    await expect(clenowCard).toContainText('16 클레노우 회귀 모멘텀');
+    await expect(clenowCard).toContainText('별도 시장 지수 200일 레짐과 고정 종목 100일 조건을 종목별 설정 SMA(regimeSmaPeriod) 초과');
+    await expect(clenowCard).toContainText('252βR²');
+    await expect(clenowCard).toContainText('대체 비중(1/K)은 ATR 위험예산을 보장하지 않으며');
+    await expect(clenowCard).toContainText('조회 시작일 첫 봉부터 평활');
+
+    // 문맥 가이드 전환 확인
+    const helpDetails = page.locator('details.rule-field-help');
+    await helpDetails.locator('summary').click();
+    await expect(helpDetails.locator('summary')).toHaveText('현재 선택한 규칙(클레노우 회귀 모멘텀) 입력 항목 설명 보기');
+    await ruleSelect.selectOption('krx_sector_rs');
+    await expect(helpDetails.locator('summary')).toHaveText('현재 선택한 규칙(KRX 섹터 상대강도) 입력 항목 설명 보기');
+
+    // 390px 모바일 무넘침 확인
+    await page.setViewportSize({ width: 390, height: 844 });
+    const overflow = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+    }));
+    expect(overflow.scrollWidth).toBeLessThanOrEqual(390);
+    expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.innerWidth);
+  }
+
+  // /strategies에서 15·16 입력 범위/비정수 검증 (role="alert" + 포커스 이동 + POST 0건)
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  await page.goto('/strategies?environment=kis-paper');
+  await waitWorkbenchReady(page);
+  const ruleSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
+  const saveBtn = page.getByRole('button', { name: '전략 저장', exact: true });
+
+  await ruleSelect.selectOption('krx_sector_rs');
+  const rsLookback = page.getByLabel('상대강도 관측 기간 (봉)');
+  await rsLookback.fill('5');
+  await saveBtn.click();
+  await expect(page.getByRole('alert')).toContainText('상대강도 관측 기간은 10-120 사이의 정수로 입력하세요.');
+  await expect(rsLookback).toBeFocused();
+
+  await rsLookback.fill('20');
+  const rsCap = page.getByLabel('종목당 최대 비중 상한 (%)');
+  await rsCap.fill('15');
+  await saveBtn.click();
+  await expect(page.getByRole('alert')).toContainText('종목당 최대 비중 상한은 20-100 사이의 정수로 입력하세요.');
+  await expect(rsCap).toBeFocused();
+
+  await ruleSelect.selectOption('clenow_momentum');
+  const atrInput = page.getByLabel('Wilder ATR 기간 (봉)');
+  await atrInput.fill('20.5');
+  await saveBtn.click();
+  await expect(page.getByRole('alert')).toContainText('Wilder ATR 기간은 10-60 사이의 정수로 입력하세요.');
+  await expect(atrInput).toBeFocused();
+
+  await atrInput.fill('20');
+  const riskInput = page.getByLabel('종목당 위험예산 (bp)');
+  await riskInput.fill('150');
+  await saveBtn.click();
+  await expect(page.getByRole('alert')).toContainText('종목당 위험예산은 5-100 사이의 정수로 입력하세요.');
+  await expect(riskInput).toBeFocused();
+
+  expect(posts).toEqual([]);
+});
+
+test('4B-2: 43거래일 환경에서 16 기본 준비 봉 부족 경고·오류, 15 기본·16 커스텀 실행·리밸런싱·무신호 0건 안내·재현·전략 왕복(?strategyId=) 검증', async ({
+  page,
+}) => {
+  const { Store } = await import('../../server/store.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const store = new Store(':memory:');
+
+  // 43거래일 동일 달력 fixture: 상승 위험자산 2종 + 안전자산 1종 + 하락 위험자산 2종(무신호 0건 검증)
+  const runA = portfolioDailyFixture('069500', '15151515-1111-4111-8111-111111111111', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 30000 + i * 260,
+  });
+  const runB = portfolioDailyFixture('005930', '15151515-2222-4222-8222-222222222222', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 50000 + i * 180,
+  });
+  const runSafe = portfolioDailyFixture('00088K', '15151515-3333-4333-8333-333333333333', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 20000 + i * 10,
+  });
+  const runFallA = portfolioDailyFixture('114800', '15151515-4444-4444-8444-444444444444', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 40000 - i * 350,
+  });
+  const runFallB = portfolioDailyFixture('122630', '15151515-5555-4555-8555-555555555555', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 35000 - i * 280,
+  });
+  for (const fx of [runA, runB, runSafe, runFallA, runFallB]) store.saveDaily(fx.run, fx.bars);
+  store.saveMasters([
+    {
+      exchange: 'KOSPI',
+      source: 'fixture',
+      collectedAt: '2026-06-02T01:00:00.000Z',
+      sha256: 'b'.repeat(64),
+      rows: [
+        { code: '069500', name: 'KODEX 200', exchange: 'KOSPI', kind: 'etf', isin: 'KR7069500007', group: 'EF', tradingHalted: false, liquidation: false },
+        { code: '005930', name: '삼성전자', exchange: 'KOSPI', kind: 'stock', isin: 'KR7005930003', group: 'ST', tradingHalted: false, liquidation: false },
+        { code: '00088K', name: '채권ETF', exchange: 'KOSPI', kind: 'etf', isin: 'KR700088K001', group: 'EF', tradingHalted: false, liquidation: false },
+      ],
+    },
+  ]);
+
+  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4314, 4351]);
+  await new Promise<void>(resolve => server.listen(4351, '127.0.0.1', resolve));
+
+  await page.route('**/api/**', async route => {
+    const response = await route.fetch({ url: route.request().url().replace(':4314', ':4351') });
+    await route.fulfill({ response });
+  });
+
+  try {
+    await page.goto('/backtest');
+    await waitWorkbenchReady(page);
+    const ruleSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
+    const runBtn = page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true });
+    const result = page.getByRole('region', { name: '저장 일봉 실험 결과' });
+
+    // 1. 43거래일 환경에서 16 기본 프리셋(101봉 필요) 선택 → 준비 봉 부족 경고 표시 및 실행 시 부족 오류 확인
+    await ruleSelect.selectOption('clenow_momentum');
+    await expect(page.getByText('보유 공통 거래일 43봉 / 현재 규칙 최소 필요 101봉')).toBeVisible();
+    await expect(
+      page.getByText(
+        '준비 봉 부족 · 선택 기간 공통 거래일(43봉)이 현재 규칙의 최소 필요 봉 수(101봉 = 판정 100봉 + 다음 봉 시가 체결 1봉)보다 부족합니다.',
+      ),
+    ).toBeVisible();
+    await runBtn.click();
+    await expect(page.getByRole('main').getByRole('alert')).toContainText('최소 101봉이 필요합니다.');
+
+    // 2. 15 KRX 섹터 상대강도 기본 프리셋(22봉 필요) 실행 성공 → 리밸런싱 내역·재현 일치 확인
+    await ruleSelect.selectOption('krx_sector_rs');
+    await page.getByLabel('안전자산 종목코드 (선택 · 비우면 현금 보유)').fill('00088K');
+    await expect(page.getByText('보유 공통 거래일 43봉 / 현재 규칙 최소 필요 22봉')).toBeVisible();
+    await expect(page.getByText('준비 봉 부족')).toHaveCount(0);
+
+    await runBtn.click();
+    await expect(result).toBeVisible();
+    await expect(result.getByRole('heading', { name: '리밸런싱 내역', exact: true })).toBeVisible();
+    await expect(result).toContainText('상대강도 상위');
+    await expect(result).toContainText('(한도 50%)');
+    await result.getByRole('button', { name: '고정 입력으로 재현 검증', exact: true }).click();
+    await expect(result).toContainText('재현 일치');
+
+    // 3. 16 클레노우 회귀 모멘텀 저기간 커스텀(회귀 20·ATR 10·추세 SMA 20 → 21봉 필요) 실행 → 리밸런싱·재현·전략 저장·?strategyId= 복원 확인
+    await ruleSelect.selectOption('clenow_momentum');
+    await page.getByLabel('회귀 모멘텀 기간 (봉)').fill('20');
+    await page.getByLabel('Wilder ATR 기간 (봉)').fill('10');
+    await page.getByLabel('종목 추세 SMA 기간 (봉)').fill('20');
+    await page.getByLabel('리밸런싱 주기 (봉)').fill('10');
+    await expect(page.getByText('보유 공통 거래일 43봉 / 현재 규칙 최소 필요 21봉')).toBeVisible();
+    await expect(page.getByText('준비 봉 부족')).toHaveCount(0);
+
+    await runBtn.click();
+    await expect(result).toBeVisible();
+    await expect(result).toContainText('회귀 모멘텀 상위');
+    await expect(result).toContainText('(ATR 역가중)');
+    await result.getByRole('button', { name: '고정 입력으로 재현 검증', exact: true }).click();
+    await expect(result).toContainText('재현 일치');
+
+    await result.getByRole('button', { name: '이 설정으로 전략 만들기', exact: true }).click();
+    await expect(page).toHaveURL(/\/strategies#strategy-editor$/);
+    await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('clenow_momentum');
+    await expect(page.getByLabel('회귀 모멘텀 기간 (봉)')).toHaveValue('20');
+    await expect(page.getByLabel('Wilder ATR 기간 (봉)')).toHaveValue('10');
+    await expect(page.getByLabel('종목 추세 SMA 기간 (봉)')).toHaveValue('20');
+
+    await page.getByLabel('전략 환경').selectOption('kis-paper');
+    await page.getByLabel('전략 이름').fill('KIS 클레노우 43봉 검증');
+    await page.getByRole('button', { name: '전략 저장', exact: true }).click();
+
+    const savedCard = page.locator('.studio-card').filter({
+      has: page.getByRole('heading', { name: 'KIS 클레노우 43봉 검증', exact: true }),
+    });
+    await expect(savedCard).toBeVisible();
+    await expect(savedCard).toContainText('저장 일봉: 다종목 자산배분 (v3)');
+    await expect(savedCard).toContainText('회귀 20봉');
+    await expect(savedCard).toContainText('ATR 10봉');
+    await expect(savedCard).toContainText('추세 SMA 20봉');
+    await expect(savedCard).toContainText('069500 / 005930');
+    await expect(savedCard).toContainText('00088K');
+    await expect(savedCard).toContainText(portfolioOnly);
+    await expect(savedCard.getByRole('button', { name: '전략 시작', exact: true })).toBeDisabled();
+
+    // location.state 없이 ?strategyId= 직접 진입 복원 확인
+    const href = await savedCard.getByRole('link', { name: '이 설정으로 백테스트', exact: true }).getAttribute('href');
+    expect(href).toMatch(/\/backtest\?source=stored&strategyId=/);
+    await page.goto(href!);
+    await waitWorkbenchReady(page);
+    await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('clenow_momentum');
+    await expect(page.getByLabel('회귀 모멘텀 기간 (봉)')).toHaveValue('20');
+    await expect(page.getByLabel('Wilder ATR 기간 (봉)')).toHaveValue('10');
+    await expect(page.getByLabel('종목 추세 SMA 기간 (봉)')).toHaveValue('20');
+    await expect(page.getByLabel('안전자산 종목코드 (선택 · 비우면 현금 보유)')).toHaveValue('00088K');
+
+    // 4. 하락장 무신호(rebalances > 0, trades === 0) 시 준비 봉 충족 구분 안내 확인
+    await ruleSelect.selectOption('krx_sector_rs');
+    await page.getByLabel('위험 자산 1', { exact: true }).fill('114800');
+    await page.getByLabel('위험 자산 2', { exact: true }).fill('122630');
+    await page.getByLabel('안전자산 종목코드 (선택 · 비우면 현금 보유)').fill('');
+    await runBtn.click();
+    await expect(result).toBeVisible();
+    await expect(result).toContainText('양의 상대강도·고점 유지 자산 없음');
+    await expect(result).toContainText('체결 횟수');
+    await expect(result).toContainText('0회');
+    await expect(result).toContainText(
+      '준비 봉 충족 · 리밸런싱 판정 완료 (적격 위험 자산 없음으로 현금/안전자산 유지)',
+    );
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
+  }
+});
+
+test('4B-2: TradingSettings는 15(krx_sector_rs)·16(clenow_momentum) 1-3단계 직접 URL 진입을 portfolioOnly로 전면 차단하고 실제 요약·초안을 전달한다', async ({
+  page,
+}) => {
+  const state = snapshot();
+  state.strategies = [
+    {
+      id: 'kis-krx-sector-rs',
+      name: 'KIS KRX 섹터 상대강도',
+      code: '069500',
+      fast: 5,
+      slow: 20,
+      qty: 1,
+      active: false,
+      lastSignal: 'hold',
+      lastTick: -1,
+      environment: 'kis-paper',
+      revision: 1,
+      rule: {
+        kind: 'krx_sector_rs',
+        assets: ['069500', '005930'],
+        safeAsset: '00088K',
+        rsLookbackDays: 20,
+        topK: 2,
+        maxWeightPct: 50,
+        rebalanceDays: 20,
+      },
+    },
+    {
+      id: 'kis-clenow-momentum',
+      name: 'KIS 클레노우 회귀 모멘텀',
+      code: '069500',
+      fast: 5,
+      slow: 20,
+      qty: 2,
+      active: false,
+      lastSignal: 'hold',
+      lastTick: -1,
+      environment: 'kis-paper',
+      revision: 1,
+      rule: {
+        kind: 'clenow_momentum',
+        assets: ['069500', '005930'],
+        safeAsset: null,
+        regressionDays: 90,
+        atrPeriod: 20,
+        regimeSmaPeriod: 100,
+        topK: 2,
+        riskPerAssetBps: 20,
+        rebalanceDays: 20,
+      },
+    },
+  ];
+
+  const posts: string[] = [];
+  page.on('request', req => {
+    if (req.method() === 'POST') posts.push(new URL(req.url()).pathname);
+  });
+
+  let activeDraftStrategyId = 'kis-krx-sector-rs';
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.route('**/api/trading-settings', route => {
+    const target = state.strategies.find(s => s.id === activeDraftStrategyId)!;
+    return route.fulfill({
+      json: {
+        active: null,
+        canFix: true,
+        plans: {
+          strategy: {
+            draft: {
+              id: 'draft-rotation-blocked',
+              runId: 'run-rotation-blocked',
+              fixed: false,
+              symbol: target.code,
+              fast: target.fast,
+              slow: target.slow,
+              qty: target.qty,
+              rule: target.rule,
+              limits: {
+                manualQty: 5,
+                maxOrder: 1000000,
+                maxPosition: 4000000,
+                dailyLoss: 300000,
+                halted: false,
+              },
+              terms: {
+                kind: 'strategy',
+                strategyId: target.id,
+                revision: 1,
+                startsAt: '2099-01-05T00:00:00.000Z',
+                endsAt: '2099-01-05T02:00:00.000Z',
+                maxOrderAmount: 100000,
+                maxAttempts: 1,
+                maxTotalAmount: 100000,
+                sellPolicy: 'deny',
+              },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  const rsSummary = 'KRX 섹터 상대강도 (관측 20봉 · 상위 2종 · 한도 50% · 리밸런싱 20봉 · 위험 069500/005930 · 안전 00088K)';
+  for (const [step, btnName] of [
+    [1, '한도·조건으로'],
+    [2, '초안 저장 및 검토'],
+    [3, '다음 실행 고정'],
+  ] as const) {
+    await page.goto(`/settings/trading/strategy/${step}?strategy=kis-krx-sector-rs`);
+    await waitWorkbenchReady(page);
+    await expect(page.getByRole('main')).toContainText(rsSummary);
+    await expect(page.getByRole('main')).toContainText(portfolioOnly);
+    await expect(page.getByRole('main')).not.toContainText('5/20 교차');
+    await expect(page.getByRole('button', { name: btnName, exact: true })).toBeDisabled();
+  }
+
+  activeDraftStrategyId = 'kis-clenow-momentum';
+  const clenowSummary =
+    '클레노우 회귀 모멘텀 (회귀 90봉 · ATR 20봉 · 추세 SMA 100봉 · 상위 2종 · 위험예산 20bp · 리밸런싱 20봉 · 위험 069500/005930 · 안전 현금)';
+  for (const [step, btnName] of [
+    [1, '한도·조건으로'],
+    [2, '초안 저장 및 검토'],
+    [3, '다음 실행 고정'],
+  ] as const) {
+    await page.goto(`/settings/trading/strategy/${step}?strategy=kis-clenow-momentum`);
+    await waitWorkbenchReady(page);
+    await expect(page.getByRole('main')).toContainText(clenowSummary);
+    await expect(page.getByRole('main')).toContainText(portfolioOnly);
+    await expect(page.getByRole('main')).not.toContainText('5/20 교차');
+    await expect(page.getByRole('button', { name: btnName, exact: true })).toBeDisabled();
+  }
+
+  await page.goto('/settings/trading/strategy/1?strategy=kis-clenow-momentum');
+  await waitWorkbenchReady(page);
+  await page.getByRole('link', { name: '전략 스튜디오에서 이 설정으로 새 전략 만들기' }).first().click();
+  await expect(page).toHaveURL(/\/strategies\?environment=kis-paper#strategy-editor$/);
+  await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('clenow_momentum');
+  await expect(page.getByLabel('회귀 모멘텀 기간 (봉)')).toHaveValue('90');
+  await expect(page.getByLabel('종목 추세 SMA 기간 (봉)')).toHaveValue('100');
+
+  expect(posts).toEqual([]);
+});
+
+test('4B-2 보완 Major 1: 다종목 체결 0건 시 무신호·안전자산 1주 미만·위험자산 1주 미만 3분기 문구를 정확히 구분한다', async ({
+  page,
+}) => {
+  const { Store } = await import('../../server/store.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const store = new Store(':memory:');
+
+  // 43거래일 동일 달력: 고가 상승 위험자산 2종(1주 시가 > 120,000원), 하락 위험자산 2종, 고가 안전자산 1종(1주 시가 > 150,000원)
+  const runHighA = portfolioDailyFixture('069500', '16161616-1111-4111-8111-111111111111', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 120000 + i * 350,
+  });
+  const runHighB = portfolioDailyFixture('005930', '16161616-2222-4222-8222-222222222222', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 130000 + i * 300,
+  });
+  const runFallA = portfolioDailyFixture('114800', '16161616-3333-4333-8333-333333333333', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 40000 - i * 350,
+  });
+  const runFallB = portfolioDailyFixture('122630', '16161616-4444-4444-8444-444444444444', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 35000 - i * 280,
+  });
+  const runHighSafe = portfolioDailyFixture('00088K', '16161616-5555-4555-8555-555555555555', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 150000 + i * 50,
+  });
+  for (const fx of [runHighA, runHighB, runFallA, runFallB, runHighSafe]) store.saveDaily(fx.run, fx.bars);
+
+  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4314, 4352]);
+  await new Promise<void>(resolve => server.listen(4352, '127.0.0.1', resolve));
+
+  await page.route('**/api/**', async route => {
+    const response = await route.fetch({ url: route.request().url().replace(':4314', ':4352') });
+    await route.fulfill({ response });
+  });
+
+  try {
+    await page.goto('/backtest');
+    await waitWorkbenchReady(page);
+    const ruleSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
+    const runBtn = page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true });
+    const result = page.getByRole('region', { name: '저장 일봉 실험 결과' });
+
+    await ruleSelect.selectOption('krx_sector_rs');
+    await page.locator('input[name="capital"]').fill('100000');
+
+    // ① 무신호·목표 비중 0 (안전자산 미지정): 적격 위험 자산 없음으로 현금/안전자산 유지
+    await page.getByLabel('위험 자산 1', { exact: true }).fill('114800');
+    await page.getByLabel('위험 자산 2', { exact: true }).fill('122630');
+    await page.getByLabel('안전자산 종목코드 (선택 · 비우면 현금 보유)').fill('');
+    await runBtn.click();
+    await expect(result).toBeVisible();
+    await expect(result).toContainText(
+      '준비 봉 충족 · 리밸런싱 판정 완료 (적격 위험 자산 없음으로 현금/안전자산 유지)',
+    );
+    await expect(result).not.toContainText('1주 시가 미만');
+
+    // ② 무신호·안전자산 100% 배정이나 1주 시가(150,000원+) 미만 예산 체결 0건
+    await page.getByLabel('안전자산 종목코드 (선택 · 비우면 현금 보유)').fill('00088K');
+    await runBtn.click();
+    await expect(result).toBeVisible();
+    await expect(result).toContainText(
+      '준비 봉 충족 · 리밸런싱 판정 완료 (적격 위험 자산 없음 · 안전자산 배정 예산이 수수료·슬리피지 포함 1주 시가 미만이어서 체결 0건)',
+    );
+    await expect(result).not.toContainText('현금/안전자산 유지');
+
+    // ③ 상승 바스켓 + maxWeightPct 20% + 초기 자금 100,000원 → 위험 자산 선정(weight>0)되었으나 1주 시가 미만 체결 0건
+    await page.getByLabel('위험 자산 1', { exact: true }).fill('069500');
+    await page.getByLabel('위험 자산 2', { exact: true }).fill('005930');
+    await page.getByLabel('안전자산 종목코드 (선택 · 비우면 현금 보유)').fill('');
+    await page.getByLabel('종목당 최대 비중 상한 (%)').fill('20');
+    await runBtn.click();
+    await expect(result).toBeVisible();
+    await expect(result).toContainText('상대강도 상위');
+    await expect(result).toContainText(
+      '준비 봉 충족 · 리밸런싱 판정 완료 (적격 위험 자산이 선정되었으나 배정 예산이 수수료·슬리피지 포함 1주 시가 미만이어서 체결 0건)',
+    );
+    await expect(result).not.toContainText('적격 위험 자산 없음');
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
+  }
+});
+
+test('4B-2 보완 Minor 1: 선택 구간 내 중간 거래일 1일이 누락된 바스켓은 사전 경고와 함께 POST 0건으로 클라이언트 차단한다', async ({
+  page,
+}) => {
+  const { Store } = await import('../../server/store.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const store = new Store(':memory:');
+
+  const runA = portfolioDailyFixture('069500', '17171717-1111-4111-8111-111111111111', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 30000 + i * 200,
+  });
+  const runB = portfolioDailyFixture('005930', '17171717-2222-4222-8222-222222222222', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 50000 + i * 150,
+  });
+  const missingDate = runB.dates[20];
+  runB.run.calendar = {
+    source: runB.run.calendar!.source,
+    dates: runB.run.calendar!.dates.filter(d => d !== missingDate),
+  };
+  runB.bars = runB.bars.filter(b => b.date !== missingDate);
+
+  store.saveDaily(runA.run, runA.bars);
+  store.saveDaily(runB.run, runB.bars);
+
+  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4314, 4353]);
+  await new Promise<void>(resolve => server.listen(4353, '127.0.0.1', resolve));
+
+  const dailyPayloads: unknown[] = [];
+  await page.route('**/api/**', async route => {
+    const req = route.request();
+    if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/backtest/daily') {
+      dailyPayloads.push(req.postDataJSON());
+    }
+    const response = await route.fetch({ url: req.url().replace(':4314', ':4353') });
+    await route.fulfill({ response });
+  });
+
+  try {
+    await page.goto('/backtest');
+    await waitWorkbenchReady(page);
+    await page.getByRole('combobox', { name: '전략 규칙', exact: true }).selectOption('krx_sector_rs');
+
+    const expectedMsg = `선택 기간 내 바스켓 종목의 거래일 달력이 일치하지 않습니다 (069500 / 005930 · ${missingDate}).`;
+    await expect(page.getByText(expectedMsg)).toBeVisible();
+
+    await page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true }).click();
+    await expect(page.getByRole('main').getByRole('alert')).toContainText(expectedMsg);
+    expect(dailyPayloads).toHaveLength(0);
   } finally {
     server.closeAllConnections();
     await new Promise<void>(resolve => server.close(() => resolve()));

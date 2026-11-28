@@ -340,10 +340,61 @@ export function StoredBacktest({
     return [...map.entries()].map(([code, name]) => ({ code, name }));
   }, [state.instruments, runs]);
 
+  const { availableCommonBars, calendarMismatchWarning } = useMemo(() => {
+    if (!portfolioMode || basketMappings.length < 2 || missingBasketCodes.length > 0) {
+      return { availableCommonBars: null as number | null, calendarMismatchWarning: '' };
+    }
+    if (!marketDate.safeParse(from).success || !marketDate.safeParse(to).success || from > to) {
+      return { availableCommonBars: null as number | null, calendarMismatchWarning: '' };
+    }
+    const normalize = (value: string) => value.replaceAll('-', '');
+    const legDateLists: { code: string; dates: string[] }[] = [];
+    for (const item of basketMappings) {
+      const dates = item.chosen?.calendar?.dates;
+      if (!dates) return { availableCommonBars: null as number | null, calendarMismatchWarning: '' };
+      const sortedInRange = dates
+        .map(normalize)
+        .filter(date => date >= from && date <= to)
+        .sort((a, b) => a.localeCompare(b, 'en'));
+      legDateLists.push({ code: item.code, dates: sortedInRange });
+    }
+
+    const ref = legDateLists[0];
+    let mismatchWarning = '';
+    for (const row of legDateLists.slice(1)) {
+      const maxLen = Math.max(ref.dates.length, row.dates.length);
+      for (let i = 0; i < maxLen; i++) {
+        if (ref.dates[i] !== row.dates[i]) {
+          const mismatchDate = [ref.dates[i], row.dates[i]]
+            .filter((value): value is string => Boolean(value))
+            .sort((a, b) => a.localeCompare(b, 'en'))[0];
+          mismatchWarning = `선택 기간 내 바스켓 종목의 거래일 달력이 일치하지 않습니다 (${ref.code} / ${row.code} · ${mismatchDate}).`;
+          break;
+        }
+      }
+      if (mismatchWarning) break;
+    }
+
+    const commonDates = new Set(ref.dates);
+    for (const row of legDateLists.slice(1)) {
+      const rowSet = new Set(row.dates);
+      for (const date of commonDates) {
+        if (!rowSet.has(date)) commonDates.delete(date);
+      }
+    }
+    return { availableCommonBars: commonDates.size, calendarMismatchWarning: mismatchWarning };
+  }, [portfolioMode, basketMappings, missingBasketCodes.length, from, to]);
+
   const previewRule = buildRuleAndOverlay(ruleForm);
+  const requiredBars =
+    previewRule.ok && isPortfolioRule(previewRule.rule) ? portfolioWarmup(previewRule.rule) + 1 : null;
+  const portfolioBarsShortage =
+    portfolioMode && availableCommonBars !== null && requiredBars !== null && availableCommonBars < requiredBars;
   const minBarsHint = previewRule.ok
     ? isPortfolioRule(previewRule.rule)
-      ? `선택 공통 기간에 판정·체결용 최소 ${portfolioWarmup(previewRule.rule) + 1}봉 이상이 필요합니다(바스켓 전 종목 거래일 달력 100% 일치 필요). 실행하면 규칙·비용 가정과 결과를 함께 저장합니다.`
+      ? availableCommonBars !== null && requiredBars !== null
+        ? `보유 공통 거래일 ${availableCommonBars}봉 / 현재 규칙 최소 필요 ${requiredBars}봉(판정 ${requiredBars - 1}봉 + 다음 봉 시가 체결 1봉, 바스켓 전 종목 거래일 달력 100% 일치 필요). 실행하면 규칙·비용 가정과 결과를 함께 저장합니다.`
+        : `선택 공통 기간에 판정·체결용 최소 ${portfolioWarmup(previewRule.rule) + 1}봉 이상이 필요합니다(바스켓 전 종목 거래일 달력 100% 일치 필요). 실행하면 규칙·비용 가정과 결과를 함께 저장합니다.`
       : !isLegacySma(previewRule.rule, previewRule.overlay)
         ? `선택 기간에 판정·체결용 최소 ${warmup(previewRule.rule, previewRule.overlay) + 1}봉 이상이 필요합니다. 실행하면 규칙·비용 가정과 결과를 함께 저장합니다.`
         : '선택 기간에 장기 기간 + 2봉 이상이 필요합니다. 실행하면 입력·비용 가정과 결과를 함께 저장합니다.'
@@ -426,6 +477,10 @@ export function StoredBacktest({
       if (to < commonRange.from || to > commonRange.to) {
         setError(`종료일은 공통 가능 기간(${dateInput(commonRange.from)} ~ ${dateInput(commonRange.to)}) 안에서 선택하세요.`);
         toInput?.focus();
+        return;
+      }
+      if (calendarMismatchWarning) {
+        setError(calendarMismatchWarning);
         return;
       }
       const chosenByCode = new Map(basketMappings.map(item => [item.code, item.chosen!]));
@@ -856,6 +911,18 @@ export function StoredBacktest({
               />
               <CostFields values={costs} change={setCosts} />
               <p className="bt-note">{minBarsHint}</p>
+              {calendarMismatchWarning && (
+                <p className="bt-warning" role="status">
+                  {calendarMismatchWarning}
+                </p>
+              )}
+              {portfolioBarsShortage && requiredBars !== null && availableCommonBars !== null && (
+                <p className="bt-warning" role="status">
+                  준비 봉 부족 · 선택 기간 공통 거래일({availableCommonBars}봉)이 현재 규칙의 최소 필요 봉 수(
+                  {requiredBars}봉 = 판정 {requiredBars - 1}봉 + 다음 봉 시가 체결 1봉)보다 부족합니다. 조회 기간을
+                  넓히거나 관측·추세 기간을 줄이세요.
+                </p>
+              )}
               {error && (
                 <p className="bt-warning" role="alert">
                   저장 일봉 실험 실패 · {error}
@@ -911,6 +978,34 @@ export function StoredBacktest({
                   </>
                 )}
                 <ResultSummary result={experiment.result} label="저장 구간 수익률" portfolio={isV3Experiment} />
+                {(() => {
+                  if (
+                    !isV3Experiment ||
+                    !('runs' in experiment.snapshot.input) ||
+                    !('rebalances' in experiment.result) ||
+                    experiment.result.rebalances.length === 0 ||
+                    experiment.result.trades.length > 0
+                  ) {
+                    return null;
+                  }
+                  const safeAssetCode = experiment.snapshot.input.rule.safeAsset;
+                  const rebalances = experiment.result.rebalances;
+                  const hasRiskTarget = rebalances.some(r =>
+                    r.targets.some(t => t.code !== safeAssetCode && t.weight > 0),
+                  );
+                  const hasAnyPositiveTarget = rebalances.some(r => r.targets.some(t => t.weight > 0));
+                  const message =
+                    !hasRiskTarget && !hasAnyPositiveTarget
+                      ? '준비 봉 충족 · 리밸런싱 판정 완료 (적격 위험 자산 없음으로 현금/안전자산 유지)'
+                      : !hasRiskTarget && hasAnyPositiveTarget
+                        ? '준비 봉 충족 · 리밸런싱 판정 완료 (적격 위험 자산 없음 · 안전자산 배정 예산이 수수료·슬리피지 포함 1주 시가 미만이어서 체결 0건)'
+                        : '준비 봉 충족 · 리밸런싱 판정 완료 (적격 위험 자산이 선정되었으나 배정 예산이 수수료·슬리피지 포함 1주 시가 미만이어서 체결 0건)';
+                  return (
+                    <p className="bt-note" role="status">
+                      {message}
+                    </p>
+                  );
+                })()}
                 <div className="button-row bt-actions">
                   <button className="button secondary" disabled={locked || !available} onClick={() => void verify()}>
                     고정 입력으로 재현 검증

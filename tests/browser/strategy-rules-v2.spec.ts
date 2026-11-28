@@ -875,7 +875,7 @@ test('신규 7종 규칙 선택·프리셋 적용·정수/소수/대소 역전/�
 
   const ruleSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
   const options = await ruleSelect.locator('option').evaluateAll(els => els.map(el => (el as HTMLOptionElement).value));
-  expect(options).toHaveLength(13);
+  expect(options).toHaveLength(15);
   expect(options).toEqual(
     expect.arrayContaining([
       'ma_crossover',
@@ -1213,7 +1213,7 @@ test('10종 도움말 사전·문맥 가이드 동적 전환·지원 환경별 �
     await page.goto(route);
     await waitWorkbenchReady(page);
 
-    // 1. 상단 도움말 패널 사전 탭에 단일 11종 + 다종목 2종 + 오버레이 2종(총 15카드) 모두 표시 및 환경별 체결 가정 분리 확인
+    // 1. 상단 도움말 패널 사전 탭에 단일 11종 + 다종목 4종 + 오버레이 2종(총 17카드) 모두 표시 및 환경별 체결 가정 분리 확인
     await page.getByRole('button', { name: '사용방법 도움말', exact: true }).click();
     const helpRegion = page.getByRole('region', { name: '전략 스튜디오 및 백테스트 사용방법 도움말' });
     await expect(helpRegion.locator('[role="tabpanel"]')).toHaveCount(4);
@@ -1221,7 +1221,7 @@ test('10종 도움말 사전·문맥 가이드 동적 전환·지원 환경별 �
 
     const dictPanel = helpRegion.locator('[role="tabpanel"]:not([hidden])');
     const cards = dictPanel.locator('article.research-help-card');
-    await expect(cards).toHaveCount(15);
+    await expect(cards).toHaveCount(17);
 
     for (const kind of storedOnlyKinds) {
       const card = cards.filter({ has: page.locator('code', { hasText: new RegExp(`^${kind}$`) }) });
@@ -2182,13 +2182,13 @@ test('3A-2: 도움말 13카드 사전·volatility_breakout·volatilityParity 문
     await page.goto(route);
     await waitWorkbenchReady(page);
 
-    // 상단 도움말 사전 15카드 및 volatility_breakout·volatilityParity 확인
+    // 상단 도움말 사전 17카드 및 volatility_breakout·volatilityParity 확인
     await page.getByRole('button', { name: '사용방법 도움말', exact: true }).click();
     const helpRegion = page.getByRole('region', { name: '전략 스튜디오 및 백테스트 사용방법 도움말' });
     await helpRegion.getByRole('tab', { name: '전략·입력 항목 사전', exact: true }).click();
     const dictPanel = helpRegion.locator('[role="tabpanel"]:not([hidden])');
     const cards = dictPanel.locator('article.research-help-card');
-    await expect(cards).toHaveCount(15);
+    await expect(cards).toHaveCount(17);
 
     const vbCard = cards.filter({ has: page.locator('code', { hasText: /^volatility_breakout$/ }) });
     await expect(vbCard).toHaveCount(1);
