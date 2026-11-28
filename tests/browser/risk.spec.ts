@@ -769,6 +769,11 @@ test('risk verifies KIS morning activation gates, refresh sync, 503 failure, sto
   const seoulCompact = seoulDay.replaceAll('-', '');
   const prevDay = new Date(Date.parse(observedAt) + 9 * 3_600_000 - 86_400_000).toISOString().slice(0, 10);
 
+  const posts: string[] = [];
+  page.on('request', req => {
+    if (req.method() === 'POST') posts.push(req.url());
+  });
+
   state.risk.halted = false;
   state.risk.dailyLoss = 300000;
   state.connection = {
@@ -787,6 +792,7 @@ test('risk verifies KIS morning activation gates, refresh sync, 503 failure, sto
   };
 
   let morningStatusCode = 200;
+  let morningGate: Promise<void> | null = null;
   let morningPayload: {
     report: { id: string; day: string; dailyLoss: number; equity: number | null; approvedAt: string | null } | null;
     run: { armed: boolean; buyId: string | null };
@@ -798,11 +804,14 @@ test('risk verifies KIS morning activation gates, refresh sync, 503 failure, sto
   };
 
   await page.route('**/api/state', route => route.fulfill({ json: state }));
-  await page.route('**/api/morning', route =>
-    morningStatusCode !== 200
-      ? route.fulfill({ status: morningStatusCode, json: { error: 'morning unavailable' } })
-      : route.fulfill({ json: morningPayload }),
-  );
+  await page.route('**/api/morning', async route => {
+    if (morningGate) await morningGate;
+    if (morningStatusCode !== 200) {
+      await route.fulfill({ status: morningStatusCode, json: { error: 'morning unavailable' } });
+      return;
+    }
+    await route.fulfill({ json: morningPayload });
+  });
 
   await page.goto('/risk?env=kis');
   const gauge = page.getByRole('region', { name: '손실 한도 소진율 게이지' });
@@ -810,42 +819,46 @@ test('risk verifies KIS morning activation gates, refresh sync, 503 failure, sto
   const card1 = hub.locator('.risk-hub-card').nth(0);
   const card3 = hub.locator('.risk-hub-card').nth(2);
 
-  // 1-a) 미승인 보고서(approvedAt: null) → 장전 비활성 유지 (공통 150k / 300k = 50% 안전 범위)
+  // 1-a) 미승인 보고서(approvedAt: null) → 로딩 완료 후 장전 비활성 유지 (공통 150k / 300k = 50% 안전 범위)
+  await expect(hub).not.toContainText('장전 상태 확인 중');
   await expect(gauge).toContainText('소진율 50%');
   await expect(gauge).toContainText('안전 범위');
   await expect(card3).toContainText('정상 허용 (긴급정지 꺼짐 · 한도 내 주문 가능)');
 
-  // 1-b) 비무장(run.armed: false) → 장전 비활성 유지
+  // 1-b) 비무장(run.armed: false) → 로딩 완료 후 장전 비활성 유지
   morningPayload = {
     report: { id: 'rep-1', day: seoulDay, dailyLoss: 150000, equity: 1000000, approvedAt: observedAt },
     run: { armed: false, buyId: 'rep-1' },
     signals: [],
   };
   await page.reload();
+  await expect(hub).not.toContainText('장전 상태 확인 중');
   await expect(gauge).toContainText('소진율 50%');
   await expect(card1).not.toContainText('장전 운용 계획 병행');
 
-  // 1-c) buyId 불일치 → 장전 비활성 유지
+  // 1-c) buyId 불일치 → 로딩 완료 후 장전 비활성 유지
   morningPayload = {
     report: { id: 'rep-1', day: seoulDay, dailyLoss: 150000, equity: 1000000, approvedAt: observedAt },
     run: { armed: true, buyId: 'rep-other' },
     signals: [],
   };
   await page.reload();
+  await expect(hub).not.toContainText('장전 상태 확인 중');
   await expect(gauge).toContainText('소진율 50%');
   await expect(card1).not.toContainText('장전 운용 계획 병행');
 
-  // 1-d) 전일 보고서(day !== currentSeoulDay) → 장전 비활성 유지
+  // 1-d) 전일 보고서(day !== currentSeoulDay) → 로딩 완료 후 장전 비활성 유지
   morningPayload = {
     report: { id: 'rep-prev', day: prevDay, dailyLoss: 150000, equity: 1000000, approvedAt: observedAt },
     run: { armed: true, buyId: 'rep-prev' },
     signals: [],
   };
   await page.reload();
+  await expect(hub).not.toContainText('장전 상태 확인 중');
   await expect(gauge).toContainText('소진율 50%');
   await expect(card1).not.toContainText('장전 운용 계획 병행');
 
-  // 2) 같은 날 승인·무장 후 상태 갱신(status.observedAt 변경) 시 /api/morning 재조회되어 즉시 장전 활성 반영
+  // 2) 같은 날 승인·무장 후 상태 갱신(status.observedAt 변경) 시 재조회 중 '장전 상태 확인 중' 전환 후 장전 활성 반영
   const nextAt = new Date(Date.parse(observedAt) + 3500).toISOString();
   state.status.observedAt = nextAt;
   state.status.lastSuccessAt = nextAt;
@@ -855,9 +868,19 @@ test('risk verifies KIS morning activation gates, refresh sync, 503 failure, sto
     run: { armed: true, buyId: 'rep-1' },
     signals: [],
   };
+  let releaseMorning!: () => void;
+  morningGate = new Promise<void>(resolve => { releaseMorning = resolve; });
+  const morningRequested = page.waitForRequest('**/api/morning');
   const morningRefreshed = page.waitForResponse('**/api/morning');
   await page.clock.fastForward(3500);
+  await morningRequested;
+  await expect(card1).toContainText('장전 상태 확인 중');
+  await expect(card3).toContainText('장전 상태 확인 중');
+  await expect(card3).not.toContainText('정상 허용');
+  morningGate = null;
+  releaseMorning();
   await morningRefreshed;
+  await expect(hub).not.toContainText('장전 상태 확인 중');
   await expect(gauge).toContainText('한도 도달 차단 (장전 매수)');
   await expect(card1).toContainText('장전 운용 계획 병행');
 
@@ -895,34 +918,69 @@ test('risk verifies KIS morning activation gates, refresh sync, 503 failure, sto
   await expect(card1).toContainText('장전 당일 손실 정지 유지 (신규 매수 차단');
   await expect(card3).toContainText('장전 당일 손실 정지 유지 (신규 매수 차단');
 
-  // 5) 공통 한도 도달 시 일반 주문 매수·매도 차단 + 장전 매도 예외 문구 확인
-  state.connection.balance!.totalEquity = 700000; // loss 300,000 >= dailyLoss 300,000
+  // 5-a) 공통 한도 도달(loss 300k >= 300k) + 장전 활성 & 장전 손실 한도 미만(equity 750k → 장전 손실 50k < 150k)
+  state.connection.balance!.totalEquity = 700000;
   morningPayload = {
-    report: { id: 'rep-1', day: seoulDay, dailyLoss: 150000, equity: 1000000, approvedAt: observedAt },
+    report: { id: 'rep-1', day: seoulDay, dailyLoss: 150000, equity: 750000, approvedAt: observedAt },
     run: { armed: true, buyId: 'rep-1' },
     signals: [],
   };
-  const at5 = new Date(Date.parse(at4) + 3500).toISOString();
-  state.status.observedAt = at5;
-  state.status.lastSuccessAt = at5;
+  const at5a = new Date(Date.parse(at4) + 3500).toISOString();
+  state.status.observedAt = at5a;
+  state.status.lastSuccessAt = at5a;
   state.revision++;
-  const commonBlockRefreshed = page.waitForResponse('**/api/morning');
+  const commonWithinMorning = page.waitForResponse('**/api/morning');
   await page.clock.fastForward(3500);
-  await commonBlockRefreshed;
+  await commonWithinMorning;
+  for (const card of [card1, card3]) {
+    await expect(card).toContainText('장전 매수는 실효 한도 내 (장전 당일 정지 이력 확인 필요) · 장전 매도는 매도가능수량 내 허용');
+  }
   await expect(card1).toContainText('일반 주문 신규 매수·매도 차단');
-  await expect(card1).toContainText('장전 매도는 매도가능수량 내 허용');
   await expect(card3).toContainText('손실 한도 도달 · 신규 매수·매도 차단 (긴급정지 꺼짐)');
   await expect(card3).toContainText('일반 주문 차단');
-  await expect(card3).toContainText('장전 매도는 매도가능수량 내 허용');
+
+  // 5-b) 공통 한도 도달 + 당일 장전 정지 신호 있음(morningLatchedStop) → 카드1·카드3 모두 장전 매수 차단 + 매도 예외
+  morningPayload = {
+    report: { id: 'rep-1', day: seoulDay, dailyLoss: 150000, equity: 750000, approvedAt: observedAt },
+    run: { armed: true, buyId: 'rep-1' },
+    signals: [
+      { at: at5a, code: '005930', side: 'buy', price: 70000, outcome: '오늘은 손실 한도로 새 매수를 중단했습니다.' },
+    ],
+  };
+  const at5b = new Date(Date.parse(at5a) + 3500).toISOString();
+  state.status.observedAt = at5b;
+  state.status.lastSuccessAt = at5b;
+  state.revision++;
+  const commonWithLatch = page.waitForResponse('**/api/morning');
+  await page.clock.fastForward(3500);
+  await commonWithLatch;
+  for (const card of [card1, card3]) {
+    await expect(card).toContainText('장전 신규 매수 차단 (당일 손실 정지 유지) · 장전 매도는 매도가능수량 내 허용');
+  }
+
+  // 5-c) 공통 한도 도달 + /api/morning 503 실패 → 카드1·카드3 모두 '장전 상태 미확인' 표시 및 장전 매도 허용 미단정
+  morningStatusCode = 503;
+  const at5c = new Date(Date.parse(at5b) + 3500).toISOString();
+  state.status.observedAt = at5c;
+  state.status.lastSuccessAt = at5c;
+  state.revision++;
+  const commonWith503 = page.waitForResponse('**/api/morning');
+  await page.clock.fastForward(3500);
+  await commonWith503;
+  for (const card of [card1, card3]) {
+    await expect(card).toContainText('장전 상태 미확인 (조회 실패)');
+    await expect(card).not.toContainText('장전 매도는 매도가능수량 내 허용');
+  }
 
   // 6-a) 공통 baseline(1,000,000)과 장전 report.equity(1,100,000)가 다른 사례
+  morningStatusCode = 200;
   state.connection.balance!.totalEquity = 950000; // 공통 손실 50k (<300k), 장전 손실 150k (>=150k)
   morningPayload = {
     report: { id: 'rep-1', day: seoulDay, dailyLoss: 150000, equity: 1100000, approvedAt: observedAt },
     run: { armed: true, buyId: 'rep-1' },
     signals: [],
   };
-  const at6 = new Date(Date.parse(at5) + 3500).toISOString();
+  const at6 = new Date(Date.parse(at5c) + 3500).toISOString();
   state.status.observedAt = at6;
   state.status.lastSuccessAt = at6;
   state.revision++;
@@ -953,4 +1011,6 @@ test('risk verifies KIS morning activation gates, refresh sync, 503 failure, sto
   await expect(card1).toContainText('일반 주문 기준은 첫 주문 전 대기');
   await expect(card3).toContainText('장전 당일 정지 이력 확인 필요');
   await expect(card3).toContainText('장전 매도는 매도가능수량 내 허용');
+
+  expect(posts).toEqual([]);
 });

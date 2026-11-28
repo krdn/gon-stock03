@@ -149,7 +149,7 @@ export function Risk() {
       return;
     }
     const controller = new AbortController();
-    setMorningStatus(prev => (prev === 'loaded' ? prev : 'loading'));
+    setMorningStatus('loading');
     void fetch('/api/morning', { signal: controller.signal })
       .then(async res => {
         if (!res.ok) throw new Error('morning_http_error');
@@ -473,7 +473,22 @@ export function Risk() {
     return `${formatRiskPct(loss / state.risk.dailyLoss)}% 소진 · 잔여 여유 ${won(Math.max(0, state.risk.dailyLoss - loss))}원`;
   })();
 
-  // 카드 1 서킷브레이커 작동 상태 (일반 주문 vs 장전 매수·매도 및 당일 래치 분리)
+  // KIS 공통 손실 한도 도달 시 장전 운용 계획 상태(조회 중/실패·정지/도달·실효 한도 내·비활성) 독립 병기
+  const kisCommonBlockedMorningClause = (() => {
+    if (morningSyncNote) return morningSyncNote;
+    if (morningActive && (morningLatchedStop || morningLossBlocked)) {
+      const buyReason = morningLatchedStop ? '당일 손실 정지 유지' : '장전 손실 한도 도달';
+      return `장전 신규 매수 차단 (${buyReason}) · 장전 매도는 매도가능수량 내 허용`;
+    }
+    if (morningActive) {
+      return morningLoss === null
+        ? '장전 매수 기준 미설정 · 장전 매도는 매도가능수량 내 허용'
+        : '장전 매수는 실효 한도 내 (장전 당일 정지 이력 확인 필요) · 장전 매도는 매도가능수량 내 허용';
+    }
+    return '';
+  })();
+
+  // 카드 1 서킷브레이커 작동 상태 (일반 주문 vs 장전 매수·매도 및 당일 래치·조회 상태 분리)
   const circuitBreakerStatus = !available
     ? `로컬 상태 ${unavailableValue}`
     : halted
@@ -483,7 +498,9 @@ export function Risk() {
         : commonLossBlocked
           ? demo
             ? '일일 손실 한도 도달 (신규 주문 차단)'
-            : '일일 손실 한도 도달 (일반 주문 신규 매수·매도 차단 · 장전 매도는 매도가능수량 내 허용)'
+            : kisCommonBlockedMorningClause
+              ? `일일 손실 한도 도달 (일반 주문 신규 매수·매도 차단 · ${kisCommonBlockedMorningClause})`
+              : '일일 손실 한도 도달 (일반 주문 신규 매수·매도 차단)'
           : morningLatchedStop
             ? '장전 당일 손실 정지 유지 (신규 매수 차단 · 장전 매도는 매도가능수량 내 허용 · 일반 주문 공통 한도 내)'
             : morningLossBlocked
@@ -514,7 +531,9 @@ export function Risk() {
           : commonLossBlocked
             ? demo
               ? '손실 한도 도달 · 신규 매수·매도 차단 (긴급정지 꺼짐)'
-              : '손실 한도 도달 · 신규 매수·매도 차단 (긴급정지 꺼짐) · 일반 주문 차단 · 장전 매도는 매도가능수량 내 허용'
+              : kisCommonBlockedMorningClause
+                ? `손실 한도 도달 · 신규 매수·매도 차단 (긴급정지 꺼짐) · 일반 주문 차단 · ${kisCommonBlockedMorningClause}`
+                : '손실 한도 도달 · 신규 매수·매도 차단 (긴급정지 꺼짐) · 일반 주문 차단'
             : !demo && morningLatchedStop
               ? '장전 당일 손실 정지 유지 (신규 매수 차단 · 장전 매도는 매도가능수량 내 허용 · 긴급정지 꺼짐)'
               : !demo && morningLossBlocked
