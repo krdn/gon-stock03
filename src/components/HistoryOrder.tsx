@@ -35,7 +35,10 @@ export function HistoryOrder({ order, name, reveal }: { order: LedgerOrder; name
         <div><strong>{name}</strong> <Badge tone={order.status === 'filled' ? 'teal' : ['unknown','rejected','partial'].includes(order.status) ? 'amber' : 'neutral'}>
           {order.status === 'filled' && order.filled === order.qty ? '전량 체결' : paperStatus[order.status]}
         </Badge></div>
-        <span>{order.code} · {order.side === 'buy' ? '매수' : '매도'} · {order.orderType === 'market' ? '시장가' : `지정가 ${won(order.price)}원`}</span>
+        <span>
+          {order.code} · {order.side === 'buy' ? '매수' : '매도'} · {order.orderType === 'market' ? '시장가' : `지정가 ${won(order.price)}원`}
+          {order.priceCeiling !== undefined ? ` · 상한 캡 ${won(order.priceCeiling)}원` : ''}
+        </span>
       </div>
       <div className="history-quantity"><strong>체결 {order.filled}주</strong> · 잔량 {order.remaining}주 <small>주문 {order.qty}주</small></div>
       <div className="history-time"><span>KIS 확인 (KST)</span>{order.lastMatchedAt
@@ -51,6 +54,17 @@ export function HistoryOrder({ order, name, reveal }: { order: LedgerOrder; name
           <dt>{label}</dt><dd><span>{value ?? '미확인'}</span>{value && <button type="button" className="history-copy" aria-label={`${label} 복사`}
             onClick={() => void copy(label, value)}><Copy size={15} aria-hidden="true" /> 복사</button>}</dd>
         </Fragment>)}
+        {order.priceCeiling !== undefined && <><dt>상한 지정가 캡</dt><dd>{won(order.priceCeiling)}원</dd></>}
+        {order.orderType !== 'market' && order.price > 0 && <><dt>주문 기준 금액</dt><dd>{won(order.qty * order.price)}원</dd></>}
+        {order.strategy && (
+          <>
+            <dt>전략 실행 정보</dt>
+            <dd>
+              {order.strategy.id} · rev.{order.strategy.revision} · {order.strategy.signal === 'buy' ? '매수' : '매도'}
+              {order.strategy.signalBarDate ? ` (${order.strategy.signalBarDate})` : ''}
+            </dd>
+          </>
+        )}
       </dl>
       <span role="status" className="history-feedback">{feedback}</span>
     </details>

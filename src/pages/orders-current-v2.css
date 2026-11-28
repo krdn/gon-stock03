@@ -1,6 +1,162 @@
+.current-orders .panel-head,
+.history-panel .panel-head {
+  gap: 6px 10px;
+  align-items: center;
+}
 .current-orders .panel-head { margin-bottom: 8px; }
+.orders-panel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.orders-help-toggle {
+  flex-shrink: 0;
+}
+
+/* 4탭 WAI-ARIA 주문·체결 사용방법 도움말 패널 */
+.orders-help {
+  margin: 0 0 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--teal);
+  border-radius: 8px;
+  background: #fbfdfd;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.orders-help-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.orders-help-head h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+  color: #1a2d37;
+}
+.orders-help .orders-help-sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.orders-help-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.orders-help-tab {
+  min-height: 34px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #dce3e7;
+  background: #f7f9fa;
+  color: #394c57;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.orders-help-tab:hover {
+  background: #edf3f2;
+  color: #135951;
+}
+.orders-help-tab.active {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #fff;
+  font-weight: 600;
+}
+.orders-help-tab:focus-visible,
+.orders-help-body:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.orders-help-body {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #293b46;
+}
+.orders-help-body[hidden] {
+  display: none;
+}
+.orders-help-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.orders-help-steps li {
+  padding: 12px 14px;
+  border-radius: 7px;
+  border: 1px solid #e1eae7;
+  background: #f8fbfa;
+  min-width: 0;
+}
+.orders-help-step-no {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #e5f3ee;
+  color: #086a57;
+  font-size: 11px;
+  font-weight: 700;
+}
+.orders-help-steps h3,
+.orders-help-card h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #1b313c;
+}
+.orders-help .orders-help-steps p,
+.orders-help .orders-help-card p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #3c4f5a;
+}
+.orders-help-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.orders-help-faq {
+  display: grid;
+  gap: 10px;
+}
+.orders-help-card {
+  padding: 12px 14px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: #fafcfc;
+  min-width: 0;
+}
+.orders-help-card code,
+.orders-help-steps code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #eaf1ef;
+  color: #145b52;
+  font-size: 11px;
+}
+
 .current-orders .history-controls { margin: 10px 0; }
-.current-orders .order-counts, .current-orders .order-scope, .order-playback, .order-read-at {
+.current-orders .order-counts, .history-panel .order-counts, .current-orders .order-scope, .order-playback, .order-read-at {
   color: #475e69; font-size: 12px; line-height: 1.6;
 }
 .current-order-table { margin-top: 12px; }
@@ -15,8 +171,225 @@
 .current-order-table dl { margin: 4px 0; overflow-wrap: anywhere; font-size: 12px; }
 .current-order-table dt { margin-top: 6px; color: #526671; }
 .current-order-table dd { margin: 0; }
-.order-playback { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--line); }
+
+/* 다차원 세부 필터 및 페이지네이션 바 */
+.orders-sub-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+.orders-sub-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+}
+.orders-chip-group {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid #dce3e7;
+  border-radius: 7px;
+  background: #f5f8f9;
+  min-width: 0;
+}
+.orders-chip {
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 0;
+  background: transparent;
+  color: #425560;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.orders-chip:hover {
+  background: #e7f0ee;
+  color: #135951;
+}
+.orders-chip.active {
+  background: var(--teal);
+  color: #fff;
+  font-weight: 600;
+}
+.orders-chip:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 1px;
+}
+.orders-pagination {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  min-width: 0;
+}
+.orders-page-range {
+  font-size: 12px;
+  color: #475e69;
+  font-variant-numeric: tabular-nums;
+}
+.orders-page-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.orders-page-actions select {
+  min-height: 29px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #dce3e7;
+  background: #fff;
+  color: #24333e;
+  font-size: 11px;
+}
+
+.order-playback { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .order-read-at { margin-top: 10px; }
+
+/* 보존된 DEMO 미확인 요청 원장 대조 배너 */
+.orders-pending-reconcile {
+  margin-top: 14px;
+  padding: 13px 15px;
+  border-radius: 8px;
+  border: 1px solid #e6d4b3;
+  background: #fff9ee;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.orders-pending-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-bottom: 6px;
+}
+.orders-pending-head h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #5d4018;
+}
+.orders-pending-meta {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #443726;
+  font-variant-numeric: tabular-nums;
+}
+.orders-pending-meta code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #f4ead6;
+  color: #5a3c12;
+  font-size: 11px;
+}
+.orders-pending-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.orders-pending-foot p {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f3d36;
+}
+
+/* 환경별 3카드 주문·체결 인텔리전스 및 원장 진단 허브 */
+.orders-hub {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+.orders-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+.orders-hub-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 14px 15px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7faf9;
+  overflow-wrap: anywhere;
+}
+.orders-hub-card h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #20333e;
+}
+.orders-hub-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+}
+.orders-hub-list > div {
+  min-width: 0;
+  padding-bottom: 7px;
+  border-bottom: 1px solid #e3eae7;
+}
+.orders-hub-list > div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.orders-hub-list dt {
+  color: #526671;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.orders-hub-list dd {
+  margin: 3px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: #20333e;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.orders-hub-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid #e3eae7;
+}
+
+@media (max-width: 1040px) {
+  .orders-hub-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .orders-help-steps,
+  .orders-help-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 820px) {
   .current-order-table { container-type: inline-size; }
   .current-order-table :is(table,tbody) { display: block; width: 100%; min-width: 0; }
@@ -36,4 +409,26 @@
   .current-order-table .order-detail { grid-column: 2; grid-row: 4; }
   .current-order-table .order-detail summary { width: fit-content; margin-left: auto; }
   .current-order-table .order-detail dl { width: 100cqi; margin-left: calc(100% - 100cqi); padding: 8px 12px; border-radius: 6px; background: #f4f7f8; }
+}
+
+@media (max-width: 520px) {
+  .current-orders .panel-head,
+  .history-panel .panel-head {
+    flex-wrap: wrap;
+  }
+  .orders-panel-actions {
+    gap: 4px;
+  }
+  .orders-panel-actions .button.small-button {
+    padding: 4px 7px;
+    font-size: 10px;
+    gap: 5px;
+  }
+  .orders-help {
+    padding: 15px;
+  }
+  .orders-help-tab {
+    flex: 1 1 calc(50% - 6px);
+    text-align: center;
+  }
 }
