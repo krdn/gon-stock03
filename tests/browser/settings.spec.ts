@@ -423,3 +423,194 @@ test('starting kis check clears prior page count and preserves server restart al
   release();
   await expect(page.getByRole('alert')).toContainText('서버가 다시 시작');
 });
+
+test('settings preserves decimal average prices, renders balance evaluation summary, per-holding metrics, and links', async ({ page }) => {
+  const state = snapshot();
+  const now = new Date().toISOString();
+  state.connection.configured = true;
+  state.connection.injection = { phase: 'present', missing: [] };
+  state.connection.connected = true;
+  state.connection.authentication = { phase: 'ready', lastSuccessAt: now, validUntil: new Date(Date.now() + 3_600_000).toISOString(), retryAt: null, failure: null };
+  state.connection.status = { ...state.connection.status, phase: 'ready', complete: true, observedAt: now, lastSuccessAt: now, pages: 1 };
+  state.connection.balance = {
+    cash: 1_000_000,
+    totalEquity: 2_390_000,
+    positions: [
+      { code: '069500', name: 'KODEX 200', qty: 10, sellable: 8, average: 77732.5, price: 80_000 },
+      { code: '005930', name: '삼성전자', qty: 3, sellable: 3, average: 193_530, price: 190_000 },
+      { code: '000660', name: 'SK하이닉스', qty: 1, average: 100_000.2, price: 100_000 },
+    ],
+  };
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.goto('/settings');
+
+  const summary = page.getByLabel('모의 계좌 평가 요약', { exact: true });
+  await expect(summary).toContainText('총 평가자산');
+  await expect(summary).toContainText('2,470,000원');
+  await expect(summary).toContainText('주식·ETF 평가액');
+  await expect(summary).toContainText('1,470,000원');
+  await expect(summary).toContainText('보유 평가손익');
+  await expect(summary.locator('dd.up')).toHaveText('+12,085원');
+  await expect(summary).toContainText('KIS 총평가액 (참고)');
+  await expect(summary).toContainText('2,390,000원');
+
+  const holdings = page.locator('.settings-holdings li');
+  await expect(holdings).toHaveCount(3);
+
+  const kodex = holdings.nth(0);
+  await expect(kodex).toContainText('77,732.5원');
+  await expect(kodex).not.toContainText('77,733원');
+  await expect(kodex).toContainText('800,000원');
+  await expect(kodex.locator('dd.up')).toHaveText('+22,675원');
+  await expect(kodex.getByRole('link', { name: '모의 매매 ↗' })).toHaveAttribute('href', '/paper?code=069500');
+
+  const samsung = holdings.nth(1);
+  await expect(samsung).toContainText('193,530원');
+  await expect(samsung).toContainText('570,000원');
+  await expect(samsung.locator('dd.down')).toHaveText('-10,590원');
+  await expect(samsung.getByRole('link', { name: '모의 매매 ↗' })).toHaveAttribute('href', '/paper?code=005930');
+
+  const hynix = holdings.nth(2);
+  const hynixPnl = hynix.locator('dl > div', { hasText: '평가손익' }).locator('dd');
+  await expect(hynixPnl).toHaveText('0원');
+  await expect(hynixPnl).not.toHaveClass(/up|down/);
+  await expect(hynix).not.toContainText('주문가능 수량');
+
+  const balanceLinks = page.locator('.settings-balance-links');
+  await expect(balanceLinks.getByRole('link', { name: '포트폴리오 상세 ↗' })).toHaveAttribute('href', '/portfolio');
+  await expect(balanceLinks.getByRole('link', { name: 'KIS 주문 대조 ↗' })).toHaveAttribute('href', '/paper');
+
+  // Unpriced holding renders '평가 불가' across summary and holding evaluation fields.
+  state.connection.balance = {
+    cash: 500_000,
+    totalEquity: 500_000,
+    positions: [{ code: '069500', name: 'KODEX 200', qty: 2, average: 77732.5, price: null }],
+  };
+  await page.getByRole('button', { name: '로컬 서버 상태 새로고침' }).click();
+  await expect(summary.locator('div', { hasText: '총 평가자산' }).locator('dd')).toHaveText('평가 불가');
+  await expect(summary.locator('div', { hasText: '주식·ETF 평가액' }).locator('dd')).toHaveText('평가 불가');
+  await expect(summary.locator('div', { hasText: '보유 평가손익' }).locator('dd')).toHaveText('평가 불가');
+  await expect(summary.locator('div', { hasText: 'KIS 총평가액 (참고)' }).locator('dd')).toContainText('500,000원');
+  const unpricedRow = page.locator('.settings-holdings li').first();
+  await expect(unpricedRow).toContainText('77,732.5원');
+  await expect(unpricedRow.locator('dl > div', { hasText: '평가액' }).locator('dd')).toHaveText('평가 불가');
+  await expect(unpricedRow.locator('dl > div', { hasText: '평가손익' }).locator('dd')).toHaveText('평가 불가');
+});
+
+test('settings renders workspace diagnostic hub cards, navigation links, and offline fallback', async ({ page }) => {
+  const state = snapshot();
+  const now = new Date().toISOString();
+  let offline = false;
+  state.connection.configured = true;
+  state.connection.injection = { phase: 'present', missing: [] };
+  state.connection.authentication = { phase: 'ready', lastSuccessAt: now, validUntil: new Date(Date.now() + 3_600_000).toISOString(), retryAt: null, failure: null };
+  state.realtime = {
+    phase: 'ready',
+    required: true,
+    ordersAllowed: true,
+    message: '실시간 대조 완료',
+    code: '005930',
+    lastQuoteAt: now,
+    lastNoticeAt: null,
+    reconciledAt: now,
+    price: 75_000,
+    fresh: true,
+  };
+  state.risk = { maxOrder: 2_000_000, maxPosition: 5_000_000, dailyLoss: 300_000, halted: true };
+  state.paperManualMaxQty = 7;
+  state.paperRisk = { day: '20261128', baselineEquity: 10_000_000, unresolvedCount: 2, orders: { observedAt: now, rows: [] } };
+  state.strategies = [
+    { id: 'kis-1', name: 'KIS 활성', code: '005930', fast: 5, slow: 20, qty: 1, active: true, lastSignal: 'hold', lastTick: 1, environment: 'kis-paper' },
+    { id: 'kis-2', name: 'KIS 대기', code: '069500', fast: 5, slow: 20, qty: 1, active: false, lastSignal: 'hold', lastTick: 1, environment: 'kis-paper' },
+    { id: 'demo-1', name: 'DEMO 활성1', code: '005930', fast: 5, slow: 20, qty: 1, active: true, lastSignal: 'hold', lastTick: 1, environment: 'demo' },
+    { id: 'demo-2', name: 'DEMO 활성2', code: '000660', fast: 5, slow: 20, qty: 1, active: true, lastSignal: 'hold', lastTick: 1 },
+    { id: 'demo-3', name: 'DEMO 대기', code: '035420', fast: 5, slow: 20, qty: 1, active: false, lastSignal: 'hold', lastTick: 1, environment: 'demo' },
+  ];
+  await page.route('**/api/state', route => offline ? route.abort() : route.fulfill({ json: state }));
+  await page.goto('/settings');
+
+  await expect(page.getByRole('heading', { name: '워크스페이스 연결·운영 설정 현황' })).toBeVisible();
+
+  const realtimeCard = page.getByLabel('KIS 실시간 및 토큰 상태', { exact: true });
+  await expect(realtimeCard).toContainText('토큰 발급됨');
+  await expect(realtimeCard).toContainText('REST 대조 완료');
+  await expect(realtimeCard).toContainText('005930 · 실시간 주문 허용');
+  await expect(realtimeCard.getByRole('link', { name: 'KIS 모의 매매 · 실시간 대조 ↗' })).toHaveAttribute('href', '/paper');
+
+  const riskCard = page.getByLabel('공통 주문 및 위험 한도 현황', { exact: true });
+  await expect(riskCard).toContainText('긴급정지 켜짐 (신규 주문 정지)');
+  await expect(riskCard).toContainText('2,000,000원 / 5,000,000원');
+  await expect(riskCard).toContainText('300,000원');
+  await expect(riskCard).toContainText('1회 7주 · 불명·전송 중 2건');
+  await expect(riskCard.getByRole('link', { name: '일반 한도·수량 설정 ↗' })).toHaveAttribute('href', '/settings/trading/general');
+  await expect(riskCard.getByRole('link', { name: '위험관리·긴급정지 ↗' })).toHaveAttribute('href', '/risk');
+
+  const strategyCard = page.getByLabel('전략 계약 및 데이터 운영 현황', { exact: true });
+  await expect(strategyCard).toContainText('저장 2개 · 실행 중 1개');
+  await expect(strategyCard).toContainText('저장 3개 · 실행 중 2개');
+  await expect(strategyCard.locator('div', { hasText: '당일 KIS 주문 대조' }).locator('dd')).not.toHaveText('미대조');
+  await expect(strategyCard.getByRole('link', { name: '매매 설정 · 전용 계약 ↗' })).toHaveAttribute('href', '/settings/trading');
+  await expect(strategyCard.getByRole('link', { name: 'KIS 전략 스튜디오 ↗' })).toHaveAttribute('href', '/strategies?environment=kis-paper');
+  await expect(strategyCard.getByRole('link', { name: '데이터 상태 · 동기화 ↗' })).toHaveAttribute('href', '/data');
+
+  offline = true;
+  await page.getByRole('button', { name: '로컬 서버 상태 새로고침' }).click();
+  await expect(realtimeCard).toContainText('서버 상태 확인 필요');
+  await expect(realtimeCard).toContainText('상태 미확인');
+  await expect(riskCard).toContainText('상태 미확인');
+  await expect(riskCard).toContainText('미확인');
+  await expect(strategyCard).toContainText('미확인');
+  await expect(strategyCard).toContainText('미대조');
+});
+
+test('settings shows extended technical diagnostics with zero POSTs, zero secret inputs, and zero mobile overflow', async ({ page }) => {
+  const state = snapshot();
+  const observedAt = '2026-11-28T05:15:30.000Z';
+  state.connection.configured = true;
+  state.connection.injection = { phase: 'present', missing: [] };
+  state.connection.connected = true;
+  state.connection.balanceSeconds = 90;
+  state.connection.authentication = { phase: 'ready', lastSuccessAt: observedAt, validUntil: new Date(Date.now() + 3_600_000).toISOString(), retryAt: null, failure: null };
+  state.connection.status = { ...state.connection.status, phase: 'ready', complete: true, observedAt, lastSuccessAt: observedAt, pages: 2 };
+  state.connection.balance = {
+    cash: 1_234_567,
+    totalEquity: 2_011_892,
+    positions: [{ code: '069500', name: 'KODEX 200', qty: 10, sellable: 10, average: 77732.5, price: 78_500 }],
+  };
+  state.realtime = {
+    phase: 'reconciling',
+    required: true,
+    ordersAllowed: false,
+    message: 'REST 대조 필요',
+    code: null,
+    lastQuoteAt: null,
+    lastNoticeAt: null,
+    reconciledAt: null,
+    price: null,
+    fresh: false,
+  };
+  const posts: string[] = [];
+  page.on('request', req => { if (req.method() === 'POST') posts.push(req.url()); });
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+
+  for (const viewport of [{ width: 320, height: 740 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/settings');
+    await expect(page.locator('input[type=password], input[name*=key]')).toHaveCount(0);
+    await expect(page.getByLabel('KIS 실시간 및 토큰 상태', { exact: true })).toContainText('REST 대조 필요');
+    await expect(page.getByLabel('KIS 실시간 및 토큰 상태', { exact: true })).toContainText('구독 없음 · 실시간 주문 차단');
+
+    await page.getByText('서버·인증 상세 정보', { exact: true }).click();
+    const technical = page.locator('.settings-technical');
+    await expect(technical).toContainText('자동 주입·공시 경로');
+    await expect(technical).toContainText('Universal Auth (.secrets/infisical-dev.json) · 공시 dev /stock');
+    await expect(technical).toContainText('최근 잔고 관측');
+    await expect(technical).toContainText('잔고 신선도·제한시간');
+    await expect(technical).toContainText('60초 유효 · 조회 제한 90초');
+    await expect(technical).toContainText(new Date(observedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }));
+
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  }
+  expect(posts).toEqual([]);
+});
