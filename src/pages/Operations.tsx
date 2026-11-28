@@ -18,6 +18,12 @@ type RiskExposureFilter = 'all' | 'warning' | 'reserved' | 'safe';
 type RiskExposureSort = 'default' | 'used-desc' | 'room-asc' | 'held-desc' | 'pending-desc';
 type RiskEventFilter = 'all' | 'halt' | 'block' | 'limit';
 
+interface RiskMorningSummary {
+  day: string;
+  dailyLoss: number;
+  equity: number | null;
+}
+
 const RISK_EVENT_TITLES = [
   '위험 한도 변경',
   '신규 주문 긴급정지',
@@ -25,6 +31,12 @@ const RISK_EVENT_TITLES = [
   '위험관리 요청 차단',
   '주문 요청 차단',
   '전략 주문 차단',
+  'KIS 주문 요청 차단',
+  'KIS 주문 대조 실패',
+  'KIS 불명 복구 조회 차단',
+  'KIS 불명 복구 확인 차단',
+  'KIS 정정·취소 요청 차단',
+  'KIS 한정 취소 요청 차단',
 ] as const;
 
 const RISK_EXPOSURE_FILTERS: { id: RiskExposureFilter; label: string }[] = [
@@ -61,6 +73,25 @@ const RISK_EVENT_ENV_LABEL: Record<'demo' | 'kis-paper' | 'shared', string> = {
   shared: '공통 위험',
 };
 
+/** 위험도 구간(0~79% / 80~99% / 100%+)과 반올림 표시 퍼센트가 충돌하지 않도록 내림 정규화한다. */
+function formatRiskPct(ratio: number): number {
+  if (ratio <= 0) return 0;
+  if (ratio >= 1) return Math.max(100, Math.floor(ratio * 100));
+  if (ratio >= 0.8) return Math.min(99, Math.max(80, Math.floor(ratio * 100)));
+  return Math.min(79, Math.max(0, Math.floor(ratio * 100)));
+}
+
+/** 서버 시각(epoch ms)을 서버 `seoulDay` 계약과 동일한 KST YYYY-MM-DD 문자열로 변환한다. */
+function riskSeoulDay(nowMs: number, fallbackDay?: string): string {
+  if (Number.isFinite(nowMs) && nowMs > 0) {
+    return new Date(nowMs + 9 * 3_600_000).toISOString().slice(0, 10);
+  }
+  if (fallbackDay && /^\d{8}$/.test(fallbackDay)) {
+    return `${fallbackDay.slice(0, 4)}-${fallbackDay.slice(4, 6)}-${fallbackDay.slice(6, 8)}`;
+  }
+  return '';
+}
+
 /** 정렬 시 null(미확인·산출 불가) 항목을 항상 뒤로 배치하는 비교 함수. */
 function compareRiskNullable(a: number | null, b: number | null, dir: 'desc' | 'asc'): number {
   if (a === null && b === null) return 0;
@@ -77,7 +108,7 @@ function classifyRiskEvent(title: string): Exclude<RiskEventFilter, 'all'> {
 }
 
 export function Risk() {
-  const { state, status, serverNow, act, busy, available, connection, paperRisk } = useWorkbench();
+  const { state, status, server, serverNow, act, busy, available, connection, paperRisk } = useWorkbench();
   const [params, setParams] = useSearchParams();
   const demo = params.get('env') !== 'kis';
   const [helpOpen, setHelpOpen] = useState(false);
@@ -88,6 +119,44 @@ export function Risk() {
   const [exposureSort, setExposureSort] = useState<RiskExposureSort>('default');
   const exposureSearchRef = useRef<HTMLInputElement>(null);
   const [eventFilter, setEventFilter] = useState<RiskEventFilter>('all');
+  const [morningReport, setMorningReport] = useState<RiskMorningSummary | null>(null);
+
+  useEffect(() => {
+    if (demo || !available) {
+      setMorningReport(null);
+      return;
+    }
+    const controller = new AbortController();
+    void fetch('/api/morning', { signal: controller.signal })
+      .then(async res => {
+        if (!res.ok) return null;
+        const data: unknown = await res.json();
+        const report = data && typeof data === 'object' ? (data as { report?: unknown }).report : null;
+        if (
+          report
+          && typeof report === 'object'
+          && typeof (report as { day?: unknown }).day === 'string'
+          && typeof (report as { dailyLoss?: unknown }).dailyLoss === 'number'
+          && Number.isFinite((report as { dailyLoss: number }).dailyLoss)
+          && (report as { dailyLoss: number }).dailyLoss > 0
+        ) {
+          const eq = (report as { equity?: unknown }).equity;
+          return {
+            day: (report as { day: string }).day,
+            dailyLoss: (report as { dailyLoss: number }).dailyLoss,
+            equity: typeof eq === 'number' && Number.isFinite(eq) ? eq : null,
+          } satisfies RiskMorningSummary;
+        }
+        return null;
+      })
+      .then(parsed => {
+        if (!controller.signal.aborted) setMorningReport(parsed);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setMorningReport(null);
+      });
+    return () => controller.abort();
+  }, [demo, available, server?.instanceId, paperRisk?.day]);
 
   function closeHelp() {
     setHelpOpen(false);
@@ -126,6 +195,17 @@ export function Risk() {
   const baseline = demo ? state.startingEquity : paperRisk?.baselineEquity;
   const currentEquity = demo ? equity(state) : connection.balance?.totalEquity;
   const loss = baseline != null && currentEquity != null ? Math.max(0, baseline - currentEquity) : null;
+  const currentSeoulDay = riskSeoulDay(serverNow, paperRisk?.day);
+  const morningActive = !demo && available && morningReport !== null;
+  const effectiveDailyLoss = morningActive ? Math.min(state.risk.dailyLoss, morningReport.dailyLoss) : state.risk.dailyLoss;
+  const morningBaseline = morningActive
+    ? (morningReport.day === currentSeoulDay ? (morningReport.equity ?? baseline) : baseline)
+    : null;
+  const morningLoss = morningActive && morningBaseline != null && currentEquity != null
+    ? Math.max(0, morningBaseline - currentEquity)
+    : null;
+  const commonLossBlocked = loss !== null && loss >= state.risk.dailyLoss;
+  const morningLossBlocked = morningActive && morningLoss !== null && morningLoss >= effectiveDailyLoss;
   const loading = status.phase === 'loading';
   const unavailableValue = loading ? '확인 중' : '미확인';
   const halted = state.risk.halted;
@@ -148,9 +228,56 @@ export function Risk() {
   }[connection.status.phase];
   const money = (amount: number) => available ? won(amount) + '원' : unavailableValue;
   const time = (at: string | null | undefined) => at ? new Date(at).toLocaleString('ko-KR') : '미확인';
+  const effectiveLimitNote = morningActive
+    ? `실효 한도 ${won(effectiveDailyLoss)}원 · 공통 ${won(state.risk.dailyLoss)}원 / 장전 계획 ${won(morningReport.dailyLoss)}원`
+    : '';
 
-  // 손실 한도 소진율 게이지 계산 (loss === dailyLoss 정확 경계값도 한도 도달 차단 처리)
+  // 손실 한도 소진율 게이지 계산 (공통 한도 + KIS 장전 운용 계획 실효 한도 및 경계값 반영)
   const lossGauge = (() => {
+    if (morningActive) {
+      if (loss === null && morningLoss === null) {
+        return {
+          pct: 0,
+          tone: 'neutral' as const,
+          label: '기준 대기',
+          summary: `첫 주문 검증 전 (손실 기준 미설정) · ${effectiveLimitNote}`,
+        };
+      }
+      if (commonLossBlocked) {
+        const pct = state.risk.dailyLoss > 0 ? formatRiskPct(loss! / state.risk.dailyLoss) : 100;
+        return {
+          pct: 100,
+          tone: 'danger' as const,
+          label: '한도 도달 차단',
+          summary: `소진율 ${pct}% · 잔여 허용 0원 · ${effectiveLimitNote}`,
+        };
+      }
+      if (morningLossBlocked) {
+        const pct = effectiveDailyLoss > 0 ? formatRiskPct(morningLoss! / effectiveDailyLoss) : 100;
+        return {
+          pct: 100,
+          tone: 'danger' as const,
+          label: '한도 도달 차단 (장전 매수)',
+          summary: `장전 소진율 ${pct}% · 잔여 허용 0원 · ${effectiveLimitNote}`,
+        };
+      }
+      const commonRatio = loss !== null && state.risk.dailyLoss > 0 ? loss / state.risk.dailyLoss : -1;
+      const morningRatio = morningLoss !== null && effectiveDailyLoss > 0 ? morningLoss / effectiveDailyLoss : -1;
+      const useMorning = morningRatio >= commonRatio;
+      const activeRatio = useMorning ? morningRatio : commonRatio;
+      const activePct = activeRatio < 0 ? 0 : formatRiskPct(activeRatio);
+      const activeRoom = useMorning
+        ? Math.max(0, effectiveDailyLoss - morningLoss!)
+        : Math.max(0, state.risk.dailyLoss - loss!);
+      const isWarn = activeRatio >= 0.8;
+      return {
+        pct: Math.min(100, activePct),
+        tone: isWarn ? ('warn' as const) : ('safe' as const),
+        label: isWarn ? '주의 (80% 이상)' : '안전 범위',
+        summary: `소진율 ${activePct}% · 잔여 허용 ${won(activeRoom)}원 · ${effectiveLimitNote}`,
+      };
+    }
+
     if (loss === null) {
       return {
         pct: 0,
@@ -168,14 +295,14 @@ export function Risk() {
       };
     }
     const ratio = loss / state.risk.dailyLoss;
-    const pct = Math.min(100, Math.round(ratio * 100));
+    const pct = formatRiskPct(ratio);
     const room = Math.max(0, state.risk.dailyLoss - loss);
     if (loss >= state.risk.dailyLoss) {
       return {
         pct: 100,
         tone: 'danger' as const,
         label: '한도 도달 차단',
-        summary: `소진율 ${pct}% · 잔여 허용 ${won(room)}원`,
+        summary: `소진율 ${Math.min(100, pct)}% · 잔여 허용 ${won(room)}원`,
       };
     }
     if (ratio >= 0.8) {
@@ -193,6 +320,72 @@ export function Risk() {
       summary: `소진율 ${pct}% · 잔여 허용 ${won(room)}원`,
     };
   })();
+
+  // 카드 1 손실 소진율 · 잔여 여유 문구 (기준 미설정 시 0%/한도 여유 확정 오표시 방지)
+  const hubLossSummary = (() => {
+    if (!known) return `산출 대기 (${unavailableValue})`;
+    if (morningActive) {
+      if (loss === null && morningLoss === null) {
+        return `기준 미설정 (첫 주문 검증 전 산출 대기) · ${effectiveLimitNote}`;
+      }
+      if (commonLossBlocked) {
+        const pct = state.risk.dailyLoss > 0 ? formatRiskPct(loss! / state.risk.dailyLoss) : 100;
+        return `${pct}% 소진 · 잔여 여유 0원 · ${effectiveLimitNote}`;
+      }
+      if (morningLossBlocked) {
+        const pct = effectiveDailyLoss > 0 ? formatRiskPct(morningLoss! / effectiveDailyLoss) : 100;
+        return `장전 ${pct}% 소진 · 잔여 여유 0원 · ${effectiveLimitNote}`;
+      }
+      const commonRatio = loss !== null && state.risk.dailyLoss > 0 ? loss / state.risk.dailyLoss : -1;
+      const morningRatio = morningLoss !== null && effectiveDailyLoss > 0 ? morningLoss / effectiveDailyLoss : -1;
+      const useMorning = morningRatio >= commonRatio;
+      const activeRatio = useMorning ? morningRatio : commonRatio;
+      const activePct = activeRatio < 0 ? 0 : formatRiskPct(activeRatio);
+      const activeRoom = useMorning
+        ? Math.max(0, effectiveDailyLoss - morningLoss!)
+        : Math.max(0, state.risk.dailyLoss - loss!);
+      return `${activePct}% 소진 · 잔여 여유 ${won(activeRoom)}원 · ${effectiveLimitNote}`;
+    }
+    if (loss === null) return '기준 미설정 (첫 주문 검증 전 산출 대기)';
+    if (state.risk.dailyLoss <= 0) return '한도 산출 불가';
+    return `${formatRiskPct(loss / state.risk.dailyLoss)}% 소진 · 잔여 여유 ${won(Math.max(0, state.risk.dailyLoss - loss))}원`;
+  })();
+
+  // 카드 1 서킷브레이커 작동 상태
+  const circuitBreakerStatus = !available
+    ? `로컬 상태 ${unavailableValue}`
+    : halted
+      ? '긴급정지 활성 (신규 주문·전략 중단)'
+      : !known
+        ? '사용량 미확인 (차단 여부 대조 필요)'
+        : commonLossBlocked
+          ? '일일 손실 한도 도달 (신규 주문 차단)'
+          : morningLossBlocked
+            ? '장전 손실 한도 도달 (장전 신규 매수 차단 · 공통 한도 내)'
+            : loss === null && (!morningActive || morningLoss === null)
+              ? '첫 주문 전 기준 미설정 (정상 감시 대기)'
+              : '정상 감시 중 (한도 내 허용)';
+
+  // 카드 3 공통 긴급정지 · 재개 게이트 일관 판정
+  const orderGateStatus = !available
+    ? `제어 상태 ${unavailableValue}`
+    : halted
+      ? resumeBlocked
+        ? `긴급정지 중 · 재개 차단 (${!paperRisk ? '원장 미확인' : `불명·전송 중 ${unresolved}건`})`
+        : '긴급정지 중 · 즉시 재개 가능 (불명 0건)'
+      : !demo && (!paperRisk || unresolved > 0)
+        ? !paperRisk
+          ? '긴급정지 꺼짐 · 주문 원장 미확인 (신규 주문 차단)'
+          : `긴급정지 꺼짐 · 불명·전송 중 ${unresolved}건 (대조 전 신규 주문 차단)`
+        : !known
+          ? '긴급정지 꺼짐 · 사용량 미확인 (잔고·주문 대조 필요)'
+          : commonLossBlocked
+            ? '손실 한도 도달 · 신규 매수·매도 차단 (긴급정지 꺼짐)'
+            : !demo && morningLossBlocked
+              ? '장전 손실 한도 도달 · 장전 신규 매수 차단 (긴급정지 꺼짐)'
+              : loss === null && (!morningActive || morningLoss === null)
+                ? '정상 허용 (긴급정지 꺼짐 · 첫 주문 시 손실 기준 설정)'
+                : '정상 허용 (긴급정지 꺼짐 · 한도 내 주문 가능)';
 
   // 종목별 사용량·노출률·잔여 한도 단일 계산 (표 및 진단 허브 공용)
   const exposureEntries = codes.map(code => {
@@ -406,13 +599,18 @@ export function Risk() {
         <table><thead><tr>{['종목', '종목 한도 사용량 (원)', '한도 (원)', '노출률 · 잔여 한도', '보유 평가액 (원)', '매수 예약액 (원)', '매도 가능 보유'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
           <tbody>{visibleEntries.map(entry => {
             const rateUnknown = entry.used === null || state.risk.maxPosition <= 0;
-            const pct = rateUnknown ? 0 : Math.round((entry.used! / state.risk.maxPosition) * 100);
+            const pct = rateUnknown ? 0 : formatRiskPct(entry.used! / state.risk.maxPosition);
             const clampedPct = Math.min(100, Math.max(0, pct));
             const barTone = entry.exposureStatus === 'limit-hit'
               ? 'danger'
               : entry.exposureStatus === 'warning'
                 ? 'warn'
                 : 'safe';
+            const rateLabel = entry.exposureStatus === 'limit-hit'
+              ? `${pct}% · 한도 도달 (여유 0원)`
+              : entry.exposureStatus === 'warning'
+                ? `${pct}% (주의) · 여유 ${won(entry.room!)}원`
+                : `${pct}% · 여유 ${won(entry.room!)}원`;
             return <tr key={entry.code}>
               <td>
                 <Link
@@ -430,7 +628,7 @@ export function Risk() {
                 {rateUnknown ? '산출 불가' : (
                   <div className="risk-exposure-rate">
                     <span className={`risk-exposure-rate-text ${barTone}`}>
-                      {pct}% · {entry.room === 0 ? '한도 도달 (여유 0원)' : `여유 ${won(entry.room!)}원`}
+                      {rateLabel}
                     </span>
                     <div className="risk-mini-bar" aria-hidden="true">
                       <div className={`risk-mini-bar-fill ${barTone}`} style={{ width: `${clampedPct}%` }} />
@@ -454,7 +652,7 @@ export function Risk() {
           <dl className="risk-hub-list">
             <div>
               <dt>선택 환경 · 손실 기준</dt>
-              <dd>{demo ? '로컬 합성 · 시작 자산 기준' : `KIS REST · 거래일 ${paperRisk?.day ?? '미확인'} 첫 주문 기준`}</dd>
+              <dd>{demo ? '로컬 합성 · 시작 자산 기준' : `KIS REST · 거래일 ${paperRisk?.day ?? '미확인'} 첫 주문 기준${morningActive ? ' · 장전 운용 계획 병행' : ''}`}</dd>
             </div>
             <div>
               <dt>기준 자산 · 현재 평가자산</dt>
@@ -462,27 +660,11 @@ export function Risk() {
             </div>
             <div>
               <dt>손실 소진율 · 잔여 여유</dt>
-              <dd>{!known
-                ? `산출 대기 (${unavailableValue})`
-                : loss === null
-                  ? `0% (첫 주문 전 기준 미설정) · 한도 여유 ${money(state.risk.dailyLoss)}`
-                  : state.risk.dailyLoss > 0
-                    ? `${Math.round((loss / state.risk.dailyLoss) * 100)}% 소진 · 잔여 여유 ${won(Math.max(0, state.risk.dailyLoss - loss))}원`
-                    : '한도 산출 불가'}</dd>
+              <dd>{hubLossSummary}</dd>
             </div>
             <div>
               <dt>서킷브레이커 작동 상태</dt>
-              <dd>{!available
-                ? `로컬 상태 ${unavailableValue}`
-                : halted
-                  ? '긴급정지 활성 (신규 주문·전략 중단)'
-                  : !known
-                    ? '사용량 미확인 (차단 여부 대조 필요)'
-                    : loss !== null && loss >= state.risk.dailyLoss
-                      ? '일일 손실 한도 도달 (신규 주문 차단)'
-                      : loss === null
-                        ? '첫 주문 전 기준 미설정 (정상 감시 대기)'
-                        : '정상 감시 중 (한도 내 허용)'}</dd>
+              <dd>{circuitBreakerStatus}</dd>
             </div>
           </dl>
         </article>
@@ -506,7 +688,7 @@ export function Risk() {
                   ? `보유·예약 없음 (종목 한도 ${money(state.risk.maxPosition)})`
                   : unknownExposureCount > 0 || !maxEntry
                     ? '일부 종목 노출 미확인 (가격·예약액 확인 필요)'
-                    : `${maxEntry.label} ${won(maxEntry.used!)}원 (${Math.round((maxEntry.used! / state.risk.maxPosition) * 100)}%) · 잔여 ${won(Math.max(0, state.risk.maxPosition - maxEntry.used!))}원`}</dd>
+                    : `${maxEntry.label} ${won(maxEntry.used!)}원 (${formatRiskPct(maxEntry.used! / state.risk.maxPosition)}%) · 잔여 ${won(Math.max(0, state.risk.maxPosition - maxEntry.used!))}원`}</dd>
             </div>
             <div>
               <dt>미체결 매수 예약 · 매도 예약</dt>
@@ -534,13 +716,7 @@ export function Risk() {
           <dl className="risk-hub-list">
             <div>
               <dt>공통 긴급정지 · 재개 게이트</dt>
-              <dd>{!available
-                ? `제어 상태 ${unavailableValue}`
-                : halted
-                  ? resumeBlocked
-                    ? `긴급정지 중 · 재개 차단 (${!paperRisk ? '원장 미확인' : `불명·전송 중 ${unresolved}건`})`
-                    : '긴급정지 중 · 즉시 재개 가능 (불명 0건)'
-                  : '신규 주문 허용 중 (긴급정지 꺼짐)'}</dd>
+              <dd>{orderGateStatus}</dd>
             </div>
             <div>
               <dt>KIS 3대 무결성 게이트</dt>

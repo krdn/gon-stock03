@@ -316,10 +316,13 @@ test('risk loss gauge and 3-card diagnostic hub reflect DEMO boundaries, KIS sta
 
   const gauge = page.getByRole('region', { name: '손실 한도 소진율 게이지' });
   const hub = page.getByRole('region', { name: '위험관리 및 주문 게이트 종합 진단 허브' });
+  const card1 = hub.locator('.risk-hub-card').nth(0);
+  const card3 = hub.locator('.risk-hub-card').nth(2);
   await expect(gauge).toContainText('소진율 33%');
   await expect(gauge).toContainText('잔여 허용 200,000원');
   await expect(gauge).toContainText('안전 범위');
-  await expect(hub).toContainText('정상 감시 중 (한도 내 허용)');
+  await expect(card1).toContainText('정상 감시 중 (한도 내 허용)');
+  await expect(card3).toContainText('정상 허용 (긴급정지 꺼짐 · 한도 내 주문 가능)');
   await expect(hub).toContainText('보유·미체결 종목 없음 (0종목)');
   await expect(hub).toContainText('신규 종목 기준 1회 가능 500,000원');
   await expect(hub.getByRole('link', { name: '매매 한도 설정 허브' })).toHaveAttribute('href', '/settings/trading/general?from=risk');
@@ -327,14 +330,15 @@ test('risk loss gauge and 3-card diagnostic hub reflect DEMO boundaries, KIS sta
   await expect(hub.getByRole('link', { name: '전략 스튜디오 확인' })).toHaveAttribute('href', '/strategies?environment=demo');
   await expect(hub.getByRole('link', { name: '전체 알림·이벤트' })).toHaveAttribute('href', '/alerts');
 
-  // 2) DEMO 정확 경계값 도달 (loss === dailyLoss = 300,000 → 한도 도달 차단)
+  // 2) DEMO 정확 경계값 도달 (loss === dailyLoss = 300,000, halted: false → 한도 도달 차단)
   state.cash = state.startingEquity - state.risk.dailyLoss;
   state.revision++;
   await page.reload();
   await expect(gauge).toContainText('소진율 100%');
   await expect(gauge).toContainText('잔여 허용 0원');
   await expect(gauge).toContainText('한도 도달 차단');
-  await expect(hub).toContainText('일일 손실 한도 도달 (신규 주문 차단)');
+  await expect(card1).toContainText('일일 손실 한도 도달 (신규 주문 차단)');
+  await expect(card3).toContainText('손실 한도 도달 · 신규 매수·매도 차단 (긴급정지 꺼짐)');
 
   // 3) KIS 모의: 기준 미설정 → 정상(80% 주의) → 불명 주문으로 재개 차단
   state.connection = {
@@ -354,7 +358,11 @@ test('risk loss gauge and 3-card diagnostic hub reflect DEMO boundaries, KIS sta
   state.revision++;
   await page.goto('/risk?env=kis');
   await expect(gauge).toContainText('첫 주문 검증 전 (손실 기준 미설정)');
-  await expect(hub).toContainText('첫 주문 전 기준 미설정 (정상 감시 대기)');
+  await expect(card1).toContainText('기준 미설정 (첫 주문 검증 전 산출 대기)');
+  await expect(card1).not.toContainText('0%');
+  await expect(card1).not.toContainText('한도 여유');
+  await expect(card1).toContainText('첫 주문 전 기준 미설정 (정상 감시 대기)');
+  await expect(card3).toContainText('정상 허용 (긴급정지 꺼짐 · 첫 주문 시 손실 기준 설정)');
   await expect(hub.getByRole('link', { name: '포트폴리오 자산 확인' })).toHaveAttribute('href', '/portfolio');
   await expect(hub.getByRole('link', { name: '전략 스튜디오 확인' })).toHaveAttribute('href', '/strategies?environment=kis-paper');
 
@@ -364,25 +372,27 @@ test('risk loss gauge and 3-card diagnostic hub reflect DEMO boundaries, KIS sta
   await page.reload();
   await expect(gauge).toContainText('소진율 83%');
   await expect(gauge).toContainText('주의 (80% 이상)');
-  await expect(hub).toContainText('83% 소진 · 잔여 여유 50,000원');
+  await expect(card1).toContainText('83% 소진 · 잔여 여유 50,000원');
 
   // KIS 긴급정지 + 불명 주문 2건 → 재개 차단 진단
   state.risk.halted = true;
   state.paperRisk.unresolvedCount = 2;
   state.revision++;
   await page.reload();
-  await expect(hub).toContainText('긴급정지 중 · 재개 차단 (불명·전송 중 2건)');
-  await expect(hub).toContainText('불명·전송 중 2건');
+  await expect(card3).toContainText('긴급정지 중 · 재개 차단 (불명·전송 중 2건)');
+  await expect(card3).toContainText('불명·전송 중 2건');
 
-  // 4) 서버 503 (!available) 시 한도 금액 마스킹 검증
+  // 4) 서버 503 (!available) 시 초기 fixture 3대 한도 금액 전체 마스킹 검증
   mode = '503';
   await page.goto('/risk?env=kis');
   await expect(hub).toContainText('로컬 상태 미확인');
   await expect(hub).toContainText('주문 가능 상한 미확인');
-  await expect(hub).not.toContainText('500,000원');
-  await expect(hub).not.toContainText('800,000원');
-  await expect(hub).not.toContainText('300,000원');
   await expect(page.getByText('1,000,000원', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('4,000,000원', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('300,000원', { exact: true })).toHaveCount(0);
+  await expect(hub).not.toContainText('1,000,000원');
+  await expect(hub).not.toContainText('4,000,000원');
+  await expect(hub).not.toContainText('300,000원');
 });
 
 test('risk exposure table supports exposure rate column, stock links, search, 4 risk filters, and 5 sorts with nulls last', async ({ page }) => {
@@ -417,7 +427,7 @@ test('risk exposure table supports exposure rate column, stock links, search, 4 
   const samsungRow = rows.filter({ hasText: '005930' });
   await expect(samsungRow.getByRole('link')).toHaveAttribute('href', '/trade?mode=demo&code=005930');
   await expect(samsungRow).toContainText('105% · 한도 도달 (여유 0원)');
-  await expect(rows.filter({ hasText: '000660' })).toContainText('85% · 여유 150,000원');
+  await expect(rows.filter({ hasText: '000660' })).toContainText('85% (주의) · 여유 150,000원');
   await expect(rows.filter({ hasText: '035420' })).toContainText('30% · 여유 700,000원');
 
   // 진단 허브 상호 배타적 분포 & 1회 주문 병목 검증
@@ -478,7 +488,8 @@ test('risk exposure table supports exposure rate column, stock links, search, 4 
   await expect(search).toBeFocused();
   await expect(rows).toHaveCount(3);
 
-  // KIS 모드에서 used === null ('산출 불가' + 기존 '미확인' 공존) 및 정렬 시 null 맨 뒤 배치 검증
+  // KIS 모드에서 used === null ('산출 불가' + 기존 '미확인' 공존) 행이 기본 순서 첫 번째(000660)일 때
+  // 정렬 시 항상 마지막 행(last)으로 이동함을 검증
   state.connection = {
     ...state.connection,
     configured: true,
@@ -488,9 +499,7 @@ test('risk exposure table supports exposure rate column, stock links, search, 4 
     balance: {
       cash: 500000,
       totalEquity: 900000,
-      positions: [
-        { code: '005930', name: '삼성전자', qty: 4, price: 70000, average: 68000 },
-      ],
+      positions: [],
     },
   };
   state.paperRisk = {
@@ -501,6 +510,7 @@ test('risk exposure table supports exposure rate column, stock links, search, 4 
       observedAt,
       rows: [
         { code: '000660', side: 'buy', price: 0, remaining: 2, cancelled: false },
+        { code: '005930', side: 'buy', price: 70000, remaining: 4, cancelled: false },
       ],
     },
   };
@@ -509,6 +519,9 @@ test('risk exposure table supports exposure rate column, stock links, search, 4 
 
   const kisRows = page.getByRole('region', { name: '종목별 한도 사용량' }).locator('tbody tr');
   await expect(kisRows).toHaveCount(2);
+  // 기본 순서에서 null 행(000660)이 첫 번째, 확정 행(005930)이 두 번째
+  await expect(kisRows.nth(0)).toContainText('000660');
+  await expect(kisRows.nth(1)).toContainText('005930');
   const unknownRow = kisRows.filter({ hasText: '000660' });
   await expect(unknownRow.getByRole('link')).toHaveAttribute('href', '/paper?code=000660');
   await expect(unknownRow.getByRole('cell', { name: '미확인', exact: true })).toBeVisible();
@@ -516,13 +529,13 @@ test('risk exposure table supports exposure rate column, stock links, search, 4 
   await expect(hub).toContainText('일부 종목 노출 미확인');
   await expect(hub).toContainText('일부 종목 잔여 한도 미확인');
 
-  // room-asc 및 used-desc 정렬 시 null 항목(000660)이 항상 맨 뒤
-  await page.getByLabel('종목별 사용량 정렬').selectOption('room-asc');
-  await expect(kisRows.nth(0)).toContainText('005930');
-  await expect(kisRows.nth(1)).toContainText('000660');
-  await page.getByLabel('종목별 사용량 정렬').selectOption('used-desc');
-  await expect(kisRows.nth(0)).toContainText('005930');
-  await expect(kisRows.nth(1)).toContainText('000660');
+  // 사용량 높은 순 / 추가 매수 여유 적은 순 / 매수 예약액 높은 순 모두 null 항목(000660)이 마지막 행으로 이동
+  const kisSort = page.getByLabel('종목별 사용량 정렬');
+  for (const option of ['used-desc', 'room-asc', 'pending-desc'] as const) {
+    await kisSort.selectOption(option);
+    await expect(kisRows.first()).toContainText('005930');
+    await expect(kisRows.last()).toContainText('000660');
+  }
 });
 
 test('risk recent events support up to 10 items, 4 category filters, severity/environment badges, and /alerts link', async ({ page }) => {
@@ -531,7 +544,7 @@ test('risk recent events support up to 10 items, 4 category filters, severity/en
   state.events = [
     { id: 'e1', time: new Date(baseTime - 1000).toISOString(), level: 'warning', title: '신규 주문 긴급정지', detail: '긴급정지 1', read: false, environment: 'shared' },
     { id: 'e2', time: new Date(baseTime - 2000).toISOString(), level: 'info', title: '신규 주문 허용', detail: '재개 1', read: false, environment: 'shared' },
-    { id: 'e3', time: new Date(baseTime - 3000).toISOString(), level: 'error', title: '주문 요청 차단', detail: 'KIS 한도 초과', read: false, environment: 'kis-paper' },
+    { id: 'e3', time: new Date(baseTime - 3000).toISOString(), level: 'error', title: 'KIS 주문 요청 차단', detail: 'KIS 한도 초과', read: false, environment: 'kis-paper' },
     { id: 'e4', time: new Date(baseTime - 4000).toISOString(), level: 'warning', title: '전략 주문 차단', detail: 'DEMO 전략 차단', read: false, environment: 'demo' },
     { id: 'e5', time: new Date(baseTime - 5000).toISOString(), level: 'info', title: '위험 한도 변경', detail: '한도 변경 1', read: false, environment: 'shared' },
     ...Array.from({ length: 7 }, (_, i) => ({
@@ -549,9 +562,10 @@ test('risk recent events support up to 10 items, 4 category filters, severity/en
 
   const eventsPanel = page.locator('.risk-events');
   await expect(eventsPanel.getByRole('link', { name: '전체 이벤트 보기' })).toHaveAttribute('href', '/alerts');
-  // 12건 중 최근 최대 10건 표시
+  // 12건 중 최근 최대 10건 표시 및 실제 서버 'KIS 주문 요청 차단' 포함 확인
   await expect(eventsPanel.locator('article.event')).toHaveCount(10);
   await expect(eventsPanel).toContainText('표시 10건 / 최근 10건');
+  await expect(eventsPanel).toContainText('KIS 주문 요청 차단');
   await expect(eventsPanel.locator('.risk-event-level', { hasText: '오류' }).first()).toBeVisible();
   await expect(eventsPanel.locator('.risk-event-env', { hasText: 'KIS 모의' }).first()).toBeVisible();
   await expect(eventsPanel.locator('.risk-event-env', { hasText: 'DEMO' }).first()).toBeVisible();
@@ -566,6 +580,7 @@ test('risk recent events support up to 10 items, 4 category filters, severity/en
 
   await catGroup.getByRole('button', { name: '주문·전략 차단', exact: true }).click();
   await expect(eventsPanel.locator('article.event')).toHaveCount(7);
+  await expect(eventsPanel).toContainText('KIS 주문 요청 차단');
 
   // 특정 분류가 0건일 때 빈 상태 안내 및 전체 보기 복귀
   state.events = state.events.filter(e => e.title !== '위험 한도 변경');
@@ -621,4 +636,115 @@ test('risk stays overflow-free across 320/390/768/1440px viewports with zero POS
   }
 
   expect(posts).toEqual([]);
+});
+
+test('risk enforces percentage boundary floors, consistent KIS card-3 gates, and morning effective daily loss', async ({ page }) => {
+  const state = snapshot();
+  const observedAt = state.status.lastSuccessAt!;
+  const seoulDay = new Date(Date.parse(observedAt) + 9 * 3_600_000).toISOString().slice(0, 10);
+  const seoulCompact = seoulDay.replaceAll('-', '');
+
+  // 1) 손실 및 종목 노출 경계값: 79.9% → 79%, 80.0% → 80% (주의), 99.9% → 99% (주의), 100.0% → 100% 한도 도달
+  state.risk.dailyLoss = 100000;
+  state.risk.maxPosition = 1000000;
+  const [i0, i1, i2, i3] = state.instruments;
+  i0.price = 1000;
+  i1.price = 1000;
+  i2.price = 1000;
+  i3.price = 1000;
+  state.positions = [
+    { code: i0.code, qty: 799, average: 1000 }, // 79.9%
+    { code: i1.code, qty: 800, average: 1000 }, // 80.0%
+    { code: i2.code, qty: 999, average: 1000 }, // 99.9%
+    { code: i3.code, qty: 1000, average: 1000 }, // 100.0%
+  ];
+  state.orders = [];
+  const positionsEquity = (799 + 800 + 999 + 1000) * 1000;
+  // 손실 79,900 / 100,000 = 79.9% → 79% 안전 범위
+  state.cash = state.startingEquity - positionsEquity - 79900;
+
+  let morningPayload: { report: { day: string; dailyLoss: number; equity: number | null } | null } = { report: null };
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.route('**/api/morning', route => route.fulfill({ json: morningPayload }));
+
+  await page.goto('/risk');
+  const gauge = page.getByRole('region', { name: '손실 한도 소진율 게이지' });
+  const hub = page.getByRole('region', { name: '위험관리 및 주문 게이트 종합 진단 허브' });
+  const card1 = hub.locator('.risk-hub-card').nth(0);
+  const card3 = hub.locator('.risk-hub-card').nth(2);
+  const tableRows = page.getByRole('region', { name: '종목별 한도 사용량' }).locator('tbody tr');
+
+  await expect(gauge).toContainText('소진율 79%');
+  await expect(gauge).toContainText('안전 범위');
+  await expect(tableRows.filter({ hasText: i0.code })).toContainText('79% · 여유 201,000원');
+  await expect(tableRows.filter({ hasText: i1.code })).toContainText('80% (주의) · 여유 200,000원');
+  await expect(tableRows.filter({ hasText: i2.code })).toContainText('99% (주의) · 여유 1,000원');
+  await expect(tableRows.filter({ hasText: i3.code })).toContainText('100% · 한도 도달 (여유 0원)');
+
+  // 손실 80,000 / 100,000 = 80.0% → 80% 주의 (80% 이상)
+  state.cash = state.startingEquity - positionsEquity - 80000;
+  state.revision++;
+  await page.reload();
+  await expect(gauge).toContainText('소진율 80%');
+  await expect(gauge).toContainText('주의 (80% 이상)');
+
+  // 손실 99,900 / 100,000 = 99.9% → 99% 주의 (80% 이상), 한도 도달 아님
+  state.cash = state.startingEquity - positionsEquity - 99900;
+  state.revision++;
+  await page.reload();
+  await expect(gauge).toContainText('소진율 99%');
+  await expect(gauge).toContainText('주의 (80% 이상)');
+  await expect(card1).toContainText('99% 소진 · 잔여 여유 100원');
+
+  // 2) KIS halted: false 상태에서 불명 주문 1건 / 주문 대조 60초 경과 시 카드 3 차단·미확인 판정
+  state.risk.halted = false;
+  state.risk.dailyLoss = 300000;
+  state.connection = {
+    ...state.connection,
+    configured: true,
+    connected: true,
+    checkedAt: observedAt,
+    status: { ...state.connection.status, phase: 'ready', complete: true, observedAt, lastSuccessAt: observedAt, pages: 1 },
+    balance: { cash: 850000, totalEquity: 850000, positions: [] },
+  };
+  state.paperRisk = {
+    day: seoulCompact,
+    baselineEquity: 1000000,
+    unresolvedCount: 1,
+    orders: { observedAt, rows: [] },
+  };
+  state.revision++;
+  await page.goto('/risk?env=kis');
+  await expect(card3).toContainText('긴급정지 꺼짐 · 불명·전송 중 1건 (대조 전 신규 주문 차단)');
+
+  state.paperRisk = {
+    day: seoulCompact,
+    baselineEquity: 1000000,
+    unresolvedCount: 0,
+    orders: { observedAt: new Date(Date.parse(observedAt) - 65000).toISOString(), rows: [] },
+  };
+  state.revision++;
+  await page.reload();
+  await expect(card3).toContainText('긴급정지 꺼짐 · 사용량 미확인 (잔고·주문 대조 필요)');
+
+  // 3) KIS /api/morning 장전 운용 계획(dailyLoss: 150,000) 활성 시 손실 150,000원(공통 300,000원 미만)에서 장전 매수 차단
+  state.paperRisk = {
+    day: seoulCompact,
+    baselineEquity: 1000000,
+    unresolvedCount: 0,
+    orders: { observedAt, rows: [] },
+  };
+  morningPayload = {
+    report: {
+      day: seoulDay,
+      dailyLoss: 150000,
+      equity: 1000000,
+    },
+  };
+  state.revision++;
+  await page.reload();
+  await expect(gauge).toContainText('한도 도달 차단 (장전 매수)');
+  await expect(gauge).toContainText('실효 한도 150,000원 · 공통 300,000원 / 장전 계획 150,000원');
+  await expect(card1).toContainText('장전 손실 한도 도달 (장전 신규 매수 차단 · 공통 한도 내)');
+  await expect(card3).toContainText('장전 손실 한도 도달 · 장전 신규 매수 차단 (긴급정지 꺼짐)');
 });

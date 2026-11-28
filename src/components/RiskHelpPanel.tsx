@@ -171,16 +171,19 @@ export function RiskHelpPanel({
           <article className="risk-help-card">
             <h3>공통 손실 한도 (dailyLoss)</h3>
             <p>
-              손실 사용량은 <code>Math.max(0, 기준 자산 − 현재 평가자산)</code>으로 계산합니다. 손실이{' '}
-              <code>dailyLoss</code> 이상(<code>loss &gt;= dailyLoss</code> 정확 경계값 포함)에 도달하면 신규 매수와
-              매도 주문을 모두 차단합니다.
+              일반 주문의 손실 사용량은 <code>Math.max(0, 기준 자산 − 현재 평가자산)</code>으로 계산합니다. 손실이{' '}
+              <code>risk.dailyLoss</code> 이상(<code>loss &gt;= dailyLoss</code> 정확 경계값 포함)에 도달하면 신규{' '}
+              <strong>매수·매도 모두 차단</strong>됩니다.
             </p>
           </article>
           <article className="risk-help-card">
             <h3>장전 운용 계획(Morning) 활성 시 손실 한도</h3>
             <p>
-              KIS 모의 계좌에서 당일 장전 보고서 운용 계획이 활성화되어 있으면 공통 손실 한도와 장전 보고서 손실 한도
-              중 더 보수적인 값인 <code>Math.min(risk.dailyLoss, morning.report.dailyLoss)</code>가 적용됩니다.
+              KIS 모의 계좌에서 당일 장전 보고서 운용 계획이 활성화되어 있으면 장전 운용 계획 주문에는 실효 한도{' '}
+              <code>Math.min(risk.dailyLoss, morning.report.dailyLoss)</code>와 당일 기준 자산(
+              <code>morning.report.equity ?? baselineEquity</code>)이 적용됩니다. 실효 한도에 도달하면 장전 신규{' '}
+              <strong>매수만 차단</strong>되며, 일반 주문의 매수·매도 전면 차단은 공통 <code>risk.dailyLoss</code>{' '}
+              기준을 따릅니다.
             </p>
           </article>
         </div>
