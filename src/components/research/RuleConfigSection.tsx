@@ -136,6 +136,58 @@ export function RuleConfigSection({
       }
       return null;
     }
+    if (form.kind === 'krx_sector_rs') {
+      const rsLookbackDays = Number(form.rsLookbackDays);
+      if (
+        form.rsLookbackDays.trim() !== '' &&
+        Number.isInteger(rsLookbackDays) &&
+        rsLookbackDays >= 10 &&
+        rsLookbackDays <= 120
+      ) {
+        return portfolioWarmup({
+          kind: 'krx_sector_rs',
+          assets: ['069500', '005930'],
+          safeAsset: null,
+          rsLookbackDays,
+          topK: 2,
+          maxWeightPct: 50,
+          rebalanceDays: 20,
+        });
+      }
+      return null;
+    }
+    if (form.kind === 'clenow_momentum') {
+      const regressionDays = Number(form.clenowRegressionDays);
+      const atrPeriod = Number(form.clenowAtrPeriod);
+      const regimeSmaPeriod = Number(form.clenowRegimeSmaPeriod);
+      if (
+        form.clenowRegressionDays.trim() !== '' &&
+        Number.isInteger(regressionDays) &&
+        regressionDays >= 20 &&
+        regressionDays <= 252 &&
+        form.clenowAtrPeriod.trim() !== '' &&
+        Number.isInteger(atrPeriod) &&
+        atrPeriod >= 10 &&
+        atrPeriod <= 60 &&
+        form.clenowRegimeSmaPeriod.trim() !== '' &&
+        Number.isInteger(regimeSmaPeriod) &&
+        regimeSmaPeriod >= 20 &&
+        regimeSmaPeriod <= 250
+      ) {
+        return portfolioWarmup({
+          kind: 'clenow_momentum',
+          assets: ['069500', '005930'],
+          safeAsset: null,
+          regressionDays,
+          atrPeriod,
+          regimeSmaPeriod,
+          topK: 2,
+          riskPerAssetBps: 20,
+          rebalanceDays: 20,
+        });
+      }
+      return null;
+    }
     return null;
   })();
 
@@ -160,7 +212,7 @@ export function RuleConfigSection({
             ))}
           </select>
         </label>
-        <p className="rule-selector-meta">13종 전략 지원 · 저장 일봉 13종(다종목 2종 포함) / DEMO 종가 전용 4종</p>
+        <p className="rule-selector-meta">15종 전략 지원 · 저장 일봉 15종(다종목 4종 포함) / DEMO 종가 전용 4종</p>
       </div>
 
       <div className="rule-guide" aria-label="규칙 요약 안내">
@@ -303,7 +355,11 @@ export function RuleConfigSection({
           <p className="rule-selector-meta">
             {form.kind === 'dual_momentum'
               ? '동률 시 입력한 위험 자산 앞 순서 종목이 우선합니다. 대표 종목은 위험 자산 1과 자동 동기화됩니다.'
-              : '종가가 이동평균을 초과한 위험 자산에 각각 1/N 배분합니다. 대표 종목은 위험 자산 1과 자동 동기화됩니다.'}
+              : form.kind === 'faber_gtaa'
+                ? '종가가 이동평균을 초과한 위험 자산에 각각 1/N 배분합니다. 대표 종목은 위험 자산 1과 자동 동기화됩니다.'
+                : form.kind === 'krx_sector_rs'
+                  ? '양의 수익률·90% 이상 고점 유지 위험 자산 중 상대강도 상위 K종에 상한 이내 동일 비중을 배분합니다(동률 시 앞 순서 우선). 대표 종목은 위험 자산 1과 자동 동기화됩니다.'
+                  : '추세 SMA 초과·양의 회귀 모멘텀 상위 K종에 Wilder ATR 역변동성 비중을 배분합니다(동률 시 앞 순서 우선). 대표 종목은 위험 자산 1과 자동 동기화됩니다.'}
           </p>
           <label className="field">
             안전자산 종목코드 (선택 · 비우면 현금 보유)
@@ -377,6 +433,154 @@ export function RuleConfigSection({
                 />
               </label>
             </div>
+          )}
+          {form.kind === 'krx_sector_rs' && (
+            <>
+              <div className="form-grid">
+                <label className="field">
+                  상대강도 관측 기간 (봉)
+                  <input
+                    name="rsLookbackDays"
+                    type="number"
+                    min="10"
+                    max="120"
+                    step="1"
+                    value={form.rsLookbackDays}
+                    onChange={e => update({ rsLookbackDays: e.target.value })}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  상위 선정 종목 수 (K)
+                  <input
+                    name="rsTopK"
+                    type="number"
+                    min="1"
+                    max="5"
+                    step="1"
+                    value={form.rsTopK}
+                    onChange={e => update({ rsTopK: e.target.value })}
+                    required
+                  />
+                </label>
+              </div>
+              <div className="form-grid">
+                <label className="field">
+                  종목당 최대 비중 상한 (%)
+                  <input
+                    name="rsMaxWeightPct"
+                    type="number"
+                    min="20"
+                    max="100"
+                    step="1"
+                    value={form.rsMaxWeightPct}
+                    onChange={e => update({ rsMaxWeightPct: e.target.value })}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  리밸런싱 주기 (봉)
+                  <input
+                    name="rsRebalanceDays"
+                    type="number"
+                    min="5"
+                    max="60"
+                    step="1"
+                    value={form.rsRebalanceDays}
+                    onChange={e => update({ rsRebalanceDays: e.target.value })}
+                    required
+                  />
+                </label>
+              </div>
+            </>
+          )}
+          {form.kind === 'clenow_momentum' && (
+            <>
+              <div className="form-grid">
+                <label className="field">
+                  회귀 모멘텀 기간 (봉)
+                  <input
+                    name="clenowRegressionDays"
+                    type="number"
+                    min="20"
+                    max="252"
+                    step="1"
+                    value={form.clenowRegressionDays}
+                    onChange={e => update({ clenowRegressionDays: e.target.value })}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  Wilder ATR 기간 (봉)
+                  <input
+                    name="clenowAtrPeriod"
+                    type="number"
+                    min="10"
+                    max="60"
+                    step="1"
+                    value={form.clenowAtrPeriod}
+                    onChange={e => update({ clenowAtrPeriod: e.target.value })}
+                    required
+                  />
+                </label>
+              </div>
+              <div className="form-grid">
+                <label className="field">
+                  종목 추세 SMA 기간 (봉)
+                  <input
+                    name="clenowRegimeSmaPeriod"
+                    type="number"
+                    min="20"
+                    max="250"
+                    step="1"
+                    value={form.clenowRegimeSmaPeriod}
+                    onChange={e => update({ clenowRegimeSmaPeriod: e.target.value })}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  상위 선정 종목 수 (K)
+                  <input
+                    name="clenowTopK"
+                    type="number"
+                    min="1"
+                    max="5"
+                    step="1"
+                    value={form.clenowTopK}
+                    onChange={e => update({ clenowTopK: e.target.value })}
+                    required
+                  />
+                </label>
+              </div>
+              <div className="form-grid">
+                <label className="field">
+                  종목당 위험예산 (bp)
+                  <input
+                    name="clenowRiskPerAssetBps"
+                    type="number"
+                    min="5"
+                    max="100"
+                    step="1"
+                    value={form.clenowRiskPerAssetBps}
+                    onChange={e => update({ clenowRiskPerAssetBps: e.target.value })}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  리밸런싱 주기 (봉)
+                  <input
+                    name="clenowRebalanceDays"
+                    type="number"
+                    min="5"
+                    max="60"
+                    step="1"
+                    value={form.clenowRebalanceDays}
+                    onChange={e => update({ clenowRebalanceDays: e.target.value })}
+                    required
+                  />
+                </label>
+              </div>
+            </>
           )}
           {portfolioWarmupBars !== null && (
             <p className="rule-selector-meta">

@@ -276,6 +276,54 @@ export function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: bo
               안전자산 <b>{rule.safeAsset ?? '현금 보유'}</b>
             </span>
           </>
+        ) : rule.kind === 'krx_sector_rs' ? (
+          <>
+            <span>
+              상대강도 관측 <b>{rule.rsLookbackDays}봉</b>
+            </span>
+            <span>
+              상위 선정 <b>{rule.topK}종</b>
+            </span>
+            <span>
+              종목 상한 <b>{rule.maxWeightPct}%</b>
+            </span>
+            <span>
+              리밸런싱 <b>{rule.rebalanceDays}봉</b>
+            </span>
+            <span>
+              위험 자산 <b>{rule.assets.join(' / ')}</b>
+            </span>
+            <span>
+              안전자산 <b>{rule.safeAsset ?? '현금 보유'}</b>
+            </span>
+          </>
+        ) : rule.kind === 'clenow_momentum' ? (
+          <>
+            <span>
+              회귀 <b>{rule.regressionDays}봉</b>
+            </span>
+            <span>
+              ATR <b>{rule.atrPeriod}봉</b>
+            </span>
+            <span>
+              추세 SMA <b>{rule.regimeSmaPeriod}봉</b>
+            </span>
+            <span>
+              상위 선정 <b>{rule.topK}종</b>
+            </span>
+            <span>
+              위험예산 <b>{rule.riskPerAssetBps}bp</b>
+            </span>
+            <span>
+              리밸런싱 <b>{rule.rebalanceDays}봉</b>
+            </span>
+            <span>
+              위험 자산 <b>{rule.assets.join(' / ')}</b>
+            </span>
+            <span>
+              안전자산 <b>{rule.safeAsset ?? '현금 보유'}</b>
+            </span>
+          </>
         ) : null}
         {!portfolio && s.overlay?.chandelier && (
           <span>

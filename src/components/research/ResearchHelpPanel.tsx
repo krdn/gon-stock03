@@ -391,6 +391,112 @@ export const RULE_FIELD_HELP: Record<RuleKind, RuleHelpEntry> = {
       },
     ],
   },
+  krx_sector_rs: {
+    summary:
+      '리밸런싱일 종가 기준 최근 수익률이 양수(> 0)이고 구간 최고 고가 대비 종가 유지율이 90% 이상(>= 0.90)인 위험 자산 중 상대강도 점수(수익률×고점 유지율) 상위 K종에 종목당 상한 이내 동일 비중을 배분합니다.',
+    envBadge: '저장 일봉: 다종목 자산배분 (v3) · DEMO 미지원 · KIS 모의 정지 저장만 가능(시작·계약 고정 차단)',
+    basicPreset:
+      '관측 20봉 / 상위 2종 / 종목 상한 50% / 리밸런싱 20봉 (보수적 60/2/40/20 · 공격적 10/3/60/10 · 위험 자산 2-6종 · 안전자산 선택)',
+    executionNote:
+      '매도·리밸런싱은 수익을 보장하지 않습니다(수익 미보장). 저장 일봉 다종목 백테스트(v3) 전용이며 DEMO 저장·합성 백테스트는 차단되고, KIS 모의에서는 정지 상태(active=false) 저장만 가능하며 시작·계약 고정은 차단됩니다(단일 종목 공통 오버레이 미지원). [원안 대비 변형 범위] 사용자 지정 섹터 대용 자산의 가격 상대강도(t−L 종가 대비 수익률 R_c > 0, 최근 L봉 최고 고가 대비 현재 종가 유지율 P_c >= 0.90, 점수 R_c × P_c)로만 판정하며, 동일 시점 섹터·ETF 구성비·중복 섹터 합산·섹터 잔여 한도는 미구현입니다. 선정 수 k에 대해 각 min(1/k, maxWeightPct/100)을 배분하며 maxWeightPct는 선정 위험자산별 상한(safeAsset 미적용)이고 잔여 비중은 안전자산(비우면 현금)으로 돌립니다. 바스켓 전 종목 거래일 달력 100% 일치·다음 봉 시가 체결·매도 선행 후 정수 수량 매수·동일 비중 유지 시 소폭 축소 매도 가능·현금 부족 시 assets 뒤쪽 종목 수량 축소 가능·동률 시 입력 앞 순서 우선·위험 자산 동일 비중 첫 시가 벤치마크·분배금/배당/세금 미포함·생존 편향에 유의하세요. 최소 준비 봉은 rsLookbackDays+2봉(판정 rsLookbackDays+1봉 + 다음 봉 시가 체결 1봉, 기본 22봉 · 보수적 62봉 · 공격적 12봉)입니다.',
+    fields: [
+      {
+        term: '위험 자산 바스켓 (assets)',
+        range: '2-6개 종목코드 (6자리 영숫자 · 중복 금지 · 순서 보존)',
+        description:
+          '사용자 지정 섹터 대용 위험 자산 목록입니다. 동일 시점 업종 분류·ETF 구성비·중복 섹터 합산·섹터 잔여 한도는 미구현이므로 동일 업종 중복 편입에 유의하세요. 동률 시 앞 순서 종목이 우선하며 대표 종목(code)은 위험 자산 1과 자동 동기화됩니다.',
+      },
+      {
+        term: '안전자산 (safeAsset, 선택)',
+        range: '6자리 영숫자 코드 또는 비움 (assets와 중복 금지)',
+        description:
+          '적격 위험 자산이 없거나 종목당 최대 비중 상한(maxWeightPct) 적용 후 남은 잔여 비중을 옮겨 담을 방어 자산입니다. maxWeightPct 상한은 선정 위험자산별 상한이며 safeAsset에는 적용되지 않습니다. 비워두면(null) 잔여 비중을 현금으로 보유합니다.',
+      },
+      {
+        term: '상대강도 관측 기간 (rsLookbackDays)',
+        range: '10-120 정수 (기본 20봉)',
+        description:
+          't−L 종가 대비 수익률(R_c > 0)과 최근 L봉 최고 고가 대비 현재 종가 유지율(P_c >= 0.90)을 측정할 거래일 수입니다. 기간을 줄이면 단기 주도 섹터로 빠르게 교체되고, 늘리면 중기 강세 종목 위주로 선별합니다.',
+      },
+      {
+        term: '상위 선정 종목 수 (topK)',
+        range: '1-5 정수 (기본 2종)',
+        description:
+          '적격 위험 자산 중 상대강도 점수(R_c × P_c) 순으로 편입할 최대 종목 수(K)입니다. 선정 수 k에 대해 종목당 min(1/k, maxWeightPct/100)을 배분합니다.',
+      },
+      {
+        term: '종목당 최대 비중 상한 (maxWeightPct)',
+        range: '20-100 정수 % (기본 50%)',
+        description:
+          '선정된 각 위험 자산 1종에 배정할 수 있는 최대 비중 상한입니다(선정 위험자산별 상한 · safeAsset 미적용). 예: 1종만 적격이고 상한이 50%면 위험 자산 50%, 나머지 50%는 안전자산(또는 현금)에 배분됩니다.',
+      },
+      {
+        term: '리밸런싱 주기 (rebalanceDays)',
+        range: '5-60 정수 (기본 20봉)',
+        description:
+          '첫 준비 완료 종가 이후 다음 상대강도 재평가까지의 거래일 간격입니다. 주기를 줄이면 대응이 빨라지지만 수수료·슬리피지가 늘어날 수 있습니다.',
+      },
+    ],
+  },
+  clenow_momentum: {
+    summary:
+      '리밸런싱일 종가가 종목 추세 SMA를 초과(>)하고 로그 종가 선형회귀 연율화 기울기×결정계수(252βR²)가 양수(> 0)인 상위 K종 위험 자산에 Wilder ATR 역변동성 비중을 배분합니다.',
+    envBadge: '저장 일봉: 다종목 자산배분 (v3) · DEMO 미지원 · KIS 모의 정지 저장만 가능(시작·계약 고정 차단)',
+    basicPreset:
+      '회귀 90봉 / ATR 20봉 / 추세 SMA 100봉 / 상위 2종 / 위험예산 20bp / 리밸런싱 20봉 (보수적 120/20/200/2/10/20 · 공격적 60/14/60/3/35/10 · 위험 자산 2-6종 · 안전자산 선택)',
+    executionNote:
+      '매도·리밸런싱은 수익을 보장하지 않습니다(수익 미보장). 저장 일봉 다종목 백테스트(v3) 전용이며 DEMO 저장·합성 백테스트는 차단되고, KIS 모의에서는 정지 상태(active=false) 저장만 가능하며 시작·계약 고정은 차단됩니다(단일 종목 공통 오버레이 미지원). [원안 대비 변형 범위] 원안의 별도 시장 지수 200일 레짐과 고정 종목 100일 조건을 종목별 설정 SMA(regimeSmaPeriod) 초과(close > SMA, 기본 100일)로 대체했고, 점수는 연율화 로그 기울기 점수 252βR²(beta > 0 && R² > 0)를 사용합니다. 원시 비중은 (riskPerAssetBps/10000)/(Wilder ATR/종가)이며 합이 1을 넘으면 비례 축소하고 1 미만 잔여 비중은 안전자산(비우면 현금)으로 배분합니다. Wilder ATR 비율(ATR/종가)이 0 또는 비유한일 때 적용하는 대체 비중(1/K)은 ATR 위험예산을 보장하지 않으며, Wilder ATR은 조회 시작일 첫 봉부터 평활하므로 관측 시작일이 달라지면 같은 신호일이라도 비중이 달라질 수 있습니다. 바스켓 전 종목 거래일 달력 100% 일치·다음 봉 시가 체결·매도 선행 후 정수 수량 매수·동일 비중 유지 시 소폭 축소 매도 가능·현금 부족 시 assets 뒤쪽 종목 수량 축소 가능·동률 시 입력 앞 순서 우선·위험 자산 동일 비중 첫 시가 벤치마크·분배금/배당/세금 미포함·생존 편향에 유의하세요. 최소 준비 봉은 max(regressionDays, regimeSmaPeriod, atrPeriod+1)+1봉(기본 101봉 · 보수적 201봉 · 공격적 61봉)입니다.',
+    fields: [
+      {
+        term: '위험 자산 바스켓 (assets)',
+        range: '2-6개 종목코드 (6자리 영숫자 · 중복 금지 · 순서 보존)',
+        description:
+          '종목별 추세 SMA 초과 및 회귀 모멘텀 점수(252βR² > 0)로 순위를 매길 위험 자산 목록입니다. 동률 시 앞 순서 종목이 우선하며 대표 종목(code)은 위험 자산 1과 자동 동기화됩니다.',
+      },
+      {
+        term: '안전자산 (safeAsset, 선택)',
+        range: '6자리 영숫자 코드 또는 비움 (assets와 중복 금지)',
+        description:
+          '적격 위험 자산이 없거나 ATR 역변동성 비중 합계가 100% 미만일 때 남는 비중을 배분할 방어 자산입니다. 비워두면(null) 잔여 비중을 현금으로 보유합니다.',
+      },
+      {
+        term: '회귀 모멘텀 기간 (regressionDays)',
+        range: '20-252 정수 (기본 90봉)',
+        description:
+          '로그 종가 선형회귀의 연율화 기울기와 결정계수 곱(252βR², beta > 0 && R² > 0)을 계산할 관측 봉 수입니다. 기간을 늘리면 완만하고 꾸준한 추세를, 줄이면 최근 급등 추세를 선호합니다.',
+      },
+      {
+        term: 'Wilder ATR 기간 (atrPeriod)',
+        range: '10-60 정수 (기본 20봉)',
+        description:
+          '역변동성 비중 산출에 쓰는 Wilder ATR 기간입니다. Wilder ATR은 조회 시작일 첫 봉부터 평활하므로 시작일이 달라지면 비중이 달라질 수 있으며, ATR/종가가 0 또는 비유한일 때 적용하는 대체 비중(1/K)은 ATR 위험예산을 보장하지 않습니다.',
+      },
+      {
+        term: '종목 추세 SMA 기간 (regimeSmaPeriod)',
+        range: '20-250 정수 (기본 100봉)',
+        description:
+          '원안의 별도 시장 지수 200일 레짐과 고정 종목 100일 조건을 대체하는 종목별 설정 추세 필터입니다. 리밸런싱일 종가가 해당 SMA를 초과(close > SMA)한 종목만 후보가 됩니다.',
+      },
+      {
+        term: '상위 선정 종목 수 (topK)',
+        range: '1-5 정수 (기본 2종)',
+        description:
+          '추세·회귀 모멘텀 적격 자산 중 점수(252βR²) 순으로 편입할 최대 종목 수(K)입니다.',
+      },
+      {
+        term: '종목당 위험예산 (riskPerAssetBps)',
+        range: '5-100 정수 bp (기본 20bp)',
+        description:
+          '종목당 목표 일간 변동성 예산(bps/10000)으로, 원시 비중 (bps/10000)/(ATR/종가)을 결정합니다. 값을 높이면 투자 비중이 커지고(합계 1 초과 시 비례 축소), 낮추면 현금·안전자산 비중이 늘어납니다.',
+      },
+      {
+        term: '리밸런싱 주기 (rebalanceDays)',
+        range: '5-60 정수 (기본 20봉)',
+        description:
+          '첫 준비 완료 종가 이후 다음 회귀 모멘텀·ATR 역변동성 비중 재산정까지의 거래일 간격입니다.',
+      },
+    ],
+  },
 };
 
 /** 샹들리에 ATR 청산 오버레이 기본 초기값 안내. */
@@ -548,12 +654,13 @@ export function ResearchHelpPanel({
             <span className="research-help-step-no">2단계</span>
             <h3>규칙과 프리셋 선택</h3>
             <p>
-              전략 스튜디오나 백테스트에서 13종 전략 규칙(단일 종목 11종 + 다종목 자산배분 2종:{' '}
-              <code>13 ETF 듀얼 모멘텀</code>, <code>14 파버 GTAA</code> · DEMO 종가 전용 4종:{' '}
-              <code>이동평균 교차</code>, <code>RSI 단기 눌림목</code>, <code>MACD 히스토그램</code>,{' '}
-              <code>볼린저 %B 반등</code>) 중 하나를 고르고 <strong>[보수적 / 기본 / 공격적]</strong> 프리셋 버튼으로
-              시작값을 채운 뒤 단일 종목 전략이면 필요에 따라 <code>샹들리에 ATR 청산</code>이나{' '}
-              <code>변동성 패리티 · RMS 사이징</code> 오버레이를 켭니다.
+              전략 스튜디오나 백테스트에서 15종 전략 규칙(단일 종목 11종 + 다종목 자산배분 4종:{' '}
+              <code>13 ETF 듀얼 모멘텀</code>, <code>14 파버 GTAA</code>, <code>15 KRX 섹터 상대강도</code>,{' '}
+              <code>16 클레노우 회귀 모멘텀</code> · DEMO 종가 전용 4종: <code>이동평균 교차</code>,{' '}
+              <code>RSI 단기 눌림목</code>, <code>MACD 히스토그램</code>, <code>볼린저 %B 반등</code>) 중 하나를
+              고르고 <strong>[보수적 / 기본 / 공격적]</strong> 프리셋 버튼으로 시작값을 채운 뒤 단일 종목 전략이면
+              필요에 따라 <code>샹들리에 ATR 청산</code>이나 <code>변동성 패리티 · RMS 사이징</code> 오버레이를
+              켭니다.
             </p>
           </li>
           <li>
@@ -577,8 +684,8 @@ export function ResearchHelpPanel({
               모의에서는 기본 무필터 SMA(장기 100 이하)는 실시간 체결가(<code>H0STCNT0</code>) 교차로, 종가 확정형
               10종(EMA·필터 포함)과 <code>19 샹들리에 청산</code>은 전용 원장에 복사된 직전 KRX 개장일 확정 일봉으로
               당일 1회 집행합니다(<code>05 윌리엄스 변동성 돌파</code>·<code>13 ETF 듀얼 모멘텀</code>·
-              <code>14 파버 GTAA</code>·<code>20 변동성 패리티</code>·무필터 SMA 장기 101-120은 저장 일봉 백테스트
-              전용이며 정지 저장만 가능).
+              <code>14 파버 GTAA</code>·<code>15 KRX 섹터 상대강도</code>·<code>16 클레노우 회귀 모멘텀</code>·
+              <code>20 변동성 패리티</code>·무필터 SMA 장기 101-120은 저장 일봉 백테스트 전용이며 정지 저장만 가능).
             </p>
           </li>
         </ol>
@@ -599,7 +706,11 @@ export function ResearchHelpPanel({
                 ? `13 ${ruleTitle(kind)}`
                 : kind === 'faber_gtaa'
                   ? `14 ${ruleTitle(kind)}`
-                  : ruleTitle(kind);
+                  : kind === 'krx_sector_rs'
+                    ? `15 ${ruleTitle(kind)}`
+                    : kind === 'clenow_momentum'
+                      ? `16 ${ruleTitle(kind)}`
+                      : ruleTitle(kind);
             return (
               <article key={kind} className="research-help-card">
                 <h3>
@@ -729,7 +840,8 @@ export function ResearchHelpPanel({
           <article className="research-help-card">
             <h3>다종목 자산배분 (v3) 정산·벤치마크·유의사항</h3>
             <p>
-              <code>13 ETF 듀얼 모멘텀</code>과 <code>14 파버 GTAA</code>는 저장 일봉 다종목 백테스트(
+              <code>13 ETF 듀얼 모멘텀</code>, <code>14 파버 GTAA</code>, <code>15 KRX 섹터 상대강도</code>,{' '}
+              <code>16 클레노우 회귀 모멘텀</code>은 저장 일봉 다종목 백테스트(
               <code>daily-portfolio-next-open-v3</code>) 전용입니다. 바스켓 전 종목(위험 자산 2-6종 + 선택 안전자산)의
               거래일 달력이 100% 일치해야 하며, 리밸런싱일 다음 봉 시가에 슬리피지 전 시가 총평가액으로 목표 정수 수량을
               산출해 매도를 먼저 체결한 뒤 가용 현금 안에서 정수 수량만 매수하고 잔여 현금을 보유합니다. 동일 비중을
@@ -752,13 +864,14 @@ export function ResearchHelpPanel({
       >
         <div className="research-help-faq">
           <article className="research-help-card">
-            <h3>Q. 왜 13종 전략 중 일부와 오버레이 2종은 DEMO에서 저장/실행이 안 되나요?</h3>
+            <h3>Q. 왜 15종 전략 중 일부와 오버레이 2종은 DEMO에서 저장/실행이 안 되나요?</h3>
             <p>
               DEMO 합성 봉은 종가 하나만 생성하며 단일 종목 연습 전용입니다. 종가만 쓰는 단일 종목 4종(
               <code>이동평균 교차</code>(거래량 필터 끔), <code>RSI 단기 눌림목</code>, <code>MACD 히스토그램</code>,{' '}
               <code>볼린저 %B 반등</code>)만 DEMO 저장·백테스트를 지원합니다. 시가·고가·저가·거래량이 필요한 단일 종목
-              7종, 다종목 자산배분 2종(<code>13 ETF 듀얼 모멘텀</code>, <code>14 파버 GTAA</code>), 이동평균 거래량
-              필터·<code>샹들리에 청산</code>·<code>변동성 패리티</code> 오버레이는 실제 일봉 데이터가 있는{' '}
+              7종, 다종목 자산배분 4종(<code>13 ETF 듀얼 모멘텀</code>, <code>14 파버 GTAA</code>,{' '}
+              <code>15 KRX 섹터 상대강도</code>, <code>16 클레노우 회귀 모멘텀</code>), 이동평균 거래량 필터·
+              <code>샹들리에 청산</code>·<code>변동성 패리티</code> 오버레이는 실제 일봉 데이터가 있는{' '}
               <strong>KIS 저장 일봉 백테스트</strong>에서만 계산할 수 있어 DEMO 저장·실행을 차단합니다.
             </p>
           </article>
@@ -771,6 +884,7 @@ export function ResearchHelpPanel({
               세션 직전 KRX 개장일 확정 일봉 신호로 당일 1회 집행하며, 고정 이후 추가 수집한 일봉은 기존 전용 원장에
               자동 반영되지 않습니다. 반면 <strong>05 윌리엄스 변동성 돌파</strong>,{' '}
               <strong>13 ETF 듀얼 모멘텀</strong>, <strong>14 파버 GTAA</strong>,{' '}
+              <strong>15 KRX 섹터 상대강도</strong>, <strong>16 클레노우 회귀 모멘텀</strong>,{' '}
               <strong>20 변동성 패리티 · RMS</strong>는 저장 일봉 백테스트 전용이라 KIS 모의에서는 정지 상태(
               <code>active=false</code>) 저장만 가능하고 시작·계약 고정은 차단됩니다. 또한 기본 무필터 SMA라도 장기
               기간이 <code>101-120</code>이면 <strong>정지 상태(active=false) 저장과 저장 일봉 백테스트는 가능하지만</strong>

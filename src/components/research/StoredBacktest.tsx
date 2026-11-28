@@ -340,10 +340,36 @@ export function StoredBacktest({
     return [...map.entries()].map(([code, name]) => ({ code, name }));
   }, [state.instruments, runs]);
 
+  const availableCommonBars = useMemo(() => {
+    if (!portfolioMode || basketMappings.length < 2 || missingBasketCodes.length > 0) return null;
+    if (!marketDate.safeParse(from).success || !marketDate.safeParse(to).success || from > to) return null;
+    const normalize = (value: string) => value.replaceAll('-', '');
+    let commonDates: Set<string> | null = null;
+    for (const item of basketMappings) {
+      const dates = item.chosen?.calendar?.dates;
+      if (!dates) return null;
+      const inRange = new Set(dates.map(normalize).filter(date => date >= from && date <= to));
+      if (commonDates === null) {
+        commonDates = inRange;
+      } else {
+        for (const date of commonDates) {
+          if (!inRange.has(date)) commonDates.delete(date);
+        }
+      }
+    }
+    return commonDates?.size ?? 0;
+  }, [portfolioMode, basketMappings, missingBasketCodes.length, from, to]);
+
   const previewRule = buildRuleAndOverlay(ruleForm);
+  const requiredBars =
+    previewRule.ok && isPortfolioRule(previewRule.rule) ? portfolioWarmup(previewRule.rule) + 1 : null;
+  const portfolioBarsShortage =
+    portfolioMode && availableCommonBars !== null && requiredBars !== null && availableCommonBars < requiredBars;
   const minBarsHint = previewRule.ok
     ? isPortfolioRule(previewRule.rule)
-      ? `선택 공통 기간에 판정·체결용 최소 ${portfolioWarmup(previewRule.rule) + 1}봉 이상이 필요합니다(바스켓 전 종목 거래일 달력 100% 일치 필요). 실행하면 규칙·비용 가정과 결과를 함께 저장합니다.`
+      ? availableCommonBars !== null && requiredBars !== null
+        ? `보유 공통 거래일 ${availableCommonBars}봉 / 현재 규칙 최소 필요 ${requiredBars}봉(판정 ${requiredBars - 1}봉 + 다음 봉 시가 체결 1봉, 바스켓 전 종목 거래일 달력 100% 일치 필요). 실행하면 규칙·비용 가정과 결과를 함께 저장합니다.`
+        : `선택 공통 기간에 판정·체결용 최소 ${portfolioWarmup(previewRule.rule) + 1}봉 이상이 필요합니다(바스켓 전 종목 거래일 달력 100% 일치 필요). 실행하면 규칙·비용 가정과 결과를 함께 저장합니다.`
       : !isLegacySma(previewRule.rule, previewRule.overlay)
         ? `선택 기간에 판정·체결용 최소 ${warmup(previewRule.rule, previewRule.overlay) + 1}봉 이상이 필요합니다. 실행하면 규칙·비용 가정과 결과를 함께 저장합니다.`
         : '선택 기간에 장기 기간 + 2봉 이상이 필요합니다. 실행하면 입력·비용 가정과 결과를 함께 저장합니다.'
@@ -856,6 +882,13 @@ export function StoredBacktest({
               />
               <CostFields values={costs} change={setCosts} />
               <p className="bt-note">{minBarsHint}</p>
+              {portfolioBarsShortage && requiredBars !== null && availableCommonBars !== null && (
+                <p className="bt-warning" role="status">
+                  준비 봉 부족 · 선택 기간 공통 거래일({availableCommonBars}봉)이 현재 규칙의 최소 필요 봉 수(
+                  {requiredBars}봉 = 판정 {requiredBars - 1}봉 + 다음 봉 시가 체결 1봉)보다 부족합니다. 조회 기간을
+                  넓히거나 관측·추세 기간을 줄이세요.
+                </p>
+              )}
               {error && (
                 <p className="bt-warning" role="alert">
                   저장 일봉 실험 실패 · {error}
@@ -911,6 +944,14 @@ export function StoredBacktest({
                   </>
                 )}
                 <ResultSummary result={experiment.result} label="저장 구간 수익률" portfolio={isV3Experiment} />
+                {isV3Experiment &&
+                  'rebalances' in experiment.result &&
+                  experiment.result.rebalances.length > 0 &&
+                  experiment.result.trades.length === 0 && (
+                    <p className="bt-note" role="status">
+                      준비 봉 충족 · 리밸런싱 판정 완료 (적격 위험 자산 없음으로 현금/안전자산 유지)
+                    </p>
+                  )}
                 <div className="button-row bt-actions">
                   <button className="button secondary" disabled={locked || !available} onClick={() => void verify()}>
                     고정 입력으로 재현 검증

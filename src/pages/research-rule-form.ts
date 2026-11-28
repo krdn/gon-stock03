@@ -25,7 +25,7 @@ export type StrategyEnvironment = 'demo' | 'kis-paper';
 /** 지원하는 단일·다종목 전략 규칙 유니온. */
 export type AnyStrategyRule = StrategyRule | PortfolioRule;
 
-/** 지원하는 전략 규칙 종류 유니온 (단일 종목 11종 + 다종목 자산배분 2종). */
+/** 지원하는 전략 규칙 종류 유니온 (단일 종목 11종 + 다종목 자산배분 4종). */
 export type RuleKind = (typeof RULE_KINDS)[number];
 
 /** 규칙 프리셋 단계 키. */
@@ -139,6 +139,16 @@ export interface RuleFormState {
   dmRebalanceDays: string;
   gtaaSmaPeriod: string;
   gtaaRebalanceDays: string;
+  rsLookbackDays: string;
+  rsTopK: string;
+  rsMaxWeightPct: string;
+  rsRebalanceDays: string;
+  clenowRegressionDays: string;
+  clenowAtrPeriod: string;
+  clenowRegimeSmaPeriod: string;
+  clenowTopK: string;
+  clenowRiskPerAssetBps: string;
+  clenowRebalanceDays: string;
   useChandelier: boolean;
   atrPeriod: string;
   atrMultiplier: string;
@@ -194,7 +204,7 @@ export function defaultStoredBacktestDraft(): StoredBacktestDraft {
 /** 저장 일봉 백테스트 선택 전환 시 전달하는 포커스·불러오기 정보. */
 export type BacktestSelection = { focus: 'policy' | 'run' } | { saved: Experiment };
 
-/** 지원하는 13종 전략 규칙 키 목록 (단일 종목 11종 + 다종목 자산배분 2종). */
+/** 지원하는 15종 전략 규칙 키 목록 (단일 종목 11종 + 다종목 자산배분 4종). */
 export const RULE_KINDS = [
   'ma_crossover',
   'donchian_breakout',
@@ -209,6 +219,8 @@ export const RULE_KINDS = [
   'disparity_reversion',
   'dual_momentum',
   'faber_gtaa',
+  'krx_sector_rs',
+  'clenow_momentum',
 ] as const;
 
 /** 전략 규칙 선택 `<optgroup>` 그룹 정의. */
@@ -223,14 +235,14 @@ export const RULE_GROUPS: { label: string; kinds: readonly RuleKind[] }[] = [
     kinds: ['rsi2_pullback', 'bollinger_percent_b', 'low_volume_pullback', 'disparity_reversion'],
   },
   {
-    label: '다종목 자산배분 (2종)',
-    kinds: ['dual_momentum', 'faber_gtaa'],
+    label: '다종목 자산배분 (4종)',
+    kinds: ['dual_momentum', 'faber_gtaa', 'krx_sector_rs', 'clenow_momentum'],
   },
 ];
 
-/** 다종목 자산배분 2종 규칙의 3줄 요약 가이드 (매수·매도·주의). */
+/** 다종목 자산배분 4종 규칙의 3줄 요약 가이드 (매수·매도·주의). */
 export const PORTFOLIO_RULE_GUIDE: Record<
-  Extract<RuleKind,PortfolioRule['kind']>,
+  PortfolioRule['kind'],
   { buyWhen: string; sellWhen: string; cautionRegime: string }
 > = {
   dual_momentum: {
@@ -243,15 +255,32 @@ export const PORTFOLIO_RULE_GUIDE: Record<
     sellWhen: '이동평균선 이하(<=)인 위험 자산의 비중 합계는 안전자산으로 돌리거나 비우면 현금을 보유해요.',
     cautionRegime: '추세선 부근 횡보장에서는 리밸런싱마다 매수·매도가 반복될 수 있어요.',
   },
+  krx_sector_rs: {
+    buyWhen:
+      '리밸런싱일 종가 기준 최근 관측 기간 수익률이 양수(> 0)이고 구간 최고 고가 대비 종가 비율이 90% 이상(>= 0.9)인 위험 자산을 상대강도 점수(수익률×고점 유지율) 순으로 상위 K개 골라 종목당 상한 이내 동일 비중으로 배분해요(동률 시 앞 순서 우선).',
+    sellWhen:
+      '적격 위험 자산이 없거나 종목당 최대 비중 상한 적용 후 남은 잔여 비중은 안전자산으로 돌리거나 비우면 현금을 보유해요.',
+    cautionRegime:
+      '사용자 지정 바스켓의 가격 상대강도만 평가하므로 동일 업종 종목을 중복 편입하면 섹터 분산 효과가 줄어들 수 있어요.',
+  },
+  clenow_momentum: {
+    buyWhen:
+      '리밸런싱일 종가가 종목 추세 SMA를 초과(>)하고 로그 종가 선형회귀 연율화 기울기×결정계수(252βR²)가 양수(> 0)인 상위 K개 위험 자산에 Wilder ATR 역변동성 비중을 배분해요(동률 시 앞 순서 우선).',
+    sellWhen:
+      '추세·회귀 모멘텀 적격 자산이 없거나 ATR 역변동성 비중 합계가 100% 미만일 때 남은 비중은 안전자산으로 돌리거나 비우면 현금을 보유해요.',
+    cautionRegime:
+      '급격한 추세 반전 구간이나 관측 시작일 변경에 따른 Wilder ATR 평활 초기값 차이로 리밸런싱 비중이 달라질 수 있어요.',
+  },
 };
 
-function isEditableKind(kind: AnyStrategyRule['kind']): kind is RuleKind {
-  return RULE_KINDS.some(supported => supported === kind);
-}
-
 /** 규칙 키가 다종목 자산배분 전략인지 판정한다. */
-export function isPortfolioKind(kind: RuleKind): kind is Extract<RuleKind,PortfolioRule['kind']> {
-  return kind === 'dual_momentum' || kind === 'faber_gtaa';
+export function isPortfolioKind(kind: RuleKind): kind is PortfolioRule['kind'] {
+  return (
+    kind === 'dual_momentum' ||
+    kind === 'faber_gtaa' ||
+    kind === 'krx_sector_rs' ||
+    kind === 'clenow_momentum'
+  );
 }
 
 /** 규칙 키의 한글 표시 제목을 반환한다. */
@@ -340,6 +369,8 @@ export function defaultRuleForm(): RuleFormState {
   const disparity = STRATEGY_CATALOG.disparity_reversion.presets.basic;
   const dm = PORTFOLIO_CATALOG.dual_momentum.presets.basic;
   const gtaa = PORTFOLIO_CATALOG.faber_gtaa.presets.basic;
+  const rs = PORTFOLIO_CATALOG.krx_sector_rs.presets.basic;
+  const clenow = PORTFOLIO_CATALOG.clenow_momentum.presets.basic;
   return {
     kind: 'ma_crossover',
     maType: ma.kind === 'ma_crossover' ? ma.maType : 'sma',
@@ -392,6 +423,16 @@ export function defaultRuleForm(): RuleFormState {
     dmRebalanceDays: String(dm.rebalanceDays),
     gtaaSmaPeriod: String(gtaa.smaPeriod),
     gtaaRebalanceDays: String(gtaa.rebalanceDays),
+    rsLookbackDays: String(rs.rsLookbackDays),
+    rsTopK: String(rs.topK),
+    rsMaxWeightPct: String(rs.maxWeightPct),
+    rsRebalanceDays: String(rs.rebalanceDays),
+    clenowRegressionDays: String(clenow.regressionDays),
+    clenowAtrPeriod: String(clenow.atrPeriod),
+    clenowRegimeSmaPeriod: String(clenow.regimeSmaPeriod),
+    clenowTopK: String(clenow.topK),
+    clenowRiskPerAssetBps: String(clenow.riskPerAssetBps),
+    clenowRebalanceDays: String(clenow.rebalanceDays),
     useChandelier: false,
     atrPeriod: '14',
     atrMultiplier: '3',
@@ -419,7 +460,6 @@ export function formFromRule(rule?: AnyStrategyRule, overlay?: ExitOverlay): Rul
     }
   }
   if (!rule) return base;
-  if (!isEditableKind(rule.kind)) throw new Error('현재 편집기에서 지원하지 않는 다종목 규칙입니다.');
   base.kind = rule.kind;
   switch (rule.kind) {
     case 'ma_crossover':
@@ -500,6 +540,24 @@ export function formFromRule(rule?: AnyStrategyRule, overlay?: ExitOverlay): Rul
       base.gtaaSmaPeriod = String(rule.smaPeriod);
       base.gtaaRebalanceDays = String(rule.rebalanceDays);
       break;
+    case 'krx_sector_rs':
+      base.portfolioAssets = [...rule.assets];
+      base.portfolioSafeAsset = rule.safeAsset ?? '';
+      base.rsLookbackDays = String(rule.rsLookbackDays);
+      base.rsTopK = String(rule.topK);
+      base.rsMaxWeightPct = String(rule.maxWeightPct);
+      base.rsRebalanceDays = String(rule.rebalanceDays);
+      break;
+    case 'clenow_momentum':
+      base.portfolioAssets = [...rule.assets];
+      base.portfolioSafeAsset = rule.safeAsset ?? '';
+      base.clenowRegressionDays = String(rule.regressionDays);
+      base.clenowAtrPeriod = String(rule.atrPeriod);
+      base.clenowRegimeSmaPeriod = String(rule.regimeSmaPeriod);
+      base.clenowTopK = String(rule.topK);
+      base.clenowRiskPerAssetBps = String(rule.riskPerAssetBps);
+      base.clenowRebalanceDays = String(rule.rebalanceDays);
+      break;
   }
   return base;
 }
@@ -517,6 +575,24 @@ export function applyPreset(form: RuleFormState, presetKey: PresetKey): RuleForm
     const preset = PORTFOLIO_CATALOG.faber_gtaa.presets[presetKey];
     next.gtaaSmaPeriod = String(preset.smaPeriod);
     next.gtaaRebalanceDays = String(preset.rebalanceDays);
+    return next;
+  }
+  if (form.kind === 'krx_sector_rs') {
+    const preset = PORTFOLIO_CATALOG.krx_sector_rs.presets[presetKey];
+    next.rsLookbackDays = String(preset.rsLookbackDays);
+    next.rsTopK = String(preset.topK);
+    next.rsMaxWeightPct = String(preset.maxWeightPct);
+    next.rsRebalanceDays = String(preset.rebalanceDays);
+    return next;
+  }
+  if (form.kind === 'clenow_momentum') {
+    const preset = PORTFOLIO_CATALOG.clenow_momentum.presets[presetKey];
+    next.clenowRegressionDays = String(preset.regressionDays);
+    next.clenowAtrPeriod = String(preset.atrPeriod);
+    next.clenowRegimeSmaPeriod = String(preset.regimeSmaPeriod);
+    next.clenowTopK = String(preset.topK);
+    next.clenowRiskPerAssetBps = String(preset.riskPerAssetBps);
+    next.clenowRebalanceDays = String(preset.rebalanceDays);
     return next;
   }
   const preset = STRATEGY_CATALOG[form.kind].presets[presetKey];
@@ -624,6 +700,36 @@ export function matchedPreset(form: RuleFormState): PresetKey | null {
     for (const key of order) {
       const preset = PORTFOLIO_CATALOG.faber_gtaa.presets[key];
       if (numEq(form.gtaaSmaPeriod, preset.smaPeriod) && numEq(form.gtaaRebalanceDays, preset.rebalanceDays)) {
+        return key;
+      }
+    }
+    return null;
+  }
+  if (form.kind === 'krx_sector_rs') {
+    for (const key of order) {
+      const preset = PORTFOLIO_CATALOG.krx_sector_rs.presets[key];
+      if (
+        numEq(form.rsLookbackDays, preset.rsLookbackDays) &&
+        numEq(form.rsTopK, preset.topK) &&
+        numEq(form.rsMaxWeightPct, preset.maxWeightPct) &&
+        numEq(form.rsRebalanceDays, preset.rebalanceDays)
+      ) {
+        return key;
+      }
+    }
+    return null;
+  }
+  if (form.kind === 'clenow_momentum') {
+    for (const key of order) {
+      const preset = PORTFOLIO_CATALOG.clenow_momentum.presets[key];
+      if (
+        numEq(form.clenowRegressionDays, preset.regressionDays) &&
+        numEq(form.clenowAtrPeriod, preset.atrPeriod) &&
+        numEq(form.clenowRegimeSmaPeriod, preset.regimeSmaPeriod) &&
+        numEq(form.clenowTopK, preset.topK) &&
+        numEq(form.clenowRiskPerAssetBps, preset.riskPerAssetBps) &&
+        numEq(form.clenowRebalanceDays, preset.rebalanceDays)
+      ) {
         return key;
       }
     }
@@ -823,7 +929,7 @@ export function buildRuleAndOverlay(
         };
       }
       rawPortfolio = { kind: 'dual_momentum', assets, safeAsset, lookbackDays, rebalanceDays };
-    } else {
+    } else if (form.kind === 'faber_gtaa') {
       const smaPeriod = Number(form.gtaaSmaPeriod);
       const rebalanceDays = Number(form.gtaaRebalanceDays);
       if (form.gtaaSmaPeriod.trim() === '' || !Number.isInteger(smaPeriod) || smaPeriod < 20 || smaPeriod > 250) {
@@ -846,6 +952,140 @@ export function buildRuleAndOverlay(
         };
       }
       rawPortfolio = { kind: 'faber_gtaa', assets, safeAsset, smaPeriod, rebalanceDays };
+    } else if (form.kind === 'krx_sector_rs') {
+      const rsLookbackDays = Number(form.rsLookbackDays);
+      const topK = Number(form.rsTopK);
+      const maxWeightPct = Number(form.rsMaxWeightPct);
+      const rebalanceDays = Number(form.rsRebalanceDays);
+      if (
+        form.rsLookbackDays.trim() === '' ||
+        !Number.isInteger(rsLookbackDays) ||
+        rsLookbackDays < 10 ||
+        rsLookbackDays > 120
+      ) {
+        return {
+          ok: false,
+          error: '상대강도 관측 기간은 10-120 사이의 정수로 입력하세요.',
+          focusName: 'rsLookbackDays',
+        };
+      }
+      if (form.rsTopK.trim() === '' || !Number.isInteger(topK) || topK < 1 || topK > 5) {
+        return {
+          ok: false,
+          error: '상위 선정 종목 수는 1-5 사이의 정수로 입력하세요.',
+          focusName: 'rsTopK',
+        };
+      }
+      if (
+        form.rsMaxWeightPct.trim() === '' ||
+        !Number.isInteger(maxWeightPct) ||
+        maxWeightPct < 20 ||
+        maxWeightPct > 100
+      ) {
+        return {
+          ok: false,
+          error: '종목당 최대 비중 상한은 20-100 사이의 정수로 입력하세요.',
+          focusName: 'rsMaxWeightPct',
+        };
+      }
+      if (
+        form.rsRebalanceDays.trim() === '' ||
+        !Number.isInteger(rebalanceDays) ||
+        rebalanceDays < 5 ||
+        rebalanceDays > 60
+      ) {
+        return {
+          ok: false,
+          error: '리밸런싱 주기는 5-60 사이의 정수로 입력하세요.',
+          focusName: 'rsRebalanceDays',
+        };
+      }
+      rawPortfolio = { kind: 'krx_sector_rs', assets, safeAsset, rsLookbackDays, topK, maxWeightPct, rebalanceDays };
+    } else {
+      const regressionDays = Number(form.clenowRegressionDays);
+      const atrPeriod = Number(form.clenowAtrPeriod);
+      const regimeSmaPeriod = Number(form.clenowRegimeSmaPeriod);
+      const topK = Number(form.clenowTopK);
+      const riskPerAssetBps = Number(form.clenowRiskPerAssetBps);
+      const rebalanceDays = Number(form.clenowRebalanceDays);
+      if (
+        form.clenowRegressionDays.trim() === '' ||
+        !Number.isInteger(regressionDays) ||
+        regressionDays < 20 ||
+        regressionDays > 252
+      ) {
+        return {
+          ok: false,
+          error: '회귀 모멘텀 기간은 20-252 사이의 정수로 입력하세요.',
+          focusName: 'clenowRegressionDays',
+        };
+      }
+      if (
+        form.clenowAtrPeriod.trim() === '' ||
+        !Number.isInteger(atrPeriod) ||
+        atrPeriod < 10 ||
+        atrPeriod > 60
+      ) {
+        return {
+          ok: false,
+          error: 'Wilder ATR 기간은 10-60 사이의 정수로 입력하세요.',
+          focusName: 'clenowAtrPeriod',
+        };
+      }
+      if (
+        form.clenowRegimeSmaPeriod.trim() === '' ||
+        !Number.isInteger(regimeSmaPeriod) ||
+        regimeSmaPeriod < 20 ||
+        regimeSmaPeriod > 250
+      ) {
+        return {
+          ok: false,
+          error: '종목 추세 SMA 기간은 20-250 사이의 정수로 입력하세요.',
+          focusName: 'clenowRegimeSmaPeriod',
+        };
+      }
+      if (form.clenowTopK.trim() === '' || !Number.isInteger(topK) || topK < 1 || topK > 5) {
+        return {
+          ok: false,
+          error: '상위 선정 종목 수는 1-5 사이의 정수로 입력하세요.',
+          focusName: 'clenowTopK',
+        };
+      }
+      if (
+        form.clenowRiskPerAssetBps.trim() === '' ||
+        !Number.isInteger(riskPerAssetBps) ||
+        riskPerAssetBps < 5 ||
+        riskPerAssetBps > 100
+      ) {
+        return {
+          ok: false,
+          error: '종목당 위험예산은 5-100 사이의 정수로 입력하세요.',
+          focusName: 'clenowRiskPerAssetBps',
+        };
+      }
+      if (
+        form.clenowRebalanceDays.trim() === '' ||
+        !Number.isInteger(rebalanceDays) ||
+        rebalanceDays < 5 ||
+        rebalanceDays > 60
+      ) {
+        return {
+          ok: false,
+          error: '리밸런싱 주기는 5-60 사이의 정수로 입력하세요.',
+          focusName: 'clenowRebalanceDays',
+        };
+      }
+      rawPortfolio = {
+        kind: 'clenow_momentum',
+        assets,
+        safeAsset,
+        regressionDays,
+        atrPeriod,
+        regimeSmaPeriod,
+        topK,
+        riskPerAssetBps,
+        rebalanceDays,
+      };
     }
     const parsedPortfolio = portfolioRuleSchema.safeParse(rawPortfolio);
     if (!parsedPortfolio.success) {
@@ -1371,6 +1611,16 @@ export function formatRuleSummary(rule: AnyStrategyRule, overlay?: ExitOverlay):
         `${PORTFOLIO_CATALOG.faber_gtaa.title} (SMA ${rule.smaPeriod}봉 · 리밸런싱 ${rule.rebalanceDays}봉 · 위험 ${rule.assets.join('/')} · 안전 ${rule.safeAsset ?? '현금'})`,
       );
       break;
+    case 'krx_sector_rs':
+      parts.push(
+        `${PORTFOLIO_CATALOG.krx_sector_rs.title} (관측 ${rule.rsLookbackDays}봉 · 상위 ${rule.topK}종 · 한도 ${rule.maxWeightPct}% · 리밸런싱 ${rule.rebalanceDays}봉 · 위험 ${rule.assets.join('/')} · 안전 ${rule.safeAsset ?? '현금'})`,
+      );
+      break;
+    case 'clenow_momentum':
+      parts.push(
+        `${PORTFOLIO_CATALOG.clenow_momentum.title} (회귀 ${rule.regressionDays}봉 · ATR ${rule.atrPeriod}봉 · 추세 SMA ${rule.regimeSmaPeriod}봉 · 상위 ${rule.topK}종 · 위험예산 ${rule.riskPerAssetBps}bp · 리밸런싱 ${rule.rebalanceDays}봉 · 위험 ${rule.assets.join('/')} · 안전 ${rule.safeAsset ?? '현금'})`,
+      );
+      break;
   }
   if (!isPortfolioRule(rule)) {
     if (overlay?.chandelier) {
@@ -1396,7 +1646,7 @@ export function environmentAvailabilityText(value: boolean | string): string {
 /** 라우터 state에서 유효한 전략/백테스트 초안을 안전하게 파싱한다. */
 export function parseTransferDraft(raw: unknown): StrategyTransferDraft | null {
   const parsed = strategyTransferSchema.safeParse(raw);
-  return parsed.success && isEditableKind(parsed.data.rule.kind) ? parsed.data : null;
+  return parsed.success ? parsed.data : null;
 }
 
 /** 전략 에디터 기본 초안 상태를 생성한다. */
