@@ -167,8 +167,9 @@ export interface CostAssumptions {
   slippageBps: number;
 }
 
-/** 저장 일봉 백테스트의 날짜·정책·바스켓 runId 편집 상태 (DEMO ↔ 저장 일봉 전환 시 보존). */
+/** 저장 일봉 백테스트의 단일 runId·날짜·정책·바스켓 runId 편집 상태 (DEMO ↔ 저장 일봉 전환 시 보존). */
 export interface StoredBacktestDraft {
+  singleRunId: string | null;
   from: string;
   to: string;
   dateEdited: boolean;
@@ -179,6 +180,7 @@ export interface StoredBacktestDraft {
 /** 저장 일봉 백테스트 기본 편집 상태를 생성한다. */
 export function defaultStoredBacktestDraft(): StoredBacktestDraft {
   return {
+    singleRunId: null,
     from: '',
     to: '',
     dateEdited: false,

@@ -31,12 +31,14 @@ export function DemoBacktest({
   setRuleForm,
   costs,
   setCosts,
+  blockedReason,
 }: {
   strategyDraft: StrategyTransferDraft | null;
   ruleForm: RuleFormState;
   setRuleForm: (next: RuleFormState) => void;
   costs: CostAssumptions;
   setCosts: (next: CostAssumptions) => void;
+  blockedReason?: string;
 }) {
   const { state, act, available, busy } = useWorkbench();
   const [selection, setSelection] = useState<string | null>(() => strategyDraft?.code ?? null);
@@ -70,6 +72,10 @@ export function DemoBacktest({
     event.preventDefault();
     clearCalc();
     if ((!portfolioMode && !code) || busy || !available) return;
+    if (blockedReason) {
+      setError(blockedReason);
+      return;
+    }
     const badInput = findBadNumberInput(event.currentTarget);
     if (badInput) {
       setError(badNumberMessage(badInput));

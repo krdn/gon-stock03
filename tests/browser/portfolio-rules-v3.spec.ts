@@ -905,3 +905,132 @@ test('4A-2 보완 Minor 1: location.state 없이 /backtest?source=stored&strateg
     store.close();
   }
 });
+
+test('4A-2 2차 보완 Major 1: 단일 종목 005930 선택·수동 날짜 변경 후 DEMO ↔ 저장 일봉 왕복 시 005930 runId·코드·수동 날짜가 그대로 유지된다', async ({
+  page,
+}) => {
+  const { Store } = await import('../../server/store.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const store = new Store(':memory:');
+
+  // 00088K가 먼저(daily.runs[0]), 005930이 두 번째로 저장되도록 구성
+  const runFirst = portfolioDailyFixture('00088K', '66666666-1111-4111-8111-111111111111', {
+    barCount: 90,
+    startedAt: '2026-06-05T01:00:00.000Z',
+    priceFn: i => 20000 + i * 50,
+  });
+  const runSecond = portfolioDailyFixture('005930', '77777777-2222-4222-8222-222222222222', {
+    barCount: 90,
+    startedAt: '2026-06-01T01:00:00.000Z',
+    priceFn: i => 55000 + Math.sin(i / 5) * 3000 + i * 40,
+  });
+  // store.dailyRuns()는 최신 저장 역순으로 반환하므로 005930 먼저, 00088K를 나중에 저장해 daily.runs[0]이 00088K가 되게 구성
+  store.saveDaily(runSecond.run, runSecond.bars);
+  store.saveDaily(runFirst.run, runFirst.bars);
+
+  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4314, 4346]);
+  await new Promise<void>(resolve => server.listen(4346, '127.0.0.1', resolve));
+
+  const dailyPayloads: Record<string, unknown>[] = [];
+  await page.route('**/api/**', async route => {
+    const req = route.request();
+    if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/backtest/daily') {
+      dailyPayloads.push(req.postDataJSON() as Record<string, unknown>);
+    }
+    const response = await route.fetch({ url: req.url().replace(':4314', ':4346') });
+    await route.fulfill({ response });
+  });
+
+  try {
+    await page.goto('/backtest');
+    await waitWorkbenchReady(page);
+    await expect(page.getByLabel('일봉 수집 기록')).toHaveValue(runFirst.run.id);
+
+    // 두 번째 단일 종목(005930) 선택 후 시작일 수동 수정
+    await page.getByLabel('일봉 수집 기록').selectOption(runSecond.run.id);
+    await expect(page.getByLabel('일봉 수집 기록')).toHaveValue(runSecond.run.id);
+
+    const customFrom = '2025-02-03';
+    await page.locator('input[name="from"]').fill(customFrom);
+    await expect(page.locator('input[name="from"]')).toHaveValue(customFrom);
+
+    // DEMO → 저장 일봉 출처 왕복
+    const sourceSelect = page.getByLabel('데이터 출처');
+    await sourceSelect.selectOption('demo');
+    await sourceSelect.selectOption('stored');
+
+    // 복귀 시 005930 runId와 수동 시작일이 그대로 유지되어야 함 (00088K로 바뀌거나 날짜 이식 금지)
+    await expect(page.getByLabel('일봉 수집 기록')).toHaveValue(runSecond.run.id);
+    await expect(page.locator('input[name="from"]')).toHaveValue(customFrom);
+
+    await page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true }).click();
+    await expect(page.getByRole('region', { name: '저장 일봉 실험 결과' })).toBeVisible();
+
+    expect(dailyPayloads).toHaveLength(1);
+    expect(dailyPayloads[0].runId).toBe(runSecond.run.id);
+    expect(dailyPayloads[0].code).toBe('005930');
+    expect(dailyPayloads[0].from).toBe('20250203');
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
+  }
+});
+
+test('4A-2 2차 보완 Minor 1: 미등록 strategyId 직접 진입 시 role=alert 경고 및 POST 0건 차단 후 규칙 재선택 시 정상 실행된다', async ({
+  page,
+}) => {
+  const { Store } = await import('../../server/store.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const store = new Store(':memory:');
+
+  const runA = portfolioDailyFixture('005930', '88888888-1111-4111-8111-111111111111', {
+    barCount: 90,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 50000 + Math.sin(i / 4) * 2500 + i * 35,
+  });
+  store.saveDaily(runA.run, runA.bars);
+
+  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4314, 4347]);
+  await new Promise<void>(resolve => server.listen(4347, '127.0.0.1', resolve));
+
+  const posts: string[] = [];
+  await page.route('**/api/**', async route => {
+    const req = route.request();
+    if (req.method() === 'POST') posts.push(new URL(req.url()).pathname);
+    const response = await route.fetch({ url: req.url().replace(':4314', ':4347') });
+    await route.fulfill({ response });
+  });
+
+  try {
+    await page.goto('/backtest?source=stored&strategyId=missing-strategy-id');
+    await waitWorkbenchReady(page);
+
+    // 1. 미등록 strategyId 경고(role="alert") 표시 확인
+    const alert = page.getByRole('main').getByRole('alert').first();
+    await expect(alert).toBeVisible();
+    await expect(alert).toContainText('요청한 전략을 찾지 못했습니다.');
+
+    // 2. 실행 클릭 시 POST 0건 차단 확인
+    const runBtn = page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true });
+    await expect(runBtn).toBeEnabled();
+    await runBtn.click();
+    expect(posts).toEqual([]);
+    await expect(page.getByRole('main').getByRole('alert').first()).toContainText('요청한 전략을 찾지 못했습니다.');
+
+    // 3. 사용자가 명시적으로 규칙을 다시 선택한 뒤 차단 해제 및 정상 실행 확인
+    await page.getByRole('combobox', { name: '전략 규칙', exact: true }).selectOption('macd_momentum');
+    await expect(page).not.toHaveURL(/strategyId=/);
+    await expect(page.getByRole('main')).not.toContainText('요청한 전략을 찾지 못했습니다.');
+
+    await runBtn.click();
+    await expect(page.getByRole('region', { name: '저장 일봉 실험 결과' })).toBeVisible();
+    expect(posts).toEqual(['/api/backtest/daily']);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
+  }
+});

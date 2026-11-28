@@ -73,6 +73,7 @@ export function StoredBacktest({
   setCosts,
   storedDraft,
   updateStoredDraft,
+  blockedReason,
   onInvalidateTransfer,
   select,
 }: {
@@ -85,23 +86,26 @@ export function StoredBacktest({
   setCosts: (next: CostAssumptions) => void;
   storedDraft: StoredBacktestDraft;
   updateStoredDraft: (patch: Partial<StoredBacktestDraft>, options?: { invalidate?: boolean }) => void;
+  blockedReason?: string;
   onInvalidateTransfer: () => void;
   select: (id: string, selection: BacktestSelection) => void;
 }) {
   const { state, act, available, busy } = useWorkbench();
   const navigate = useNavigate();
-  const { from, to, dateEdited, portfolioPolicy, portfolioRunOverrides } = storedDraft;
+  const { singleRunId, from, to, dateEdited, portfolioPolicy, portfolioRunOverrides } = storedDraft;
   const rawSaved = initial && 'saved' in initial ? initial.saved : null;
   const savedRunsMatch =
     rawSaved === null ||
-    !('runs' in rawSaved.snapshot.input) ||
-    ((portfolioPolicy === null || portfolioPolicy === rawSaved.snapshot.input.adjustment) &&
-      rawSaved.snapshot.input.runs.every(
-        item => !portfolioRunOverrides[item.code] || portfolioRunOverrides[item.code] === item.runId,
-      ));
+    ('runs' in rawSaved.snapshot.input
+      ? (portfolioPolicy === null || portfolioPolicy === rawSaved.snapshot.input.adjustment) &&
+        rawSaved.snapshot.input.runs.every(
+          item => !portfolioRunOverrides[item.code] || portfolioRunOverrides[item.code] === item.runId,
+        )
+      : requested === null || requested === rawSaved.snapshot.input.runId);
   const savedDatesMatch =
     rawSaved === null ||
     !dateEdited ||
+    (!('runs' in rawSaved.snapshot.input) && singleRunId !== rawSaved.snapshot.input.runId) ||
     (from === rawSaved.snapshot.input.from && to === rawSaved.snapshot.input.to);
   const savedMatchesForm =
     rawSaved !== null &&
@@ -162,11 +166,15 @@ export function StoredBacktest({
         const daily = dailyRunsSchema.parse(await dailyResponse.json());
         const savedList = experimentListSchema.parse(await savedResponse.json());
         if (controller.signal.aborted) return;
+        const restoredSingleRun =
+          selected === null && singleRunId && !isPortfolioKind(ruleForm.kind)
+            ? daily.runs.find(row => row.id === singleRunId && isEligibleDailyRun(row))
+            : undefined;
         const preferredRun =
-          selected === null && strategyDraft
+          selected === null && !restoredSingleRun && strategyDraft
             ? daily.runs.find(row => row.code === strategyDraft.code) ?? daily.runs[0]
             : undefined;
-        const id = selected ?? preferredRun?.id ?? daily.runs[0]?.id;
+        const id = selected ?? restoredSingleRun?.id ?? preferredRun?.id ?? daily.runs[0]?.id;
         const match = daily.runs.find(row => row.id === id);
         setRuns(daily.runs);
         setExperiments(savedList.experiments);
@@ -180,8 +188,19 @@ export function StoredBacktest({
         );
         if (match && (!runs || selected === null)) {
           setSelected(match.id);
-          if (!isPortfolioKind(ruleForm.kind) && !dateEdited) {
-            updateStoredDraft({ from: input?.from ?? match.from, to: input?.to ?? match.to }, { invalidate: false });
+          if (!isPortfolioKind(ruleForm.kind)) {
+            const keepEditedDates = dateEdited && singleRunId === match.id;
+            if (!keepEditedDates) {
+              updateStoredDraft(
+                {
+                  singleRunId: match.id,
+                  from: input?.from ?? match.from,
+                  to: input?.to ?? match.to,
+                  dateEdited: Boolean(input),
+                },
+                { invalidate: false },
+              );
+            }
           }
         }
       } catch {
@@ -211,16 +230,18 @@ export function StoredBacktest({
   const syncedDraftCode = useRef<string | null>(null);
   useEffect(() => {
     if (portfolioMode || !runs || requested !== null || !strategyDraft) return;
+    if (singleRunId && runs.some(row => row.id === singleRunId && isEligibleDailyRun(row))) return;
     if (syncedDraftCode.current === strategyDraft.code) return;
     syncedDraftCode.current = strategyDraft.code;
     const preferred = runs.find(row => row.code === strategyDraft.code);
     if (preferred && preferred.id !== selected) {
       setSelected(preferred.id);
-      if (!dateEdited) {
-        updateStoredDraft({ from: preferred.from, to: preferred.to }, { invalidate: false });
-      }
+      updateStoredDraft(
+        { singleRunId: preferred.id, from: preferred.from, to: preferred.to, dateEdited: false },
+        { invalidate: false },
+      );
     }
-  }, [portfolioMode, runs, requested, strategyDraft, selected, dateEdited, updateStoredDraft]);
+  }, [portfolioMode, runs, requested, strategyDraft, singleRunId, selected, updateStoredDraft]);
 
   const basketEntries = useMemo(() => {
     if (!portfolioMode) return [];
@@ -262,6 +283,17 @@ export function StoredBacktest({
     }
     return { from: commonFrom, to: commonTo, valid: commonFrom <= commonTo };
   }, [portfolioMode, basketMappings, missingBasketCodes.length]);
+
+  useEffect(() => {
+    if (portfolioMode || !run) return;
+    if (dateEdited && singleRunId === run.id) return;
+    if (saved && !('runs' in saved.snapshot.input) && saved.snapshot.input.runId === run.id) return;
+    if (!dateEdited && from === run.from && to === run.to && singleRunId === run.id) return;
+    updateStoredDraft(
+      { singleRunId: run.id, from: run.from, to: run.to, dateEdited: false },
+      { invalidate: false },
+    );
+  }, [portfolioMode, dateEdited, run, from, to, singleRunId, saved, updateStoredDraft]);
 
   useEffect(() => {
     if (!portfolioMode || dateEdited || !commonRange || !commonRange.valid) return;
@@ -311,6 +343,11 @@ export function StoredBacktest({
   async function execute(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (locked || listError || !available) return;
+    if (blockedReason) {
+      clearResult();
+      setError(blockedReason);
+      return;
+    }
     if (!portfolioMode && (!run || !eligible)) return;
     clearResult();
     const fromInput = event.currentTarget.querySelector<HTMLInputElement>('input[name="from"]');
@@ -514,6 +551,7 @@ export function StoredBacktest({
       setRuleForm(formFromRule(ruleFromExperimentInput(fixed), 'overlay' in fixed ? fixed.overlay : undefined));
       updateStoredDraft(
         {
+          singleRunId: 'runs' in fixed ? null : fixed.runId,
           from: fixed.from,
           to: fixed.to,
           dateEdited: true,
@@ -757,7 +795,11 @@ export function StoredBacktest({
                     min={portfolioMode ? (commonRange?.valid ? dateInput(commonRange.from) : undefined) : run && dateInput(run.from)}
                     max={portfolioMode ? (commonRange?.valid ? dateInput(commonRange.to) : undefined) : run && dateInput(run.to)}
                     onChange={event => {
-                      updateStoredDraft({ from: event.target.value.replaceAll('-', ''), dateEdited: true });
+                      updateStoredDraft({
+                        from: event.target.value.replaceAll('-', ''),
+                        dateEdited: true,
+                        ...(!portfolioMode && run ? { singleRunId: run.id } : {}),
+                      });
                     }}
                   />
                 </label>
@@ -771,7 +813,11 @@ export function StoredBacktest({
                     min={portfolioMode ? (commonRange?.valid ? dateInput(commonRange.from) : undefined) : run && dateInput(run.from)}
                     max={portfolioMode ? (commonRange?.valid ? dateInput(commonRange.to) : undefined) : run && dateInput(run.to)}
                     onChange={event => {
-                      updateStoredDraft({ to: event.target.value.replaceAll('-', ''), dateEdited: true });
+                      updateStoredDraft({
+                        to: event.target.value.replaceAll('-', ''),
+                        dateEdited: true,
+                        ...(!portfolioMode && run ? { singleRunId: run.id } : {}),
+                      });
                     }}
                   />
                 </label>

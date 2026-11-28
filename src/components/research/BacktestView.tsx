@@ -31,12 +31,15 @@ function sameCodeSet(a: string[], b: string[]): boolean {
   return a.every(code => setB.has(code));
 }
 
+/** 미등록 또는 삭제된 `strategyId` 진입 시 표시하는 차단 안내 문구. */
+const MISSING_STRATEGY_MESSAGE = '요청한 전략을 찾지 못했습니다. 실행하려면 아래에서 규칙이나 출처를 다시 선택하세요.';
+
 /** 백테스트 최상위 페이지 (`/backtest`). */
 export function Backtest() {
   const [params, setParams] = useSearchParams();
   const location = useLocation();
   const transfer = useRef<{ key: string; selection: BacktestSelection } | null>(null);
-  const { state, busy } = useWorkbench();
+  const { state, available, server, busy } = useWorkbench();
   const [helpOpen, setHelpOpen] = useState(false);
   const helpPanelId = useId();
   const helpToggleRef = useRef<HTMLButtonElement>(null);
@@ -53,6 +56,7 @@ export function Backtest() {
   const strategyDraft = parseTransferDraft(locState?.strategyDraft);
   const [hydratedDraft, setHydratedDraft] = useState<StrategyTransferDraft | null>(null);
   const hydratedStrategyRef = useRef<string | null>(strategyDraft ? `state:${location.key}` : null);
+  const [dismissedMissingId, setDismissedMissingId] = useState<string | null>(null);
   const [ruleForm, setRuleForm] = useState<RuleFormState>(() =>
     strategyDraft ? formFromRule(strategyDraft.rule, strategyDraft.overlay) : defaultRuleForm(),
   );
@@ -84,6 +88,25 @@ export function Backtest() {
   }, [strategyDraft, strategyIdParam, state.strategies]);
 
   const effectiveDraft = strategyDraft ?? hydratedDraft;
+  const strategyFound = Boolean(strategyIdParam && state.strategies.some(item => item.id === strategyIdParam));
+  const missingStrategyBlocked = Boolean(
+    valid &&
+      strategyIdParam &&
+      !strategyDraft &&
+      available &&
+      server &&
+      !strategyFound &&
+      dismissedMissingId !== strategyIdParam,
+  );
+  const blockedReason = missingStrategyBlocked ? MISSING_STRATEGY_MESSAGE : '';
+
+  function clearMissingStrategyBlock() {
+    if (!strategyIdParam) return;
+    setDismissedMissingId(strategyIdParam);
+    const next = new URLSearchParams(params);
+    next.delete('strategyId');
+    setParams(next, { replace: true, state: location.state });
+  }
 
   function invalidateTransfer() {
     transfer.current = null;
@@ -91,6 +114,7 @@ export function Backtest() {
 
   function handleRuleFormChange(next: RuleFormState) {
     transfer.current = null;
+    if (missingStrategyBlocked) clearMissingStrategyBlock();
     const modeChanged = isPortfolioKind(ruleForm.kind) !== isPortfolioKind(next.kind);
     const basketChanged =
       isPortfolioKind(next.kind) && !sameCodeSet(formPortfolioCodes(ruleForm), formPortfolioCodes(next));
@@ -114,6 +138,9 @@ export function Backtest() {
 
   function select(nextSource: string, nextRun?: string, selection?: BacktestSelection) {
     if (valid && nextSource === source && nextRun === undefined && !selection) return;
+    if (missingStrategyBlocked && strategyIdParam) {
+      setDismissedMissingId(strategyIdParam);
+    }
     if (selection && 'saved' in selection) {
       const savedInput = selection.saved.snapshot.input;
       setCosts(costsOf(savedInput));
@@ -121,6 +148,7 @@ export function Backtest() {
         formFromRule(ruleFromExperimentInput(savedInput), 'overlay' in savedInput ? savedInput.overlay : undefined),
       );
       setStoredDraft({
+        singleRunId: 'runs' in savedInput ? null : savedInput.runId,
         from: savedInput.from,
         to: savedInput.to,
         dateEdited: true,
@@ -131,6 +159,7 @@ export function Backtest() {
     } else if (selection && 'focus' in selection) {
       setStoredDraft(prev => ({
         ...prev,
+        singleRunId: nextRun ?? null,
         from: '',
         to: '',
         dateEdited: false,
@@ -184,6 +213,14 @@ export function Backtest() {
         </button>
       </div>
       {helpOpen && <ResearchHelpPanel panelId={helpPanelId} onClose={closeHelp} />}
+      {missingStrategyBlocked && (
+        <div className="bt-warning" role="alert">
+          {MISSING_STRATEGY_MESSAGE}{' '}
+          <button type="button" className="text-link" onClick={clearMissingStrategyBlock}>
+            기본 설정으로 계속
+          </button>
+        </div>
+      )}
       {!valid ? (
         <p className="bt-warning" role="alert">
           백테스트 주소의 출처 또는 수집 ID가 올바르지 않습니다. 데이터 출처를 직접 선택하세요.
@@ -195,6 +232,7 @@ export function Backtest() {
           setRuleForm={handleRuleFormChange}
           costs={costs}
           setCosts={handleCostsChange}
+          blockedReason={blockedReason}
         />
       ) : (
         <StoredBacktest
@@ -208,6 +246,7 @@ export function Backtest() {
           setCosts={handleCostsChange}
           storedDraft={storedDraft}
           updateStoredDraft={updateStoredDraft}
+          blockedReason={blockedReason}
           onInvalidateTransfer={invalidateTransfer}
           select={(id, selection) => select('stored', id, selection)}
         />
