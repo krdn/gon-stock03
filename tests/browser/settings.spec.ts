@@ -437,7 +437,7 @@ test('settings preserves decimal average prices, renders balance evaluation summ
     totalEquity: 2_390_000,
     positions: [
       { code: '069500', name: 'KODEX 200', qty: 10, sellable: 8, average: 77732.5, price: 80_000 },
-      { code: '005930', name: '삼성전자', qty: 3, sellable: 3, average: 193_530, price: 190_000 },
+      { code: '005930', name: '삼성전자', qty: 3, sellable: 0, average: 193_530, price: 190_000 },
       { code: '000660', name: 'SK하이닉스', qty: 1, average: 100_000.2, price: 100_000 },
     ],
   };
@@ -462,19 +462,23 @@ test('settings preserves decimal average prices, renders balance evaluation summ
   await expect(kodex).not.toContainText('77,733원');
   await expect(kodex).toContainText('800,000원');
   await expect(kodex.locator('dd.up')).toHaveText('+22,675원');
+  await expect(kodex).toContainText('주문가능 수량');
+  await expect(kodex.locator('dl > div', { hasText: '주문가능 수량' }).locator('dd')).toHaveText('8주');
   await expect(kodex.getByRole('link', { name: '모의 매매 ↗' })).toHaveAttribute('href', '/paper?code=069500');
 
   const samsung = holdings.nth(1);
   await expect(samsung).toContainText('193,530원');
   await expect(samsung).toContainText('570,000원');
   await expect(samsung.locator('dd.down')).toHaveText('-10,590원');
+  await expect(samsung).toContainText('주문가능 수량');
+  await expect(samsung.locator('dl > div', { hasText: '주문가능 수량' }).locator('dd')).toHaveText('0주');
   await expect(samsung.getByRole('link', { name: '모의 매매 ↗' })).toHaveAttribute('href', '/paper?code=005930');
 
   const hynix = holdings.nth(2);
   const hynixPnl = hynix.locator('dl > div', { hasText: '평가손익' }).locator('dd');
   await expect(hynixPnl).toHaveText('0원');
   await expect(hynixPnl).not.toHaveClass(/up|down/);
-  await expect(hynix).not.toContainText('주문가능 수량');
+  await expect(hynix.locator('dl > div', { hasText: '주문가능 수량' })).toHaveCount(0);
 
   const balanceLinks = page.locator('.settings-balance-links');
   await expect(balanceLinks.getByRole('link', { name: '포트폴리오 상세 ↗' })).toHaveAttribute('href', '/portfolio');
@@ -553,6 +557,15 @@ test('settings renders workspace diagnostic hub cards, navigation links, and off
   await expect(strategyCard.getByRole('link', { name: 'KIS 전략 스튜디오 ↗' })).toHaveAttribute('href', '/strategies?environment=kis-paper');
   await expect(strategyCard.getByRole('link', { name: '데이터 상태 · 동기화 ↗' })).toHaveAttribute('href', '/data');
 
+  state.paperRisk = { ...state.paperRisk!, unresolvedCount: 0 };
+  await page.getByRole('button', { name: '로컬 서버 상태 새로고침' }).click();
+  await expect(riskCard).toContainText('1회 7주 · 불명·전송 중 0건');
+
+  state.paperRisk = undefined;
+  await page.getByRole('button', { name: '로컬 서버 상태 새로고침' }).click();
+  await expect(riskCard).toContainText('1회 7주 · 불명·전송 중 미확인');
+  await expect(riskCard).not.toContainText('불명·전송 중 0건');
+
   offline = true;
   await page.getByRole('button', { name: '로컬 서버 상태 새로고침' }).click();
   await expect(realtimeCard).toContainText('서버 상태 확인 필요');
@@ -565,13 +578,15 @@ test('settings renders workspace diagnostic hub cards, navigation links, and off
 
 test('settings shows extended technical diagnostics with zero POSTs, zero secret inputs, and zero mobile overflow', async ({ page }) => {
   const state = snapshot();
+  const authAt = '2026-11-28T04:11:12.000Z';
+  const balanceSuccessAt = '2026-11-28T05:13:20.000Z';
   const observedAt = '2026-11-28T05:15:30.000Z';
   state.connection.configured = true;
   state.connection.injection = { phase: 'present', missing: [] };
   state.connection.connected = true;
   state.connection.balanceSeconds = 90;
-  state.connection.authentication = { phase: 'ready', lastSuccessAt: observedAt, validUntil: new Date(Date.now() + 3_600_000).toISOString(), retryAt: null, failure: null };
-  state.connection.status = { ...state.connection.status, phase: 'ready', complete: true, observedAt, lastSuccessAt: observedAt, pages: 2 };
+  state.connection.authentication = { phase: 'ready', lastSuccessAt: authAt, validUntil: new Date(Date.now() + 3_600_000).toISOString(), retryAt: null, failure: null };
+  state.connection.status = { ...state.connection.status, phase: 'ready', complete: true, observedAt, lastSuccessAt: balanceSuccessAt, pages: 2 };
   state.connection.balance = {
     cash: 1_234_567,
     totalEquity: 2_011_892,
@@ -593,6 +608,12 @@ test('settings shows extended technical diagnostics with zero POSTs, zero secret
   page.on('request', req => { if (req.method() === 'POST') posts.push(req.url()); });
   await page.route('**/api/state', route => route.fulfill({ json: state }));
 
+  const expectedAuth = new Date(authAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+  const expectedBalanceSuccess = new Date(balanceSuccessAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+  const expectedObserved = new Date(observedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+  expect(expectedObserved).not.toBe(expectedBalanceSuccess);
+  expect(expectedObserved).not.toBe(expectedAuth);
+
   for (const viewport of [{ width: 320, height: 740 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
     await page.goto('/settings');
@@ -607,7 +628,9 @@ test('settings shows extended technical diagnostics with zero POSTs, zero secret
     await expect(technical).toContainText('최근 잔고 관측');
     await expect(technical).toContainText('잔고 신선도·제한시간');
     await expect(technical).toContainText('60초 유효 · 조회 제한 90초');
-    await expect(technical).toContainText(new Date(observedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }));
+    await expect(technical.locator('dt', { hasText: /^토큰 발급$/ }).locator('+ dd')).toHaveText(expectedAuth);
+    await expect(technical.locator('dt', { hasText: /^잔고 전체 조회$/ }).locator('+ dd')).toHaveText(expectedBalanceSuccess);
+    await expect(technical.locator('dt', { hasText: /^최근 잔고 관측$/ }).locator('+ dd')).toHaveText(expectedObserved);
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);

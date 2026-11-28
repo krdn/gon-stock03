@@ -591,7 +591,7 @@ export function Settings() {
             <div><dt>신규 주문 제어</dt><dd>{!available ? '상태 미확인' : state.risk.halted ? '긴급정지 켜짐 (신규 주문 정지)' : '긴급정지 꺼짐 (정상)'}</dd></div>
             <div><dt>1회 주문 / 종목별 한도</dt><dd>{available ? `${won(state.risk.maxOrder)}원 / ${won(state.risk.maxPosition)}원` : '미확인'}</dd></div>
             <div><dt>공통 일일 손실 한도</dt><dd>{available ? `${won(state.risk.dailyLoss)}원` : '미확인'}</dd></div>
-            <div><dt>KIS 수동 주문 상한 / 불명 건수</dt><dd>{available ? `1회 ${state.paperManualMaxQty ?? DEFAULT_PAPER_MAX_QTY}주 · 불명·전송 중 ${paperRisk?.unresolvedCount ?? 0}건` : '미확인'}</dd></div>
+            <div><dt>KIS 수동 주문 상한 / 불명 건수</dt><dd>{available ? `1회 ${state.paperManualMaxQty ?? DEFAULT_PAPER_MAX_QTY}주 · ${paperRisk ? `불명·전송 중 ${paperRisk.unresolvedCount}건` : '불명·전송 중 미확인'}` : '미확인'}</dd></div>
           </dl>
           <div className="settings-hub-links">
             <Link className="text-link" to="/settings/trading/general">일반 한도·수량 설정 ↗</Link>
