@@ -92,7 +92,7 @@ export function StoredBacktest({
 }) {
   const { state, act, available, busy } = useWorkbench();
   const navigate = useNavigate();
-  const { singleRunId, from, to, dateEdited, portfolioPolicy, portfolioRunOverrides } = storedDraft;
+  const { singleRunId, singleRunEdited, from, to, dateEdited, portfolioPolicy, portfolioRunOverrides } = storedDraft;
   const rawSaved = initial && 'saved' in initial ? initial.saved : null;
   const savedRunsMatch =
     rawSaved === null ||
@@ -167,12 +167,14 @@ export function StoredBacktest({
         const savedList = experimentListSchema.parse(await savedResponse.json());
         if (controller.signal.aborted) return;
         const restoredSingleRun =
-          selected === null && singleRunId && !isPortfolioKind(ruleForm.kind)
+          selected === null && singleRunEdited && singleRunId && !isPortfolioKind(ruleForm.kind)
             ? daily.runs.find(row => row.id === singleRunId && isEligibleDailyRun(row))
             : undefined;
         const preferredRun =
           selected === null && !restoredSingleRun && strategyDraft
-            ? daily.runs.find(row => row.code === strategyDraft.code) ?? daily.runs[0]
+            ? (daily.runs.find(row => row.code === strategyDraft.code && isEligibleDailyRun(row)) ??
+                daily.runs.find(row => row.code === strategyDraft.code) ??
+                daily.runs[0])
             : undefined;
         const id = selected ?? restoredSingleRun?.id ?? preferredRun?.id ?? daily.runs[0]?.id;
         const match = daily.runs.find(row => row.id === id);
@@ -190,10 +192,14 @@ export function StoredBacktest({
           setSelected(match.id);
           if (!isPortfolioKind(ruleForm.kind)) {
             const keepEditedDates = dateEdited && singleRunId === match.id;
+            const isExplicitRun = Boolean(
+              requested || restoredSingleRun || (preferredRun && strategyDraft && match.code === strategyDraft.code),
+            );
             if (!keepEditedDates) {
               updateStoredDraft(
                 {
                   singleRunId: match.id,
+                  singleRunEdited: isExplicitRun,
                   from: input?.from ?? match.from,
                   to: input?.to ?? match.to,
                   dateEdited: Boolean(input),
@@ -226,22 +232,30 @@ export function StoredBacktest({
   const eligible = isEligibleDailyRun(run);
   const locked = busy || pending || loading;
 
-  // 단일 종목 strategyId 비동기 복원 완료 시 일치하는 수집 기록으로 자동 선택
+  // 단일 종목 strategyId 비동기 복원 완료 시 일치하는 수집 기록으로 자동 선택 (기본 폴백 daily.runs[0]은 덮어씀)
   const syncedDraftCode = useRef<string | null>(null);
   useEffect(() => {
     if (portfolioMode || !runs || requested !== null || !strategyDraft) return;
-    if (singleRunId && runs.some(row => row.id === singleRunId && isEligibleDailyRun(row))) return;
+    if (singleRunEdited && singleRunId && runs.some(row => row.id === singleRunId && isEligibleDailyRun(row))) return;
     if (syncedDraftCode.current === strategyDraft.code) return;
     syncedDraftCode.current = strategyDraft.code;
-    const preferred = runs.find(row => row.code === strategyDraft.code);
-    if (preferred && preferred.id !== selected) {
+    const preferred =
+      runs.find(row => row.code === strategyDraft.code && isEligibleDailyRun(row)) ??
+      runs.find(row => row.code === strategyDraft.code);
+    if (preferred) {
       setSelected(preferred.id);
       updateStoredDraft(
-        { singleRunId: preferred.id, from: preferred.from, to: preferred.to, dateEdited: false },
+        {
+          singleRunId: preferred.id,
+          singleRunEdited: true,
+          from: preferred.from,
+          to: preferred.to,
+          dateEdited: false,
+        },
         { invalidate: false },
       );
     }
-  }, [portfolioMode, runs, requested, strategyDraft, singleRunId, selected, updateStoredDraft]);
+  }, [portfolioMode, runs, requested, strategyDraft, singleRunEdited, singleRunId, updateStoredDraft]);
 
   const basketEntries = useMemo(() => {
     if (!portfolioMode) return [];
@@ -290,10 +304,16 @@ export function StoredBacktest({
     if (saved && !('runs' in saved.snapshot.input) && saved.snapshot.input.runId === run.id) return;
     if (!dateEdited && from === run.from && to === run.to && singleRunId === run.id) return;
     updateStoredDraft(
-      { singleRunId: run.id, from: run.from, to: run.to, dateEdited: false },
+      {
+        singleRunId: run.id,
+        singleRunEdited: singleRunEdited && singleRunId === run.id,
+        from: run.from,
+        to: run.to,
+        dateEdited: false,
+      },
       { invalidate: false },
     );
-  }, [portfolioMode, dateEdited, run, from, to, singleRunId, saved, updateStoredDraft]);
+  }, [portfolioMode, dateEdited, run, from, to, singleRunId, singleRunEdited, saved, updateStoredDraft]);
 
   useEffect(() => {
     if (!portfolioMode || dateEdited || !commonRange || !commonRange.valid) return;
@@ -552,6 +572,7 @@ export function StoredBacktest({
       updateStoredDraft(
         {
           singleRunId: 'runs' in fixed ? null : fixed.runId,
+          singleRunEdited: !('runs' in fixed),
           from: fixed.from,
           to: fixed.to,
           dateEdited: true,
@@ -798,7 +819,7 @@ export function StoredBacktest({
                       updateStoredDraft({
                         from: event.target.value.replaceAll('-', ''),
                         dateEdited: true,
-                        ...(!portfolioMode && run ? { singleRunId: run.id } : {}),
+                        ...(!portfolioMode && run ? { singleRunId: run.id, singleRunEdited: true } : {}),
                       });
                     }}
                   />
@@ -816,7 +837,7 @@ export function StoredBacktest({
                       updateStoredDraft({
                         to: event.target.value.replaceAll('-', ''),
                         dateEdited: true,
-                        ...(!portfolioMode && run ? { singleRunId: run.id } : {}),
+                        ...(!portfolioMode && run ? { singleRunId: run.id, singleRunEdited: true } : {}),
                       });
                     }}
                   />

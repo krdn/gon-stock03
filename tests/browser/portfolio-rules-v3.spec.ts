@@ -1034,3 +1034,189 @@ test('4A-2 2차 보완 Minor 1: 미등록 strategyId 직접 진입 시 role=aler
     store.close();
   }
 });
+
+test('4A-2 3차 보완 Major 1: /api/state가 /api/data/daily보다 늦게 응답해도 단일 종목 strategyId(005930) 직접 진입 시 005930 runId로 동기화되어 실행된다', async ({
+  page,
+}) => {
+  const { Store } = await import('../../server/store.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const store = new Store(':memory:');
+
+  // store.dailyRuns()는 최신 저장 역순이므로 005930 먼저, 00088K를 나중에 저장해 daily.runs[0] = 00088K, daily.runs[1] = 005930 구성
+  const runSamsung = portfolioDailyFixture('005930', '99999999-2222-4222-8222-222222222222', {
+    barCount: 90,
+    startedAt: '2026-06-01T01:00:00.000Z',
+    priceFn: i => 55000 + Math.sin(i / 4) * 3000 + i * 40,
+  });
+  const runDefault = portfolioDailyFixture('00088K', '99999999-1111-4111-8111-111111111111', {
+    barCount: 90,
+    startedAt: '2026-06-05T01:00:00.000Z',
+    priceFn: i => 20000 + i * 40,
+  });
+  store.saveDaily(runSamsung.run, runSamsung.bars);
+  store.saveDaily(runDefault.run, runDefault.bars);
+
+  const strategyId = 'delayed-single-samsung-strategy';
+  store.update(state => {
+    state.strategies.push({
+      id: strategyId,
+      name: '삼성전자 MACD 직접 진입',
+      code: '005930',
+      fast: 5,
+      slow: 20,
+      qty: 1,
+      active: false,
+      lastSignal: 'hold',
+      lastTick: -1,
+      environment: 'kis-paper',
+      revision: 1,
+      rule: {
+        kind: 'macd_momentum',
+        fastPeriod: 12,
+        slowPeriod: 26,
+        signalPeriod: 9,
+        requireZeroLineAbove: false,
+      },
+    });
+  });
+
+  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4314, 4348]);
+  await new Promise<void>(resolve => server.listen(4348, '127.0.0.1', resolve));
+
+  let dailyResolved = false;
+  let releaseState = () => {};
+  const dailyDone = new Promise<void>(resolve => {
+    releaseState = resolve;
+  });
+  const dailyPayloads: Record<string, unknown>[] = [];
+  await page.route('**/api/**', async route => {
+    const req = route.request();
+    const pathname = new URL(req.url()).pathname;
+    if (req.method() === 'POST' && pathname === '/api/backtest/daily') {
+      dailyPayloads.push(req.postDataJSON() as Record<string, unknown>);
+    }
+    if (req.method() === 'GET' && pathname === '/api/state' && !dailyResolved) {
+      await dailyDone;
+      await new Promise(resolve => setTimeout(resolve, 120));
+    }
+    const response = await route.fetch({ url: req.url().replace(':4314', ':4348') });
+    await route.fulfill({ response });
+    if (req.method() === 'GET' && pathname === '/api/data/daily' && !dailyResolved) {
+      dailyResolved = true;
+      releaseState?.();
+    }
+  });
+
+  try {
+    await page.goto(`/backtest?source=stored&strategyId=${encodeURIComponent(strategyId)}`);
+    await waitWorkbenchReady(page);
+
+    // /api/state 지연 도착 후에도 00088K 기본 폴백에 고정되지 않고 005930 runId와 macd_momentum으로 동기화됨
+    await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('macd_momentum');
+    await expect(page.getByLabel('일봉 수집 기록')).toHaveValue(runSamsung.run.id);
+
+    await page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true }).click();
+    await expect(page.getByRole('region', { name: '저장 일봉 실험 결과' })).toBeVisible();
+
+    expect(dailyPayloads).toHaveLength(1);
+    expect(dailyPayloads[0].runId).toBe(runSamsung.run.id);
+    expect(dailyPayloads[0].code).toBe('005930');
+  } finally {
+    releaseState?.();
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
+  }
+});
+
+test('4A-2 3차 보완 Minor 1: 전략 카드 클릭 후 삭제된 strategyId를 새로고침하면 location.state가 남아도 role=alert 경고 및 POST 0건 차단한다', async ({
+  page,
+}) => {
+  const { Store } = await import('../../server/store.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const store = new Store(':memory:');
+
+  const runA = portfolioDailyFixture('005930', 'aaaaaaaa-9999-4999-8999-999999999999', {
+    barCount: 90,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 52000 + Math.sin(i / 4) * 2000 + i * 30,
+  });
+  store.saveDaily(runA.run, runA.bars);
+
+  const strategyId = 'card-then-deleted-strategy';
+  store.update(state => {
+    state.strategies.push({
+      id: strategyId,
+      name: '삭제 예정 카드 전략',
+      code: '005930',
+      fast: 5,
+      slow: 20,
+      qty: 1,
+      active: false,
+      lastSignal: 'hold',
+      lastTick: -1,
+      environment: 'kis-paper',
+      revision: 1,
+      rule: {
+        kind: 'macd_momentum',
+        fastPeriod: 12,
+        slowPeriod: 26,
+        signalPeriod: 9,
+        requireZeroLineAbove: false,
+      },
+    });
+  });
+
+  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4314, 4349]);
+  await new Promise<void>(resolve => server.listen(4349, '127.0.0.1', resolve));
+
+  let hideStrategy = false;
+  const posts: string[] = [];
+  await page.route('**/api/**', async route => {
+    const req = route.request();
+    const pathname = new URL(req.url()).pathname;
+    if (req.method() === 'POST') posts.push(pathname);
+    const response = await route.fetch({ url: req.url().replace(':4314', ':4349') });
+    if (req.method() === 'GET' && pathname === '/api/state' && hideStrategy) {
+      const json = (await response.json()) as { strategies: { id: string }[] };
+      json.strategies = json.strategies.filter(item => item.id !== strategyId);
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(json) });
+      return;
+    }
+    await route.fulfill({ response });
+  });
+
+  try {
+    // 1. 전략 카드에서 '이 설정으로 백테스트' 클릭 → location.state + ?strategyId=... 함께 진입
+    await page.goto('/strategies?environment=kis-paper');
+    await waitWorkbenchReady(page);
+    const card = page.locator('.studio-card').filter({
+      has: page.getByRole('heading', { name: '삭제 예정 카드 전략', exact: true }),
+    });
+    await expect(card).toBeVisible();
+    await card.getByRole('link', { name: '이 설정으로 백테스트', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/backtest\\?source=stored&strategyId=${strategyId}`));
+    await expect(page.getByRole('combobox', { name: '전략 규칙', exact: true })).toHaveValue('macd_momentum');
+
+    // 2. 서버 상태에서 해당 전략 삭제 후 새로고침 (History의 location.state.strategyDraft는 유지됨)
+    hideStrategy = true;
+    await page.reload();
+    await waitWorkbenchReady(page);
+
+    // 3. role="alert" 경고 표시 및 실행 클릭 시 POST 0건 차단 확인
+    const alert = page.getByRole('main').getByRole('alert').first();
+    await expect(alert).toBeVisible();
+    await expect(alert).toContainText('요청한 전략을 찾지 못했습니다.');
+
+    const runBtn = page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true });
+    await expect(runBtn).toBeEnabled();
+    await runBtn.click();
+    expect(posts).toEqual([]);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
+  }
+});

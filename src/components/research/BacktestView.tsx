@@ -92,7 +92,6 @@ export function Backtest() {
   const missingStrategyBlocked = Boolean(
     valid &&
       strategyIdParam &&
-      !strategyDraft &&
       available &&
       server &&
       !strategyFound &&
@@ -149,6 +148,7 @@ export function Backtest() {
       );
       setStoredDraft({
         singleRunId: 'runs' in savedInput ? null : savedInput.runId,
+        singleRunEdited: !('runs' in savedInput),
         from: savedInput.from,
         to: savedInput.to,
         dateEdited: true,
@@ -160,6 +160,7 @@ export function Backtest() {
       setStoredDraft(prev => ({
         ...prev,
         singleRunId: nextRun ?? null,
+        singleRunEdited: Boolean(nextRun),
         from: '',
         to: '',
         dateEdited: false,
