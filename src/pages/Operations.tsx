@@ -9,6 +9,8 @@ import { Check, ChevronDown, Landmark, RefreshCw, Server, Settings2, ShieldCheck
 import { useWorkbench } from '../context';
 import { Badge, Empty, Panel } from '../components/ui';
 import { equity, won, type ConnectionFailure, type Event as WorkspaceEvent } from '../../shared/model';
+import { DEFAULT_PAPER_MAX_QTY } from '../../shared/contracts';
+import { portfolioValue } from '../../shared/portfolio';
 import { authenticationStatus } from '../../shared/status';
 
 export function Risk() {
@@ -356,7 +358,7 @@ const connectionRecovery: Record<ConnectionFailure['kind'], { label: string; act
   rejected: { label: '요청 거부', action: '모의 계좌·키·서비스 이용 가능 시간을 확인한 뒤 다시 조회하세요.' },
 };
 export function Settings() {
-  const { act, busy, available, connection, refresh, server, serverNow, status } = useWorkbench();
+  const { state, act, busy, available, connection, realtime, paperRisk, refresh, server, serverNow, status } = useWorkbench();
   const [checking, setChecking] = useState(false);
   const previousCheckStart = useRef<string | null>(null);
   const [params, setParams] = useSearchParams();
@@ -390,6 +392,26 @@ export function Settings() {
   const setupBlocked = available && injectionFailure !== null;
   const failure = available && !loading ? injectionFailure ?? connection.failure ?? authentication.failure : null;
   const balance = connection.balance;
+  const portfolio = balance ? portfolioValue(balance.cash, balance.positions) : null;
+  const formatProfit = (value: number | null) => {
+    if (value === null) return { text: '평가 불가', tone: undefined as 'up' | 'down' | undefined };
+    const rounded = Math.round(value);
+    if (rounded > 0) return { text: `+${won(rounded)}원`, tone: 'up' as const };
+    if (rounded < 0) return { text: `${won(rounded)}원`, tone: 'down' as const };
+    return { text: '0원', tone: undefined };
+  };
+  const portfolioProfit = formatProfit(portfolio ? portfolio.profit : null);
+  const realtimePhaseLabels = {
+    stopped: '미연결',
+    connecting: '연결 중',
+    reconciling: 'REST 대조 필요',
+    ready: 'REST 대조 완료',
+    disconnected: '수신 중단',
+    error: '오류',
+  } as const;
+  const realtimePhaseLabel = available && realtime ? (realtimePhaseLabels[realtime.phase] ?? '상태 미확인') : '상태 미확인';
+  const kisStrategies = state.strategies.filter(s => s.environment === 'kis-paper');
+  const demoStrategies = state.strategies.filter(s => s.environment !== 'kis-paper');
   const missingSettings = connection.injection.phase === 'missing';
   const missingFields = connection.injection.missing;
   const initialLoad = !available && status.phase === 'loading';
@@ -505,13 +527,92 @@ export function Settings() {
     {balance && <Panel title="모의 계좌 잔고" className="settings-balance" action={<Badge tone={currentBalance ? 'teal' : 'neutral'}>{currentBalance ? '조회 완료' : '이전 조회 잔고'}</Badge>}>
       <p className="settings-hint">조회 기준 (한국시간) <time dateTime={connection.status.lastSuccessAt ?? undefined}>{time(connection.status.lastSuccessAt)}</time></p>
       <dl className="settings-cash"><dt>예수금</dt><dd>{won(balance.cash)}원</dd></dl>
+      <dl className="settings-balance-summary" aria-label="모의 계좌 평가 요약">
+        <div>
+          <dt>총 평가자산</dt>
+          <dd>{portfolio && portfolio.total !== null ? <>{`${won(portfolio.total)}원`}<small className="settings-summary-note">예수금+평가</small></> : '평가 불가'}</dd>
+        </div>
+        <div>
+          <dt>주식·ETF 평가액</dt>
+          <dd>{portfolio && portfolio.invested !== null ? `${won(portfolio.invested)}원` : '평가 불가'}</dd>
+        </div>
+        <div>
+          <dt>보유 평가손익</dt>
+          <dd className={portfolioProfit.tone}>{portfolioProfit.text}</dd>
+        </div>
+        <div>
+          <dt>KIS 총평가액 (참고)</dt>
+          <dd>{`${won(balance.totalEquity)}원`}<small className="settings-summary-note">API 기준</small></dd>
+        </div>
+      </dl>
       {balance.positions.length ? <>
         <h3>보유 종목 <span>{balance.positions.length}개</span></h3>
-        <ul className="settings-holdings">{balance.positions.map(p =>
-          <li key={p.code}><div className="settings-stock"><strong>{p.name}</strong><small>{p.code}</small></div>
-            <dl><div><dt>보유 수량</dt><dd>{p.qty.toLocaleString('ko-KR')}주</dd></div><div><dt>평균 매입가</dt><dd>{won(p.average)}원</dd></div><div><dt>현재가</dt><dd>{p.price === null ? '평가 불가' : `${won(p.price)}원`}</dd></div></dl>
-          </li>)}</ul></> : <p className="settings-no-holdings">{currentBalance ? '보유 종목 없음' : '이전 조회 시 보유 종목 없음'}</p>}
+        <ul className="settings-holdings">{balance.positions.map(p => {
+          const priced = p.price !== null && p.price > 0;
+          const posProfit = formatProfit(priced ? p.qty * (p.price! - p.average) : null);
+          return <li key={p.code}>
+            <div className="settings-stock">
+              <strong>{p.name}</strong>
+              <small>{p.code}</small>
+              <Link className="text-link settings-stock-link" to={'/paper?code=' + encodeURIComponent(p.code)}>모의 매매 ↗</Link>
+            </div>
+            <dl>
+              <div><dt>보유 수량</dt><dd>{p.qty.toLocaleString('ko-KR')}주</dd></div>
+              <div><dt>평균 매입가</dt><dd>{`${p.average.toLocaleString('ko-KR', { maximumFractionDigits: 20 })}원`}</dd></div>
+              <div><dt>현재가</dt><dd>{p.price === null ? '평가 불가' : `${won(p.price)}원`}</dd></div>
+              <div><dt>평가액</dt><dd>{priced ? `${won(p.qty * p.price!)}원` : '평가 불가'}</dd></div>
+              <div><dt>평가손익</dt><dd className={posProfit.tone}>{posProfit.text}</dd></div>
+              {p.sellable !== undefined && <div><dt>주문가능 수량</dt><dd>{p.sellable.toLocaleString('ko-KR')}주</dd></div>}
+            </dl>
+          </li>;
+        })}</ul></> : <p className="settings-no-holdings">{currentBalance ? '보유 종목 없음' : '이전 조회 시 보유 종목 없음'}</p>}
+      <div className="settings-balance-links">
+        <Link className="text-link" to="/portfolio">포트폴리오 상세 ↗</Link>
+        <Link className="text-link" to="/paper">KIS 주문 대조 ↗</Link>
+      </div>
     </Panel>}
+    <Panel title="워크스페이스 연결·운영 설정 현황" className="settings-hub">
+      <div className="settings-hub-grid">
+        <section className="settings-hub-card" aria-label="KIS 실시간 및 토큰 상태">
+          <h3>KIS 실시간 · 인증 유효성</h3>
+          <dl className="settings-hub-list">
+            <div><dt>토큰 상태</dt><dd>{available ? authLabel : '서버 상태 확인 필요'}</dd></div>
+            <div><dt>토큰 재확인 기한</dt><dd>{available ? time(authentication.validUntil) : '미확인'}</dd></div>
+            <div><dt>실시간 WebSocket</dt><dd>{realtimePhaseLabel}</dd></div>
+            <div><dt>구독 종목 / 주문 허용</dt><dd>{!available || !realtime ? '미확인' : `${realtime.code ?? '구독 없음'} · ${realtime.ordersAllowed ? '실시간 주문 허용' : '실시간 주문 차단'}`}</dd></div>
+          </dl>
+          <div className="settings-hub-links">
+            <Link className="text-link" to="/paper">KIS 모의 매매 · 실시간 대조 ↗</Link>
+          </div>
+        </section>
+        <section className="settings-hub-card" aria-label="공통 주문 및 위험 한도 현황">
+          <h3>공통 주문 · 위험 한도</h3>
+          <dl className="settings-hub-list">
+            <div><dt>신규 주문 제어</dt><dd>{!available ? '상태 미확인' : state.risk.halted ? '긴급정지 켜짐 (신규 주문 정지)' : '긴급정지 꺼짐 (정상)'}</dd></div>
+            <div><dt>1회 주문 / 종목별 한도</dt><dd>{available ? `${won(state.risk.maxOrder)}원 / ${won(state.risk.maxPosition)}원` : '미확인'}</dd></div>
+            <div><dt>공통 일일 손실 한도</dt><dd>{available ? `${won(state.risk.dailyLoss)}원` : '미확인'}</dd></div>
+            <div><dt>KIS 수동 주문 상한 / 불명 건수</dt><dd>{available ? `1회 ${state.paperManualMaxQty ?? DEFAULT_PAPER_MAX_QTY}주 · ${paperRisk ? `불명·전송 중 ${paperRisk.unresolvedCount}건` : '불명·전송 중 미확인'}` : '미확인'}</dd></div>
+          </dl>
+          <div className="settings-hub-links">
+            <Link className="text-link" to="/settings/trading/general">일반 한도·수량 설정 ↗</Link>
+            <Link className="text-link" to="/risk">위험관리·긴급정지 ↗</Link>
+          </div>
+        </section>
+        <section className="settings-hub-card" aria-label="전략 계약 및 데이터 운영 현황">
+          <h3>전략 계약 · 데이터 운영</h3>
+          <dl className="settings-hub-list">
+            <div><dt>KIS 모의 전략</dt><dd>{available ? `저장 ${kisStrategies.length}개 · 실행 중 ${kisStrategies.filter(s => s.active).length}개` : '미확인'}</dd></div>
+            <div><dt>로컬 DEMO 전략</dt><dd>{available ? `저장 ${demoStrategies.length}개 · 실행 중 ${demoStrategies.filter(s => s.active).length}개` : '미확인'}</dd></div>
+            <div><dt>당일 KIS 주문 대조</dt><dd>{available && paperRisk?.orders ? time(paperRisk.orders.observedAt) : '미대조'}</dd></div>
+          </dl>
+          <div className="settings-hub-links">
+            <Link className="text-link" to="/settings/trading">매매 설정 · 전용 계약 ↗</Link>
+            <Link className="text-link" to="/strategies?environment=kis-paper">KIS 전략 스튜디오 ↗</Link>
+            <Link className="text-link" to="/data">데이터 상태 · 동기화 ↗</Link>
+          </div>
+        </section>
+      </div>
+    </Panel>
     <details className="settings-technical">
       <summary><Server size={17} aria-hidden="true" />서버·인증 상세 정보<ChevronDown size={16} aria-hidden="true" /></summary>
       <div className="settings-technical-body">
@@ -519,6 +620,7 @@ export function Settings() {
           <dl className="settings-server" aria-label="실행 서버 식별">
             <dt>모의 API</dt><dd><code>openapivts.koreainvestment.com</code></dd>
             <dt>비밀정보 경로</dt><dd>Infisical · dev /kis</dd>
+            <dt>자동 주입·공시 경로</dt><dd>Universal Auth (.secrets/infisical-dev.json) · 공시 dev /stock</dd>
             <dt>서버 시작 (한국시간)</dt><dd>{server ? time(server.startedAt) : '미확인'}</dd>
             <dt>인스턴스</dt><dd>{server?.instanceId.slice(0, 8) ?? '미확인'}</dd>
           </dl>
@@ -528,6 +630,8 @@ export function Settings() {
           <dl className="settings-server">
             <dt>토큰 발급</dt><dd>{time(authentication.lastSuccessAt)}</dd><dt>토큰 재확인</dt><dd>{time(authentication.validUntil)}</dd>
             <dt>잔고 전체 조회</dt><dd>{time(connection.status.lastSuccessAt)}</dd><dt>확인한 페이지</dt><dd>{connection.status.pages}</dd>
+            <dt>최근 잔고 관측</dt><dd>{time(connection.status.observedAt)}</dd>
+            <dt>잔고 신선도·제한시간</dt><dd>60초 유효 · 조회 제한 {connection.balanceSeconds ?? 120}초</dd>
           </dl>
           {available && connection.status.error && !loading && <p>{connection.status.error}</p>}
           {failure && failure.message !== connection.status.error && <p>{failure.message}</p>}

@@ -84,7 +84,7 @@ export const connectionSchema = z.object({
   injection: z.object({ phase: z.enum(['unverified', 'missing', 'invalid', 'present']), missing: z.array(z.enum(['KIS_APP_KEY', 'KIS_APP_SECRET', 'KIS_CANO', 'KIS_ACNT_PRDT_CD'])) }),
   authentication: z.object({ phase: z.enum(['unverified', 'loading', 'ready', 'expired', 'error']), lastSuccessAt: z.iso.datetime().nullable(), validUntil: z.iso.datetime().nullable(), retryAt: z.iso.datetime().nullable(), failure: connectionFailureSchema.nullable() }),
   failure: connectionFailureSchema.nullable(),
-  balance: z.object({ cash: z.number().nonnegative(), totalEquity: z.number().nonnegative(), positions: z.array(z.object({ code: z.string(), name: z.string(), qty: z.number().nonnegative(), average: z.number().nonnegative(), price: z.number().positive().nullable() })) }).optional(),
+  balance: z.object({ cash: z.number().nonnegative(), totalEquity: z.number().nonnegative(), positions: z.array(z.object({ code: z.string(), name: z.string(), qty: z.number().nonnegative(), sellable: z.number().int().nonnegative().optional(), average: z.number().nonnegative(), price: z.number().positive().nullable() })) }).optional(),
 });
 export const stateSnapshotSchema = z.object({
   cash: z.number(), startingEquity: z.number(),
