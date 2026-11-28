@@ -338,3 +338,268 @@ test('current order actions, keyboard details and read time stay separate from t
   expect(detail!.x + detail!.width).toBeLessThanOrEqual(320);
   expect([...new Set(requests)].sort()).toEqual(['GET /api/kis/ledger','GET /api/state']);
 });
+
+test('orders 4-tab WAI-ARIA help supports keyboard navigation, restores focus and stays open across environment tabs', async ({ page }) => {
+  await page.route('**/api/state', route => route.fulfill({ json: snapshot() }));
+  await page.route('**/api/kis/ledger', route => route.fulfill({ json: { orders: [paper] } }));
+  await page.route('**/api/kis/history', route => route.fulfill({ json: { sourceCount: 1, unavailable: [], orders: [paper] } }));
+  await page.goto('/orders');
+
+  const toggle = page.getByRole('button', { name: '사용방법 도움말' });
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('region', { name: '주문·체결 사용방법 도움말' })).toHaveCount(0);
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  const help = page.getByRole('region', { name: '주문·체결 사용방법 도움말' });
+  await expect(help).toBeVisible();
+
+  const tab1 = help.getByRole('tab', { name: '처음부터 따라하기' });
+  const tab2 = help.getByRole('tab', { name: '상태·수량·체결 사전' });
+  const tab3 = help.getByRole('tab', { name: '원장 대조·안전장치 사전' });
+  const tab4 = help.getByRole('tab', { name: '환경별 차이·FAQ' });
+  await expect(tab1).toHaveAttribute('aria-selected', 'true');
+
+  await tab1.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(tab2).toBeFocused();
+  await expect(tab2).toHaveAttribute('aria-selected', 'true');
+  await expect(help.getByRole('tabpanel')).toContainText('filled + remaining <= qty');
+
+  await page.keyboard.press('End');
+  await expect(tab4).toBeFocused();
+  await expect(tab4).toHaveAttribute('aria-selected', 'true');
+  await expect(help.getByRole('tabpanel')).toContainText('demo-order-pending');
+
+  await page.keyboard.press('ArrowLeft');
+  await expect(tab3).toBeFocused();
+  await expect(tab3).toHaveAttribute('aria-selected', 'true');
+  await expect(help.getByRole('tabpanel')).toContainText('Zero-Mutation Read');
+
+  await page.keyboard.press('Home');
+  await expect(tab1).toBeFocused();
+  await expect(tab1).toHaveAttribute('aria-selected', 'true');
+
+  // 환경 탭 전환 시 도움말 열림 상태 유지
+  await page.getByRole('button', { name: 'KIS 모의 원장', exact: true }).click();
+  await expect(help).toBeVisible();
+  await page.getByRole('button', { name: '지난 KIS 실행 기록', exact: true }).click();
+  await expect(help).toBeVisible();
+
+  // 닫기 클릭 시 토글 버튼으로 포커스 복귀
+  await help.getByRole('button', { name: '닫기' }).click();
+  await expect(help).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '사용방법 도움말' })).toBeFocused();
+  await expect(page.getByRole('button', { name: '사용방법 도움말' })).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('DEMO supports side/source sub-filters, pagination over 20 rows, pending request reconciliation and 3-card hub', async ({ page }) => {
+  const matchedReqId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const missingReqId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const state = snapshot();
+  state.cash = 10_000_000;
+  state.strategies = [
+    { id: 'strat-1', name: '골든크로스', code: '005930', fast: 5, slow: 20, qty: 1, active: true, lastSignal: 'hold', lastTick: 1, environment: 'demo' },
+  ];
+  state.orders = [
+    { id: 'demo-1', requestId: matchedReqId, code: '005930', side: 'buy', qty: 2, price: 70000, status: 'pending', createdAt: '2026-11-15T01:00:00Z', source: 'manual', fee: 0 },
+    { id: 'demo-2', requestId: 'req-filled-buy', code: '005930', side: 'buy', qty: 2, price: 71000, filledPrice: 70000, status: 'filled', createdAt: '2026-11-15T01:01:00Z', filledAt: '2026-11-15T01:02:00Z', source: 'strat-1', fee: 21 },
+    { id: 'demo-3', requestId: 'req-pending-sell', code: '000660', side: 'sell', qty: 3, price: 120000, status: 'pending', createdAt: '2026-11-15T01:03:00Z', source: 'strat-1', fee: 0 },
+    ...Array.from({ length: 22 }, (_, i) => ({
+      id: `demo-extra-${i + 1}`,
+      requestId: `req-extra-${i + 1}`,
+      code: i % 2 === 0 ? '005930' : '000660',
+      side: (i % 2 === 0 ? 'buy' : 'sell') as 'buy' | 'sell',
+      qty: 1,
+      price: 70000,
+      status: 'cancelled' as const,
+      createdAt: '2026-11-15T01:04:00Z',
+      source: i % 3 === 0 ? 'strat-1' : 'manual',
+      fee: 0,
+    })),
+  ];
+
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.addInitScript(input => {
+    if (sessionStorage.getItem('demo-order-pending') === null) {
+      sessionStorage.setItem('demo-order-pending', JSON.stringify(input));
+    }
+  }, {
+    code: '005930', side: 'buy', qty: 2, price: 70000, requestId: matchedReqId,
+  });
+  await page.goto('/orders');
+
+  // 페이지네이션: 기본 20건씩 (thead 1 + tbody 20 = 21 rows)
+  const table = page.getByRole('table', { name: 'DEMO 주문 목록' });
+  await expect(table.getByRole('row')).toHaveCount(21);
+  const subToolbar = page.getByRole('region', { name: '주문 세부 필터 및 표시 제어' });
+  await expect(subToolbar).toContainText('1–20 / 총 25건');
+
+  await subToolbar.getByRole('button', { name: '다음 페이지' }).click();
+  await expect(table.getByRole('row')).toHaveCount(6);
+  await expect(subToolbar).toContainText('21–25 / 총 25건');
+
+  await subToolbar.getByLabel('페이지당 표시 건수').selectOption('all');
+  await expect(table.getByRole('row')).toHaveCount(26);
+  await expect(subToolbar).toContainText('1–25 / 총 25건');
+
+  // 상세 <dl> 검증 (체결 금액 · 지정가 대비 체결 차액 · 앱 요청 ID)
+  const filledRow = table.getByRole('row').filter({ hasText: 'demo-2' });
+  await filledRow.locator('summary').click();
+  await expect(filledRow).toContainText('req-filled-buy');
+  await expect(filledRow).toContainText('140,000원');
+  await expect(filledRow).toContainText('+2,000원 유리 (주당 1,000원)');
+
+  // 세부 필터 (매매 방향 + 주문 출처) 및 조건 지우기 통합 초기화
+  await subToolbar.getByRole('group', { name: '매매 방향 필터' }).getByRole('button', { name: '매도' }).click();
+  await subToolbar.getByRole('group', { name: '주문 출처 필터' }).getByRole('button', { name: '전략 주문' }).click();
+  await expect(table).toContainText('demo-3');
+  await expect(table).not.toContainText('demo-1');
+  await expect(table).not.toContainText('demo-2');
+  await page.getByRole('button', { name: '조건 지우기' }).click();
+  await expect(subToolbar.getByRole('group', { name: '매매 방향 필터' }).getByRole('button', { name: '전체' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(subToolbar.getByRole('group', { name: '주문 출처 필터' }).getByRole('button', { name: '전체' })).toHaveAttribute('aria-pressed', 'true');
+
+  // 보존된 DEMO 요청 자동 원장 대조 (일치 케이스)
+  const pendingBanner = page.getByRole('region', { name: '보존된 DEMO 요청 원장 대조' });
+  await expect(pendingBanner).toContainText(matchedReqId);
+  await expect(pendingBanner).toContainText('원장 접수 확인됨 · 상태: 접수 · 미체결');
+
+  // DEMO 3카드 인텔리전스 허브
+  const hub = page.getByRole('region', { name: '주문·체결 분석 및 원장 진단 허브' });
+  await expect(hub).toContainText('총 주문 25건');
+  await expect(hub).toContainText('140,021원');
+  await expect(hub).toContainText('예약 제외 가용 현금 9,859,979원');
+  await expect(hub).toContainText('누적 수수료 21원 · 지정가 대비 유리 차액 +2,000원');
+  await expect(hub).toContainText('활성 DEMO 전략 1개');
+
+  // 미접수 케이스 검증
+  await page.evaluate(input => sessionStorage.setItem('demo-order-pending', JSON.stringify(input)), {
+    code: '000660', side: 'sell', qty: 1, price: 110000, requestId: missingReqId,
+  });
+  await page.reload();
+  await expect(page.getByRole('region', { name: '보존된 DEMO 요청 원장 대조' })).toContainText('원장 미접수 확인 · 트레이딩 화면에서 재시도 가능');
+});
+
+test('KIS current ledger and archive restore priceCeiling/strategy/minimumRun, guard paperRisk and keep zero POSTs', async ({ page }) => {
+  const posts: string[] = [];
+  page.on('request', req => { if (req.method() === 'POST') posts.push(req.url()); });
+
+  const state = snapshot();
+  let includePaperRisk = false;
+  await page.route('**/api/state', route => route.fulfill({
+    json: includePaperRisk
+      ? { ...state, paperRisk: { day: '20261120', baselineEquity: 10000000, unresolvedCount: 2, orders: null } }
+      : state,
+  }));
+
+  const cappedStrategyOrder = {
+    ...paper,
+    requestId: '33333333-3333-4333-8333-333333333333',
+    price: 70500,
+    priceCeiling: 71000,
+    status: 'accepted',
+    filled: 0,
+    remaining: 3,
+    lastMatchedAt: '2026-11-15T01:10:00Z',
+    strategy: { id: 'ma-cross', revision: 2, event: 'signal-1', signalBarDate: '20261114', signal: 'buy' },
+  };
+  const marketOrder = {
+    ...paper,
+    requestId: '44444444-4444-4444-8444-444444444444',
+    code: '000660',
+    side: 'sell',
+    qty: 1,
+    price: 0,
+    orderType: 'market',
+    status: 'filled',
+    filled: 1,
+    remaining: 0,
+    lastMatchedAt: '2026-11-15T01:15:00Z',
+  };
+
+  await page.route('**/api/kis/ledger', route => route.fulfill({
+    json: {
+      minimumRun: { active: true, requestId: '55555555-5555-4555-8555-555555555555', code: '005930', maxQty: 2 },
+      orders: [cappedStrategyOrder, marketOrder],
+    },
+  }));
+  await page.route('**/api/kis/history', route => route.fulfill({
+    json: {
+      sourceCount: 2,
+      unavailable: [],
+      orders: [
+        { ...cappedStrategyOrder, sourceId: 'run-a', sourceLabel: '비밀 아카이브 라벨', tradeDate: '20261115' },
+        { ...marketOrder, sourceId: 'run-b', sourceLabel: '다른 아카이브 라벨', tradeDate: '20261120' },
+      ],
+    },
+  }));
+
+  await page.goto('/orders?view=kis');
+  const table = page.getByRole('table', { name: '현재 KIS 주문 목록' });
+  await expect(table).toContainText('상한 캡 71,000원');
+  await expect(table).toContainText('전략 ma-cross');
+
+  const strategyRow = table.getByRole('row').filter({ hasText: cappedStrategyOrder.requestId });
+  await strategyRow.locator('summary').click();
+  await expect(strategyRow).toContainText('상한 지정가 캡');
+  await expect(strategyRow).toContainText('71,000원');
+  await expect(strategyRow).toContainText('주문 기준 금액');
+  await expect(strategyRow).toContainText('211,500원');
+  await expect(strategyRow).toContainText('전략 ma-cross (rev.2 · 매수 신호 · 기준일 20261114)');
+
+  const marketRow = table.getByRole('row').filter({ hasText: marketOrder.requestId });
+  await marketRow.locator('summary').click();
+  await expect(marketRow).toContainText('시장가');
+  await expect(marketRow).not.toContainText('0원');
+
+  const kisHub = page.getByRole('region', { name: '주문·체결 분석 및 원장 진단 허브' });
+  await expect(kisHub).toContainText('불명·전송 중 미확인');
+  await expect(kisHub).toContainText('활성 (005930 · 상한 2주)');
+  await expect(kisHub.getByRole('link', { name: 'KIS 모의 매매·복구 이동' })).toBeVisible();
+
+  // paperRisk 제공 시 건수 표시 확인
+  includePaperRisk = true;
+  await page.reload();
+  await expect(page.getByRole('region', { name: '주문·체결 분석 및 원장 진단 허브' })).toContainText('불명·전송 중 2건');
+
+  // 지난 KIS 실행 기록 검증 (아카이브 sourceLabel 비노출 + 3카드 허브 + priceCeiling/strategy)
+  await page.getByRole('button', { name: '지난 KIS 실행 기록', exact: true }).click();
+  const historyList = page.getByRole('list', { name: '지난 주문 목록' });
+  await expect(historyList).toContainText('상한 캡 71,000원');
+  await expect(page.getByText('비밀 아카이브 라벨')).toBeHidden();
+  await expect(page.getByText('다른 아카이브 라벨')).toBeHidden();
+
+  const historyHub = page.getByRole('region', { name: '주문·체결 분석 및 원장 진단 허브' });
+  await expect(historyHub).toContainText('2026-11-15 ~ 2026-11-20 (2거래일)');
+  await expect(historyHub).toContainText('지정가 1건 (상한 캡 1건) · 시장가 1건');
+  await expect(historyHub).toContainText('2개 실행 세션 아카이브');
+  await expect(historyHub).not.toContainText('비밀 아카이브 라벨');
+
+  await historyList.locator('summary').first().click();
+  await expect(historyList).toContainText('ma-cross · rev.2 · 매수 (20261114)');
+  expect(posts).toEqual([]);
+});
+
+test('orders page has zero horizontal overflow across 1440, 768, 390 and 320 viewports', async ({ page }) => {
+  const state = snapshot();
+  state.orders = [
+    { id: 'ov-1', requestId: 'req-ov-1', code: '005930', side: 'buy', qty: 2, price: 70000, filledPrice: 69500, status: 'filled', createdAt: '2026-11-15T01:00:00Z', filledAt: '2026-11-15T01:05:00Z', source: 'manual', fee: 21 },
+  ];
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.route('**/api/kis/ledger', route => route.fulfill({ json: { orders: [paper] } }));
+  await page.route('**/api/kis/history', route => route.fulfill({ json: { sourceCount: 1, unavailable: [], orders: [paper] } }));
+
+  await page.goto('/orders');
+  await page.getByRole('button', { name: '사용방법 도움말' }).click();
+
+  for (const [width, height] of [[1440, 900], [768, 1024], [390, 844], [320, 740]]) {
+    await page.setViewportSize({ width, height });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await page.getByRole('button', { name: 'KIS 모의 원장', exact: true }).click();
+  for (const [width, height] of [[1440, 900], [768, 1024], [390, 844], [320, 740]]) {
+    await page.setViewportSize({ width, height });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+});

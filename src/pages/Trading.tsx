@@ -1,14 +1,15 @@
 import './orders-current-v2.css';
 import { LiveTrading } from './LiveTrading';
 import { TradeHelpPanel } from '../components/TradeHelpPanel';
+import { OrdersHelpPanel } from '../components/OrdersHelpPanel';
 import { HistoryOrder, paperStatus, type LedgerOrder } from '../components/HistoryOrder';
 import { RealtimeStatus } from '../components/RealtimeStatus';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { ArrowRight, BookOpen, X } from 'lucide-react';
 import { useWorkbench } from '../context';
-import { Badge, Change, Chart, Empty, Panel } from '../components/ui';
-import { orderInput, paperLedgerSchema, orderHistorySchema, type OrderInput, type PaperLedger } from '../../shared/contracts';
+import { Badge, Change, Chart, Empty, Panel, phaseLabels } from '../components/ui';
+import { DEFAULT_PAPER_MAX_QTY, orderInput, paperLedgerSchema, orderHistorySchema, type OrderInput, type PaperLedger } from '../../shared/contracts';
 import { orderStatus, won, equity, type Instrument } from '../../shared/model';
 
 /** 손익 금액을 `-0원` 없이 부호·색상과 함께 포맷한다. */
@@ -340,12 +341,31 @@ function TradeForm({ instrument }: { instrument: Instrument }) {
     <dialog ref={dialog} className="order-dialog" aria-labelledby="demo-order-confirm-title" onCancel={event => { event.preventDefault(); setConfirm(false); }}><div className="panel-head"><h2 id="demo-order-confirm-title">로컬 데모 주문 확인</h2><button className="icon-button" aria-label="주문 확인 닫기" onClick={() => setConfirm(false)}><X size={18} /></button></div><p>환경: DEMO · 합성 시세 {won(instrument.price)}원</p><p>{instrument.name} · {side === 'buy' ? '매수' : '매도'}</p><h3>{qty}주 × {won(numPrice)}원</h3><p>주문 금액 {won(amount)}원. KIS로 전송되지 않습니다.</p>{quoteChanged && <div className="notice warning"><p>시세가 변경되었습니다. 지정가는 유지됩니다. 현재 시세와 주문 가격을 다시 확인하세요.</p><button onClick={() => setReviewedQuote(instrument.price)}>변경된 시세 재확인</button></div>}{inputError && <p role="status">{inputError}</p>}{blocked && <p role="status">{state.risk.halted ? '신규 주문 정지 상태입니다.' : '최신 로컬 상태 확인 전 접수를 차단합니다.'}</p>}<div className="button-row"><button className="button secondary" onClick={() => setConfirm(false)}>돌아가기</button><button className="button primary" disabled={busy || blocked || quoteChanged || Boolean(unresolved) || Boolean(inputError)} onClick={() => void submit()}>데모 주문 접수</button></div></dialog></div>;
 }
 type OrderView = 'demo' | 'kis' | 'history';
+type SideFilter = 'all' | 'buy' | 'sell';
+type SourceFilter = 'all' | 'manual' | 'strategy';
+type PageSizeOption = '20' | '50' | 'all';
 type LedgerView = {
-  orders: PaperLedger['orders'] | null; phase: 'loading' | 'ready' | 'error'; readAt: string | null;
-  unavailable: string[]; sourceCount: number;
+  orders: PaperLedger['orders'] | null;
+  minimumRun?: PaperLedger['minimumRun'];
+  phase: 'loading' | 'ready' | 'error';
+  readAt: string | null;
+  unavailable: string[];
+  sourceCount: number;
 };
-const emptyLedger: LedgerView = { orders: null, phase: 'loading', readAt: null, unavailable: [], sourceCount: 0 };
+const emptyLedger: LedgerView = { orders: null, minimumRun: undefined, phase: 'loading', readAt: null, unavailable: [], sourceCount: 0 };
 const localTime = (at: string) => new Date(at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+const formatTradeDate = (tradeDate: string) => tradeDate.replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
+
+/** sessionStorage에 보존된 DEMO 미확인 요청을 안전하게 읽는다. */
+function readPendingDemoOrder(): OrderInput | null {
+  try {
+    const raw = sessionStorage.getItem('demo-order-pending');
+    if (raw === null) return null;
+    return orderInput.parse(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
 
 const demoFilters = [['all', '전체'], ['pending', '미체결'], ['filled', '체결'], ['cancelled', '취소']];
 const kisFilters = [['all', '전체'], ['sending', '전송 중'], ['accepted', '미체결'], ['partial', '부분체결'], ['filled', '체결'], ['cancelled', '취소'], ['unknown', '불명'], ['rejected', '거부']];
@@ -356,32 +376,81 @@ export function Orders() {
   const environment = views.find(([id]) => id === params.get('view'))?.[0] ?? 'demo';
   const filters = environment === 'demo' ? demoFilters : kisFilters;
   const filter = filters.find(([id]) => id === params.get('status'))?.[0] ?? 'all';
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpPanelId = useId();
+  const helpToggleRef = useRef<HTMLButtonElement>(null);
+
+  function closeHelp() {
+    setHelpOpen(false);
+    helpToggleRef.current?.focus();
+  }
+
   function choose(view: OrderView, status: string) {
     const next = new URLSearchParams(params);
     if (view === 'demo') next.delete('view'); else next.set('view', view);
     if (status === 'all') next.delete('status'); else next.set('status', status);
     navigate(next);
   }
+
   return <>
     <div className="tabs order-views" role="group" aria-label="주문 환경">{views.map(([id, label]) =>
       <button key={id} className={environment === id ? 'active' : ''} aria-pressed={environment === id}
         onClick={() => { if (environment !== id) choose(id, 'all'); }}>{label}</button>)}</div>
-    <OrderList key={environment} environment={environment} filter={filter} filters={filters}
-      setFilter={status => choose(environment, status)} showHistory={() => choose('history', 'all')} />
+    {helpOpen && <OrdersHelpPanel panelId={helpPanelId} onClose={closeHelp} />}
+    <OrderList
+      key={environment}
+      environment={environment}
+      filter={filter}
+      filters={filters}
+      setFilter={status => choose(environment, status)}
+      showHistory={() => choose('history', 'all')}
+      helpOpen={helpOpen}
+      helpPanelId={helpPanelId}
+      helpToggleRef={helpToggleRef}
+      onToggleHelp={() => setHelpOpen(open => !open)}
+    />
   </>;
 }
 
-function OrderList({ environment, filter, filters, setFilter, showHistory }: {
-  environment: OrderView; filter: string; filters: string[][]; setFilter: (id: string) => void; showHistory: () => void;
+function OrderList({
+  environment,
+  filter,
+  filters,
+  setFilter,
+  showHistory,
+  helpOpen,
+  helpPanelId,
+  helpToggleRef,
+  onToggleHelp,
+}: {
+  environment: OrderView;
+  filter: string;
+  filters: string[][];
+  setFilter: (id: string) => void;
+  showHistory: () => void;
+  helpOpen: boolean;
+  helpPanelId: string;
+  helpToggleRef: RefObject<HTMLButtonElement | null>;
+  onToggleHelp: () => void;
 }) {
-  const { state, status, act, busy, available, realtime } = useWorkbench();
+  const { state, status, connection, paperRisk, act, busy, available, realtime } = useWorkbench();
   const [query, setQuery] = useState('');
+  const [sideFilter, setSideFilter] = useState<SideFilter>('all');
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
+  const [pageSize, setPageSize] = useState<PageSizeOption>('20');
+  const [page, setPage] = useState(1);
   const [reload, setReload] = useState(0);
   const [ledger, setLedger] = useState<LedgerView>(emptyLedger);
+  const [pendingDemoRequest] = useState<OrderInput | null>(() => (environment === 'demo' ? readPendingDemoOrder() : null));
   const history = environment === 'history';
   const liveReconciliation = environment === 'kis' ? realtime?.reconciledAt : undefined;
   const searchField = useRef<HTMLInputElement>(null);
   const cancelling = useRef(false);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, filter, sideFilter, sourceFilter, pageSize]);
+
   useEffect(() => {
     if (environment === 'demo') return;
     const controller = new AbortController(); let active = true;
@@ -392,45 +461,240 @@ function OrderList({ environment, filter, filters, setFilter, showHistory }: {
         if (!response.ok) throw new Error('ledger');
         const data = await response.json();
         const result = history ? orderHistorySchema.parse(data) : { ...paperLedgerSchema.parse(data), unavailable: [], sourceCount: 1 };
-        if (active) setLedger({ ...result, phase: 'ready', readAt: new Date().toISOString() });
+        if (active) {
+          setLedger({
+            orders: result.orders,
+            minimumRun: result.minimumRun,
+            unavailable: result.unavailable,
+            sourceCount: result.sourceCount,
+            phase: 'ready',
+            readAt: new Date().toISOString(),
+          });
+        }
       } catch { if (active) setLedger(old => ({ ...old, phase: 'error' })); }
     })();
     return () => { active = false; controller.abort(); };
   }, [environment, history, reload, liveReconciliation]);
+
   function clearConditions() {
     setQuery('');
+    setSideFilter('all');
+    setSourceFilter('all');
+    setPage(1);
     if (filter !== 'all') setFilter('all');
     searchField.current?.focus();
   }
+
   async function cancel(id: string) {
     if (cancelling.current || busy || !available) return;
     cancelling.current = true;
     try { await act('orders/cancel', { id }); } catch {} finally { cancelling.current = false; }
   }
+
   const needle = query.trim().toLowerCase();
   const nameOf = (code: string) => state.instruments.find(s => s.code === code)?.name ?? code;
   const matches = (code: string) => `${code} ${nameOf(code)}`.toLowerCase().includes(needle);
   const identifierMatch = (o: LedgerOrder) => Boolean(needle && [o.requestId, o.brokerId].some(id => id?.toLowerCase().includes(needle)));
   const dateDigits = /^\d{4}[-./]?\d{2}[-./]?\d{2}$/.test(needle) ? needle.replace(/\D/g, '') : '';
-  const rows = state.orders.filter(o => (filter === 'all' || o.status === filter) && matches(o.code));
-  const paperRows = ledger.orders?.filter(o => (filter === 'all' || o.status === filter) &&
-    (matches(o.code) || (history && (o.tradeDate === dateDigits || identifierMatch(o))))) ?? [];
+  const rows = state.orders.filter(o =>
+    (filter === 'all' || o.status === filter) &&
+    (sideFilter === 'all' || o.side === sideFilter) &&
+    (sourceFilter === 'all' || (sourceFilter === 'manual' ? o.source === 'manual' : o.source !== 'manual')) &&
+    matches(o.code),
+  );
+  const paperRows = ledger.orders?.filter(o =>
+    (filter === 'all' || o.status === filter) &&
+    (sideFilter === 'all' || o.side === sideFilter) &&
+    (sourceFilter === 'all' || (sourceFilter === 'manual' ? !o.strategy : Boolean(o.strategy))) &&
+    (matches(o.code) || (history && (o.tradeDate === dateDigits || identifierMatch(o)))),
+  ) ?? [];
   const urgentRealtime = realtime?.phase === 'error' || realtime?.phase === 'disconnected' ||
     Boolean(realtime?.required && !realtime.ordersAllowed);
-  const filtered = Boolean(needle || filter !== 'all');
+  const filtered = Boolean(needle || filter !== 'all' || sideFilter !== 'all' || sourceFilter !== 'all');
   const clearButton = <button type="button" className="text-link" onClick={clearConditions}>조건 지우기</button>;
   const demo = environment === 'demo';
   const resultCount = demo ? rows.length : paperRows.length;
   const total = demo ? state.orders.length : ledger.orders?.length;
   const hasSnapshot = demo ? available || Boolean(status.lastSuccessAt) : ledger.orders !== null;
   const showControls = history || Boolean(total) || (hasSnapshot && filtered);
-  const pending = state.orders.filter(o => o.status === 'pending').length;
-  const filled = state.orders.filter(o => o.status === 'filled').length;
+  const numericPageSize = pageSize === 'all' ? Number.POSITIVE_INFINITY : Number(pageSize);
+  const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(resultCount / numericPageSize));
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = pageSize === 'all' ? 0 : (currentPage - 1) * numericPageSize;
+  const pagedRows = pageSize === 'all' || resultCount <= numericPageSize
+    ? rows
+    : rows.slice(startIndex, startIndex + numericPageSize);
+  const pagedPaperRows = pageSize === 'all' || resultCount <= numericPageSize
+    ? paperRows
+    : paperRows.slice(startIndex, startIndex + numericPageSize);
+  const rangeStart = resultCount === 0 ? 0 : startIndex + 1;
+  const rangeEnd = pageSize === 'all' ? resultCount : Math.min(resultCount, startIndex + numericPageSize);
+
+  const pendingOrders = state.orders.filter(o => o.status === 'pending');
+  const filledOrders = state.orders.filter(o => o.status === 'filled');
+  const pending = pendingOrders.length;
+  const filled = filledOrders.length;
+  const cancelled = state.orders.filter(o => o.status === 'cancelled').length;
+  const demoBuyCount = state.orders.filter(o => o.side === 'buy').length;
+  const demoSellCount = state.orders.length - demoBuyCount;
+  const demoManualCount = state.orders.filter(o => o.source === 'manual').length;
+  const demoStrategyCount = state.orders.length - demoManualCount;
+  const pendingBuyReserved = pendingOrders
+    .filter(o => o.side === 'buy')
+    .reduce((sum, o) => sum + o.qty * o.price + calcDemoFee(o.qty * o.price), 0);
+  const pendingSellQty = pendingOrders
+    .filter(o => o.side === 'sell')
+    .reduce((sum, o) => sum + o.qty, 0);
+  const filledBuyAmt = filledOrders
+    .filter(o => o.side === 'buy')
+    .reduce((sum, o) => sum + o.qty * (o.filledPrice ?? o.price), 0);
+  const filledSellAmt = filledOrders
+    .filter(o => o.side === 'sell')
+    .reduce((sum, o) => sum + o.qty * (o.filledPrice ?? o.price), 0);
+  const totalDemoFees = state.orders.reduce((sum, o) => sum + o.fee, 0);
+  const totalDemoImprovement = Math.round(filledOrders.reduce((sum, o) => {
+    if (o.filledPrice === undefined) return sum;
+    const unitDiff = o.side === 'buy' ? o.price - o.filledPrice : o.filledPrice - o.price;
+    return sum + unitDiff * o.qty;
+  }, 0));
+  const improvementText = totalDemoImprovement > 0
+    ? `유리 차액 +${won(totalDemoImprovement)}원`
+    : totalDemoImprovement < 0
+      ? `불리 차액 -${won(Math.abs(totalDemoImprovement))}원`
+      : '차액 0원';
+  const demoDailyLossRemaining = Math.max(0, state.risk.dailyLoss - Math.max(0, state.startingEquity - equity(state)));
+  const activeDemoStrategies = state.strategies.filter(s => s.active && (s.environment ?? 'demo') === 'demo').length;
+
+  const kisOrders = ledger.orders ?? [];
+  const kisBuy = kisOrders.filter(o => o.side === 'buy').length;
+  const kisSell = kisOrders.length - kisBuy;
+  const kisAccepted = kisOrders.filter(o => o.status === 'accepted').length;
+  const kisPartial = kisOrders.filter(o => o.status === 'partial').length;
+  const kisOpen = kisAccepted + kisPartial;
+  const kisFilled = kisOrders.filter(o => o.status === 'filled').length;
+  const kisClosed = kisOrders.filter(o => o.status === 'cancelled' || o.status === 'rejected').length;
+  const kisUnknown = kisOrders.filter(o => o.status === 'unknown').length;
+  const kisSending = kisOrders.filter(o => o.status === 'sending').length;
+  const kisTotalQty = kisOrders.reduce((sum, o) => sum + o.qty, 0);
+  const kisFilledQty = kisOrders.reduce((sum, o) => sum + o.filled, 0);
+  const kisRemQty = kisOrders.reduce((sum, o) => sum + o.remaining, 0);
+  const kisFillPct = kisTotalQty > 0 ? Math.round((kisFilledQty / kisTotalQty) * 100) : 0;
+  const kisMatched = kisOrders.filter(o => Boolean(o.lastMatchedAt)).length;
+  const kisUnmatched = kisOrders.length - kisMatched;
+  const latestMatchedAt = kisOrders.reduce<string | null>((latest, o) => {
+    if (!o.lastMatchedAt) return latest;
+    return !latest || Date.parse(o.lastMatchedAt) > Date.parse(latest) ? o.lastMatchedAt : latest;
+  }, null);
+  const kisStrategy = kisOrders.filter(o => Boolean(o.strategy)).length;
+  const kisManual = kisOrders.length - kisStrategy;
+  const kisMarket = kisOrders.filter(o => o.orderType === 'market').length;
+  const kisLimit = kisOrders.length - kisMarket;
+  const kisCapped = kisOrders.filter(o => o.priceCeiling !== undefined).length;
+  const sortedHistoryDates = [...new Set(kisOrders.map(o => o.tradeDate).filter(d => /^\d{8}$/.test(d)))].sort();
+  const historyDateRangeText = sortedHistoryDates.length === 0
+    ? '기록 없음'
+    : sortedHistoryDates.length === 1
+      ? `${formatTradeDate(sortedHistoryDates[0])} (1거래일)`
+      : `${formatTradeDate(sortedHistoryDates[0])} ~ ${formatTradeDate(sortedHistoryDates[sortedHistoryDates.length - 1])} (${sortedHistoryDates.length}거래일)`;
+  const distinctArchiveSources = new Set(kisOrders.map(o => o.sourceId ?? o.sourceLabel ?? 'default')).size;
+
+  const subToolbar = showControls && (Boolean(total) || filtered) && (
+    <div className="orders-sub-toolbar" role="region" aria-label="주문 세부 필터 및 표시 제어">
+      <div className="orders-sub-filters">
+        <div className="orders-chip-group" role="group" aria-label="매매 방향 필터">
+          {([['all', '전체'], ['buy', '매수'], ['sell', '매도']] as const).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={`orders-chip${sideFilter === id ? ' active' : ''}`}
+              aria-pressed={sideFilter === id}
+              onClick={() => setSideFilter(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="orders-chip-group" role="group" aria-label="주문 출처 필터">
+          {([['all', '전체'], ['manual', '수동 주문'], ['strategy', '전략 주문']] as const).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={`orders-chip${sourceFilter === id ? ' active' : ''}`}
+              aria-pressed={sourceFilter === id}
+              onClick={() => setSourceFilter(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {resultCount > 20 && (
+        <div className="orders-pagination">
+          <span className="orders-page-range">{rangeStart}–{rangeEnd} / 총 {resultCount}건</span>
+          <div className="orders-page-actions">
+            <button
+              type="button"
+              className="button secondary small-button"
+              disabled={pageSize === 'all' || currentPage <= 1}
+              onClick={() => setPage(prev => Math.max(1, prev - 1))}
+            >
+              이전 페이지
+            </button>
+            <button
+              type="button"
+              className="button secondary small-button"
+              disabled={pageSize === 'all' || currentPage >= totalPages}
+              onClick={() => setPage(prev => Math.min(totalPages, prev + 1))}
+            >
+              다음 페이지
+            </button>
+            <select
+              aria-label="페이지당 표시 건수"
+              value={pageSize}
+              onChange={e => setPageSize(e.target.value as PageSizeOption)}
+            >
+              <option value="20">20건씩</option>
+              <option value="50">50건씩</option>
+              <option value="all">전체 보기</option>
+            </select>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   const noMatch = <Empty title="검색 조건에 맞는 주문이 없습니다">{clearButton}</Empty>;
   return <>
     {environment === 'kis' && urgentRealtime && <RealtimeStatus />}
-    <Panel className={history ? 'history-panel' : 'current-orders'} title={demo ? 'DEMO 주문 내역' : history ? '지난 주문' : '현재 KIS 저장 원장'}
-      action={!demo && <button className="button secondary" disabled={ledger.phase === 'loading'} onClick={() => setReload(value => value + 1)}>원장 다시 읽기</button>}>
+    <Panel
+      className={history ? 'history-panel' : 'current-orders'}
+      title={demo ? 'DEMO 주문 내역' : history ? '지난 주문' : '현재 KIS 저장 원장'}
+      action={
+        <div className="orders-panel-actions">
+          <button
+            ref={helpToggleRef}
+            type="button"
+            className={`button small-button ${helpOpen ? 'primary' : 'secondary'} orders-help-toggle`}
+            aria-expanded={helpOpen}
+            aria-controls={helpOpen ? helpPanelId : undefined}
+            onClick={onToggleHelp}
+          >
+            <BookOpen size={14} aria-hidden="true" />
+            사용방법 도움말
+          </button>
+          {!demo && (
+            <button
+              type="button"
+              className="button secondary small-button"
+              disabled={ledger.phase === 'loading'}
+              onClick={() => setReload(value => value + 1)}
+            >
+              원장 다시 읽기
+            </button>
+          )}
+        </div>
+      }
+    >
       {demo && status.phase === 'loading' && <p role="status">DEMO 주문 확인 중…</p>}
       {demo && !available && status.phase !== 'loading' && <p role="status" className="notice warning">{status.lastSuccessAt ? '이전에 확인한 DEMO 주문입니다. 최신 주문 상태를 확인할 수 없습니다.' : 'DEMO 주문 내역 미확인 · 로컬 상태를 확인해야 합니다.'}</p>}
       {demo && (available || status.lastSuccessAt) && <p className="order-counts">로컬 DEMO · 전체 {state.orders.length}건 · 미체결 {pending}건 · 체결 {filled}건</p>}
@@ -449,7 +713,7 @@ function OrderList({ environment, filter, filters, setFilter, showHistory }: {
         {ledger.phase !== 'ready' && ledger.orders !== null && <p className="notice warning">{ledger.orders.length ? '이전에 읽은 원장' : '이전에 읽은 범위는 0건입니다. 현재 건수는 미확인입니다.'}</p>}
       </>}
       {demo && <>
-        {rows.length ? <CurrentOrderTable demo>{rows.map(o => <tr role="row" key={o.id}>
+        {rows.length ? <CurrentOrderTable demo>{pagedRows.map(o => <tr role="row" key={o.id}>
           <td role="cell" className="order-symbol"><Link className="stock-name" to={`/trade?mode=demo&code=${o.code}`}>{nameOf(o.code)}</Link>
             <small>{o.code} · {o.side === 'buy' ? '매수' : '매도'} · 지정가 {won(o.price)}원</small></td>
           <td role="cell" className="order-status"><Badge tone={o.status === 'filled' ? 'teal' : 'neutral'}>{orderStatus[o.status]}</Badge></td>
@@ -459,39 +723,213 @@ function OrderList({ environment, filter, filters, setFilter, showHistory }: {
             ? <button className="button small secondary" disabled={busy || !available} onClick={() => void cancel(o.id)}>취소</button>
             : <span className="muted">취소 불가</span>}</td>
           <td role="cell" className="order-detail"><details><summary aria-label={`${nameOf(o.code)} DEMO 주문 상세`}>주문 상세</summary>
-            <dl><dt>주문 ID</dt><dd>{o.id}</dd><dt>접수 (KST)</dt><dd>{localTime(o.createdAt)}</dd>
+            <dl>
+              <dt>주문 ID</dt><dd>{o.id}</dd>
+              <dt>접수 (KST)</dt><dd>{localTime(o.createdAt)}</dd>
               {o.filledAt && <><dt>체결 (KST)</dt><dd>{localTime(o.filledAt)}</dd></>}
-              <dt>수수료</dt><dd>{won(o.fee)}원</dd><dt>출처</dt><dd>{o.source === 'manual' ? '수동 주문' : state.strategies.find(s => s.id === o.source)?.name ?? '전략'}</dd></dl>
+              <dt>수수료</dt><dd>{won(o.fee)}원</dd>
+              <dt>출처</dt><dd>{o.source === 'manual' ? '수동 주문' : state.strategies.find(s => s.id === o.source)?.name ?? '전략'}</dd>
+              <dt>앱 요청 ID</dt><dd>{o.requestId}</dd>
+              <dt>주문 금액</dt><dd>{won(o.qty * o.price)}원</dd>
+              {o.filledPrice !== undefined && (() => {
+                const unitDiff = o.side === 'buy' ? o.price - o.filledPrice : o.filledPrice - o.price;
+                const diff = Math.round(unitDiff * o.qty);
+                const unitLabel = Math.abs(unitDiff).toLocaleString('ko-KR', { maximumFractionDigits: 20 });
+                const diffText = diff > 0
+                  ? `+${won(diff)}원 유리 (주당 ${unitLabel}원)`
+                  : diff < 0
+                    ? `-${won(Math.abs(diff))}원 불리 (주당 ${unitLabel}원)`
+                    : '지정가 일치 (0원)';
+                return <>
+                  <dt>체결 금액</dt><dd>{won(o.qty * o.filledPrice)}원</dd>
+                  <dt>지정가 대비 체결 차액</dt><dd>{diffText}</dd>
+                </>;
+              })()}
+            </dl>
           </details></td>
         </tr>)}</CurrentOrderTable> : state.orders.length && filtered ? noMatch : available && <Empty title="아직 주문이 없습니다"><Link to="/trade?mode=demo">DEMO 연습</Link>에서 DEMO 주문을 확인하세요.</Empty>}
+        {subToolbar}
         <div className="order-playback"><span>미체결 취소는 DEMO 예약을 해제합니다. 다음 봉을 재생하면 체결 조건을 평가합니다.</span>
           <button disabled={busy || !available} className="button secondary" onClick={() => void act('tick').catch(() => {})}>다음 데모 봉 재생</button></div>
+        {pendingDemoRequest && (() => {
+          const matched = state.orders.find(o => o.requestId === pendingDemoRequest.requestId);
+          const reconcileText = matched
+            ? `원장 접수 확인됨 · 상태: ${orderStatus[matched.status]}`
+            : available
+              ? '원장 미접수 확인 · 트레이딩 화면에서 재시도 가능'
+              : '로컬 상태 연결 후 원장 대조 가능';
+          return (
+            <section className="orders-pending-reconcile" role="region" aria-label="보존된 DEMO 요청 원장 대조">
+              <div className="orders-pending-head">
+                <h3>보존된 DEMO 요청 원장 대조</h3>
+                <Badge tone={matched ? 'teal' : 'amber'}>{matched ? '원장 일치' : available ? '미접수' : '대조 대기'}</Badge>
+              </div>
+              <p className="orders-pending-meta">
+                {pendingDemoRequest.code} · {pendingDemoRequest.side === 'buy' ? '매수' : '매도'} · {pendingDemoRequest.qty}주 × {won(pendingDemoRequest.price)}원 · 요청 ID <code>{pendingDemoRequest.requestId}</code>
+              </p>
+              <div className="orders-pending-foot">
+                <p role="status">{reconcileText}</p>
+                <Link className="text-link" to={`/trade?mode=demo&code=${encodeURIComponent(pendingDemoRequest.code)}`}>
+                  DEMO 연습 주문 화면으로 이동
+                </Link>
+              </div>
+            </section>
+          );
+        })()}
+        {(available || Boolean(status.lastSuccessAt)) && (
+          <section className="orders-hub" role="region" aria-label="주문·체결 분석 및 원장 진단 허브">
+            <div className="orders-hub-grid">
+              <article className="orders-hub-card">
+                <h3>DEMO 주문 구성 요약</h3>
+                <dl className="orders-hub-list">
+                  <div><dt>총 주문 · 현재 일치</dt><dd>총 주문 {state.orders.length}건 · 현재 일치 {rows.length}건</dd></div>
+                  <div><dt>상태별 분포</dt><dd>미체결 {pending}건 · 체결 {filled}건 · 취소 {cancelled}건</dd></div>
+                  <div><dt>매매 방향별</dt><dd>매수 {demoBuyCount}건 · 매도 {demoSellCount}건</dd></div>
+                  <div><dt>주문 출처별</dt><dd>수동 {demoManualCount}건 · 전략 {demoStrategyCount}건</dd></div>
+                </dl>
+              </article>
+              <article className="orders-hub-card">
+                <h3>DEMO 예약 및 체결 자금 분석</h3>
+                <dl className="orders-hub-list">
+                  <div><dt>미체결 매수 예약 잠금 현금</dt><dd>{won(pendingBuyReserved)}원 · 예약 제외 가용 현금 {won(Math.max(0, state.cash - pendingBuyReserved))}원</dd></div>
+                  <div><dt>미체결 매도 예약 잠금 수량</dt><dd>{pendingSellQty.toLocaleString('ko-KR')}주</dd></div>
+                  <div><dt>누적 체결 총액</dt><dd>매수 체결 {won(filledBuyAmt)}원 · 매도 체결 {won(filledSellAmt)}원</dd></div>
+                  <div><dt>누적 수수료 및 단가 개선</dt><dd>누적 수수료 {won(totalDemoFees)}원 · 지정가 대비 {improvementText}</dd></div>
+                </dl>
+              </article>
+              <article className="orders-hub-card">
+                <h3>DEMO 위험 한도 및 연계 화면</h3>
+                <dl className="orders-hub-list">
+                  <div><dt>신규 주문 제어</dt><dd>{!available ? '로컬 상태 미확인 (차단)' : state.risk.halted ? '긴급정지 켜짐 (차단)' : '정상 (주문 가능)'}</dd></div>
+                  <div><dt>공통 한도</dt><dd>1회 {won(state.risk.maxOrder)}원 · 종목별 {won(state.risk.maxPosition)}원</dd></div>
+                  <div><dt>일일 손실 한도 여유액</dt><dd>{won(demoDailyLossRemaining)}원 / {won(state.risk.dailyLoss)}원</dd></div>
+                  <div><dt>데모 봉 · 전략</dt><dd>봉 #{state.tick} · 활성 DEMO 전략 {activeDemoStrategies}개</dd></div>
+                </dl>
+                <div className="orders-hub-links">
+                  <Link className="text-link" to="/trade?mode=demo">DEMO 연습 주문</Link>
+                  <Link className="text-link" to="/portfolio">포트폴리오</Link>
+                  <Link className="text-link" to="/strategies">자동매매 전략</Link>
+                  <Link className="text-link" to="/risk">위험관리</Link>
+                </div>
+              </article>
+            </div>
+          </section>
+        )}
       </>}
       {!demo && <>
         {paperRows.length && history ? <ul className="history-list" aria-label="지난 주문 목록">
-          {paperRows.map(o => <HistoryOrder key={JSON.stringify([o.sourceId, o.requestId])} order={o} name={nameOf(o.code)}
+          {pagedPaperRows.map(o => <HistoryOrder key={JSON.stringify([o.sourceId, o.requestId])} order={o} name={nameOf(o.code)}
             reveal={identifierMatch(o) && !matches(o.code) && o.tradeDate !== dateDigits} />)}
-        </ul> : paperRows.length ? <CurrentOrderTable demo={false}>{paperRows.map(o => <tr role="row" key={o.requestId}>
+        </ul> : paperRows.length ? <CurrentOrderTable demo={false}>{pagedPaperRows.map(o => <tr role="row" key={o.requestId}>
           <td role="cell" className="order-symbol"><strong>{nameOf(o.code)}</strong>
-            <small>{o.code} · {o.side === 'buy' ? '매수' : '매도'} · {o.orderType === 'market' ? '시장가' : `지정가 ${won(o.price)}원`}</small></td>
+            <small>
+              {o.code} · {o.side === 'buy' ? '매수' : '매도'} · {o.orderType === 'market' ? '시장가' : `지정가 ${won(o.price)}원`}
+              {o.priceCeiling !== undefined ? ` · 상한 캡 ${won(o.priceCeiling)}원` : ''}
+              {o.strategy ? ` · 전략 ${o.strategy.id}` : ''}
+            </small></td>
           <td role="cell" className="order-status"><Badge tone={['partial','unknown','rejected'].includes(o.status) ? 'amber' : o.status === 'filled' ? 'teal' : 'neutral'}>{paperStatus[o.status]}</Badge></td>
           <td role="cell" className="order-quantity">{o.qty} / {o.filled} / {o.remaining}주</td>
           <td role="cell" className="order-observation">{o.lastMatchedAt ? <time dateTime={o.lastMatchedAt}>{localTime(o.lastMatchedAt)}</time> : <strong className="history-unknown">미확인</strong>}</td>
           <td role="cell" className="order-management"><Link to={`/paper?code=${o.code}`}>KIS 원장·복구 화면</Link></td>
           <td role="cell" className="order-detail"><details><summary aria-label={`${nameOf(o.code)} KIS 주문 상세`}>주문 상세</summary>
-            <dl><dt>주문일</dt><dd>{o.tradeDate}</dd><dt>요청 생성 (KST)</dt><dd>{localTime(o.createdAt)}</dd>
-              <dt>앱 요청 ID</dt><dd>{o.requestId}</dd><dt>증권사 주문번호</dt><dd>{o.brokerId ?? '미확인'}</dd></dl>
+            <dl>
+              <dt>주문일</dt><dd>{o.tradeDate}</dd>
+              <dt>요청 생성 (KST)</dt><dd>{localTime(o.createdAt)}</dd>
+              <dt>앱 요청 ID</dt><dd>{o.requestId}</dd>
+              <dt>증권사 주문번호</dt><dd>{o.brokerId ?? '미확인'}</dd>
+              {o.priceCeiling !== undefined && <><dt>상한 지정가 캡</dt><dd>{won(o.priceCeiling)}원</dd></>}
+              {o.orderType !== 'market' && o.price > 0 && <><dt>주문 기준 금액</dt><dd>{won(o.qty * o.price)}원</dd></>}
+              <dt>체결 진행률</dt><dd>{o.qty > 0 ? Math.round((o.filled / o.qty) * 100) : 0}% ({o.filled}/{o.qty}주 체결 · 잔량 {o.remaining}주)</dd>
+              <dt>주문 출처</dt><dd>{o.strategy
+                ? `전략 ${o.strategy.id} (rev.${o.strategy.revision} · ${o.strategy.signal === 'buy' ? '매수' : '매도'} 신호${o.strategy.signalBarDate ? ` · 기준일 ${o.strategy.signalBarDate}` : ''})`
+                : '수동·일반 모의 주문'}</dd>
+            </dl>
           </details></td>
         </tr>)}</CurrentOrderTable> : ledger.orders?.length && filtered ? noMatch : ledger.phase === 'ready' && (
           <Empty title={history ? ledger.unavailable.length ? '읽을 수 있는 과거 주문이 없습니다' : '등록된 지난 실행에 저장된 주문이 없습니다' : '저장된 KIS 주문이 없습니다'}>
             {history ? '이 PC에 연결한 실행 원장 범위입니다.' : <>현재 실행 원장 범위입니다. <button className="text-link" onClick={showHistory}>지난 실행 기록 보기</button></>}
           </Empty>)}
+        {subToolbar}
         {!history && ledger.readAt && <p className="order-read-at" role="status">{ledger.phase === 'ready' ? '로컬 원장 읽기 완료' : '마지막 로컬 읽기'} (KST) · {localTime(ledger.readAt)}</p>}
         <details className="history-info"><summary>원장 정보{history && ledger.readAt && ` · 읽은 실행 원장 ${ledger.sourceCount}개`}</summary>
           <p>{history ? '지난 실행은 읽기 전용입니다.' : '현재 실행의 주문 대조와 복구는 KIS 모의 매매에서 진행합니다.'} 주문별 KIS 확인은 원주문과 증권사 응답이 일치한 마지막 저장 시각입니다.</p>
           {history && ledger.readAt && <p>마지막 로컬 읽기 (KST) · {localTime(ledger.readAt)}</p>}
           <p>평균 체결가·수수료는 현재 원장에 미제공</p>
         </details>
+        {environment === 'kis' && ledger.orders !== null && (
+          <section className="orders-hub" role="region" aria-label="주문·체결 분석 및 원장 진단 허브">
+            <div className="orders-hub-grid">
+              <article className="orders-hub-card">
+                <h3>KIS 저장 원장 체결 요약</h3>
+                <dl className="orders-hub-list">
+                  <div><dt>원장 총계</dt><dd>총 주문 {kisOrders.length}건 · 매수 {kisBuy}건 · 매도 {kisSell}건</dd></div>
+                  <div><dt>진행 상태</dt><dd>열린 주문(미체결·부분) {kisOpen}건 · 체결 {kisFilled}건 · 취소·거부 {kisClosed}건</dd></div>
+                  <div><dt>대조 필요</dt><dd>불명 {kisUnknown}건 · 전송 중 {kisSending}건</dd></div>
+                  <div><dt>누적 수량 · 체결률</dt><dd>주문 {kisTotalQty}주 / 체결 {kisFilledQty}주 / 잔량 {kisRemQty}주 ({kisFillPct}%)</dd></div>
+                </dl>
+              </article>
+              <article className="orders-hub-card">
+                <h3>KIS 대조 및 실행 계약 진단</h3>
+                <dl className="orders-hub-list">
+                  <div><dt>주문별 KIS 확인</dt><dd>확인 완료 {kisMatched}건 / 미확인 {kisUnmatched}건</dd></div>
+                  <div><dt>최근 주문별 KIS 확인 시각</dt><dd>{latestMatchedAt ? localTime(latestMatchedAt) : '확인 기록 없음'}</dd></div>
+                  <div><dt>위험 스냅샷 미결 상태</dt><dd>{!available || !paperRisk ? '불명·전송 중 미확인' : `불명·전송 중 ${paperRisk.unresolvedCount}건`}</dd></div>
+                  <div><dt>다음 한정 실행 계약</dt><dd>{ledger.minimumRun?.active ? `활성 (${ledger.minimumRun.code ?? '종목 미지정'} · 상한 ${ledger.minimumRun.maxQty}주)` : '비활성'}</dd></div>
+                </dl>
+              </article>
+              <article className="orders-hub-card">
+                <h3>KIS 모의 운영 및 복구 허브</h3>
+                <dl className="orders-hub-list">
+                  <div><dt>계좌 · 긴급정지</dt><dd>KIS 계좌 {phaseLabels[connection.status.phase]} · {!available ? '긴급정지 미확인' : state.risk.halted ? '긴급정지 켜짐' : '긴급정지 꺼짐'}</dd></div>
+                  <div><dt>수동 주문 수량 상한</dt><dd>{available ? `1회 최대 ${state.paperManualMaxQty ?? DEFAULT_PAPER_MAX_QTY}주` : '미확인'}</dd></div>
+                  <div><dt>출처 분포</dt><dd>수동·일반 {kisManual}건 · 전략 자동 {kisStrategy}건</dd></div>
+                </dl>
+                <div className="orders-hub-links">
+                  <Link className="text-link" to="/paper">KIS 모의 매매·복구 이동</Link>
+                  <Link className="text-link" to="/settings/trading">매매 설정</Link>
+                  <Link className="text-link" to="/settings">연결·설정</Link>
+                  <Link className="text-link" to="/alerts">알림·이벤트</Link>
+                </div>
+              </article>
+            </div>
+          </section>
+        )}
+        {history && ledger.orders !== null && (
+          <section className="orders-hub" role="region" aria-label="주문·체결 분석 및 원장 진단 허브">
+            <div className="orders-hub-grid">
+              <article className="orders-hub-card">
+                <h3>지난 실행 아카이브 요약</h3>
+                <dl className="orders-hub-list">
+                  <div><dt>연결된 실행 원장</dt><dd>읽은 원장 {ledger.sourceCount}개{ledger.unavailable.length ? ` · 읽기 실패 ${ledger.unavailable.length}개` : ' · 전체 정상'}</dd></div>
+                  <div><dt>보존 주문 총계</dt><dd>총 주문 {kisOrders.length}건 · 매수 {kisBuy}건 · 매도 {kisSell}건</dd></div>
+                  <div><dt>종결 분포</dt><dd>체결·부분체결 {kisFilled + kisPartial}건 · 취소·거부 {kisClosed}건 · 불명·미종결 {kisUnknown + kisAccepted + kisSending}건</dd></div>
+                  <div><dt>누적 체결 수량</dt><dd>주문 {kisTotalQty}주 중 체결 {kisFilledQty}주 ({kisFillPct}%)</dd></div>
+                </dl>
+              </article>
+              <article className="orders-hub-card">
+                <h3>아카이브 거래일 및 유형 분석</h3>
+                <dl className="orders-hub-list">
+                  <div><dt>기록된 거래일 범위</dt><dd>{historyDateRangeText}</dd></div>
+                  <div><dt>KIS 확인 시각 보존</dt><dd>확인 시각 보존 {kisMatched}건 / 미확인 {kisUnmatched}건</dd></div>
+                  <div><dt>주문 유형 분포</dt><dd>지정가 {kisLimit}건 (상한 캡 {kisCapped}건) · 시장가 {kisMarket}건</dd></div>
+                  <div><dt>아카이브 출처 분포</dt><dd>{distinctArchiveSources}개 실행 세션 아카이브</dd></div>
+                </dl>
+              </article>
+              <article className="orders-hub-card">
+                <h3>아카이브 감사 및 연계 화면</h3>
+                <dl className="orders-hub-list">
+                  <div><dt>식별자 검색 안내</dt><dd>앱 요청 ID·증권사 주문번호 검색 시 해당 주문 상세 자동 펼침</dd></div>
+                  <div><dt>거래일 검색 안내</dt><dd>YYYY-MM-DD 또는 YYYYMMDD 입력으로 거래일 필터링</dd></div>
+                </dl>
+                <div className="orders-hub-links">
+                  <Link className="text-link" to="/paper">KIS 모의 매매·복구 이동</Link>
+                  <Link className="text-link" to="/settings/trading">매매 설정</Link>
+                  <Link className="text-link" to="/journal">매매일지</Link>
+                </div>
+              </article>
+            </div>
+          </section>
+        )}
       </>}
     </Panel>
     {environment === 'kis' && !urgentRealtime && <RealtimeStatus />}
