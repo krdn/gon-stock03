@@ -1,9 +1,11 @@
+import { useId, useRef, useState } from 'react';
 import { MorningPortfolio } from '../components/MorningPortfolio';
+import { PortfolioHelpPanel } from '../components/PortfolioHelpPanel';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowRight, ArrowUpRight, RefreshCw, ShieldCheck, Star, Zap } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, BookOpen, RefreshCw, ShieldCheck, Star, Zap } from 'lucide-react';
 import { useWorkbench } from '../context';
 import { Badge, Change, Chart, DataStatusLine, Empty, PageLink, Panel, Stat, confirmedAt, phaseLabels } from '../components/ui';
-import { won, type Instrument } from '../../shared/model';
+import { equity, won, type Instrument } from '../../shared/model';
 import { portfolioValue } from '../../shared/portfolio';
 import { BALANCE_STALE_MS } from '../../shared/status';
 import './dashboard-v2.css';
@@ -144,12 +146,72 @@ export function Market({ watchOnly = false }: { watchOnly?: boolean }) {
   return <MarketExplorer key={watchOnly ? 'watchlist' : 'market'} watchOnly={watchOnly} />;
 }
 
+type PnlFilter = 'all' | 'gain' | 'loss' | 'flat';
+type PortfolioSort = 'default' | 'value-desc' | 'weight-desc' | 'profit-desc' | 'profit-asc' | 'return-desc';
+
+/** 자산 구성 비율 바 종목별 세그먼트 색상 팔레트. */
+const ALLOC_SEGMENT_COLORS = ['#2f62ad', '#3e8476', '#b6802e', '#765aa6', '#b23b44', '#397b91'];
+
+/** DEMO 지정가 예상 수수료(0.015% 올림) 계산. */
+const calcDemoFee = (amount: number) => Math.ceil((amount * 1.5) / 10000);
+
+/** 분할 매수 소수점 평균 매입가를 초대형 정수 정밀도 손실 없이 최대 4자리까지 포맷한다. */
+function formatAveragePrice(average: number): string {
+  if (!Number.isFinite(average)) return '평가 불가';
+  if (Number.isInteger(average)) return `${average.toLocaleString('ko-KR')}원`;
+  return `${Number(average.toFixed(4)).toLocaleString('ko-KR', { maximumFractionDigits: 4 })}원`;
+}
+
+/** 종목별 평가수익률을 `-0.00%`·`NaN` 없이 계산해 표시 값과 색상을 반환한다. */
+function returnRate(p: { average: number; qty: number; profit: number | null }): { value: string; raw: number | null; tone?: 'up' | 'down' } {
+  const cost = p.average * p.qty;
+  if (p.profit === null || !Number.isFinite(cost) || cost <= 0) return { value: '평가 불가', raw: null };
+  const roundedProfit = Math.round(p.profit);
+  const rawPct = (p.profit / cost) * 100;
+  if (!Number.isFinite(rawPct)) return { value: '평가 불가', raw: null };
+  const roundedPct = Math.round(rawPct * 100) / 100;
+  if (roundedProfit === 0 || roundedPct === 0) return { value: '0.00%', raw: rawPct };
+  if (roundedPct > 0) return { value: `+${roundedPct.toFixed(2)}%`, raw: rawPct, tone: 'up' };
+  return { value: `${roundedPct.toFixed(2)}%`, raw: rawPct, tone: 'down' };
+}
+
+/** 정렬 시 `null`/평가 불가 항목을 항상 뒤로 배치하는 비교 함수. */
+function compareNullable(a: number | null, b: number | null, dir: 'desc' | 'asc'): number {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return dir === 'desc' ? b - a : a - b;
+}
+
 export function Portfolio() {
-  const { state, status, connection, act, busy, available } = useWorkbench();
+  const { state, status, connection, paperRisk, act, busy, available, serverNow } = useWorkbench();
   const [params, setParams] = useSearchParams();
   const kis = params.get('environment') !== 'demo';
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpPanelId = useId();
+  const helpToggleRef = useRef<HTMLButtonElement>(null);
+  const [query, setQuery] = useState('');
+  const [pnlFilter, setPnlFilter] = useState<PnlFilter>('all');
+  const [sortBy, setSortBy] = useState<PortfolioSort>('default');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  function closeHelp() {
+    setHelpOpen(false);
+    helpToggleRef.current?.focus();
+  }
+
+  function clearFilters() {
+    setQuery('');
+    setPnlFilter('all');
+    setSortBy('default');
+    searchInputRef.current?.focus();
+  }
+
   function selectEnvironment(environment: 'kis-paper' | 'demo') {
     if ((environment === 'kis-paper') === kis) return;
+    setQuery('');
+    setPnlFilter('all');
+    setSortBy('default');
     const next = new URLSearchParams(params);
     next.set('environment', environment);
     setParams(next);
@@ -178,12 +240,130 @@ export function Portfolio() {
   let emptyTitle = kis ? 'KIS 계좌 미확인' : 'DEMO 계좌 미확인';
   if (loading) emptyTitle = '계좌 조회 중';
   else if (kis && available) emptyTitle = incomplete ? 'KIS 잔고 전체 조회 미완료' : 'KIS 잔고를 조회해 주세요';
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const controlsActive = normalizedQuery !== '' || pnlFilter !== 'all' || sortBy !== 'default';
+  const visiblePositions = (() => {
+    if (!portfolio) return [];
+    const filtered = portfolio.positions.filter(p => {
+      if (normalizedQuery && !p.name.toLowerCase().includes(normalizedQuery) && !p.code.toLowerCase().includes(normalizedQuery)) {
+        return false;
+      }
+      if (pnlFilter === 'gain') return p.profit !== null && Math.round(p.profit) > 0;
+      if (pnlFilter === 'loss') return p.profit !== null && Math.round(p.profit) < 0;
+      if (pnlFilter === 'flat') return p.profit === null || Math.round(p.profit) === 0;
+      return true;
+    });
+    if (sortBy === 'default') return filtered;
+    return [...filtered].sort((a, b) => {
+      if (sortBy === 'value-desc') return compareNullable(a.value, b.value, 'desc');
+      if (sortBy === 'weight-desc') return compareNullable(a.weight, b.weight, 'desc');
+      if (sortBy === 'profit-desc') return compareNullable(a.profit, b.profit, 'desc');
+      if (sortBy === 'profit-asc') return compareNullable(a.profit, b.profit, 'asc');
+      return compareNullable(returnRate(a).raw, returnRate(b).raw, 'desc');
+    });
+  })();
+
+  // 포트폴리오 분석 및 위험·배분 진단 허브 집계 (항상 전체 보유종목 기준)
+  const totalCost = portfolio ? portfolio.positions.reduce((sum, p) => sum + p.average * p.qty, 0) : 0;
+  const totalReturnText = (() => {
+    if (!portfolio) return '산출 불가';
+    if (portfolio.positions.length === 0) return '보유종목 없음 (0.00%)';
+    if (portfolio.unpriced > 0 || portfolio.profit === null) return '평가 불가 (현재가 누락)';
+    if (Number.isFinite(totalCost) && totalCost > 0) {
+      const rate = returnRate({ average: totalCost, qty: 1, profit: portfolio.profit });
+      return `${rate.value} (손익 ${profit(portfolio.profit).value})`;
+    }
+    return '산출 불가';
+  })();
+  const gainPositions = portfolio ? portfolio.positions.filter(p => p.profit !== null && Math.round(p.profit) > 0) : [];
+  const lossPositions = portfolio ? portfolio.positions.filter(p => p.profit !== null && Math.round(p.profit) < 0) : [];
+  const gainCount = gainPositions.length;
+  const lossCount = lossPositions.length;
+  const flatCount = portfolio ? portfolio.positions.length - gainCount - lossCount : 0;
+  const bestGain = gainPositions.reduce<(typeof gainPositions)[number] | null>(
+    (best, p) => (!best || p.profit! > best.profit! ? p : best),
+    null,
+  );
+  const worstLoss = lossPositions.reduce<(typeof lossPositions)[number] | null>(
+    (worst, p) => (!worst || p.profit! < worst.profit! ? p : worst),
+    null,
+  );
+  const weightedPositions = portfolio
+    ? [...portfolio.positions].filter(p => p.weight !== null).sort((a, b) => b.weight! - a.weight!)
+    : [];
+  const topWeightPos = weightedPositions[0] ?? null;
+  const top3Weight = weightedPositions.length > 0
+    ? weightedPositions.slice(0, 3).reduce((sum, p) => sum + p.weight!, 0)
+    : null;
+  const valuedPositions = portfolio
+    ? [...portfolio.positions].filter(p => p.value !== null).sort((a, b) => b.value! - a.value!)
+    : [];
+  const maxValuePos = valuedPositions[0] ?? null;
+
+  const ordersAge = paperRisk?.orders ? serverNow - Date.parse(paperRisk.orders.observedAt) : Infinity;
+  const ordersKnown = available && Boolean(paperRisk?.orders) && ordersAge >= 0 && ordersAge < BALANCE_STALE_MS;
+  const kisPendingCount = paperRisk?.orders?.rows.filter(o => !o.cancelled && o.remaining > 0).length ?? 0;
+
+  const demoPendingOrders = state.orders.filter(o => o.status === 'pending');
+  const demoPendingBuyReserved = demoPendingOrders
+    .filter(o => o.side === 'buy')
+    .reduce((sum, o) => sum + o.qty * o.price + calcDemoFee(o.qty * o.price), 0);
+  const demoAvailableCash = portfolio ? Math.max(0, portfolio.cash - demoPendingBuyReserved) : 0;
+  const totalShares = portfolio ? portfolio.positions.reduce((sum, p) => sum + p.qty, 0) : 0;
+  const demoPendingSellShares = demoPendingOrders
+    .filter(o => o.side === 'sell')
+    .reduce((sum, o) => sum + o.qty, 0);
+  const demoSellableShares = portfolio
+    ? portfolio.positions.reduce((sum, p) => {
+      const reserved = demoPendingOrders
+        .filter(o => o.side === 'sell' && o.code === p.code)
+        .reduce((acc, o) => acc + o.qty, 0);
+      return sum + Math.max(0, p.qty - reserved);
+    }, 0)
+    : 0;
+  const kisSellableSummary = (() => {
+    if (!portfolio || portfolio.positions.length === 0) return '주문가능 0주';
+    const known = portfolio.positions.filter(p => p.sellable !== undefined);
+    if (known.length === 0) return '주문가능 미확인';
+    const sellableSum = known.reduce((sum, p) => sum + p.sellable!, 0);
+    const unknownSellableCount = portfolio.positions.length - known.length;
+    if (unknownSellableCount === 0) return `주문가능 ${sellableSum.toLocaleString('ko-KR')}주`;
+    return `주문가능 확인 ${sellableSum.toLocaleString('ko-KR')}주 (${unknownSellableCount}종목 미확인)`;
+  })();
+  const currentDailyLoss = Math.max(0, state.startingEquity - equity(state));
+  const demoLossLimitHit = !kis && currentDailyLoss >= state.risk.dailyLoss;
+
+  const allocSegments = portfolio && portfolio.total !== null && portfolio.total > 0 && portfolio.unpriced === 0
+    ? [
+      { key: 'cash', label: '현금', weight: portfolio.cashWeight ?? 0, color: 'var(--teal)' },
+      ...portfolio.positions.map((p, index) => ({
+        key: p.code,
+        label: p.name,
+        weight: p.weight ?? 0,
+        color: ALLOC_SEGMENT_COLORS[index % ALLOC_SEGMENT_COLORS.length],
+      })),
+    ]
+    : null;
+
   return <div className="portfolio-page">
     <div className="portfolio-toolbar" role="group" aria-label="포트폴리오 환경">
       <button type="button" className={`button ${kis ? 'primary' : 'secondary'}`} aria-pressed={kis} onClick={() => selectEnvironment('kis-paper')}>KIS 모의</button>
       <button type="button" className={`button ${!kis ? 'primary' : 'secondary'}`} aria-pressed={!kis} onClick={() => selectEnvironment('demo')}>로컬 DEMO</button>
       {kis && <button type="button" className="button secondary" disabled={!available || busy || connection.status.phase === 'loading'} onClick={() => void act('kis/check').catch(() => {})}><RefreshCw size={15} aria-hidden="true" />KIS 잔고 새로고침</button>}
+      <button
+        ref={helpToggleRef}
+        type="button"
+        className={`button small-button ${helpOpen ? 'primary' : 'secondary'} portfolio-help-toggle`}
+        aria-expanded={helpOpen}
+        aria-controls={helpOpen ? helpPanelId : undefined}
+        onClick={() => setHelpOpen(open => !open)}
+      >
+        <BookOpen size={14} aria-hidden="true" />
+        사용방법 도움말
+      </button>
     </div>
+    {helpOpen && <PortfolioHelpPanel panelId={helpPanelId} onClose={closeHelp} />}
     {kis && <MorningPortfolio />}
     <div className="portfolio-source" role="group" aria-label="포트폴리오 조회 상태">
       <strong>{kis ? 'KIS 모의 잔고 · REST' : 'DEMO 계좌 · 로컬 합성 데이터'}</strong>
@@ -212,19 +392,217 @@ export function Portfolio() {
         <Stat label="주식·ETF 평가액" value={money(portfolio.invested)} />
       </section>
       <Panel title="보유자산" action={<Badge>{kis ? 'KIS 모의' : 'DEMO'} · {portfolio.positions.length}종목</Badge>}>
-        {portfolio.positions.length ? <div className="table-scroll mobile-records"><table role="table"><thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">종목</th><th role="columnheader" scope="col">보유수량</th><th role="columnheader" scope="col">평균 매입가</th><th role="columnheader" scope="col">현재가</th><th role="columnheader" scope="col">평가액</th><th role="columnheader" scope="col">평가손익</th><th role="columnheader" scope="col">비중</th></tr></thead><tbody role="rowgroup">
-          {portfolio.positions.map(p => {
-            const pnl = profit(p.profit);
-            return <tr role="row" key={p.code}>
-              <td role="cell" data-label="종목"><span className="record-value"><Link className="stock-name" to={`${kis ? '/paper?code=' : '/trade?mode=demo&code='}${encodeURIComponent(p.code)}`}>{p.name}<small>{p.code}</small></Link></span></td>
-              <td role="cell" className="number" data-label="보유수량"><span className="record-value">{p.qty.toLocaleString('ko-KR')}주</span></td><td role="cell" className="number" data-label="평균 매입가"><span className="record-value">{p.average.toLocaleString('ko-KR', { maximumFractionDigits: 20 })}원</span></td>
-              <td role="cell" className="number" data-label="현재가"><span className="record-value">{p.price !== null && p.price > 0 ? money(p.price) : '평가 불가'}</span></td>
-              <td role="cell" className="number" data-label="평가액"><span className="record-value">{money(p.value)}</span></td><td role="cell" className={pnl.tone ? `number ${pnl.tone}` : 'number'} data-label="평가손익"><span className="record-value">{pnl.value}</span></td>
-              <td role="cell" className="number" data-label="비중"><span className="record-value">{weight(p.weight)}</span></td>
-            </tr>;
-          })}
-        </tbody></table></div> : <Empty title="보유종목 없음">보유수량이 0인 종목은 제외합니다.</Empty>}
+        {portfolio.positions.length > 0 && (
+          <div className="portfolio-controls" role="region" aria-label="보유종목 검색 및 정렬 제어">
+            <label className="portfolio-search">
+              <span className="sr-only">보유종목 검색</span>
+              <input
+                ref={searchInputRef}
+                type="search"
+                aria-label="보유종목 검색"
+                placeholder="종목명 또는 코드"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+              />
+            </label>
+            <div className="portfolio-filter-group" role="group" aria-label="손익 상태 필터">
+              {([
+                ['all', '전체'],
+                ['gain', '수익 종목'],
+                ['loss', '손실 종목'],
+                ['flat', '보합·평가불가'],
+              ] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`portfolio-chip${pnlFilter === id ? ' active' : ''}`}
+                  aria-pressed={pnlFilter === id}
+                  onClick={() => setPnlFilter(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <label className="portfolio-sort">
+              <span className="sr-only">보유종목 정렬</span>
+              <select
+                aria-label="보유종목 정렬"
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value as PortfolioSort)}
+              >
+                <option value="default">기본 순서</option>
+                <option value="value-desc">평가액 높은 순</option>
+                <option value="weight-desc">비중 높은 순</option>
+                <option value="profit-desc">평가손익 높은 순</option>
+                <option value="profit-asc">평가손익 낮은 순</option>
+                <option value="return-desc">수익률 높은 순</option>
+              </select>
+            </label>
+            {controlsActive && (
+              <div className="portfolio-controls-summary">
+                <span>표시 {visiblePositions.length}종목 / 전체 {portfolio.positions.length}종목</span>
+                {visiblePositions.length > 0 && (
+                  <button type="button" className="text-link" onClick={clearFilters}>조건 지우기</button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        {portfolio.positions.length ? (
+          visiblePositions.length ? <div className="table-scroll mobile-records"><table role="table"><thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">종목</th><th role="columnheader" scope="col">보유수량</th><th role="columnheader" scope="col">평균 매입가</th><th role="columnheader" scope="col">현재가</th><th role="columnheader" scope="col">평가액</th><th role="columnheader" scope="col">평가손익</th><th role="columnheader" scope="col">수익률</th><th role="columnheader" scope="col">비중</th></tr></thead><tbody role="rowgroup">
+            {visiblePositions.map(p => {
+              const pnl = profit(p.profit);
+              const rate = returnRate(p);
+              return <tr role="row" key={p.code}>
+                <td role="cell" data-label="종목"><span className="record-value"><Link className="stock-name" to={`${kis ? '/paper?code=' : '/trade?mode=demo&code='}${encodeURIComponent(p.code)}`}>{p.name}<small>{p.code}</small></Link></span></td>
+                <td role="cell" className="number" data-label="보유수량"><span className="record-value">{p.qty.toLocaleString('ko-KR')}주</span></td><td role="cell" className="number" data-label="평균 매입가"><span className="record-value">{formatAveragePrice(p.average)}</span></td>
+                <td role="cell" className="number" data-label="현재가"><span className="record-value">{p.price !== null && p.price > 0 ? money(p.price) : '평가 불가'}</span></td>
+                <td role="cell" className="number" data-label="평가액"><span className="record-value">{money(p.value)}</span></td><td role="cell" className={pnl.tone ? `number ${pnl.tone}` : 'number'} data-label="평가손익"><span className="record-value">{pnl.value}</span></td>
+                <td role="cell" className={rate.tone ? `number ${rate.tone}` : 'number'} data-label="수익률"><span className="record-value">{rate.value}</span></td>
+                <td role="cell" className="number" data-label="비중"><span className="record-value">{weight(p.weight)}</span></td>
+              </tr>;
+            })}
+          </tbody></table></div> : <Empty title="조건에 맞는 보유종목이 없습니다"><button type="button" className="text-link" onClick={clearFilters}>조건 지우기</button></Empty>
+        ) : <Empty title="보유종목 없음">보유수량이 0인 종목은 제외합니다.</Empty>}
       </Panel>
+      <section className="portfolio-hub" role="region" aria-label="포트폴리오 분석 및 위험·배분 진단 허브">
+        {allocSegments && (
+          <div className="portfolio-alloc-panel" role="region" aria-label="자산 구성 비율 바">
+            <div className="portfolio-alloc-head">
+              <h3>자산 구성 비율</h3>
+              <span>현금 {weight(portfolio.cashWeight)} · 주식·ETF {weight(portfolio.investedWeight)}</span>
+            </div>
+            <div className="portfolio-alloc-bar">
+              {allocSegments.map(seg => seg.weight > 0 && (
+                <div
+                  key={seg.key}
+                  className="portfolio-alloc-seg"
+                  style={{ width: `${Math.min(100, Math.max(0, seg.weight))}%`, backgroundColor: seg.color }}
+                  title={`${seg.label} ${weight(seg.weight)}`}
+                />
+              ))}
+            </div>
+            <ul className="portfolio-alloc-legend">
+              {allocSegments.map(seg => (
+                <li key={seg.key}>
+                  <span className="portfolio-alloc-dot" style={{ backgroundColor: seg.color }} aria-hidden="true" />
+                  <span>{seg.label} <strong>{weight(seg.weight)}</strong></span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <div className="portfolio-hub-grid">
+          <article className="portfolio-hub-card">
+            <h3>손익 기여도 및 수익률 분석</h3>
+            <dl className="portfolio-hub-list">
+              <div>
+                <dt>매입원금 · 평가액</dt>
+                <dd>총 매입 {won(totalCost)}원 · 현재 평가 {money(portfolio.invested)}</dd>
+              </div>
+              <div>
+                <dt>총 투자 수익률</dt>
+                <dd>{totalReturnText}</dd>
+              </div>
+              <div>
+                <dt>손익 종목 분포</dt>
+                <dd>수익 {gainCount}종목 · 손실 {lossCount}종목 · 보합·미평가 {flatCount}종목</dd>
+              </div>
+              <div>
+                <dt>최고 수익 · 최대 손실 기여</dt>
+                <dd>
+                  {bestGain ? `${bestGain.name} (+${won(Math.round(bestGain.profit!))}원)` : '해당 없음'}
+                  {' · '}
+                  {worstLoss ? `${worstLoss.name} (${won(Math.round(worstLoss.profit!))}원)` : '해당 없음'}
+                </dd>
+              </div>
+            </dl>
+          </article>
+          <article className="portfolio-hub-card">
+            <h3>자산 배분 및 집중도 진단</h3>
+            <dl className="portfolio-hub-list">
+              <div>
+                <dt>현금 대 투자 비중</dt>
+                <dd>현금 {weight(portfolio.cashWeight)} · 주식·ETF {weight(portfolio.investedWeight)}</dd>
+              </div>
+              <div>
+                <dt>최대 비중 · 상위 집중도</dt>
+                <dd>
+                  {portfolio.positions.length === 0
+                    ? '보유종목 없음'
+                    : `최대 ${topWeightPos && topWeightPos.weight !== null ? `${topWeightPos.name} (${weight(topWeightPos.weight)})` : '산출 불가'} · 상위 3종목 합산 ${top3Weight !== null ? weight(top3Weight) : '산출 불가'}`}
+                </dd>
+              </div>
+              <div>
+                <dt>종목별 한도 대비 최대 노출</dt>
+                <dd>
+                  {!available
+                    ? '로컬 상태 미확인'
+                    : portfolio.positions.length === 0
+                      ? `한도 ${won(state.risk.maxPosition)}원 · 보유종목 없음`
+                      : maxValuePos && maxValuePos.value !== null && state.risk.maxPosition > 0
+                        ? `${maxValuePos.name} ${won(maxValuePos.value)}원 / 한도 ${won(state.risk.maxPosition)}원 (${Math.round((maxValuePos.value / state.risk.maxPosition) * 100)}%)`
+                        : `한도 ${won(state.risk.maxPosition)}원 · 노출 산출 불가`}
+                </dd>
+              </div>
+              <div>
+                <dt>계좌 기준 자산 대조</dt>
+                <dd>
+                  {kis
+                    ? `화면 합계 ${money(portfolio.total)} · KIS API 총평가 ${connection.balance ? `${won(connection.balance.totalEquity)}원` : '미확인'}`
+                    : `시작 자산 ${won(state.startingEquity)}원 · 현재 ${money(portfolio.total)}`}
+                </dd>
+              </div>
+            </dl>
+          </article>
+          <article className="portfolio-hub-card">
+            <h3>가용 자금 · 매도 가능량 및 연계 허브</h3>
+            <dl className="portfolio-hub-list">
+              <div>
+                <dt>가용 자금 및 미체결 진단</dt>
+                <dd>
+                  {kis
+                    ? `예수금 ${won(portfolio.cash)}원 · ${ordersKnown ? `미체결 ${kisPendingCount}건` : '미체결 미확인'} · ${available && paperRisk ? `불명·전송 중 ${paperRisk.unresolvedCount}건` : '불명·전송 중 미확인'}`
+                    : `예약 제외 가용 ${won(demoAvailableCash)}원 · 미체결 매수 예약 ${won(demoPendingBuyReserved)}원`}
+                </dd>
+              </div>
+              <div>
+                <dt>보유 및 매도 가능 수량</dt>
+                <dd>
+                  {kis
+                    ? `총 보유 ${totalShares.toLocaleString('ko-KR')}주 · ${kisSellableSummary}`
+                    : `총 보유 ${totalShares.toLocaleString('ko-KR')}주 · 즉시 매도 가능 ${demoSellableShares.toLocaleString('ko-KR')}주 (매도 예약 ${demoPendingSellShares.toLocaleString('ko-KR')}주)`}
+                </dd>
+              </div>
+              <div>
+                <dt>신규 주문 제어 · 위험 한도</dt>
+                <dd>
+                  {!available
+                    ? '로컬 상태 미확인 (차단)'
+                    : state.risk.halted
+                      ? `긴급정지 켜짐 (신규 주문 정지) · 1회 ${won(state.risk.maxOrder)}원 · 일일 손실 ${won(state.risk.dailyLoss)}원`
+                      : demoLossLimitHit
+                        ? `일일 손실 한도 도달 (신규 주문 정지) · 1회 ${won(state.risk.maxOrder)}원 · 일일 손실 ${won(state.risk.dailyLoss)}원`
+                        : `긴급정지 꺼짐 (정상) · 1회 ${won(state.risk.maxOrder)}원 · 일일 손실 ${won(state.risk.dailyLoss)}원`}
+                </dd>
+              </div>
+            </dl>
+            <div className="portfolio-hub-links">
+              {kis ? <>
+                <Link className="text-link" to="/paper">KIS 모의 매매·대조</Link>
+                <Link className="text-link" to="/orders?view=kis">KIS 모의 원장</Link>
+                <Link className="text-link" to="/strategies?environment=kis-paper">KIS 전략 스튜디오</Link>
+                <Link className="text-link" to="/risk?env=kis">KIS 위험관리</Link>
+              </> : <>
+                <Link className="text-link" to="/trade?mode=demo">DEMO 연습 주문</Link>
+                <Link className="text-link" to="/orders?view=demo">DEMO 주문 원장</Link>
+                <Link className="text-link" to="/strategies?environment=demo">DEMO 전략 스튜디오</Link>
+                <Link className="text-link" to="/risk">DEMO 위험관리</Link>
+              </>}
+            </div>
+          </article>
+        </div>
+      </section>
       <details className="portfolio-details" key={kis ? 'kis' : 'demo'}>
         <summary>평가 기준과 자산 배분</summary>
         <p>{kis ? 'KIS 잔고의 예수금과 보유종목 현재가' : '로컬 DEMO 보유 현금과 합성 현재가'}로 총 평가자산을 계산합니다. 손익은 원본 평균 매입가 기준이며 원 단위로 반올림합니다.</p>
