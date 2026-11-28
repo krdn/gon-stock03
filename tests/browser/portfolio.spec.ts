@@ -321,6 +321,7 @@ test('portfolio formats return rates and up-to-4-decimal average prices without 
     { code: '000660', name: 'SK하이닉스', qty: 4, average: 200, price: 175 },
     { code: '035420', name: 'NAVER', qty: 3, average: 34694.813913751714, price: 35000 },
     { code: '005380', name: '현대차', qty: 1200, average: 100.0001, price: 100 },
+    { code: '207940', name: '삼성바이오로직스', qty: 1, average: 100.4, price: 100 },
     { code: '051910', name: 'LG화학', qty: 1, average: 123456789012345, price: 123456789012345 },
     { code: '035720', name: '카카오', qty: 2, average: 50000, price: null },
   ];
@@ -347,6 +348,16 @@ test('portfolio formats return rates and up-to-4-decimal average prices without 
   const hyundaiRate = hyundai.getByRole('cell', { name: '0.00%', exact: true });
   await expect(hyundaiRate).toBeVisible();
   await expect(hyundaiRate).not.toHaveClass(/up|down/);
+
+  // 원 단위 반올림 손익은 0원이지만 백분율 수익률은 -0.40%(down)로 정확히 표시
+  const biolo = page.getByRole('row').filter({ hasText: '삼성바이오로직스' });
+  await expect(biolo.getByRole('cell', { name: '100.4원', exact: true })).toBeVisible();
+  const bioloPnl = biolo.getByRole('cell', { name: '0원', exact: true });
+  await expect(bioloPnl).toBeVisible();
+  await expect(bioloPnl).not.toHaveClass(/up|down/);
+  const bioloRate = biolo.getByRole('cell', { name: '-0.40%', exact: true });
+  await expect(bioloRate).toBeVisible();
+  await expect(bioloRate).toHaveClass(/down/);
 
   const lgchem = page.getByRole('row').filter({ hasText: 'LG화학' });
   await expect(lgchem.getByRole('cell', { name: '123,456,789,012,345원', exact: true }).first()).toBeVisible();
@@ -401,14 +412,28 @@ test('portfolio supports holdings search, PnL filters, multi-criteria sort with 
   await controls.getByRole('button', { name: '전체', exact: true }).click();
   await expect(tbodyRows).toHaveCount(4);
 
-  // 정렬: 평가액 높은 순 (NAVER 1000 -> SK하이닉스 700 -> 삼성전자 300 -> 카카오 null 맨 뒤)
+  // 정렬 1: 평가액 높은 순 (NAVER 1000 -> SK하이닉스 700 -> 삼성전자 300 -> 카카오 null 맨 뒤)
   await sort.selectOption('value-desc');
   await expect(tbodyRows.nth(0)).toContainText('NAVER');
   await expect(tbodyRows.nth(1)).toContainText('SK하이닉스');
   await expect(tbodyRows.nth(2)).toContainText('삼성전자');
   await expect(tbodyRows.nth(3)).toContainText('카카오');
 
-  // 정렬: 수익률 높은 순 (삼성전자 +50% -> NAVER 0% -> SK하이닉스 -12.5% -> 카카오 null 맨 뒤)
+  // 정렬 2: 평가손익 높은 순 (삼성전자 +100 -> NAVER 0 -> SK하이닉스 -100 -> 카카오 null 맨 뒤)
+  await sort.selectOption('profit-desc');
+  await expect(tbodyRows.nth(0)).toContainText('삼성전자');
+  await expect(tbodyRows.nth(1)).toContainText('NAVER');
+  await expect(tbodyRows.nth(2)).toContainText('SK하이닉스');
+  await expect(tbodyRows.nth(3)).toContainText('카카오');
+
+  // 정렬 3: 평가손익 낮은 순 (SK하이닉스 -100 -> NAVER 0 -> 삼성전자 +100 -> 카카오 null 맨 뒤)
+  await sort.selectOption('profit-asc');
+  await expect(tbodyRows.nth(0)).toContainText('SK하이닉스');
+  await expect(tbodyRows.nth(1)).toContainText('NAVER');
+  await expect(tbodyRows.nth(2)).toContainText('삼성전자');
+  await expect(tbodyRows.nth(3)).toContainText('카카오');
+
+  // 정렬 4: 수익률 높은 순 (삼성전자 +50% -> NAVER 0% -> SK하이닉스 -12.5% -> 카카오 null 맨 뒤)
   await sort.selectOption('return-desc');
   await expect(tbodyRows.nth(0)).toContainText('삼성전자');
   await expect(tbodyRows.nth(1)).toContainText('NAVER');
@@ -424,6 +449,15 @@ test('portfolio supports holdings search, PnL filters, multi-criteria sort with 
   await expect(sort).toHaveValue('default');
   await expect(tbodyRows).toHaveCount(4);
   await expect(tbodyRows.nth(0)).toContainText('삼성전자');
+
+  // 정렬 5: 비중 높은 순 (전체 현재가 유효 시 카카오 1200 -> NAVER 1000 -> SK하이닉스 700 -> 삼성전자 300)
+  state.connection.balance!.positions[3].price = 600;
+  await page.reload();
+  await sort.selectOption('weight-desc');
+  await expect(tbodyRows.nth(0)).toContainText('카카오');
+  await expect(tbodyRows.nth(1)).toContainText('NAVER');
+  await expect(tbodyRows.nth(2)).toContainText('SK하이닉스');
+  await expect(tbodyRows.nth(3)).toContainText('삼성전자');
   expect(mutations).toBe(0);
 });
 
@@ -462,20 +496,58 @@ test('portfolio renders allocation bar, 3-card diagnostic hub for KIS and DEMO, 
   await expect(allocBar).toContainText('삼성전자 15.0%');
   await expect(allocBar).toContainText('SK하이닉스 35.0%');
 
-  // KIS 모의 3카드 진단 허브: paperRisk 미제공 시 허위 0건 금지 + 일부 sellable 정직 표기
+  // KIS 모의 3카드 진단 허브: paperRisk 미제공 시 허위 0건·정상·노출 오표시 금지 + 일부 sellable 정직 표기
   await expect(hub).toContainText('수익 1종목 · 손실 1종목 · 보합·미평가 0종목');
   await expect(hub).toContainText('삼성전자 (+100원) · SK하이닉스 (-100원)');
   await expect(hub).toContainText('최대 SK하이닉스 (35.0%) · 상위 3종목 합산 50.0%');
+  await expect(hub).toContainText('한도 4,000,000원 · 노출 미확인 (잔고·주문 대조 필요)');
   await expect(hub).toContainText('미체결 미확인');
   await expect(hub).toContainText('불명·전송 중 미확인');
+  await expect(hub).toContainText('긴급정지 꺼짐 (KIS 손실·대조 미확인)');
   await expect(hub).toContainText('총 보유 6주 · 주문가능 확인 1주 (1종목 미확인)');
   await expect(hub.getByRole('link', { name: 'KIS 모의 매매·대조', exact: true })).toHaveAttribute('href', '/paper');
   await expect(hub.getByRole('link', { name: 'KIS 모의 원장', exact: true })).toHaveAttribute('href', '/orders?view=kis');
   await expect(hub.getByRole('link', { name: 'KIS 전략 스튜디오', exact: true })).toHaveAttribute('href', '/strategies?environment=kis-paper');
   await expect(hub.getByRole('link', { name: 'KIS 위험관리', exact: true })).toHaveAttribute('href', '/risk?env=kis');
 
-  // 로컬 DEMO 전환: 예약 제외 가용, 매도 예약 수량, 일일 손실 한도 도달(정상 오표시 금지)
+  // KIS 모의 정상 대조 시: 미체결 매수 예약 합산 최대 노출 및 일일 손실 한도 도달 차단 표시
+  state.risk.maxPosition = 10_000;
+  state.connection.balance!.totalEquity = 100_000;
+  state.paperRisk = {
+    day: '20261120',
+    baselineEquity: 500_000,
+    unresolvedCount: 0,
+    orders: {
+      observedAt: now,
+      rows: [{ code: '005930', side: 'buy', price: 1000, remaining: 5, cancelled: false }],
+    },
+  };
+  await page.reload();
+  await expect(hub).toContainText('삼성전자 5,300원 / 한도 10,000원 (53%)');
+  await expect(hub).toContainText('일일 손실 한도 도달 (신규 주문 정지)');
+  await expect(hub).toContainText('미체결 1건 · 불명·전송 중 0건');
+
+  // KIS 모의 손실 기준 미설정 및 시장가(price: 0) 미체결 매수 예약 시 노출 산출 불가 처리
+  state.paperRisk = {
+    day: '20261120',
+    baselineEquity: null,
+    unresolvedCount: 0,
+    orders: {
+      observedAt: now,
+      rows: [{ code: '035420', side: 'buy', price: 0, remaining: 2, cancelled: false }],
+    },
+  };
+  await page.reload();
+  await expect(hub).toContainText('한도 10,000원 · 노출 산출 불가');
+  await expect(hub).toContainText('긴급정지 꺼짐 (손실 기준 미설정)');
+
+  // 로컬 DEMO 전환: 미체결 매수 예약 합산 최대 노출, 예약 제외 가용, 매도 예약 수량, 일일 손실 한도 도달
+  state.risk.maxPosition = 4_000_000;
+  await page.reload();
   await page.getByRole('button', { name: '로컬 DEMO', exact: true }).click();
+  const demoSamsungHeld = state.positions.find(p => p.code === '005930')!.qty * state.instruments.find(i => i.code === '005930')!.price;
+  const demoSamsungExposure = demoSamsungHeld + 100_000;
+  await expect(hub).toContainText(`삼성전자 ${demoSamsungExposure.toLocaleString('ko-KR')}원 / 한도 4,000,000원 (${Math.round((demoSamsungExposure / 4_000_000) * 100)}%)`);
   await expect(hub).toContainText('미체결 매수 예약 100,015원');
   await expect(hub).toContainText('예약 제외 가용');
   await expect(hub).toContainText('매도 예약 5주');
@@ -493,11 +565,18 @@ test('portfolio renders allocation bar, 3-card diagnostic hub for KIS and DEMO, 
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   }
 
-  // 현재가 누락 시 자산 구성 비율 바 미표시 및 평가 불가 표기
+  // 현재가 누락 시 자산 구성 비율 바 미표시 및 평가 불가·노출 산출 불가 표기
   state.connection.balance!.positions[0].price = null;
+  state.paperRisk = {
+    day: '20261120',
+    baselineEquity: 500_000,
+    unresolvedCount: 0,
+    orders: { observedAt: now, rows: [] },
+  };
   await page.goto('/portfolio');
   await expect(hub.getByRole('region', { name: '자산 구성 비율 바' })).toHaveCount(0);
   await expect(hub).toContainText('평가 불가 (현재가 누락)');
+  await expect(hub).toContainText('한도 4,000,000원 · 노출 산출 불가');
 
   expect(mutations).toBe(0);
   expect(errors).toEqual([]);

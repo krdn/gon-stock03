@@ -166,11 +166,10 @@ function formatAveragePrice(average: number): string {
 function returnRate(p: { average: number; qty: number; profit: number | null }): { value: string; raw: number | null; tone?: 'up' | 'down' } {
   const cost = p.average * p.qty;
   if (p.profit === null || !Number.isFinite(cost) || cost <= 0) return { value: '평가 불가', raw: null };
-  const roundedProfit = Math.round(p.profit);
   const rawPct = (p.profit / cost) * 100;
   if (!Number.isFinite(rawPct)) return { value: '평가 불가', raw: null };
   const roundedPct = Math.round(rawPct * 100) / 100;
-  if (roundedProfit === 0 || roundedPct === 0) return { value: '0.00%', raw: rawPct };
+  if (roundedPct === 0) return { value: '0.00%', raw: rawPct };
   if (roundedPct > 0) return { value: `+${roundedPct.toFixed(2)}%`, raw: rawPct, tone: 'up' };
   return { value: `${roundedPct.toFixed(2)}%`, raw: rawPct, tone: 'down' };
 }
@@ -296,14 +295,14 @@ export function Portfolio() {
   const top3Weight = weightedPositions.length > 0
     ? weightedPositions.slice(0, 3).reduce((sum, p) => sum + p.weight!, 0)
     : null;
-  const valuedPositions = portfolio
-    ? [...portfolio.positions].filter(p => p.value !== null).sort((a, b) => b.value! - a.value!)
-    : [];
-  const maxValuePos = valuedPositions[0] ?? null;
-
   const ordersAge = paperRisk?.orders ? serverNow - Date.parse(paperRisk.orders.observedAt) : Infinity;
   const ordersKnown = available && Boolean(paperRisk?.orders) && ordersAge >= 0 && ordersAge < BALANCE_STALE_MS;
   const kisPendingCount = paperRisk?.orders?.rows.filter(o => !o.cancelled && o.remaining > 0).length ?? 0;
+  const currentBalance = connection.connected && connection.status.complete && Boolean(connection.balance);
+  const kisRiskKnown = available && currentBalance && ordersKnown && paperRisk?.unresolvedCount === 0;
+  const kisLoss = paperRisk?.baselineEquity != null && connection.balance?.totalEquity != null
+    ? Math.max(0, paperRisk.baselineEquity - connection.balance.totalEquity)
+    : null;
 
   const demoPendingOrders = state.orders.filter(o => o.status === 'pending');
   const demoPendingBuyReserved = demoPendingOrders
@@ -333,6 +332,60 @@ export function Portfolio() {
   })();
   const currentDailyLoss = Math.max(0, state.startingEquity - equity(state));
   const demoLossLimitHit = !kis && currentDailyLoss >= state.risk.dailyLoss;
+
+  // 종목별 한도 대비 최대 노출: 보유 평가액 + 미체결 매수 예약액 합산 (Risk·서버 계약 동일)
+  const maxExposureText = (() => {
+    if (!available) return '로컬 상태 미확인';
+    if (!portfolio) return `한도 ${won(state.risk.maxPosition)}원 · 노출 산출 불가`;
+    if (kis && (!currentBalance || !ordersKnown)) {
+      return `한도 ${won(state.risk.maxPosition)}원 · 노출 미확인 (잔고·주문 대조 필요)`;
+    }
+    const activeBuyOrders: { code: string; price: number; remaining: number; name?: string }[] = kis
+      ? (paperRisk?.orders?.rows ?? []).filter(o => !o.cancelled && o.remaining > 0 && o.side === 'buy')
+      : demoPendingOrders.filter(o => o.side === 'buy').map(o => ({ code: o.code, price: o.price, remaining: o.qty }));
+    const exposureCodes = [...new Set([
+      ...portfolio.positions.map(p => p.code),
+      ...activeBuyOrders.map(o => o.code),
+    ])];
+    if (exposureCodes.length === 0) return `한도 ${won(state.risk.maxPosition)}원 · 보유·예약 없음`;
+    if (state.risk.maxPosition <= 0) return `한도 ${won(state.risk.maxPosition)}원 · 노출 산출 불가`;
+    const entries = exposureCodes.map(code => {
+      const p = portfolio.positions.find(pos => pos.code === code);
+      const held = p ? (p.qty === 0 ? 0 : p.value) : 0;
+      const buys = activeBuyOrders.filter(o => o.code === code);
+      const pendingBuy = buys.some(o => o.price <= 0)
+        ? null
+        : buys.reduce((sum, o) => sum + o.remaining * o.price, 0);
+      const used = held === null || pendingBuy === null ? null : held + pendingBuy;
+      const orderName = buys.find(o => o.name)?.name;
+      const name = p?.name
+        ?? orderName
+        ?? (kis ? connection.balance?.positions.find(pos => pos.code === code)?.name : undefined)
+        ?? state.instruments.find(inst => inst.code === code)?.name
+        ?? code;
+      return { code, name, used };
+    });
+    if (entries.some(e => e.used === null)) {
+      return `한도 ${won(state.risk.maxPosition)}원 · 노출 산출 불가`;
+    }
+    const maxExposureEntry = entries.reduce((best, entry) => (entry.used! > best.used! ? entry : best));
+    return `${maxExposureEntry.name} ${won(maxExposureEntry.used!)}원 / 한도 ${won(state.risk.maxPosition)}원 (${Math.round((maxExposureEntry.used! / state.risk.maxPosition) * 100)}%)`;
+  })();
+
+  // 신규 주문 제어 · 위험 한도 상태 문구 (DEMO·KIS 일일 손실 한도 및 대조 상태 반영)
+  const orderControlText = !available
+    ? '로컬 상태 미확인 (차단)'
+    : state.risk.halted
+      ? `긴급정지 켜짐 (신규 주문 정지) · 1회 ${won(state.risk.maxOrder)}원 · 일일 손실 ${won(state.risk.dailyLoss)}원`
+      : !kis && demoLossLimitHit
+        ? `일일 손실 한도 도달 (신규 주문 정지) · 1회 ${won(state.risk.maxOrder)}원 · 일일 손실 ${won(state.risk.dailyLoss)}원`
+        : kis && !kisRiskKnown
+          ? `긴급정지 꺼짐 (KIS 손실·대조 미확인) · 1회 ${won(state.risk.maxOrder)}원 · 일일 손실 ${won(state.risk.dailyLoss)}원`
+          : kis && kisLoss !== null && kisLoss >= state.risk.dailyLoss
+            ? `일일 손실 한도 도달 (신규 주문 정지) · 1회 ${won(state.risk.maxOrder)}원 · 일일 손실 ${won(state.risk.dailyLoss)}원`
+            : kis && kisLoss === null
+              ? `긴급정지 꺼짐 (손실 기준 미설정) · 1회 ${won(state.risk.maxOrder)}원 · 일일 손실 ${won(state.risk.dailyLoss)}원`
+              : `긴급정지 꺼짐 (정상) · 1회 ${won(state.risk.maxOrder)}원 · 일일 손실 ${won(state.risk.dailyLoss)}원`;
 
   const allocSegments = portfolio && portfolio.total !== null && portfolio.total > 0 && portfolio.unpriced === 0
     ? [
@@ -535,15 +588,7 @@ export function Portfolio() {
               </div>
               <div>
                 <dt>종목별 한도 대비 최대 노출</dt>
-                <dd>
-                  {!available
-                    ? '로컬 상태 미확인'
-                    : portfolio.positions.length === 0
-                      ? `한도 ${won(state.risk.maxPosition)}원 · 보유종목 없음`
-                      : maxValuePos && maxValuePos.value !== null && state.risk.maxPosition > 0
-                        ? `${maxValuePos.name} ${won(maxValuePos.value)}원 / 한도 ${won(state.risk.maxPosition)}원 (${Math.round((maxValuePos.value / state.risk.maxPosition) * 100)}%)`
-                        : `한도 ${won(state.risk.maxPosition)}원 · 노출 산출 불가`}
-                </dd>
+                <dd>{maxExposureText}</dd>
               </div>
               <div>
                 <dt>계좌 기준 자산 대조</dt>
@@ -576,15 +621,7 @@ export function Portfolio() {
               </div>
               <div>
                 <dt>신규 주문 제어 · 위험 한도</dt>
-                <dd>
-                  {!available
-                    ? '로컬 상태 미확인 (차단)'
-                    : state.risk.halted
-                      ? `긴급정지 켜짐 (신규 주문 정지) · 1회 ${won(state.risk.maxOrder)}원 · 일일 손실 ${won(state.risk.dailyLoss)}원`
-                      : demoLossLimitHit
-                        ? `일일 손실 한도 도달 (신규 주문 정지) · 1회 ${won(state.risk.maxOrder)}원 · 일일 손실 ${won(state.risk.dailyLoss)}원`
-                        : `긴급정지 꺼짐 (정상) · 1회 ${won(state.risk.maxOrder)}원 · 일일 손실 ${won(state.risk.dailyLoss)}원`}
-                </dd>
+                <dd>{orderControlText}</dd>
               </div>
             </dl>
             <div className="portfolio-hub-links">
