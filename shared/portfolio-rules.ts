@@ -1,3 +1,4 @@
+import { atr, sma } from './indicators.ts';
 import { z } from 'zod';
 import { masterCodeSchema } from './market-data.ts';
 
@@ -9,13 +10,18 @@ const common = {
 export const portfolioRuleSchema = z.discriminatedUnion('kind', [
   z.strictObject({kind:z.literal('dual_momentum'), ...common, lookbackDays:z.int().min(20).max(252)}),
   z.strictObject({kind:z.literal('faber_gtaa'), ...common, smaPeriod:z.int().min(20).max(250)}),
+  z.strictObject({kind:z.literal('krx_sector_rs'), ...common,
+    rsLookbackDays:z.int().min(10).max(120), topK:z.int().min(1).max(5), maxWeightPct:z.int().min(20).max(100)}),
+  z.strictObject({kind:z.literal('clenow_momentum'), ...common,
+    regressionDays:z.int().min(20).max(252), atrPeriod:z.int().min(10).max(60), regimeSmaPeriod:z.int().min(20).max(250),
+    topK:z.int().min(1).max(5), riskPerAssetBps:z.int().min(5).max(100)}),
 ]).refine(rule => new Set(portfolioCodes(rule)).size === portfolioCodes(rule).length, '바스켓 종목이 중복됩니다.');
 export type PortfolioRule = z.infer<typeof portfolioRuleSchema>;
 export function portfolioCodes(rule: {assets:string[], safeAsset:string|null}) {
   return rule.safeAsset ? [...rule.assets, rule.safeAsset] : [...rule.assets];
 }
 export function isPortfolioRule(rule: {kind:string} | undefined): rule is PortfolioRule {
-  return rule?.kind === 'dual_momentum' || rule?.kind === 'faber_gtaa';
+  return !!rule && Object.hasOwn(PORTFOLIO_CATALOG,rule.kind);
 }
 export const portfolioOnly = '다종목 자산배분 전략은 저장 일봉 다종목 백테스트 전용입니다.';
 const environments = { daily:true, demo:false, kisPaper:false } as const;
@@ -26,12 +32,99 @@ export const PORTFOLIO_CATALOG = {
   faber_gtaa: {title:'파버 GTAA', environments, presets:{
     conservative:{smaPeriod:200,rebalanceDays:20}, basic:{smaPeriod:120,rebalanceDays:20}, aggressive:{smaPeriod:60,rebalanceDays:10},
   }},
+  krx_sector_rs: {title:'KRX 섹터 상대강도', environments, presets:{
+    conservative:{rsLookbackDays:60,topK:2,maxWeightPct:40,rebalanceDays:20},
+    basic:{rsLookbackDays:20,topK:2,maxWeightPct:50,rebalanceDays:20},
+    aggressive:{rsLookbackDays:10,topK:3,maxWeightPct:60,rebalanceDays:10},
+  }},
+  clenow_momentum: {title:'클레노우 회귀 모멘텀', environments, presets:{
+    conservative:{regressionDays:120,atrPeriod:20,regimeSmaPeriod:200,topK:2,riskPerAssetBps:10,rebalanceDays:20},
+    basic:{regressionDays:90,atrPeriod:20,regimeSmaPeriod:100,topK:2,riskPerAssetBps:20,rebalanceDays:20},
+    aggressive:{regressionDays:60,atrPeriod:14,regimeSmaPeriod:60,topK:3,riskPerAssetBps:35,rebalanceDays:10},
+  }},
 };
 export function portfolioWarmup(rule:PortfolioRule) {
+  if (rule.kind === 'krx_sector_rs') return rule.rsLookbackDays+1;
+  if (rule.kind === 'clenow_momentum') return Math.max(rule.regressionDays,rule.regimeSmaPeriod,rule.atrPeriod+1);
   return rule.kind === 'dual_momentum' ? rule.lookbackDays + 1 : rule.smaPeriod;
 }
-export function targetWeights(legs: readonly {code:string, bars:readonly {close:number}[]}[], t:number, rule:PortfolioRule) {
+type PriceBar = {high:number; low:number; close:number};
+type Leg = {code:string; bars:readonly PriceBar[]};
+type RotationRule = Extract<PortfolioRule,{kind:'krx_sector_rs'|'clenow_momentum'}>;
+
+function validBar({low,close,high}:PriceBar) {
+  return Number.isFinite(high) && low > 0 && low <= close && close <= high;
+}
+
+function regressionScore(closes:number[]) {
+  const logs = closes.map(Math.log);
+  const mean = sma(logs,logs.length);
+  const mid = (logs.length-1)/2;
+  let sxx = 0, syy = 0, sxy = 0;
+  for (const [i,y] of logs.entries()) {
+    sxx += (i-mid)**2;
+    syy += (y-mean)**2;
+    sxy += (i-mid)*(y-mean);
+  }
+  if (sxx <= 0 || syy <= 0 || ![sxx,syy,sxy].every(Number.isFinite)) return 0;
+  const beta = sxy/sxx;
+  const r2 = sxy*sxy/(sxx*syy);
+  return beta > 0 && Number.isFinite(r2) ? 252*beta*Math.min(1,Math.max(0,r2)) : 0;
+}
+
+function rotationCandidate(bars:readonly PriceBar[], t:number, rule:RotationRule) {
+  if (t < portfolioWarmup(rule)-1 || !bars[t]) return;
+  const close = bars[t].close;
+  if (rule.kind === 'krx_sector_rs') {
+    const window = bars.slice(t-rule.rsLookbackDays,t+1);
+    if (!window.every(validBar)) return;
+    const ret = close/window[0].close-1;
+    const keep = close/Math.max(...window.slice(1).map(b=>b.high));
+    if (ret > 0 && Number.isFinite(ret) && keep >= 0.9) return {score:ret*keep,atrPct:0};
+  } else {
+    const prefix = bars.slice(0,t+1);
+    if (!prefix.every(validBar)) return;
+    const closes = prefix.map(b=>b.close);
+    if (close <= sma(closes,rule.regimeSmaPeriod)) return;
+    const score = regressionScore(closes.slice(-rule.regressionDays));
+    if (score > 0) return {score,atrPct:atr(prefix,rule.atrPeriod)/close};
+  }
+}
+
+function rotationWeights(legs:readonly Leg[], t:number, rule:RotationRule, weights:Record<string,number>) {
+  const winners = rule.assets.flatMap(code => {
+    const candidate = rotationCandidate(legs.find(leg=>leg.code===code)?.bars ?? [],t,rule);
+    return candidate ? [{code,...candidate}] : [];
+  }).sort((a,b)=>b.score-a.score).slice(0,rule.topK);
+  const sector = rule.kind === 'krx_sector_rs';
+  if (!winners.length) {
+    if (rule.safeAsset) weights[rule.safeAsset] = 1;
+    return {weights,reason:sector ? '양의 상대강도·고점 유지 자산 없음' : '추세·양의 회귀 모멘텀 자산 없음'};
+  }
+  const equal = 1/winners.length;
+  const raw = winners.map(({atrPct}) => {
+    if (sector) return Math.min(equal,rule.maxWeightPct/100);
+    const u = (rule.riskPerAssetBps/10000)/atrPct;
+    return Number.isFinite(u) && u > 0 ? u : equal;
+  });
+  const total = raw.reduce((sum,w)=>sum+w,0);
+  for (const [i,{code}] of winners.entries()) weights[code] = raw[i]/Math.max(1,total);
+  if (rule.safeAsset) weights[rule.safeAsset] = Math.max(0,1-total);
+  // Integer-like codes can enumerate differently from the order in the result targets.
+  for (const order of [portfolioCodes(rule), Object.keys(weights)]) {
+    let allocated = 0;
+    for (const code of order) {
+      weights[code] = Math.min(weights[code],1-allocated);
+      allocated += weights[code];
+    }
+  }
+  const codes = winners.map(w=>w.code).join(',');
+  return {weights,reason:sector ? '상대강도 상위 '+codes+' (한도 '+rule.maxWeightPct+'%)' : '회귀 모멘텀 상위 '+codes+' (ATR 역가중)'};
+}
+
+export function targetWeights(legs:readonly Leg[], t:number, rule:PortfolioRule) {
   const weights: Record<string,number> = Object.fromEntries(portfolioCodes(rule).map(code => [code,0]));
+  if (rule.kind === 'krx_sector_rs' || rule.kind === 'clenow_momentum') return rotationWeights(legs,t,rule,weights);
   let winner = rule.safeAsset, best = 0, selected = 0;
   for (const code of rule.assets) {
     const bars = legs.find(leg => leg.code === code)!.bars;

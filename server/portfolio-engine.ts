@@ -25,6 +25,14 @@ export function backtestPortfolio(legs:Pick<PortfolioSnapshot['legs'][number],'c
   const holdings = portfolioCodes(rule).map(code => ({
     code, bars:legs.find(leg => leg.code === code)!.bars, qty:0, benchmarkQty:0,
   }));
+  for (const asset of holdings) {
+    for (const {date,open,high,low,close} of asset.bars) {
+      if (![open,high,low,close].every(v=>Number.isFinite(v) && v>0) ||
+          low > Math.min(open,close) || high < Math.max(open,close)) {
+        throw new Error(`잘못된 OHLC 가격입니다 (${asset.code} · ${date}).`);
+      }
+    }
+  }
   let cash = capital, benchmarkCash = capital, fees = 0, slippageCost = 0;
   for (const asset of holdings) {
     if (asset.code === rule.safeAsset) continue;
