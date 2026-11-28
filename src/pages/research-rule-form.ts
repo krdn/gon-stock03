@@ -230,7 +230,7 @@ export const RULE_GROUPS: { label: string; kinds: readonly RuleKind[] }[] = [
 
 /** 다종목 자산배분 2종 규칙의 3줄 요약 가이드 (매수·매도·주의). */
 export const PORTFOLIO_RULE_GUIDE: Record<
-  PortfolioRule['kind'],
+  Extract<RuleKind,PortfolioRule['kind']>,
   { buyWhen: string; sellWhen: string; cautionRegime: string }
 > = {
   dual_momentum: {
@@ -245,8 +245,12 @@ export const PORTFOLIO_RULE_GUIDE: Record<
   },
 };
 
+function isEditableKind(kind: AnyStrategyRule['kind']): kind is RuleKind {
+  return RULE_KINDS.some(supported => supported === kind);
+}
+
 /** 규칙 키가 다종목 자산배분 전략인지 판정한다. */
-export function isPortfolioKind(kind: RuleKind): kind is PortfolioRule['kind'] {
+export function isPortfolioKind(kind: RuleKind): kind is Extract<RuleKind,PortfolioRule['kind']> {
   return kind === 'dual_momentum' || kind === 'faber_gtaa';
 }
 
@@ -415,6 +419,7 @@ export function formFromRule(rule?: AnyStrategyRule, overlay?: ExitOverlay): Rul
     }
   }
   if (!rule) return base;
+  if (!isEditableKind(rule.kind)) throw new Error('현재 편집기에서 지원하지 않는 다종목 규칙입니다.');
   base.kind = rule.kind;
   switch (rule.kind) {
     case 'ma_crossover':
@@ -1391,7 +1396,7 @@ export function environmentAvailabilityText(value: boolean | string): string {
 /** 라우터 state에서 유효한 전략/백테스트 초안을 안전하게 파싱한다. */
 export function parseTransferDraft(raw: unknown): StrategyTransferDraft | null {
   const parsed = strategyTransferSchema.safeParse(raw);
-  return parsed.success ? parsed.data : null;
+  return parsed.success && isEditableKind(parsed.data.rule.kind) ? parsed.data : null;
 }
 
 /** 전략 에디터 기본 초안 상태를 생성한다. */
@@ -1410,11 +1415,12 @@ export function defaultEditorDraft(): StrategyEditorDraft {
 
 /** 백테스트 전달 초안으로부터 전략 에디터 초안 상태를 생성한다. */
 export function editorDraftFromTransfer(draft: StrategyTransferDraft): StrategyEditorDraft {
+  const ruleForm = formFromRule(draft.rule, isPortfolioRule(draft.rule) ? undefined : draft.overlay);
   const code = isPortfolioRule(draft.rule) ? draft.rule.assets[0] : draft.code;
   return {
-    name: `${ruleTitle(draft.rule.kind)} 전략`,
+    name: `${ruleTitle(ruleForm.kind)} 전략`,
     code,
-    ruleForm: formFromRule(draft.rule, isPortfolioRule(draft.rule) ? undefined : draft.overlay),
+    ruleForm,
     evidence: draft.evidence,
     qty: '1',
     attempted: false,
