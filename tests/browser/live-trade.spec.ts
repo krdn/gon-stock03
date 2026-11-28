@@ -211,3 +211,155 @@ test('partial local state retains labeled previous quote and blocks retry', asyn
   await expect(page.locator('.quote').getByText('이전 수신값')).toBeVisible();
   await expect(page.getByRole('button', { name: '시세 다시 조회' })).toBeDisabled();
 });
+
+test('trade help panel toggles 4 WAI-ARIA tabs with keyboard and restores focus on close', async ({ page }) => {
+  await local(page);
+  await page.route('**/api/kis/market', route => route.fulfill({ json: market() }));
+  await page.goto('/trade');
+  const toggle = page.getByRole('button', { name: '사용방법 도움말', exact: true });
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  const region = page.getByRole('region', { name: '트레이딩 사용방법 도움말' });
+  await expect(region).toBeVisible();
+  const tablist = region.getByRole('tablist', { name: '트레이딩 도움말 분류' });
+  const tabs = ['처음부터 따라하기', '시세·호가·차트 사전', '주문·한도·체결 사전', '환경별 차이·FAQ'];
+  const firstTab = tablist.getByRole('tab', { name: tabs[0] });
+  await expect(firstTab).toHaveAttribute('aria-selected', 'true');
+  await firstTab.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(tablist.getByRole('tab', { name: tabs[1] })).toBeFocused();
+  await expect(tablist.getByRole('tab', { name: tabs[1] })).toHaveAttribute('aria-selected', 'true');
+  await expect(region.getByRole('tabpanel')).toContainText('가격제한폭 위치');
+  await page.keyboard.press('ArrowRight');
+  await expect(tablist.getByRole('tab', { name: tabs[2] })).toHaveAttribute('aria-selected', 'true');
+  await expect(region.getByRole('tabpanel')).toContainText('공통 4대 위험 한도');
+  await page.keyboard.press('End');
+  await expect(tablist.getByRole('tab', { name: tabs[3] })).toBeFocused();
+  await expect(tablist.getByRole('tab', { name: tabs[3] })).toHaveAttribute('aria-selected', 'true');
+  await expect(region.getByRole('tabpanel')).toContainText('Zero-Synthetic-Fallback');
+  await page.keyboard.press('Home');
+  await expect(firstTab).toBeFocused();
+  await expect(firstTab).toHaveAttribute('aria-selected', 'true');
+  await region.getByRole('button', { name: '닫기', exact: true }).click();
+  await expect(region).toHaveCount(0);
+  await expect(toggle).toBeFocused();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('live trade renders quote band metrics, trend/SMA summary, and explicit watchlist actions without extra initial POSTs', async ({ page }) => {
+  const state = snapshot();
+  state.status.staleAfterMs = 3_600_000;
+  const posts: { path: string; body: unknown }[] = [];
+  page.on('request', r => {
+    if (r.method() === 'POST') posts.push({ path: new URL(r.url()).pathname, body: r.postDataJSON() });
+  });
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.route('**/api/watchlist', async route => {
+    const { code } = route.request().postDataJSON();
+    state.watchlist = state.watchlist.includes(code)
+      ? state.watchlist.filter(c => c !== code)
+      : [...state.watchlist, code];
+    state.revision++;
+    await route.fulfill({ json: { state } });
+  });
+  const bars65 = Array.from({ length: 65 }, (_, i) => {
+    const d = new Date(Date.UTC(2026, 7, 1 + i));
+    const date = d.toISOString().slice(0, 10).replaceAll('-', '');
+    return { date, close: 150000 + i * 500 };
+  });
+  await page.route('**/api/kis/market', route => {
+    const { code } = route.request().postDataJSON();
+    if (code === '005930') {
+      return route.fulfill({
+        json: {
+          quote: { code, price: 182000, change: 1.25, upper: 234000, lower: 126000, tickSize: 100, stopped: false, volume: 12345678, sector: '전기전자', receivedAt: new Date().toISOString() },
+          bars: bars65,
+        },
+      });
+    }
+    return route.fulfill({ json: market(code, 210000) });
+  });
+  await page.goto('/trade');
+  await expect(page.getByLabel('실제 현재가')).toHaveText('182,000원');
+  expect(posts.map(p => p.path)).toEqual(['/api/kis/market']);
+  await expect(page.locator('main')).not.toContainText('72,800');
+  await expect(page.locator('main')).not.toContainText('8,341,000');
+
+  const metrics = page.getByLabel('실제 호가 및 가격제한폭 요약');
+  await expect(metrics).toContainText('234,000원');
+  await expect(metrics).toContainText('126,000원');
+  await expect(metrics).toContainText('100원');
+  await expect(metrics).toContainText('52%');
+  await expect(metrics).toContainText('12,345,678주');
+  await expect(metrics).toContainText('전기전자 · 정상 거래');
+
+  const trend = page.getByLabel('선택 구간 일봉 추세 요약');
+  await expect(trend).toContainText('선택 구간 수익률');
+  await expect(trend).toContainText('최고 182,000원');
+  await expect(trend).toContainText('20일 이동평균 (SMA 20)');
+  await expect(trend).not.toContainText('표본 부족 (20거래일 미만)');
+  await expect(trend).toContainText('60일 이동평균 (SMA 60)');
+  await expect(trend).not.toContainText('표본 부족 (60거래일 미만)');
+
+  const chips = page.getByRole('group', { name: '관심종목 빠른 선택' });
+  await expect(chips.getByRole('button', { name: /삼성전자/ })).toHaveAttribute('aria-pressed', 'true');
+  await chips.getByRole('button', { name: /SK하이닉스/ }).click();
+  await expect(page).toHaveURL(/code=000660/);
+  await expect(page.getByLabel('실제 현재가')).toHaveText('210,000원');
+  await expect(trend).toContainText('표본 부족 (20거래일 미만)');
+  await expect(trend).toContainText('표본 부족 (60거래일 미만)');
+
+  const watchToggle = page.getByRole('button', { name: '관심종목 해제', exact: true });
+  await watchToggle.click();
+  await expect(page.getByRole('button', { name: '관심종목 등록', exact: true })).toBeVisible();
+  expect(posts.some(p => p.path === '/api/watchlist')).toBe(true);
+});
+
+test('live trade workspace diagnostic hub renders KIS holdings, paperRisk fallback, links, and fits 320-1440px', async ({ page }) => {
+  const state = snapshot();
+  state.status.staleAfterMs = 3_600_000;
+  state.connection.balance = {
+    cash: 5_000_000,
+    totalEquity: 7_000_000,
+    positions: [{ code: '005930', name: '삼성전자', qty: 10, sellable: 8, average: 185000.5, price: 190300 }],
+  };
+  state.strategies.push({
+    id: 'kis-1', name: 'KIS 모의 삼성 전략', code: '005930', fast: 5, slow: 20, qty: 1,
+    active: true, lastSignal: 'hold', lastTick: 0, environment: 'kis-paper',
+  });
+  state.journal.push({ id: 'j-1', date: new Date().toISOString(), code: '005930', text: '실제 시세 점검 메모' });
+  let offline = false;
+  await page.route('**/api/state', route => offline ? route.fulfill({ status: 503, json: {} }) : route.fulfill({ json: state }));
+  await page.route('**/api/kis/market', route => route.fulfill({ json: market('005930', 190300) }));
+
+  await page.goto('/trade');
+  await expect(page.getByLabel('실제 현재가')).toHaveText('190,300원');
+  const hub = page.getByLabel('선택 종목 KIS 모의 매매 및 워크스페이스 현황');
+  await expect(hub).toContainText('보유 10주 · 주문가능 8주 · 평단 185,000.5원');
+  await expect(hub).toContainText('+52,995원');
+  await expect(hub).toContainText('긴급정지 꺼짐 (정상)');
+  await expect(hub).toContainText('불명·전송 중 미확인');
+  await expect(hub).toContainText('저장 1개 · 실행 중 1개');
+  await expect(hub).toContainText('기록 1건');
+  await expect(hub.getByRole('link', { name: 'KIS 모의 매매·원장 대조 ↗' })).toHaveAttribute('href', '/paper?code=005930');
+  await expect(hub.getByRole('link', { name: 'KIS 전략 스튜디오 ↗' })).toHaveAttribute('href', '/strategies?environment=kis-paper');
+  await expect(hub.getByRole('link', { name: '일봉 백테스트 ↗' })).toHaveAttribute('href', '/backtest');
+  await expect(hub.getByRole('link', { name: '매매일지 기록 ↗' })).toHaveAttribute('href', '/journal');
+  await expect(page.getByRole('link', { name: 'KIS 모의 주문 화면' })).toHaveCount(1);
+
+  state.paperRisk = { day: '20261117', baselineEquity: 7_000_000, unresolvedCount: 2, orders: null };
+  state.revision++;
+  await page.reload();
+  await expect(hub).toContainText('불명·전송 중 2건');
+
+  for (const width of [320, 390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `live-${width}`).toBe(true);
+  }
+
+  offline = true;
+  await page.reload();
+  await expect(hub).toContainText('상태 미확인');
+  await expect(hub).not.toContainText('불명·전송 중 2건');
+});

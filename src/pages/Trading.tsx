@@ -1,20 +1,71 @@
 import './orders-current-v2.css';
 import { LiveTrading } from './LiveTrading';
+import { TradeHelpPanel } from '../components/TradeHelpPanel';
 import { HistoryOrder, paperStatus, type LedgerOrder } from '../components/HistoryOrder';
 import { RealtimeStatus } from '../components/RealtimeStatus';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { ArrowRight, X } from 'lucide-react';
+import { ArrowRight, BookOpen, X } from 'lucide-react';
 import { useWorkbench } from '../context';
 import { Badge, Change, Chart, Empty, Panel } from '../components/ui';
 import { orderInput, paperLedgerSchema, orderHistorySchema, type OrderInput, type PaperLedger } from '../../shared/contracts';
 import { orderStatus, won, equity, type Instrument } from '../../shared/model';
 
+/** 손익 금액을 `-0원` 없이 부호·색상과 함께 포맷한다. */
+function formatSignedWon(value: number): { text: string; tone: '' | 'up' | 'down' } {
+  if (!Number.isFinite(value)) return { text: '—', tone: '' };
+  const rounded = Math.round(value);
+  if (rounded > 0) return { text: `+${rounded.toLocaleString('ko-KR')}원`, tone: 'up' };
+  if (rounded < 0) return { text: `${rounded.toLocaleString('ko-KR')}원`, tone: 'down' };
+  return { text: '0원', tone: '' };
+}
+
+/** 등락률(%)을 `-0.00%` 없이 부호·색상과 함께 포맷한다. */
+function formatSignedPct(value: number): { text: string; tone: '' | 'up' | 'down' } {
+  if (!Number.isFinite(value)) return { text: '—', tone: '' };
+  const rounded = Math.round(value * 100) / 100;
+  if (rounded > 0) return { text: `+${rounded.toFixed(2)}%`, tone: 'up' };
+  if (rounded < 0) return { text: `${rounded.toFixed(2)}%`, tone: 'down' };
+  return { text: '0.00%', tone: '' };
+}
+
+/** DEMO 지정가 예상 수수료(0.015% 올림) 계산. */
+const calcDemoFee = (amt: number) => Math.ceil((amt * 1.5) / 10000);
+
 export function Trade() {
   const [params, setParams] = useSearchParams();
   const code = params.get('code') ?? '005930';
   const demo = params.get('mode') === 'demo';
-  return <><div className="tabs trade-mode" role="group" aria-label="트레이딩 환경"><button className={!demo ? 'active' : ''} aria-pressed={!demo} onClick={() => { if (demo) setParams({ code }); }}>실제 시세</button><button className={demo ? 'active' : ''} aria-pressed={demo} onClick={() => { if (!demo) setParams({ code, mode: 'demo' }); }}>DEMO 연습</button></div>{demo ? <DemoTrade /> : <LiveTrading code={code} />}</>;
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpPanelId = useId();
+  const helpToggleRef = useRef<HTMLButtonElement>(null);
+
+  function closeHelp() {
+    setHelpOpen(false);
+    helpToggleRef.current?.focus();
+  }
+
+  return <>
+    <div className="trade-top-bar">
+      <div className="tabs trade-mode" role="group" aria-label="트레이딩 환경">
+        <button className={!demo ? 'active' : ''} aria-pressed={!demo} onClick={() => { if (demo) setParams({ code }); }}>실제 시세</button>
+        <button className={demo ? 'active' : ''} aria-pressed={demo} onClick={() => { if (!demo) setParams({ code, mode: 'demo' }); }}>DEMO 연습</button>
+      </div>
+      <button
+        ref={helpToggleRef}
+        type="button"
+        className={`button small-button ${helpOpen ? 'primary' : 'secondary'} trade-help-toggle`}
+        aria-expanded={helpOpen}
+        aria-controls={helpOpen ? helpPanelId : undefined}
+        onClick={() => setHelpOpen(open => !open)}
+      >
+        <BookOpen size={14} aria-hidden="true" />
+        사용방법 도움말
+      </button>
+    </div>
+    {helpOpen && <TradeHelpPanel panelId={helpPanelId} onClose={closeHelp} />}
+    {demo ? <DemoTrade /> : <LiveTrading code={code} />}
+  </>;
 }
 
 function DemoTrade() {
@@ -60,20 +111,60 @@ function TradeForm({ instrument }: { instrument: Instrument }) {
   useEffect(() => { setPriceEdited(false); setPrice(String(instrument.price)); setConfirm(false); }, [instrument.code]);
   useEffect(() => { if (!priceEdited && !confirm) setPrice(String(instrument.price)); }, [instrument.price, priceEdited, confirm]);
   useEffect(() => { if (confirm) dialog.current?.showModal(); else dialog.current?.close(); }, [confirm]);
-  const amount = Number(qty) * Number(price); const holding = state.positions.find(p => p.code === instrument.code)?.qty ?? 0;
-  const pendingBuy = state.orders.filter(o => o.status === 'pending' && o.side === 'buy').reduce((a, o) => a + o.qty * o.price + Math.ceil(o.qty * o.price * 1.5 / 10000), 0);
+  const numQty = Number(qty);
+  const numPrice = Number(price);
+  const amount = numQty * numPrice;
+  const position = state.positions.find(p => p.code === instrument.code);
+  const holding = position?.qty ?? 0;
+  const holdingAvg = position?.average ?? 0;
+  const pendingBuy = state.orders.filter(o => o.status === 'pending' && o.side === 'buy').reduce((a, o) => a + o.qty * o.price + calcDemoFee(o.qty * o.price), 0);
   const sellable = holding - state.orders.filter(o => o.status === 'pending' && o.side === 'sell' && o.code === instrument.code).reduce((sum, o) => sum + o.qty, 0);
-  const validNumbers = Number.isSafeInteger(Number(qty)) && Number(qty) >= 1 && Number(qty) <= 100000 && Number.isSafeInteger(Number(price)) && Number(price) >= 1 && Number(price) <= 10000000;
-  const estimatedFee = validNumbers ? Math.ceil(amount * 1.5 / 10000) : 0;
+  const validPrice = Number.isSafeInteger(numPrice) && numPrice >= 1 && numPrice <= 10_000_000;
+  const validNumbers = Number.isSafeInteger(numQty) && numQty >= 1 && numQty <= 100_000 && validPrice;
+  const estimatedFee = validNumbers ? calcDemoFee(amount) : 0;
   const pendingExposure = state.orders.filter(o => o.status === 'pending' && o.side === 'buy' && o.code === instrument.code).reduce((sum, o) => sum + o.qty * o.price, 0);
+  const lossLimitHit = state.startingEquity - equity(state) >= state.risk.dailyLoss;
   const inputError = !validNumbers ? '가격은 1~10,000,000원, 수량은 1~100,000주의 정수로 입력하세요.'
-    : state.startingEquity - equity(state) >= state.risk.dailyLoss ? '손실 한도를 초과했습니다.'
+    : lossLimitHit ? '손실 한도를 초과했습니다.'
     : amount > state.risk.maxOrder ? '1회 주문 한도를 초과합니다.'
     : side === 'buy' && amount + estimatedFee > state.cash - pendingBuy ? '수수료를 포함한 주문 금액이 예약 제외 현금을 초과합니다.'
     : side === 'buy' && holding * instrument.price + pendingExposure + amount > state.risk.maxPosition ? '종목별 최대 투자금을 초과합니다.'
-    : side === 'sell' && Number(qty) > sellable ? '예약 제외 매도 가능 수량을 초과합니다.' : '';
+    : side === 'sell' && numQty > sellable ? '예약 제외 매도 가능 수량을 초과합니다.' : '';
   const quoteChanged = instrument.price !== reviewedQuote;
   const blocked = !available || state.risk.halted || storageError;
+
+  // 현재 입력가 및 위험 한도·수수료 기준 최대 가능 수량 계산
+  const maxOrderableQty = (() => {
+    if (!available || state.risk.halted || !validPrice || lossLimitHit) return 0;
+    const byMaxOrder = Math.floor(state.risk.maxOrder / numPrice);
+    if (side === 'sell') return Math.max(0, Math.min(100_000, sellable, byMaxOrder));
+    const remPosition = Math.max(0, state.risk.maxPosition - holding * instrument.price - pendingExposure);
+    const byPosition = Math.floor(remPosition / numPrice);
+    const availCash = Math.max(0, state.cash - pendingBuy);
+    let byCash = Math.min(100_000, Math.floor(availCash / numPrice));
+    while (byCash > 0 && byCash * numPrice + calcDemoFee(byCash * numPrice) > availCash) byCash -= 1;
+    return Math.max(0, Math.min(100_000, byMaxOrder, byPosition, byCash));
+  })();
+
+  function adjustPrice(factor: number) {
+    const base = Number.isFinite(numPrice) && numPrice > 0 ? numPrice : instrument.price;
+    const next = Math.min(10_000_000, Math.max(1, Math.round(base * factor)));
+    setPriceEdited(true);
+    setPrice(String(next));
+  }
+
+  // 주문 영향 사전 시뮬레이션
+  const projectedHolding = holding + (validNumbers ? numQty : 0);
+  const projectedBuyAvg = side === 'buy' && validNumbers && projectedHolding > 0
+    ? Math.round(((holding * holdingAvg + amount) / projectedHolding) * 100) / 100
+    : null;
+  const projectedSellPnl = side === 'sell'
+    ? (holding <= 0 ? { text: '보유 없음', tone: '' as const }
+      : validNumbers && numQty > 0 ? formatSignedWon((numPrice - holdingAvg) * numQty - estimatedFee)
+      : { text: '—', tone: '' as const })
+    : null;
+  const projectedExposure = holding * instrument.price + pendingExposure + (side === 'buy' && validNumbers ? amount : 0);
+
   function review(e: React.FormEvent) {
     e.preventDefault(); if (blocked || busy || unresolved || sending.current || inputError) return;
     setRequestId(crypto.randomUUID()); setReviewedQuote(instrument.price); setConfirm(true); setOrderNotice('');
@@ -98,9 +189,24 @@ function TradeForm({ instrument }: { instrument: Instrument }) {
   }
   async function submit() {
     if (!confirm || quoteChanged || unresolved || inputError) return;
-    await send({ code: instrument.code, side, qty: Number(qty), price: Number(price), requestId });
+    await send({ code: instrument.code, side, qty: numQty, price: numPrice, requestId });
   }
   const history = instrument.history.slice(-range);
+  const historyStats = (() => {
+    if (history.length === 0) return null;
+    const high = Math.max(...history);
+    const low = Math.min(...history);
+    const avg = history.reduce((sum, v) => sum + v, 0) / history.length;
+    const first = history[0];
+    const last = history[history.length - 1];
+    const changePct = first > 0 ? formatSignedPct(((last - first) / first) * 100) : { text: '0.00%', tone: '' as const };
+    return { high, low, avg, changePct };
+  })();
+  const buyPendingCount = state.orders.filter(o => o.status === 'pending' && o.side === 'buy' && o.code === instrument.code).length;
+  const sellPendingCount = state.orders.filter(o => o.status === 'pending' && o.side === 'sell' && o.code === instrument.code).length;
+  const holdingEval = holding * instrument.price;
+  const holdingProfit = holding > 0 ? formatSignedWon((instrument.price - holdingAvg) * holding) : null;
+
   const blockedReason = !available ? '최신 로컬 상태 확인 전 주문을 차단합니다.'
     : state.risk.halted ? '신규 주문 정지 상태입니다.'
     : storageError ? '요청 보존 저장소를 확인한 뒤 주문할 수 있습니다.'
@@ -127,11 +233,38 @@ function TradeForm({ instrument }: { instrument: Instrument }) {
             <label className="field">주문 가격 (원)<input required type="number" min="1" max="10000000" step="1" value={price} onChange={e => { setPriceEdited(true); setPrice(e.target.value); }} /></label>
             <label className="field">주문 수량 (주)<input required type="number" min="1" max="100000" step="1" value={qty} onChange={e => setQty(e.target.value)} /></label>
           </div>
-          <div className="quantity-buttons">{[1, 5, 10].map(n => <button key={n} type="button" onClick={() => setQty(String(n))}>{n}주</button>)}</div>
+          <div className="trade-price-adjust" role="group" aria-label="주문 가격 빠른 조정">
+            <button type="button" onClick={() => adjustPrice(0.99)}>-1%</button>
+            <button type="button" onClick={() => { setPrice(String(instrument.price)); setPriceEdited(false); }}>현재가 적용</button>
+            <button type="button" onClick={() => adjustPrice(1.01)}>+1%</button>
+          </div>
+          <div className="quantity-buttons">
+            {[1, 5, 10].map(n => <button key={n} type="button" onClick={() => setQty(String(n))}>{n}주</button>)}
+            <button type="button" className="trade-max-qty" disabled={maxOrderableQty < 1} onClick={() => setQty(String(maxOrderableQty))}>최대 가능 ({maxOrderableQty.toLocaleString('ko-KR')}주)</button>
+          </div>
           <div className="order-total"><span>주문 금액</span><strong>{validNumbers ? won(amount) : '—'}<small>원</small></strong></div>
           <div className="check-row"><span>지정가 기준 예상 수수료</span><strong>{validNumbers ? won(estimatedFee) : '—'}원</strong></div>
           <div className="check-row"><span>예약 제외 현금</span><strong>{won(state.cash - pendingBuy)}원</strong></div>
           <div className="check-row" role="group" aria-label="매도 가능 수량"><span>예약 제외 매도 가능 수량</span><strong>{sellable}주</strong></div>
+          <dl className="demo-order-impact" aria-label="DEMO 주문 영향 및 한도 진단">
+            {side === 'buy' ? <>
+              <div>
+                <dt>체결 후 예상 보유</dt>
+                <dd>{holding.toLocaleString('ko-KR')}주 → {projectedHolding.toLocaleString('ko-KR')}주</dd>
+              </div>
+              <div>
+                <dt>체결 후 예상 평균 매입가</dt>
+                <dd>{projectedBuyAvg !== null ? `${projectedBuyAvg.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}원` : '—'}</dd>
+              </div>
+            </> : <div>
+              <dt>예상 실현손익 (수수료 반영)</dt>
+              <dd className={projectedSellPnl?.tone ?? ''}>{projectedSellPnl?.text ?? '—'}</dd>
+            </div>}
+            <div>
+              <dt>종목별 최대 투자금 노출</dt>
+              <dd className={projectedExposure > state.risk.maxPosition ? 'trade-limit-over' : ''}>{won(projectedExposure)}원 / {won(state.risk.maxPosition)}원</dd>
+            </div>
+          </dl>
           <details className="trade-data-details">
             <summary>보유수량·주문 한도·비용 기준</summary>
             <div className="check-row"><span>보유수량</span><strong>{holding}주</strong></div>
@@ -152,6 +285,38 @@ function TradeForm({ instrument }: { instrument: Instrument }) {
           ? <Chart values={history} height={240} label={`${instrument.name} 합성 ${history.length}봉 종가`} />
           : <Empty title="합성 종가 표본이 부족합니다">차트를 그리려면 2개 이상의 봉이 필요합니다.</Empty>}
         <div className="chart-axis"><span>과거 표본</span><span>원 · 실제 거래일 미부여</span><span>현재 데모 봉</span></div>
+        {historyStats && <dl className="demo-chart-stats" aria-label="합성 차트 구간 통계">
+          <div><dt>구간 최고가</dt><dd>{won(historyStats.high)}원</dd></div>
+          <div><dt>구간 최저가</dt><dd>{won(historyStats.low)}원</dd></div>
+          <div><dt>구간 등락률</dt><dd className={historyStats.changePct.tone}>{historyStats.changePct.text}</dd></div>
+          <div><dt>구간 평균가</dt><dd>{won(historyStats.avg)}원</dd></div>
+        </dl>}
+        <section className="demo-position-summary" aria-label="선택 종목 DEMO 보유 및 미체결 현황">
+          <div className="demo-position-head">
+            <h3>선택 종목 DEMO 보유 · 미체결</h3>
+            <button type="button" className="button secondary small-button" disabled={busy || !available} onClick={() => { void act('tick').catch(() => {}); }}>다음 데모 봉 재생</button>
+          </div>
+          <dl className="demo-position-grid">
+            <div>
+              <dt>보유 수량</dt>
+              <dd>{holding.toLocaleString('ko-KR')}주</dd>
+            </div>
+            <div>
+              <dt>평균 매입가</dt>
+              <dd>{holding > 0 ? `${holdingAvg.toLocaleString('ko-KR', { maximumFractionDigits: 20 })}원` : '미보유'}</dd>
+            </div>
+            <div>
+              <dt>현재 평가액 · 손익</dt>
+              <dd>{holding > 0 && holdingProfit
+                ? <>{won(holdingEval)}원 <small className={holdingProfit.tone}>({holdingProfit.text})</small></>
+                : '미보유'}</dd>
+            </div>
+            <div>
+              <dt>미체결 대기 현황</dt>
+              <dd>매수 대기 {buyPendingCount}건 · 매도 대기 {sellPendingCount}건</dd>
+            </div>
+          </dl>
+        </section>
         <details className="trade-data-details">
           <summary>종목 정보와 DEMO 체결 기준</summary>
           <div className="trade-facts"><div><span>구분</span><strong>{instrument.sector}</strong></div><div><span>데모 거래량</span><strong>{won(instrument.volume)}</strong></div></div>
@@ -160,7 +325,7 @@ function TradeForm({ instrument }: { instrument: Instrument }) {
         <Link className="text-link demo-paper-link" to={`/paper?code=${instrument.code}`}>선택 종목 KIS 모의 매매<ArrowRight size={15} /></Link>
       </Panel>
     </div>
-    <dialog ref={dialog} className="order-dialog" aria-labelledby="demo-order-confirm-title" onCancel={event => { event.preventDefault(); setConfirm(false); }}><div className="panel-head"><h2 id="demo-order-confirm-title">로컬 데모 주문 확인</h2><button className="icon-button" aria-label="주문 확인 닫기" onClick={() => setConfirm(false)}><X size={18} /></button></div><p>환경: DEMO · 합성 시세 {won(instrument.price)}원</p><p>{instrument.name} · {side === 'buy' ? '매수' : '매도'}</p><h3>{qty}주 × {won(Number(price))}원</h3><p>주문 금액 {won(amount)}원. KIS로 전송되지 않습니다.</p>{quoteChanged && <div className="notice warning"><p>시세가 변경되었습니다. 지정가는 유지됩니다. 현재 시세와 주문 가격을 다시 확인하세요.</p><button onClick={() => setReviewedQuote(instrument.price)}>변경된 시세 재확인</button></div>}{inputError && <p role="status">{inputError}</p>}{blocked && <p role="status">{state.risk.halted ? '신규 주문 정지 상태입니다.' : '최신 로컬 상태 확인 전 접수를 차단합니다.'}</p>}<div className="button-row"><button className="button secondary" onClick={() => setConfirm(false)}>돌아가기</button><button className="button primary" disabled={busy || blocked || quoteChanged || Boolean(unresolved) || Boolean(inputError)} onClick={() => void submit()}>데모 주문 접수</button></div></dialog></div>;
+    <dialog ref={dialog} className="order-dialog" aria-labelledby="demo-order-confirm-title" onCancel={event => { event.preventDefault(); setConfirm(false); }}><div className="panel-head"><h2 id="demo-order-confirm-title">로컬 데모 주문 확인</h2><button className="icon-button" aria-label="주문 확인 닫기" onClick={() => setConfirm(false)}><X size={18} /></button></div><p>환경: DEMO · 합성 시세 {won(instrument.price)}원</p><p>{instrument.name} · {side === 'buy' ? '매수' : '매도'}</p><h3>{qty}주 × {won(numPrice)}원</h3><p>주문 금액 {won(amount)}원. KIS로 전송되지 않습니다.</p>{quoteChanged && <div className="notice warning"><p>시세가 변경되었습니다. 지정가는 유지됩니다. 현재 시세와 주문 가격을 다시 확인하세요.</p><button onClick={() => setReviewedQuote(instrument.price)}>변경된 시세 재확인</button></div>}{inputError && <p role="status">{inputError}</p>}{blocked && <p role="status">{state.risk.halted ? '신규 주문 정지 상태입니다.' : '최신 로컬 상태 확인 전 접수를 차단합니다.'}</p>}<div className="button-row"><button className="button secondary" onClick={() => setConfirm(false)}>돌아가기</button><button className="button primary" disabled={busy || blocked || quoteChanged || Boolean(unresolved) || Boolean(inputError)} onClick={() => void submit()}>데모 주문 접수</button></div></dialog></div>;
 }
 type OrderView = 'demo' | 'kis' | 'history';
 type LedgerView = {
