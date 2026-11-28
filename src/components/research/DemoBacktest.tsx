@@ -1,17 +1,20 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Play } from 'lucide-react';
 import { z } from 'zod';
 import { won } from '../../../shared/model';
+import { isPortfolioRule } from '../../../shared/portfolio-rules';
 import { useWorkbench } from '../../context';
 import { Chart, Panel } from '../ui';
 import {
   badNumberMessage,
   buildRuleAndOverlay,
+  demoFormBlockReason,
   findBadNumberInput,
   flexibleResultSchema,
   formatRuleSummary,
   isDemoRuleSupported,
   isLegacySma,
+  isPortfolioKind,
   validateCosts,
   type CostAssumptions,
   type FlexibleBacktestResult,
@@ -21,28 +24,36 @@ import {
 import { CostFields, ResultSummary, Trades, useResultFocus } from './BacktestShared';
 import { RuleConfigSection } from './RuleConfigSection';
 
-/** DEMO 합성 봉 백테스트 패널 (v1 SMA 및 v2 종가 기반 다중 규칙 지원). */
+/** DEMO 합성 봉 백테스트 패널 (v1 SMA 및 v2 종가 기반 다중 규칙 지원, 다종목은 차단). */
 export function DemoBacktest({
   strategyDraft,
   ruleForm,
   setRuleForm,
   costs,
   setCosts,
+  blockedReason,
 }: {
   strategyDraft: StrategyTransferDraft | null;
   ruleForm: RuleFormState;
   setRuleForm: (next: RuleFormState) => void;
   costs: CostAssumptions;
   setCosts: (next: CostAssumptions) => void;
+  blockedReason?: string;
 }) {
   const { state, act, available, busy } = useWorkbench();
   const [selection, setSelection] = useState<string | null>(() => strategyDraft?.code ?? null);
+  useEffect(() => {
+    if (selection === null && strategyDraft?.code) {
+      setSelection(strategyDraft.code);
+    }
+  }, [selection, strategyDraft?.code]);
   const [calculation, setCalculation] = useState<{
     code: string;
     summary: string;
     result: FlexibleBacktestResult;
   } | null>(null);
   const [error, setError] = useState('');
+  const portfolioMode = isPortfolioKind(ruleForm.kind);
   const instrument =
     selection === null
       ? state.instruments.find(row => row.code === '069500') ?? state.instruments[0]
@@ -60,7 +71,11 @@ export function DemoBacktest({
   async function run(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     clearCalc();
-    if (!code || busy || !available) return;
+    if ((!portfolioMode && !code) || busy || !available) return;
+    if (blockedReason) {
+      setError(blockedReason);
+      return;
+    }
     const badInput = findBadNumberInput(event.currentTarget);
     if (badInput) {
       setError(badNumberMessage(badInput));
@@ -71,7 +86,7 @@ export function DemoBacktest({
     if (!built.ok) {
       setError(built.error);
       if (built.focusName) {
-        event.currentTarget.querySelector<HTMLInputElement>(`[name="${built.focusName}"]`)?.focus();
+        event.currentTarget.querySelector<HTMLElement>(`[name="${built.focusName}"]`)?.focus();
       }
       return;
     }
@@ -81,10 +96,8 @@ export function DemoBacktest({
       event.currentTarget.querySelector<HTMLInputElement>(`[name="${costError.focusName}"]`)?.focus();
       return;
     }
-    if (!isDemoRuleSupported(ruleForm)) {
-      setError(
-        'DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙이나 샹들리에 청산·변동성 패리티 오버레이는 저장 일봉 백테스트에서 사용하세요.',
-      );
+    if (!isDemoRuleSupported(ruleForm) || isPortfolioRule(built.rule)) {
+      setError(demoFormBlockReason(ruleForm));
       return;
     }
     try {
@@ -124,27 +137,31 @@ export function DemoBacktest({
         )}
         <form onSubmit={run} onChange={clearCalc} noValidate>
           <fieldset className="backtest-fields" disabled={busy}>
-            <label className="field">
-              대상
-              <select value={code} onChange={event => setSelection(event.target.value)}>
+            {!portfolioMode && (
+              <>
+                <label className="field">
+                  대상
+                  <select value={code} onChange={event => setSelection(event.target.value)}>
+                    {!code && (
+                      <option value="" disabled>
+                        {state.instruments.length ? '종목을 다시 선택하세요' : '합성 종목 없음'}
+                      </option>
+                    )}
+                    {state.instruments.map(item => (
+                      <option value={item.code} key={item.code}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 {!code && (
-                  <option value="" disabled>
-                    {state.instruments.length ? '종목을 다시 선택하세요' : '합성 종목 없음'}
-                  </option>
+                  <p role="status">
+                    {state.instruments.length
+                      ? '선택한 합성 종목을 찾을 수 없습니다. 대상을 다시 선택하세요.'
+                      : '계산할 합성 종목이 없습니다.'}
+                  </p>
                 )}
-                {state.instruments.map(item => (
-                  <option value={item.code} key={item.code}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {!code && (
-              <p role="status">
-                {state.instruments.length
-                  ? '선택한 합성 종목을 찾을 수 없습니다. 대상을 다시 선택하세요.'
-                  : '계산할 합성 종목이 없습니다.'}
-              </p>
+              </>
             )}
             <RuleConfigSection
               form={ruleForm}
@@ -155,12 +172,12 @@ export function DemoBacktest({
               disabled={busy}
               mode="demo"
               unit="봉"
+              codeOptions={state.instruments.map(i => ({ code: i.code, name: i.name }))}
             />
             <CostFields values={costs} change={setCosts} />
             {demoUnsupported && (
               <p className="bt-warning" role="status">
-                DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙이나 샹들리에 청산·변동성 패리티 오버레이는 저장
-                일봉 백테스트에서 사용하세요.
+                {demoFormBlockReason(ruleForm)}
               </p>
             )}
             <p className="bt-note">비용은 검증용 가정이며 세금은 포함하지 않습니다. 결과는 이 화면에서 확인합니다.</p>
@@ -169,7 +186,7 @@ export function DemoBacktest({
                 합성 실험 입력·계산 확인 · {error}
               </p>
             )}
-            <button className="button primary wide" disabled={!available || !code}>
+            <button className="button primary wide" disabled={!available || (!portfolioMode && !code)}>
               <Play size={15} />백테스트 실행
             </button>
           </fieldset>

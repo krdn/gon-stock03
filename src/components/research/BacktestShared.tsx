@@ -39,10 +39,24 @@ export function CostFields({
   );
 }
 
-/** 전략 성과와 단순 보유(benchmark) 성과를 나란히 비교하는 요약 컴포넌트. */
-export function ResultSummary({ result, label }: { result: FlexibleBacktestResult; label: string }) {
+/** 전략 성과와 벤치마크 성과를 나란히 비교하는 요약 컴포넌트. */
+export function ResultSummary({
+  result,
+  label,
+  portfolio,
+}: {
+  result: FlexibleBacktestResult;
+  label: string;
+  portfolio?: boolean;
+}) {
   const benchmark = result.benchmark;
   const excessReturn = benchmark ? result.returnPct - benchmark.returnPct : null;
+  const benchmarkAriaLabel = portfolio ? '위험 자산 동일 비중 벤치마크 비교' : '단순 보유 벤치마크 비교';
+  const benchmarkHeading = portfolio ? '전략 vs 위험 자산 동일 비중 비교' : '전략 vs 단순 보유 비교';
+  const benchmarkColumnLabel = portfolio
+    ? '위험 자산 동일 비중 첫 시가 보유 (벤치마크)'
+    : '단순 보유 (벤치마크)';
+
   return (
     <>
       <div className="stats-grid three">
@@ -55,9 +69,9 @@ export function ResultSummary({ result, label }: { result: FlexibleBacktestResul
         슬리피지 {won(result.slippageCost)}원
       </p>
       {benchmark && (
-        <div className="bt-benchmark" aria-label="단순 보유 벤치마크 비교">
+        <div className="bt-benchmark" aria-label={benchmarkAriaLabel}>
           <div className="bt-benchmark-head">
-            <strong>전략 vs 단순 보유 비교</strong>
+            <strong>{benchmarkHeading}</strong>
             <span className="bt-note">
               초과 수익률 {excessReturn !== null && (excessReturn >= 0 ? '+' : '')}
               {excessReturn?.toFixed(2)}%p
@@ -82,7 +96,7 @@ export function ResultSummary({ result, label }: { result: FlexibleBacktestResul
               </dl>
             </div>
             <div className="bt-benchmark-col">
-              <span className="bt-benchmark-label">단순 보유 (벤치마크)</span>
+              <span className="bt-benchmark-label">{benchmarkColumnLabel}</span>
               <dl>
                 <div>
                   <dt>수익률</dt>
@@ -105,8 +119,59 @@ export function ResultSummary({ result, label }: { result: FlexibleBacktestResul
   );
 }
 
-/** 백테스트 거래 내역 테이블 (v2 매매 사유 `reason`이 있으면 사유 열을 함께 표시). */
+/** 목표 비중 소수를 백분율 문자열로 포맷한다. */
+function formatWeightPct(weight: number): string {
+  const pct = weight * 100;
+  return `${Number.isInteger(pct) ? pct : pct.toFixed(1).replace(/\.0$/, '')}%`;
+}
+
+/** 다종목 자산배분(`v3`) 리밸런싱 판정·체결·목표 비중 내역 테이블. */
+export function Rebalances({
+  rebalances,
+}: {
+  rebalances: NonNullable<FlexibleBacktestResult['rebalances']>;
+}) {
+  return (
+    <Panel title="리밸런싱 내역">
+      {rebalances.length ? (
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>판정일 → 체결일</th>
+                <th>종목별 목표 비중</th>
+                <th>판정 사유</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rebalances.map((item, idx) => {
+                const allocated = item.targets.reduce((sum, t) => sum + t.weight, 0);
+                const cashWeight = Math.max(0, 1 - allocated);
+                const targetText = [
+                  ...item.targets.map(t => `${t.code} ${formatWeightPct(t.weight)}`),
+                  ...(cashWeight > 0.0001 ? [`현금 ${formatWeightPct(cashWeight)}`] : []),
+                ].join(' · ');
+                return (
+                  <tr key={`${item.signalDate}-${item.date}-${idx}`}>
+                    <td>{`${dateInput(item.signalDate)} → ${dateInput(item.date)}`}</td>
+                    <td>{targetText}</td>
+                    <td>{item.reason}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p>이 구간에는 리밸런싱 내역이 없습니다.</p>
+      )}
+    </Panel>
+  );
+}
+
+/** 백테스트 거래 내역 테이블 (v2 매매 사유 `reason` 및 v3 종목 코드 `code` 열 자동 지원). */
 export function Trades({ result, daily }: { result: FlexibleBacktestResult; daily?: boolean }) {
+  const hasCode = result.trades.some(t => Boolean(t.code));
   const hasReason = result.trades.some(t => Boolean(t.reason));
   return (
     <Panel title="백테스트 거래 내역">
@@ -115,6 +180,7 @@ export function Trades({ result, daily }: { result: FlexibleBacktestResult; dail
           <table>
             <thead>
               <tr>
+                {hasCode && <th>종목 코드</th>}
                 <th>{daily ? '신호일 → 체결일' : '봉 번호'}</th>
                 <th>방향</th>
                 <th>체결가 (원)</th>
@@ -124,8 +190,9 @@ export function Trades({ result, daily }: { result: FlexibleBacktestResult; dail
               </tr>
             </thead>
             <tbody>
-              {result.trades.map(t => (
-                <tr key={t.bar}>
+              {result.trades.map((t, idx) => (
+                <tr key={`${t.bar}-${t.code ?? ''}-${t.side}-${idx}`}>
+                  {hasCode && <td>{t.code ?? '—'}</td>}
                   <td>{daily ? `${dateInput(t.signalDate) || '미확인'} → ${dateInput(t.date) || '미확인'}` : t.bar}</td>
                   <td>{t.side === 'buy' ? '매수' : '매도'}</td>
                   <td>{t.price.toLocaleString('ko-KR', { maximumFractionDigits: 4 })}</td>

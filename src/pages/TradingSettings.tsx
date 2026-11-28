@@ -1,4 +1,4 @@
-import {isPortfolioRule, PORTFOLIO_CATALOG} from '../../shared/portfolio-rules';
+import { isPortfolioRule } from '../../shared/portfolio-rules';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronRight, ClipboardList, SlidersHorizontal, Workflow } from 'lucide-react';
@@ -13,7 +13,7 @@ import {
   type TradingTerms,
 } from '../../shared/trading-plan';
 import { won, type Strategy } from '../../shared/model';
-import { assertRealtimeRule, isBasicRealtimeSma, type StrategyRule } from '../../shared/strategy-rules';
+import { assertRealtimeRule, isBasicRealtimeSma } from '../../shared/strategy-rules';
 import { formatRuleSummary } from './research-rule-form';
 import { Panel } from '../components/ui';
 import { PaperQuantitySetting } from '../components/PaperQuantitySetting';
@@ -72,10 +72,9 @@ function formatTradingStrategyRule(strategy: Pick<Strategy, 'rule' | 'overlay' |
     const slow = strategy.rule?.kind === 'ma_crossover' ? strategy.rule.slow : strategy.slow;
     return `${fast}/${slow} 교차`;
   }
-  if (isPortfolioRule(strategy.rule)) return PORTFOLIO_CATALOG[strategy.rule.kind].title;
-  const rule: StrategyRule = strategy.rule ?? {
-    kind: 'ma_crossover',
-    maType: 'sma',
+  const rule = strategy.rule ?? {
+    kind: 'ma_crossover' as const,
+    maType: 'sma' as const,
     fast: strategy.fast,
     slow: strategy.slow,
   };
@@ -332,14 +331,14 @@ function Editor({
   const studioDraftState = selected
     ? {
         backtestDraft: {
-          code: selected.code,
+          code: isPortfolioRule(selected.rule) ? selected.rule.assets[0] : selected.code,
           rule: selected.rule ?? {
             kind: 'ma_crossover' as const,
             maType: 'sma' as const,
             fast: selected.fast,
             slow: selected.slow,
           },
-          ...(selected.overlay ? { overlay: selected.overlay } : {}),
+          ...(!isPortfolioRule(selected.rule) && selected.overlay ? { overlay: selected.overlay } : {}),
         },
       }
     : undefined;

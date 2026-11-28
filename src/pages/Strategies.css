@@ -20,6 +20,7 @@
 .studio-meta { color: var(--muted); }
 .studio-warning { color: #8c351e; }
 .studio-recent .text-link, .studio-card .text-link { display: inline-flex; align-items: center; min-height: 30px; }
+.studio-card-links { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px; }
 .studio-list-title { margin: 18px 0 9px; }
 .studio-card, .studio-rules { margin-bottom: 10px; }
 .studio-card-head, .studio-replay { justify-content: space-between; }
@@ -68,6 +69,21 @@
 }
 .rule-presets-label { font-size: 11px; color: var(--muted); font-weight: 500; }
 .rule-preset-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.rule-portfolio-basket {
+  margin: 8px 0 10px; padding: 10px 12px; border-radius: 6px;
+  border: 1px solid #d9e6e2; background: #f8fbfa; min-width: 0;
+}
+.rule-basket-head {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 6px 10px; margin-bottom: 8px;
+}
+.rule-basket-rows { display: grid; gap: 8px; margin-bottom: 8px; }
+.rule-basket-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end;
+}
+.rule-basket-row .field { margin-bottom: 0; min-width: 0; }
+.rule-basket-row-actions { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; }
+.rule-portfolio-basket > .field { margin-top: 8px; }
 .rule-overlay-box {
   margin: 8px 0 10px; padding: 10px 12px; border-radius: 6px;
   border: 1px solid var(--line); background: #fafcfb;
@@ -194,6 +210,7 @@
 }
 @media (max-width: 520px) {
   .studio-editor .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .rule-basket-row { grid-template-columns: minmax(0, 1fr); }
   .studio-tools-actions { width: 100%; }
   .studio-tools-actions > * { flex: 1 1 auto; }
   .research-help { padding: 15px; }

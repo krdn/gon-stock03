@@ -1,8 +1,8 @@
-import {isPortfolioRule, PORTFOLIO_CATALOG} from '../../../shared/portfolio-rules';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Play, Square } from 'lucide-react';
 import { type Strategy } from '../../../shared/model';
+import { PORTFOLIO_CATALOG, isPortfolioRule, portfolioOnly } from '../../../shared/portfolio-rules';
 import { STRATEGY_CATALOG } from '../../../shared/strategy-rules';
 import { useWorkbench } from '../../context';
 import { Badge, Panel } from '../ui';
@@ -13,6 +13,7 @@ import {
   isKisTickSmaRule,
   kisRealtimeBlockReason,
   signalLabels,
+  type StrategyTransferDraft,
 } from '../../pages/research-rule-form';
 
 /** 저장된 전략 1건을 규칙 요약·검증 실험 배지·실행 제어와 함께 표시하는 카드. */
@@ -21,6 +22,7 @@ export function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: bo
   const instrument = state.instruments.find(i => i.code === s.code);
   const quoteAge = realtime?.lastQuoteAt ? serverNow - Date.parse(realtime.lastQuoteAt) : Infinity;
   const freshQuote = quoteAge >= 0 && quoteAge <= (realtime?.quoteSeconds ?? 5) * 1000;
+  const portfolio = isPortfolioRule(s.rule);
   const kisRuleBlock = kis ? kisRealtimeBlockReason(s.rule, s.overlay, s.slow) : '';
   const kisConfirmedDaily = kis && isKisConfirmedDailyStrategy(s.rule, s.overlay, s.slow);
   let blocked = '';
@@ -30,6 +32,8 @@ export function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: bo
     else if (!realtime?.fresh || !realtime.ordersAllowed) blocked = realtime?.message || '실시간 상태 미확인';
     else if (!freshQuote) blocked = '현재 시세 유효 시간 확인 필요';
     else if (realtime.code !== s.code) blocked = '실시간 대조 종목이 전략과 다릅니다.';
+  } else if (portfolio) {
+    blocked = portfolioOnly;
   }
   let controlNote = '';
   const rechecking = status.phase === 'loading';
@@ -44,6 +48,13 @@ export function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: bo
   const [stopping, setStopping] = useState(false);
   const unit = kis && isKisTickSmaRule(s.rule, s.overlay) ? '이벤트' : '봉';
   const rule = s.rule;
+  const cardRule = rule ?? { kind: 'ma_crossover' as const, maType: 'sma' as const, fast: s.fast, slow: s.slow };
+  const cardBacktestDraft: StrategyTransferDraft = {
+    code: isPortfolioRule(cardRule) ? cardRule.assets[0] : s.code,
+    rule: cardRule,
+    ...(!isPortfolioRule(cardRule) && s.overlay ? { overlay: s.overlay } : {}),
+    ...(s.evidence ? { evidence: s.evidence } : {}),
+  };
 
   return (
     <Panel className="studio-card">
@@ -52,6 +63,7 @@ export function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: bo
           {s.name}
         </h3>
         <div className="studio-card-badges">
+          {portfolio && <Badge tone="teal">저장 일봉: 다종목 자산배분 (v3)</Badge>}
           {kisConfirmedDaily && <Badge tone="teal">KIS 모의: 확정 일봉 기반</Badge>}
           {s.evidence && (
             <Badge tone="teal">
@@ -234,13 +246,43 @@ export function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: bo
               손절 <b>-{rule.stopLossPct}%</b>
             </span>
           </>
+        ) : rule.kind === 'dual_momentum' ? (
+          <>
+            <span>
+              모멘텀 관측 <b>{rule.lookbackDays}봉</b>
+            </span>
+            <span>
+              리밸런싱 <b>{rule.rebalanceDays}봉</b>
+            </span>
+            <span>
+              위험 자산 <b>{rule.assets.join(' / ')}</b>
+            </span>
+            <span>
+              안전자산 <b>{rule.safeAsset ?? '현금 보유'}</b>
+            </span>
+          </>
+        ) : rule.kind === 'faber_gtaa' ? (
+          <>
+            <span>
+              추세 SMA <b>{rule.smaPeriod}봉</b>
+            </span>
+            <span>
+              리밸런싱 <b>{rule.rebalanceDays}봉</b>
+            </span>
+            <span>
+              위험 자산 <b>{rule.assets.join(' / ')}</b>
+            </span>
+            <span>
+              안전자산 <b>{rule.safeAsset ?? '현금 보유'}</b>
+            </span>
+          </>
         ) : null}
-        {s.overlay?.chandelier && (
+        {!portfolio && s.overlay?.chandelier && (
           <span>
             샹들리에 <b>ATR({s.overlay.chandelier.atrPeriod})×{s.overlay.chandelier.atrMultiplier}</b>
           </span>
         )}
-        {s.overlay?.volatilityParity && (
+        {!portfolio && s.overlay?.volatilityParity && (
           <span>
             변동성 패리티{' '}
             <b>
@@ -256,11 +298,20 @@ export function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: bo
       {kisRuleBlock && (
         <p className="studio-warning">{kisRuleBlock}</p>
       )}
-      {kis && (
-        <Link className="text-link" to={`/settings/trading/strategy?strategy=${encodeURIComponent(s.id)}`}>
-          다음 계약 준비
+      <div className="studio-card-links">
+        {kis && (
+          <Link className="text-link" to={`/settings/trading/strategy?strategy=${encodeURIComponent(s.id)}`}>
+            다음 계약 준비
+          </Link>
+        )}
+        <Link
+          className="text-link"
+          to={`/backtest?source=stored&strategyId=${encodeURIComponent(s.id)}`}
+          state={{ strategyDraft: cardBacktestDraft }}
+        >
+          이 설정으로 백테스트
         </Link>
-      )}
+      </div>
       {kis ? (
         <details className="studio-history" onToggle={e => setHistoryOpen(e.currentTarget.open)}>
           <summary>

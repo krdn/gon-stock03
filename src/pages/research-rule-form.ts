@@ -1,7 +1,14 @@
-import type {PortfolioRule} from '../../shared/portfolio-rules';
 import { z } from 'zod';
-import { backtestResultSchema, type SingleExperiment as Experiment } from '../../shared/backtest';
+import { backtestResultSchema, portfolioResultSchema, type Experiment } from '../../shared/backtest';
 import { masterCodeSchema } from '../../shared/market-data';
+import {
+  PORTFOLIO_CATALOG,
+  isPortfolioRule,
+  portfolioCodes,
+  portfolioOnly,
+  portfolioRuleSchema,
+  type PortfolioRule,
+} from '../../shared/portfolio-rules';
 import {
   STRATEGY_CATALOG,
   assertRealtimeRule,
@@ -15,13 +22,16 @@ import {
 /** 전략 실행 환경 구분 (`demo`: 합성 봉, `kis-paper`: KIS 모의 체결가 이벤트). */
 export type StrategyEnvironment = 'demo' | 'kis-paper';
 
-/** 지원하는 전략 규칙 종류 유니온. */
+/** 지원하는 단일·다종목 전략 규칙 유니온. */
+export type AnyStrategyRule = StrategyRule | PortfolioRule;
+
+/** 지원하는 전략 규칙 종류 유니온 (단일 종목 11종 + 다종목 자산배분 2종). */
 export type RuleKind = (typeof RULE_KINDS)[number];
 
 /** 규칙 프리셋 단계 키. */
 export type PresetKey = 'conservative' | 'basic' | 'aggressive';
 
-/** v1·v2 백테스트 결과를 모두 수용하는 유연한 결과 스키마. */
+/** v1·v2·v3 백테스트 결과를 모두 수용하는 유연한 결과 스키마. */
 const benchmarkSchema = backtestResultSchema.pick({
   returnPct: true,
   maxDrawdown: true,
@@ -29,16 +39,31 @@ const benchmarkSchema = backtestResultSchema.pick({
 });
 
 const flexibleTradeSchema = backtestResultSchema.shape.trades.element.extend({
+  code: masterCodeSchema.optional(),
   reason: z.string().min(1).optional(),
 });
 
-/** v1·v2 백테스트 결과 응답 검증 스키마. */
+/** v2 단일 규칙 백테스트 결과 엄격 검증 스키마 (`shared/backtest.ts` `ruleResultSchema`와 동일). */
+export const ruleReplayResultSchema = backtestResultSchema.extend({
+  trades: z.array(backtestResultSchema.shape.trades.element.extend({ reason: z.string().min(1) })),
+  benchmark: benchmarkSchema,
+});
+
+/** 엔진 버전(`v1`·`v2`·`v3`)에 대응하는 엄격 재현 결과 스키마를 반환한다. */
+export function replayResultSchemaFor(engineVersion: Experiment['snapshot']['engineVersion']) {
+  if (engineVersion === 'daily-portfolio-next-open-v3') return portfolioResultSchema;
+  if (engineVersion === 'daily-rules-next-open-v2') return ruleReplayResultSchema;
+  return backtestResultSchema;
+}
+
+/** v1·v2·v3 백테스트 결과 응답 검증 스키마. */
 export const flexibleResultSchema = backtestResultSchema.extend({
   trades: z.array(flexibleTradeSchema),
   benchmark: benchmarkSchema.optional(),
+  rebalances: portfolioResultSchema.shape.rebalances.optional(),
 });
 
-/** v1·v2 백테스트 결과 타입. */
+/** v1·v2·v3 백테스트 결과 타입. */
 export type FlexibleBacktestResult = z.infer<typeof flexibleResultSchema>;
 
 /** `/strategies` ↔ `/backtest` 간 이동 시 라우터 state로 주고받는 검증 실험 증거 스키마. */
@@ -53,7 +78,7 @@ export type StrategyEvidence = z.infer<typeof evidenceSchema>;
 /** `/strategies` ↔ `/backtest` 라우터 state 전달용 초안 스키마. */
 export const strategyTransferSchema = z.object({
   code: masterCodeSchema,
-  rule: strategyRuleSchema,
+  rule: z.union([strategyRuleSchema, portfolioRuleSchema]),
   overlay: exitOverlaySchema.optional(),
   evidence: evidenceSchema.optional(),
 });
@@ -108,6 +133,12 @@ export interface RuleFormState {
   buyDisparity: string;
   sellDisparity: string;
   stopLossPct: string;
+  portfolioAssets: string[];
+  portfolioSafeAsset: string;
+  dmLookbackDays: string;
+  dmRebalanceDays: string;
+  gtaaSmaPeriod: string;
+  gtaaRebalanceDays: string;
   useChandelier: boolean;
   atrPeriod: string;
   atrMultiplier: string;
@@ -136,10 +167,34 @@ export interface CostAssumptions {
   slippageBps: number;
 }
 
+/** 저장 일봉 백테스트의 단일 runId·날짜·정책·바스켓 runId 편집 상태 (DEMO ↔ 저장 일봉 전환 시 보존). */
+export interface StoredBacktestDraft {
+  singleRunId: string | null;
+  singleRunEdited: boolean;
+  from: string;
+  to: string;
+  dateEdited: boolean;
+  portfolioPolicy: 'adjusted' | 'raw' | null;
+  portfolioRunOverrides: Record<string, string>;
+}
+
+/** 저장 일봉 백테스트 기본 편집 상태를 생성한다. */
+export function defaultStoredBacktestDraft(): StoredBacktestDraft {
+  return {
+    singleRunId: null,
+    singleRunEdited: false,
+    from: '',
+    to: '',
+    dateEdited: false,
+    portfolioPolicy: null,
+    portfolioRunOverrides: {},
+  };
+}
+
 /** 저장 일봉 백테스트 선택 전환 시 전달하는 포커스·불러오기 정보. */
 export type BacktestSelection = { focus: 'policy' | 'run' } | { saved: Experiment };
 
-/** 지원하는 11종 전략 규칙 키 목록. */
+/** 지원하는 13종 전략 규칙 키 목록 (단일 종목 11종 + 다종목 자산배분 2종). */
 export const RULE_KINDS = [
   'ma_crossover',
   'donchian_breakout',
@@ -152,6 +207,8 @@ export const RULE_KINDS = [
   'bollinger_percent_b',
   'low_volume_pullback',
   'disparity_reversion',
+  'dual_momentum',
+  'faber_gtaa',
 ] as const;
 
 /** 전략 규칙 선택 `<optgroup>` 그룹 정의. */
@@ -165,7 +222,38 @@ export const RULE_GROUPS: { label: string; kinds: readonly RuleKind[] }[] = [
     label: '눌림목 · 평균회귀 (4종)',
     kinds: ['rsi2_pullback', 'bollinger_percent_b', 'low_volume_pullback', 'disparity_reversion'],
   },
+  {
+    label: '다종목 자산배분 (2종)',
+    kinds: ['dual_momentum', 'faber_gtaa'],
+  },
 ];
+
+/** 다종목 자산배분 2종 규칙의 3줄 요약 가이드 (매수·매도·주의). */
+export const PORTFOLIO_RULE_GUIDE: Record<
+  PortfolioRule['kind'],
+  { buyWhen: string; sellWhen: string; cautionRegime: string }
+> = {
+  dual_momentum: {
+    buyWhen: '리밸런싱일 종가 기준 최근 수익률이 양수(> 0)인 위험 자산 중 1위 종목에 100% 배분해요(동률 시 앞 순서 우선).',
+    sellWhen: '양의 모멘텀 위험 자산이 없으면 안전자산에 100% 배분하거나 비우면 현금을 보유해요.',
+    cautionRegime: '급반등·변동성 장세에서는 리밸런싱 주기 사이에 추세가 뒤바뀔 수 있어요.',
+  },
+  faber_gtaa: {
+    buyWhen: '리밸런싱일 종가가 이동평균선을 초과(>)하는 위험 자산에 각각 1/N 동일 비중으로 배분해요.',
+    sellWhen: '이동평균선 이하(<=)인 위험 자산의 비중 합계는 안전자산으로 돌리거나 비우면 현금을 보유해요.',
+    cautionRegime: '추세선 부근 횡보장에서는 리밸런싱마다 매수·매도가 반복될 수 있어요.',
+  },
+};
+
+/** 규칙 키가 다종목 자산배분 전략인지 판정한다. */
+export function isPortfolioKind(kind: RuleKind): kind is PortfolioRule['kind'] {
+  return kind === 'dual_momentum' || kind === 'faber_gtaa';
+}
+
+/** 규칙 키의 한글 표시 제목을 반환한다. */
+export function ruleTitle(kind: RuleKind): string {
+  return isPortfolioKind(kind) ? PORTFOLIO_CATALOG[kind].title : STRATEGY_CATALOG[kind].title;
+}
 
 /** 규칙 프리셋 버튼 목록. */
 export const PRESET_ENTRIES: { key: PresetKey; label: string }[] = [
@@ -246,6 +334,8 @@ export function defaultRuleForm(): RuleFormState {
   const percentB = STRATEGY_CATALOG.bollinger_percent_b.presets.basic;
   const lowVol = STRATEGY_CATALOG.low_volume_pullback.presets.basic;
   const disparity = STRATEGY_CATALOG.disparity_reversion.presets.basic;
+  const dm = PORTFOLIO_CATALOG.dual_momentum.presets.basic;
+  const gtaa = PORTFOLIO_CATALOG.faber_gtaa.presets.basic;
   return {
     kind: 'ma_crossover',
     maType: ma.kind === 'ma_crossover' ? ma.maType : 'sma',
@@ -292,6 +382,12 @@ export function defaultRuleForm(): RuleFormState {
     buyDisparity: String(disparity.buyDisparity),
     sellDisparity: String(disparity.sellDisparity),
     stopLossPct: String(disparity.stopLossPct),
+    portfolioAssets: ['069500', '005930'],
+    portfolioSafeAsset: '',
+    dmLookbackDays: String(dm.lookbackDays),
+    dmRebalanceDays: String(dm.rebalanceDays),
+    gtaaSmaPeriod: String(gtaa.smaPeriod),
+    gtaaRebalanceDays: String(gtaa.rebalanceDays),
     useChandelier: false,
     atrPeriod: '14',
     atrMultiplier: '3',
@@ -303,18 +399,20 @@ export function defaultRuleForm(): RuleFormState {
 }
 
 /** 규칙·오버레이 객체를 폼 상태로 변환한다. */
-export function formFromRule(rule?: StrategyRule, overlay?: ExitOverlay): RuleFormState {
+export function formFromRule(rule?: AnyStrategyRule, overlay?: ExitOverlay): RuleFormState {
   const base = defaultRuleForm();
-  if (overlay?.chandelier) {
-    base.useChandelier = true;
-    base.atrPeriod = String(overlay.chandelier.atrPeriod);
-    base.atrMultiplier = String(overlay.chandelier.atrMultiplier);
-  }
-  if (overlay?.volatilityParity) {
-    base.useVolatilityParity = true;
-    base.volLookback = String(overlay.volatilityParity.volLookback);
-    base.targetAnnualVolPct = String(overlay.volatilityParity.targetAnnualVolPct);
-    base.maxAllocationPct = String(overlay.volatilityParity.maxAllocationPct);
+  if (!isPortfolioRule(rule)) {
+    if (overlay?.chandelier) {
+      base.useChandelier = true;
+      base.atrPeriod = String(overlay.chandelier.atrPeriod);
+      base.atrMultiplier = String(overlay.chandelier.atrMultiplier);
+    }
+    if (overlay?.volatilityParity) {
+      base.useVolatilityParity = true;
+      base.volLookback = String(overlay.volatilityParity.volLookback);
+      base.targetAnnualVolPct = String(overlay.volatilityParity.targetAnnualVolPct);
+      base.maxAllocationPct = String(overlay.volatilityParity.maxAllocationPct);
+    }
   }
   if (!rule) return base;
   base.kind = rule.kind;
@@ -385,14 +483,38 @@ export function formFromRule(rule?: StrategyRule, overlay?: ExitOverlay): RuleFo
       base.sellDisparity = String(rule.sellDisparity);
       base.stopLossPct = String(rule.stopLossPct);
       break;
+    case 'dual_momentum':
+      base.portfolioAssets = [...rule.assets];
+      base.portfolioSafeAsset = rule.safeAsset ?? '';
+      base.dmLookbackDays = String(rule.lookbackDays);
+      base.dmRebalanceDays = String(rule.rebalanceDays);
+      break;
+    case 'faber_gtaa':
+      base.portfolioAssets = [...rule.assets];
+      base.portfolioSafeAsset = rule.safeAsset ?? '';
+      base.gtaaSmaPeriod = String(rule.smaPeriod);
+      base.gtaaRebalanceDays = String(rule.rebalanceDays);
+      break;
   }
   return base;
 }
 
 /** 현재 폼에 카탈로그 프리셋을 적용한다. */
 export function applyPreset(form: RuleFormState, presetKey: PresetKey): RuleFormState {
+  const next: RuleFormState = { ...form, portfolioAssets: [...form.portfolioAssets] };
+  if (form.kind === 'dual_momentum') {
+    const preset = PORTFOLIO_CATALOG.dual_momentum.presets[presetKey];
+    next.dmLookbackDays = String(preset.lookbackDays);
+    next.dmRebalanceDays = String(preset.rebalanceDays);
+    return next;
+  }
+  if (form.kind === 'faber_gtaa') {
+    const preset = PORTFOLIO_CATALOG.faber_gtaa.presets[presetKey];
+    next.gtaaSmaPeriod = String(preset.smaPeriod);
+    next.gtaaRebalanceDays = String(preset.rebalanceDays);
+    return next;
+  }
   const preset = STRATEGY_CATALOG[form.kind].presets[presetKey];
-  const next = { ...form };
   switch (preset.kind) {
     case 'ma_crossover':
       next.maType = preset.maType;
@@ -464,9 +586,16 @@ export function applyPreset(form: RuleFormState, presetKey: PresetKey): RuleForm
   return next;
 }
 
-/** 두 규칙 폼 상태가 모든 필드에서 동일한지 비교한다. */
+/** 두 규칙 폼 상태가 모든 필드(바스켓 종목 순서 포함)에서 동일한지 비교한다. */
 export function isSameRuleForm(a: RuleFormState, b: RuleFormState): boolean {
-  return (Object.keys(a) as (keyof RuleFormState)[]).every(key => a[key] === b[key]);
+  return (Object.keys(a) as (keyof RuleFormState)[]).every(key => {
+    const av = a[key];
+    const bv = b[key];
+    if (Array.isArray(av) && Array.isArray(bv)) {
+      return av.length === bv.length && av.every((item, index) => item === bv[index]);
+    }
+    return av === bv;
+  });
 }
 
 /** 문자열 입력값이 대상 숫자와 정확히 일치하는지 판정한다(빈 문자열의 0 변환 차단). */
@@ -477,6 +606,24 @@ function numEq(raw: string, expected: number): boolean {
 /** 현재 폼 값이 일치하는 프리셋 키를 반환한다(동일 값 프리셋은 기본 우선). */
 export function matchedPreset(form: RuleFormState): PresetKey | null {
   const order: PresetKey[] = ['basic', 'conservative', 'aggressive'];
+  if (form.kind === 'dual_momentum') {
+    for (const key of order) {
+      const preset = PORTFOLIO_CATALOG.dual_momentum.presets[key];
+      if (numEq(form.dmLookbackDays, preset.lookbackDays) && numEq(form.dmRebalanceDays, preset.rebalanceDays)) {
+        return key;
+      }
+    }
+    return null;
+  }
+  if (form.kind === 'faber_gtaa') {
+    for (const key of order) {
+      const preset = PORTFOLIO_CATALOG.faber_gtaa.presets[key];
+      if (numEq(form.gtaaSmaPeriod, preset.smaPeriod) && numEq(form.gtaaRebalanceDays, preset.rebalanceDays)) {
+        return key;
+      }
+    }
+    return null;
+  }
   for (const key of order) {
     const preset = STRATEGY_CATALOG[form.kind].presets[key];
     if (preset.kind === 'ma_crossover' && form.kind === 'ma_crossover') {
@@ -595,10 +742,116 @@ export function badNumberMessage(input: HTMLInputElement): string {
   return label ? `${label} 항목에 올바른 숫자를 입력하세요.` : '숫자 입력 형식이 올바르지 않습니다.';
 }
 
-/** 폼 상태에서 스키마 검증을 거친 규칙·오버레이를 조립한다. */
+/** 폼 상태에서 스키마 검증을 거친 규칙·오버레이를 조립한다 (다종목 전략은 오버레이 생략). */
 export function buildRuleAndOverlay(
   form: RuleFormState,
-): { ok: true; rule: StrategyRule; overlay?: ExitOverlay } | { ok: false; error: string; focusName?: string } {
+): { ok: true; rule: AnyStrategyRule; overlay?: ExitOverlay } | { ok: false; error: string; focusName?: string } {
+  if (isPortfolioKind(form.kind)) {
+    if (form.portfolioAssets.length < 2 || form.portfolioAssets.length > 6) {
+      return { ok: false, error: '위험 자산은 2-6개 종목으로 구성하세요.', focusName: 'portfolioAsset-0' };
+    }
+    const assets: string[] = [];
+    const seen = new Set<string>();
+    for (let i = 0; i < form.portfolioAssets.length; i++) {
+      const code = form.portfolioAssets[i].trim().toUpperCase();
+      if (!masterCodeSchema.safeParse(code).success) {
+        return {
+          ok: false,
+          error: `위험 자산 ${i + 1} 종목코드는 6자리 영숫자로 입력하세요.`,
+          focusName: `portfolioAsset-${i}`,
+        };
+      }
+      if (seen.has(code)) {
+        return {
+          ok: false,
+          error: `바스켓 종목이 중복됩니다 (${code}). 서로 다른 종목코드를 입력하세요.`,
+          focusName: `portfolioAsset-${i}`,
+        };
+      }
+      seen.add(code);
+      assets.push(code);
+    }
+    const trimmedSafe = form.portfolioSafeAsset.trim().toUpperCase();
+    const safeAsset = trimmedSafe === '' ? null : trimmedSafe;
+    if (safeAsset !== null) {
+      if (!masterCodeSchema.safeParse(safeAsset).success) {
+        return {
+          ok: false,
+          error: '안전자산 종목코드는 6자리 영숫자로 입력하거나 비워두세요.',
+          focusName: 'portfolioSafeAsset',
+        };
+      }
+      if (seen.has(safeAsset)) {
+        return {
+          ok: false,
+          error: `안전자산(${safeAsset})은 위험 자산 목록과 중복될 수 없습니다.`,
+          focusName: 'portfolioSafeAsset',
+        };
+      }
+    }
+    let rawPortfolio: unknown;
+    if (form.kind === 'dual_momentum') {
+      const lookbackDays = Number(form.dmLookbackDays);
+      const rebalanceDays = Number(form.dmRebalanceDays);
+      if (
+        form.dmLookbackDays.trim() === '' ||
+        !Number.isInteger(lookbackDays) ||
+        lookbackDays < 20 ||
+        lookbackDays > 252
+      ) {
+        return {
+          ok: false,
+          error: '모멘텀 관측 기간은 20-252 사이의 정수로 입력하세요.',
+          focusName: 'dmLookbackDays',
+        };
+      }
+      if (
+        form.dmRebalanceDays.trim() === '' ||
+        !Number.isInteger(rebalanceDays) ||
+        rebalanceDays < 5 ||
+        rebalanceDays > 60
+      ) {
+        return {
+          ok: false,
+          error: '리밸런싱 주기는 5-60 사이의 정수로 입력하세요.',
+          focusName: 'dmRebalanceDays',
+        };
+      }
+      rawPortfolio = { kind: 'dual_momentum', assets, safeAsset, lookbackDays, rebalanceDays };
+    } else {
+      const smaPeriod = Number(form.gtaaSmaPeriod);
+      const rebalanceDays = Number(form.gtaaRebalanceDays);
+      if (form.gtaaSmaPeriod.trim() === '' || !Number.isInteger(smaPeriod) || smaPeriod < 20 || smaPeriod > 250) {
+        return {
+          ok: false,
+          error: '추세 이동평균 기간은 20-250 사이의 정수로 입력하세요.',
+          focusName: 'gtaaSmaPeriod',
+        };
+      }
+      if (
+        form.gtaaRebalanceDays.trim() === '' ||
+        !Number.isInteger(rebalanceDays) ||
+        rebalanceDays < 5 ||
+        rebalanceDays > 60
+      ) {
+        return {
+          ok: false,
+          error: '리밸런싱 주기는 5-60 사이의 정수로 입력하세요.',
+          focusName: 'gtaaRebalanceDays',
+        };
+      }
+      rawPortfolio = { kind: 'faber_gtaa', assets, safeAsset, smaPeriod, rebalanceDays };
+    }
+    const parsedPortfolio = portfolioRuleSchema.safeParse(rawPortfolio);
+    if (!parsedPortfolio.success) {
+      return {
+        ok: false,
+        error: parsedPortfolio.error.issues[0]?.message ?? '다종목 자산배분 규칙 입력값을 확인하세요.',
+      };
+    }
+    return { ok: true, rule: parsedPortfolio.data, overlay: undefined };
+  }
+
   let rawRule: unknown;
   switch (form.kind) {
     case 'ma_crossover': {
@@ -924,9 +1177,10 @@ export function buildRuleAndOverlay(
 
 /** v1 기본 SMA 경로(필터·오버레이 없음, 장기 100 이하)인지 판정한다. */
 export function isLegacySma(
-  rule: StrategyRule,
+  rule: AnyStrategyRule,
   overlay?: ExitOverlay,
 ): rule is Extract<StrategyRule, { kind: 'ma_crossover' }> {
+  if (isPortfolioRule(rule)) return false;
   return (
     rule.kind === 'ma_crossover' &&
     rule.maType === 'sma' &&
@@ -940,12 +1194,19 @@ export function isLegacySma(
 
 /** DEMO(종가 전용) 환경에서 실행·저장 가능한 규칙 조합인지 확인한다 (`assertCloseOnly`와 동일 기준). */
 export function isDemoRuleSupported(form: RuleFormState): boolean {
+  if (isPortfolioKind(form.kind)) return false;
   if (form.useChandelier || form.useVolatilityParity) return false;
   if (STRATEGY_CATALOG[form.kind].environments.demo === false) return false;
   if (form.kind === 'ma_crossover' && form.minRelativeVolume.trim() !== '' && Number(form.minRelativeVolume) > 0) {
     return false;
   }
   return true;
+}
+
+/** DEMO 환경에서 차단될 때 표시할 사유 문구를 반환한다. */
+export function demoFormBlockReason(form: RuleFormState): string {
+  if (isPortfolioKind(form.kind)) return portfolioOnly;
+  return 'DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙이나 샹들리에 청산·변동성 패리티 오버레이는 저장 일봉 백테스트에서 사용하세요.';
 }
 
 /** 폼 상태가 필터·오버레이 없는 기본 SMA인지 판정한다(`shared/strategy-rules` `unfilteredSma`와 동일 기준). */
@@ -959,7 +1220,7 @@ function isFormUnfilteredSma(form: RuleFormState): boolean {
 }
 
 /** KIS 모의 계약·실시간 시작 차단 사유를 반환한다(`shared/strategy-rules` `assertRealtimeRule`과 100% 일치). */
-export function kisRealtimeBlockReason(rule?: PortfolioRule | StrategyRule, overlay?: ExitOverlay, slow?: number): string {
+export function kisRealtimeBlockReason(rule?: AnyStrategyRule, overlay?: ExitOverlay, slow?: number): string {
   try {
     assertRealtimeRule(rule, overlay, slow);
     return '';
@@ -970,7 +1231,7 @@ export function kisRealtimeBlockReason(rule?: PortfolioRule | StrategyRule, over
 
 /** 저장 전략이 KIS 모의 확정 일봉 기반(종가 확정형 10종 + 선택 샹들리에)인지 판정한다. */
 export function isKisConfirmedDailyStrategy(
-  rule?: PortfolioRule | StrategyRule,
+  rule?: AnyStrategyRule,
   overlay?: ExitOverlay,
   slow?: number,
 ): boolean {
@@ -983,7 +1244,8 @@ export function isKisTickSmaForm(form: RuleFormState): boolean {
 }
 
 /** 저장 전략이 KIS 모의 체결가 이벤트 단위를 사용하는 무필터·무오버레이 기본 SMA인지 판정한다(`slow` 상한과 무관). */
-export function isKisTickSmaRule(rule?: PortfolioRule | StrategyRule, overlay?: ExitOverlay): boolean {
+export function isKisTickSmaRule(rule?: AnyStrategyRule, overlay?: ExitOverlay): boolean {
+  if (isPortfolioRule(rule)) return false;
   if (overlay?.chandelier || overlay?.volatilityParity) return false;
   return (
     !rule ||
@@ -1001,6 +1263,7 @@ export function isKisBasicSmaSlowExceeded(form: RuleFormState): boolean {
 
 /** 폼 상태에서 KIS 모의 계약·시작 지원 여부를 판정한다(`assertRealtimeRule`과 100% 일치). */
 export function isKisRealtimeFormSupported(form: RuleFormState): boolean {
+  if (isPortfolioKind(form.kind)) return false;
   if (form.kind === 'volatility_breakout' || form.useVolatilityParity) return false;
   if (isKisBasicSmaSlowExceeded(form)) return false;
   return true;
@@ -1018,6 +1281,7 @@ export function kisFormExecutionMode(form: RuleFormState): KisFormExecutionMode 
 
 /** 폼 상태에서 KIS 모의 시작 제한 사유를 반환한다(지원 설정이면 빈 문자열). */
 export function kisFormBlockReason(form: RuleFormState): string {
+  if (isPortfolioKind(form.kind)) return portfolioOnly;
   if (form.kind === 'volatility_breakout' || form.useVolatilityParity) {
     return '윌리엄스 변동성 돌파와 변동성 패리티 수량 조절은 저장 일봉 백테스트 전용입니다.';
   }
@@ -1027,14 +1291,14 @@ export function kisFormBlockReason(form: RuleFormState): string {
   return '';
 }
 
-/** 저장된 실험 입력에서 표준 StrategyRule을 추출한다. */
-export function ruleFromExperimentInput(input: Experiment['snapshot']['input']): StrategyRule {
+/** 저장된 실험 입력에서 표준 StrategyRule 또는 PortfolioRule을 추출한다. */
+export function ruleFromExperimentInput(input: Experiment['snapshot']['input']): AnyStrategyRule {
   if ('rule' in input) return input.rule;
   return { kind: 'ma_crossover', maType: 'sma', fast: input.fast, slow: input.slow };
 }
 
 /** 규칙과 오버레이를 한 줄 한글 요약으로 포맷한다. */
-export function formatRuleSummary(rule: StrategyRule, overlay?: ExitOverlay): string {
+export function formatRuleSummary(rule: AnyStrategyRule, overlay?: ExitOverlay): string {
   const parts: string[] = [];
   switch (rule.kind) {
     case 'ma_crossover':
@@ -1092,14 +1356,26 @@ export function formatRuleSummary(rule: StrategyRule, overlay?: ExitOverlay): st
         `${STRATEGY_CATALOG.disparity_reversion.title} (MA ${rule.maPeriod}봉 · 매수 ≤ ${rule.buyDisparity}% / 매도 ≥ ${rule.sellDisparity}% · 손절 ${rule.stopLossPct}%)`,
       );
       break;
+    case 'dual_momentum':
+      parts.push(
+        `${PORTFOLIO_CATALOG.dual_momentum.title} (관측 ${rule.lookbackDays}봉 · 리밸런싱 ${rule.rebalanceDays}봉 · 위험 ${rule.assets.join('/')} · 안전 ${rule.safeAsset ?? '현금'})`,
+      );
+      break;
+    case 'faber_gtaa':
+      parts.push(
+        `${PORTFOLIO_CATALOG.faber_gtaa.title} (SMA ${rule.smaPeriod}봉 · 리밸런싱 ${rule.rebalanceDays}봉 · 위험 ${rule.assets.join('/')} · 안전 ${rule.safeAsset ?? '현금'})`,
+      );
+      break;
   }
-  if (overlay?.chandelier) {
-    parts.push(`샹들리에 ATR(${overlay.chandelier.atrPeriod})×${overlay.chandelier.atrMultiplier}`);
-  }
-  if (overlay?.volatilityParity) {
-    parts.push(
-      `변동성 패리티(${overlay.volatilityParity.volLookback}일 · 목표 ${overlay.volatilityParity.targetAnnualVolPct}% · 최대 ${overlay.volatilityParity.maxAllocationPct}%)`,
-    );
+  if (!isPortfolioRule(rule)) {
+    if (overlay?.chandelier) {
+      parts.push(`샹들리에 ATR(${overlay.chandelier.atrPeriod})×${overlay.chandelier.atrMultiplier}`);
+    }
+    if (overlay?.volatilityParity) {
+      parts.push(
+        `변동성 패리티(${overlay.volatilityParity.volLookback}일 · 목표 ${overlay.volatilityParity.targetAnnualVolPct}% · 최대 ${overlay.volatilityParity.maxAllocationPct}%)`,
+      );
+    }
   }
   return parts.join(' · ');
 }
@@ -1134,14 +1410,31 @@ export function defaultEditorDraft(): StrategyEditorDraft {
 
 /** 백테스트 전달 초안으로부터 전략 에디터 초안 상태를 생성한다. */
 export function editorDraftFromTransfer(draft: StrategyTransferDraft): StrategyEditorDraft {
+  const code = isPortfolioRule(draft.rule) ? draft.rule.assets[0] : draft.code;
   return {
-    name: `${STRATEGY_CATALOG[draft.rule.kind].title} 전략`,
-    code: draft.code,
-    ruleForm: formFromRule(draft.rule, draft.overlay),
+    name: `${ruleTitle(draft.rule.kind)} 전략`,
+    code,
+    ruleForm: formFromRule(draft.rule, isPortfolioRule(draft.rule) ? undefined : draft.overlay),
     evidence: draft.evidence,
     qty: '1',
     attempted: false,
     formError: '',
-    draftSourceCode: draft.code,
+    draftSourceCode: code,
   };
 }
+
+/** 규칙 바스켓 종목 목록(유효한 6자리 영숫자 코드만, 중복 제외·순서 유지)을 추출한다. */
+export function formPortfolioCodes(form: RuleFormState): string[] {
+  const raw = [...form.portfolioAssets, form.portfolioSafeAsset];
+  const seen = new Set<string>();
+  const codes: string[] = [];
+  for (const item of raw) {
+    const code = item.trim().toUpperCase();
+    if (!code || seen.has(code) || !masterCodeSchema.safeParse(code).success) continue;
+    seen.add(code);
+    codes.push(code);
+  }
+  return codes;
+}
+
+export { portfolioCodes };

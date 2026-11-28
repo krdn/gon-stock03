@@ -3,17 +3,21 @@ import { useNavigate } from 'react-router-dom';
 import { FlaskConical, Link2 } from 'lucide-react';
 import { codeSchema } from '../../../shared/contracts';
 import { masterCodeSchema } from '../../../shared/market-data';
+import { isPortfolioRule } from '../../../shared/portfolio-rules';
 import { useWorkbench } from '../../context';
 import { Panel } from '../ui';
 import {
   badNumberMessage,
   buildRuleAndOverlay,
+  demoFormBlockReason,
   findBadNumberInput,
   isDemoRuleSupported,
   isKisBasicSmaSlowExceeded,
   isKisRealtimeFormSupported,
   isKisTickSmaForm,
+  isPortfolioKind,
   isSameRuleForm,
+  kisFormBlockReason,
   type RuleFormState,
   type StrategyEditorDraft,
   type StrategyEnvironment,
@@ -38,6 +42,8 @@ export function StrategyEditor({
   const formRef = useRef<HTMLFormElement>(null);
   const { name, code, ruleForm, evidence, qty, attempted, formError, draftSourceCode } = draft;
 
+  const portfolioMode = isPortfolioKind(ruleForm.kind);
+  const portfolioPrimaryCode = ruleForm.portfolioAssets[0]?.trim().toUpperCase() ?? '';
   const instruments = server ? state.instruments : [];
   const noSelection = !available
     ? status.phase === 'loading'
@@ -46,7 +52,7 @@ export function StrategyEditor({
     : instruments.length
       ? '종목을 선택하세요'
       : '저장 가능한 종목 없음';
-  const validCode = instruments.some(i => i.code === code);
+  const validCode = portfolioMode ? true : instruments.some(i => i.code === code);
   const invalidPeriods =
     attempted &&
     ruleForm.kind === 'ma_crossover' &&
@@ -57,17 +63,20 @@ export function StrategyEditor({
   const demoUnsupported = environment === 'demo' && !isDemoRuleSupported(ruleForm);
   const kisSlowExceeded = environment === 'kis-paper' && isKisBasicSmaSlowExceeded(ruleForm);
   const kisUnsupported = environment === 'kis-paper' && !isKisRealtimeFormSupported(ruleForm) && !kisSlowExceeded;
-  const alphanumericDraftCode = Boolean(draftSourceCode && !codeSchema.safeParse(draftSourceCode).success);
+  const alphanumericDraftCode = Boolean(!portfolioMode && draftSourceCode && !codeSchema.safeParse(draftSourceCode).success);
 
   function focusField(fieldName?: string) {
     if (!fieldName) return;
-    formRef.current?.querySelector<HTMLInputElement>(`[name="${fieldName}"]`)?.focus();
+    formRef.current?.querySelector<HTMLElement>(`[name="${fieldName}"]`)?.focus();
   }
 
   function handleRuleChange(next: RuleFormState) {
     setDraft(prev => {
       if (isSameRuleForm(prev.ruleForm, next)) return prev;
-      return { ...prev, ruleForm: next, formError: '', evidence: undefined };
+      const syncedCode = isPortfolioKind(next.kind)
+        ? next.portfolioAssets[0]?.trim().toUpperCase() || prev.code
+        : prev.code;
+      return { ...prev, code: syncedCode, ruleForm: next, formError: '', evidence: undefined };
     });
   }
 
@@ -112,8 +121,7 @@ export function StrategyEditor({
     if (environment === 'demo' && !isDemoRuleSupported(ruleForm)) {
       setDraft(prev => ({
         ...prev,
-        formError:
-          'DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙이나 샹들리에 청산·변동성 패리티 오버레이는 저장 일봉 백테스트에서 사용하세요.',
+        formError: demoFormBlockReason(ruleForm),
       }));
       return;
     }
@@ -123,18 +131,19 @@ export function StrategyEditor({
       focusField('qty');
       return;
     }
+    const submitCode = isPortfolioRule(built.rule) ? built.rule.assets[0] : code;
     const compatFast = built.rule.kind === 'ma_crossover' ? built.rule.fast : 5;
     const compatSlow = built.rule.kind === 'ma_crossover' ? built.rule.slow : 20;
     const payload: Record<string, unknown> = {
       name,
-      code,
+      code: submitCode,
       fast: compatFast,
       slow: compatSlow,
       qty: parsedQty,
       environment,
       rule: built.rule,
     };
-    if (built.overlay) payload.overlay = built.overlay;
+    if (!isPortfolioRule(built.rule) && built.overlay) payload.overlay = built.overlay;
     if (evidence) payload.evidence = evidence;
     try {
       const saved = await act<{ id: string }>('strategies', payload);
@@ -174,15 +183,17 @@ export function StrategyEditor({
       focusField(built.focusName);
       return;
     }
-    const targetCode = validCode
-      ? code
-      : masterCodeSchema.safeParse(code).success
+    const targetCode = isPortfolioRule(built.rule)
+      ? built.rule.assets[0]
+      : validCode
         ? code
-        : instruments[0]?.code ?? code;
+        : masterCodeSchema.safeParse(code).success
+          ? code
+          : instruments[0]?.code ?? code;
     const strategyDraft: StrategyTransferDraft = {
       code: targetCode,
       rule: built.rule,
-      ...(built.overlay ? { overlay: built.overlay } : {}),
+      ...(!isPortfolioRule(built.rule) && built.overlay ? { overlay: built.overlay } : {}),
       ...(evidence ? { evidence } : {}),
     };
     navigate('/backtest', { state: { strategyDraft } });
@@ -207,23 +218,30 @@ export function StrategyEditor({
             maxLength={60}
           />
         </label>
-        <label className="field">
-          대상 종목
-          <select
-            required
-            disabled={!available || busy}
-            value={validCode ? code : ''}
-            onChange={e => handleCodeChange(e.target.value)}
-          >
-            {!validCode && <option value="">{noSelection}</option>}
-            {instruments.map(i => (
-              <option key={i.code} value={i.code}>
-                {i.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {available && draftSourceCode && !validCode && (
+        {portfolioMode ? (
+          <label className="field">
+            대표 종목 (위험 자산 1 자동 동기화)
+            <input name="code" type="text" value={portfolioPrimaryCode} readOnly aria-readonly="true" />
+          </label>
+        ) : (
+          <label className="field">
+            대상 종목
+            <select
+              required
+              disabled={!available || busy}
+              value={validCode ? code : ''}
+              onChange={e => handleCodeChange(e.target.value)}
+            >
+              {!validCode && <option value="">{noSelection}</option>}
+              {instruments.map(i => (
+                <option key={i.code} value={i.code}>
+                  {i.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {!portfolioMode && available && draftSourceCode && !validCode && (
           <p className="studio-warning" role="status">
             {alphanumericDraftCode
               ? `백테스트 종목(${draftSourceCode})은 영숫자 코드로 전략 저장(숫자 6자리 종목) 대상이 아닙니다. 규칙·오버레이 설정은 유지되므로 대상 종목을 선택해 저장하세요.`
@@ -239,6 +257,7 @@ export function StrategyEditor({
           unit={unit}
           periodError={invalidPeriods}
           periodErrorId="strategy-period-error"
+          codeOptions={instruments.map(i => ({ code: i.code, name: i.name }))}
         />
 
         {evidence && (
@@ -259,14 +278,13 @@ export function StrategyEditor({
 
         {demoUnsupported && (
           <p className="studio-warning" role="status">
-            DEMO는 종가만 제공합니다. 고저가·거래량이 필요한 규칙이나 샹들리에 청산·변동성 패리티 오버레이는 DEMO에
-            저장할 수 없으며, 아래 버튼으로 저장 일봉 백테스트에서 검증할 수 있습니다.
+            {demoFormBlockReason(ruleForm)} DEMO에 저장할 수 없으며, 아래 버튼으로 저장 일봉 백테스트에서 검증할 수
+            있습니다.
           </p>
         )}
         {kisUnsupported && (
           <p className="studio-warning" role="status">
-            윌리엄스 변동성 돌파와 변동성 패리티 수량 조절은 저장 일봉 백테스트 전용입니다. KIS 모의에는 정지 상태로만
-            저장할 수 있으며 전략 시작·계약 고정은 차단됩니다.
+            {kisFormBlockReason(ruleForm)} KIS 모의에는 정지 상태로만 저장할 수 있으며 전략 시작·계약 고정은 차단됩니다.
           </p>
         )}
         {kisSlowExceeded && (
