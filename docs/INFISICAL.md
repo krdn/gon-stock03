@@ -59,6 +59,10 @@ chmod 600 .secrets/infisical-dev.json
 
 `npm run dev`는 기동 시 `POST https://app.infisical.com/api/v1/auth/universal-auth/login`으로 Access Token을 메모리에만 발급받아 `GET /api/v4/secrets`(구버전 서버는 `/api/v3/secrets/raw` 폴백)에서 KIS 4개 키를 읽어 API 자식 프로세스에만 주입하며, 웹 프로세스 및 모든 자식 프로세스에서는 `INFISICAL_*` 변수를 제거한다. 심볼릭 링크·권한 과다(`0600`/`0700` 위반)·평문 `http://` 주소는 거부하며, [vite.config.ts](../vite.config.ts)의 `server.fs.deny`로 `.secrets/**`·`.local/**`의 개발 서버 HTTP 노출을 차단한다.
 
+일반 `npm run dev`에서 KIS 4개가 이미 셸에 있으면 조회를 생략한다. KIS 주입에 성공하면 기존 셸의 `OPENDART_API_KEY`를 보존하고, 머신 인증의 `dev /kis` 응답(Secret Import 포함)에 유효한 키가 있으면 함께 적용한다. 키가 비어 있으면 같은 인증 방식으로 공용 프로젝트 `890430d6-ff44-4317-9d91-64d912e0d67a`의 `dev /stock`을 조회한다. 다른 위치는 `INFISICAL_STOCK_PROJECT_ID`와 `INFISICAL_STOCK_PATH`로 각각 지정한다. 머신 인증에서 이 추가 조회는 Universal Auth 로그인을 한 번 더 수행한다. 직접 조회하려면 Machine Identity에 해당 경로 읽기 권한을 부여한다. 선택 키는 API 서버에만 전달하며, 조회 실패 시 경고 없이 KIS 기동을 계속한다. 키가 없으면 공시는 RSS로 수집한다.
+
+2026-11-27 수동 실키 호출로 OpenDART `list.json`에서 상장사 공시 285건을 5페이지에 걸쳐 수집했고 페이지 상한을 `dartGaps`에 기록했다. 자동 주입은 모의 전송으로 검증했으며 운영 자동 주입은 미측정이다. [이슈 #256](https://github.com/krdn/gon-stock03/issues/256)
+
 머신 인증 설정이 없으면 기존 `infisical` CLI 조회로 폴백하며, 대화형 터미널에서 CLI 응답 시간 초과(`ETIMEDOUT`)가 감지되면 자동으로 `infisical login --domain ...`을 실행해 로그인 완료 후 재조회한다. `--realtime`(`npm run dev:realtime`) 및 `npm run dev:morning`은 기존 `infisical secrets-manager run --env dev --path /kis` 경로를 유지하며 `.secrets/infisical-dev.json` 자동 주입 범위 밖이다.
 
 서버·컨테이너·Kubernetes에서는 지원되는 workload identity/OIDC와 Agent·SDK·Operator 중 해당 배포 방식을 사용한다.

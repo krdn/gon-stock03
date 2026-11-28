@@ -10,6 +10,8 @@ import { createServer } from 'vite';
 import viteConfig from '../vite.config.ts';
 import {
   applyKisRecords,
+  applyOptionalRecords,
+  DEFAULT_STOCK_PROJECT_ID,
   DEFAULT_INFISICAL_DOMAIN,
   fetchKisSecretsViaUniversalAuth,
   readMachineAuthConfig,
@@ -223,6 +225,38 @@ test('applyKisRecords stays all-or-nothing and stripInfisicalEnv removes INFISIC
   assert.equal(stripped.INFISICAL_PROJECT_ID, undefined);
 });
 
+test('optional records respect existing values and only accompany a successful KIS batch', () => {
+  const dart = { secretKey: 'OPENDART_API_KEY', secretValue: 'fixture-dart' };
+  for (const secretValue of ['', ' ', ' leading', 'trailing ', 'a\nb', 'a\0b', 'a\x7fb']) {
+    const env: NodeJS.ProcessEnv = {};
+    applyOptionalRecords(env, [{ ...dart, secretValue }]);
+    assert.equal(env.OPENDART_API_KEY, undefined);
+  }
+  const env: NodeJS.ProcessEnv = { OPENDART_API_KEY: ' ' };
+  assert.equal(applyKisRecords(env, [dart]).ok, false);
+  assert.equal(env.OPENDART_API_KEY, ' ');
+  assert.equal(applyKisRecords(env, [...fullSecrets, dart]).ok, true);
+  assert.equal(env.OPENDART_API_KEY, dart.secretValue);
+  applyOptionalRecords(env, [{ ...dart, secretValue: 'fixture-other' }]);
+  assert.equal(env.OPENDART_API_KEY, dart.secretValue);
+});
+
+test('explicit stock target is used on both v4 and v3', async () => {
+  const urls: URL[] = [];
+  const result = await fetchKisSecretsViaUniversalAuth(baseConfig, async input => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith('/login')) return Response.json({ accessToken: 'fixture-token' });
+    urls.push(url);
+    return url.pathname.includes('/v4/') ? new Response(null, { status: 404 }) : Response.json({ secrets: [] });
+  }, { projectId: 'stock-project', secretPath: '/custom' });
+  assert.ok(result.ok);
+  assert.deepEqual(urls.map(url => [...url.searchParams].filter(([key]) =>
+    ['projectId', 'workspaceId', 'secretPath'].includes(key))), [
+    [['projectId', 'stock-project'], ['secretPath', '/custom']],
+    [['workspaceId', 'stock-project'], ['secretPath', '/custom']],
+  ]);
+});
+
 test('scripts/dev.ts uses machine auth file without invoking CLI and handles machine error or CLI timeout safely', () => {
   const dir = mkdtempSync(join(tmpdir(), 'gon-dev-machine-'));
   try {
@@ -242,28 +276,44 @@ test('scripts/dev.ts uses machine auth file without invoking CLI and handles mac
       import { syncBuiltinESMExports } from 'node:module';
       import { EventEmitter } from 'node:events';
 
-      cp.spawnSync = () => {
+      const mode = process.env.MODE;
+      const kis = ${JSON.stringify(fullSecrets)};
+      const dart = { secretKey: 'OPENDART_API_KEY', secretValue: 'fixture-dart' };
+      const paths = [];
+      let cliCalls = 0;
+      cp.spawnSync = (command, args, options) => {
+        cliCalls++;
+        const path = args[args.indexOf('--path') + 1];
+        paths.push(path);
         if (process.env.EXPECT_CLI_TIMEOUT === '1') {
           return { status: null, error: Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }) };
         }
-        assert.fail('CLI must not run for machine auth cases');
-      };
-      globalThis.fetch = async (url) => {
-        if (String(url).endsWith('/api/v1/auth/universal-auth/login')) {
-          return Response.json({ accessToken: 'fixture-jwt-token', expiresIn: 7200 });
+        if (path === '/kis') {
+          return { status: mode === 'cli-fail' ? 1 : 0, stdout: JSON.stringify(kis) };
         }
-        return Response.json({
-          secrets: [
-            { secretKey: 'KIS_APP_KEY', secretValue: 'fixture-app' },
-            { secretKey: 'KIS_APP_SECRET', secretValue: 'fixture-secret' },
-            { secretKey: 'KIS_CANO', secretValue: '12345678' },
-            { secretKey: 'KIS_ACNT_PRDT_CD', secretValue: '01' },
-          ],
-        });
+        assert.deepEqual(args, ['secrets-manager', 'secrets', 'get', 'OPENDART_API_KEY',
+          '--projectId', 'custom-project', '--env', 'dev', '--path', '/custom', '-o', 'json', '--silent']);
+        assert.deepEqual(options, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+        const record = mode === 'cli-missing' ? { ...dart, secretValue: '*not found*' } : dart;
+        return { status: 0, stdout: mode === 'cli-json' ? 'fixture-invalid' : JSON.stringify([record]) };
+      };
+      globalThis.fetch = async input => {
+        const url = new URL(input);
+        if (url.pathname.endsWith('/login')) return Response.json({ accessToken: 'fixture-token' });
+        const path = url.searchParams.get('secretPath');
+        paths.push(path);
+        if (path === '/kis') {
+          return Response.json({ secrets: kis, imports: [{ secrets: mode === 'import' ? [dart] : [] }] });
+        }
+        assert.equal(url.searchParams.get('projectId'), '${DEFAULT_STOCK_PROJECT_ID}');
+        return mode === 'denied' ? new Response(null, { status: 403 }) : Response.json({ secrets: [dart] });
       };
       cp.spawn = (command, args, options) => {
         const env = options?.env ?? {};
         assert.equal(command, 'npm');
+        assert.equal(cliCalls, Number(process.env.EXPECT_CLI_COUNT ?? 0));
+        assert.deepEqual(paths, JSON.parse(process.env.EXPECT_PATHS ?? '[]'));
+        assert.equal(env.OPENDART_API_KEY, args[1] === 'dev:server' ? process.env.EXPECT_DART : undefined);
         assert.ok(Object.keys(env).every(key => !key.startsWith('INFISICAL_')));
         if (args[1] === 'dev:server' && process.env.EXPECT_INJECTED === '1') {
           assert.equal(env.KIS_APP_KEY, 'fixture-app');
@@ -289,7 +339,8 @@ test('scripts/dev.ts uses machine auth file without invoking CLI and handles mac
         encoding: 'utf8',
         timeout: 10_000,
         env: {
-          ...process.env,
+          PATH: process.env.PATH,
+          HOME: dir,
           INFISICAL_CLIENT_ID: undefined,
           INFISICAL_CLIENT_SECRET: undefined,
           INFISICAL_PROJECT_ID: undefined,
@@ -302,7 +353,28 @@ test('scripts/dev.ts uses machine auth file without invoking CLI and handles mac
       },
     );
 
-    const ok = runDev({ INFISICAL_AUTH_FILE: authFile, EXPECT_INJECTED: '1' });
+    const machine = { INFISICAL_AUTH_FILE: authFile, EXPECT_INJECTED: '1' };
+    for (const mode of ['denied', 'import', 'shell']) {
+      const result = runDev({ ...machine, MODE: mode,
+        EXPECT_PATHS: JSON.stringify(mode === 'denied' ? ['/kis', '/stock'] : ['/kis']),
+        OPENDART_API_KEY: mode === 'shell' ? 'fixture-shell' : undefined,
+        EXPECT_DART: mode === 'shell' ? 'fixture-shell' : mode === 'import' ? 'fixture-dart' : undefined,
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stderr, '');
+    }
+    for (const mode of ['cli-ok', 'cli-json', 'cli-missing', 'cli-fail']) {
+      const failed = mode === 'cli-fail';
+      const result = runDev({ MODE: mode, INFISICAL_AUTH_FILE: '',
+        INFISICAL_STOCK_PROJECT_ID: ' custom-project ', INFISICAL_STOCK_PATH: ' /custom ',
+        EXPECT_CLI_COUNT: failed ? '1' : '2', EXPECT_INJECTED: failed ? '0' : '1',
+        EXPECT_PATHS: JSON.stringify(failed ? ['/kis'] : ['/kis', '/custom']),
+        EXPECT_DART: mode === 'cli-ok' ? 'fixture-dart' : undefined,
+      });
+      assert.equal(result.status, 0, result.stderr);
+      if (!failed) assert.equal(result.stderr, '');
+    }
+    const ok = runDev({ ...machine, EXPECT_PATHS: '["/kis","/stock"]', EXPECT_DART: 'fixture-dart' });
     assert.equal(ok.status, 0, ok.stderr);
     assert.match(ok.stdout, /CHILD dev:server/);
     assert.match(ok.stdout, /CHILD dev:web/);
@@ -314,7 +386,7 @@ test('scripts/dev.ts uses machine auth file without invoking CLI and handles mac
     assert.match(badPerm.stderr, /0600/);
     assert.match(badPerm.stdout, /CHILD dev:server/);
 
-    const cliTimeout = runDev({ INFISICAL_AUTH_FILE: '', EXPECT_CLI_TIMEOUT: '1', EXPECT_INJECTED: '0' });
+    const cliTimeout = runDev({ INFISICAL_AUTH_FILE: '', EXPECT_CLI_TIMEOUT: '1', EXPECT_CLI_COUNT: '1', EXPECT_PATHS: '["/kis"]', EXPECT_INJECTED: '0' });
     assert.equal(cliTimeout.status, 0, cliTimeout.stderr);
     assert.match(cliTimeout.stderr, /CLI 응답 시간 초과/);
     assert.match(cliTimeout.stdout, /CHILD dev:server/);

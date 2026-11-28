@@ -61,7 +61,7 @@ cp.spawn = (command, args, options) => {
     const lookupSucceeded = ['success', 'matching-prefix'].includes(process.env.LOOKUP_FIXTURE);
     for (const [i, key] of keys.entries()) assert.equal(env[key], lookupSucceeded ? vault[i] : process.env[key]);
   } else {
-    assert.ok(Object.keys(env).every(key => !key.startsWith('KIS_') && !key.startsWith('INFISICAL_')));
+    assert.ok(Object.keys(env).every(key => !key.startsWith('KIS_') && !key.startsWith('INFISICAL_') && !key.startsWith('OPENDART_')));
   }
   assert.equal(lookups, process.env.LOOKUP_FIXTURE ? 1 : 0);
   if (process.env.CASE === 'default') assert.equal(requests, 0);
@@ -99,6 +99,7 @@ test('기본 dev는 인증 없이 기존 실행을 유지한다', () => {
 for (const lookup of ['success', 'matching-prefix', 'partial', 'conflict', 'denied', 'missing-cli', 'bad-json', 'nul']) {
   test(`기본 dev Infisical 조회: ${lookup}`, () => {
     const result = run('default', {
+      OPENDART_API_KEY: ['success', 'matching-prefix'].includes(lookup) ? 'fixture-shell' : undefined,
       LOOKUP_FIXTURE: lookup, KIS_APP_KEY: lookup === 'conflict' ? 'other-account-key' : lookup === 'matching-prefix' ? 'fixture-app' : undefined,
       KIS_APP_SECRET: undefined, KIS_CANO: undefined, KIS_ACNT_PRDT_CD: undefined,
     });

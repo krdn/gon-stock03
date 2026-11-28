@@ -3,6 +3,9 @@ import { dirname, resolve } from 'node:path';
 import { z } from 'zod';
 
 export const kisVariables = ['KIS_APP_KEY', 'KIS_APP_SECRET', 'KIS_CANO', 'KIS_ACNT_PRDT_CD'] as const;
+export const optionalVariables = ['OPENDART_API_KEY'] as const;
+export const DEFAULT_STOCK_PROJECT_ID = '890430d6-ff44-4317-9d91-64d912e0d67a';
+export const DEFAULT_STOCK_SECRET_PATH = '/stock';
 export const DEFAULT_INFISICAL_DOMAIN = 'https://app.infisical.com';
 export const DEFAULT_AUTH_FILE = '.secrets/infisical-dev.json';
 
@@ -30,8 +33,8 @@ const machineAuthSchema = z.object({
 
 export const secretRecordSchema = z.object({
   secretKey: z.string(),
-  secretValue: z.string().refine(value => !value.includes('\0')),
-});
+  secretValue: z.string(),
+}).refine(record => optionalVariables.some(key => key === record.secretKey) || !record.secretValue.includes('\0'));
 
 export type SecretRecord = z.infer<typeof secretRecordSchema>;
 
@@ -168,6 +171,13 @@ export function readMachineAuthConfig(env: NodeJS.ProcessEnv, cwd = process.cwd(
   }
 }
 
+export function applyOptionalRecords(env: NodeJS.ProcessEnv, records: SecretRecord[]): void {
+  for (const key of optionalVariables) {
+    const value = records.findLast(record => record.secretKey === key)?.secretValue;
+    if (!env[key]?.trim() && safeSecret.safeParse(value).success) env[key] = value;
+  }
+}
+
 /**
  * 조회한 비밀 목록에서 KIS 필수 4개 키를 all-or-nothing으로 검증·주입한다.
  * 실패 시 비밀값 없이 누락·충돌 키 이름만 진단 문자열로 반환한다.
@@ -178,6 +188,7 @@ export function applyKisRecords(env: NodeJS.ProcessEnv, records: SecretRecord[])
   const conflictKeys = kisVariables.filter(key => env[key]?.trim() && values.get(key)?.trim() && env[key] !== values.get(key));
   if (!missingKeys.length && !conflictKeys.length) {
     for (const key of kisVariables) env[key] = values.get(key);
+    applyOptionalRecords(env, records);
     return { ok: true };
   }
   const details: string[] = [];
@@ -201,6 +212,7 @@ const secretsResponseSchema = z.object({
 export async function fetchKisSecretsViaUniversalAuth(
   config: MachineAuthConfig,
   transport: typeof fetch = fetch,
+  { projectId = config.projectId, secretPath = '/kis' }: { projectId?: string; secretPath?: string } = {},
 ): Promise<FetchKisSecretsResult> {
   let accessToken: string;
   try {
@@ -231,9 +243,9 @@ export async function fetchKisSecretsViaUniversalAuth(
   try {
     const headers = { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' };
     const v4Query = new URLSearchParams({
-      projectId: config.projectId,
+      projectId,
       environment: 'dev',
-      secretPath: '/kis',
+      secretPath,
       viewSecretValue: 'true',
       expandSecretReferences: 'true',
       includeImports: 'true',
@@ -247,9 +259,9 @@ export async function fetchKisSecretsViaUniversalAuth(
     });
     if (secretsRes.status === 404) {
       const v3Query = new URLSearchParams({
-        workspaceId: config.projectId,
+        workspaceId: projectId,
         environment: 'dev',
-        secretPath: '/kis',
+        secretPath,
         expandSecretReferences: 'true',
         include_imports: 'true',
       });

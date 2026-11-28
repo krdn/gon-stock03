@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { Realtime } from '../server/realtime.ts';
 import {
   applyKisRecords,
+  applyOptionalRecords,
+  DEFAULT_STOCK_PROJECT_ID,
+  DEFAULT_STOCK_SECRET_PATH,
+  optionalVariables,
   fetchKisSecretsViaUniversalAuth,
   kisVariables,
   readMachineAuthConfig,
@@ -10,6 +14,13 @@ import {
   secretRecordSchema,
   stripInfisicalEnv,
 } from './infisical-dev.ts';
+
+function resolveStockTarget(env: NodeJS.ProcessEnv) {
+  return {
+    projectId: env.INFISICAL_STOCK_PROJECT_ID?.trim() || DEFAULT_STOCK_PROJECT_ID,
+    secretPath: env.INFISICAL_STOCK_PATH?.trim() || DEFAULT_STOCK_SECRET_PATH,
+  };
+}
 
 async function loadDevCredentials(env: NodeJS.ProcessEnv) {
   if (kisVariables.every(key => env[key]?.trim())) return;
@@ -27,7 +38,13 @@ async function loadDevCredentials(env: NodeJS.ProcessEnv) {
       return;
     }
     const applied = applyKisRecords(env, fetched.records);
-    if (applied.ok) return;
+    if (applied.ok) {
+      if (!env.OPENDART_API_KEY?.trim()) {
+        const stock = await fetchKisSecretsViaUniversalAuth(machineAuth.config, fetch, resolveStockTarget(env));
+        if (stock.ok) applyOptionalRecords(env, stock.records);
+      }
+      return;
+    }
     console.warn(`Infisical 머신 인증으로 KIS 설정을 불러오지 못했습니다${applied.diagnosis}. dev /kis 읽기 권한과 기존 환경변수를 확인한 뒤 npm run dev를 다시 실행하세요. 로컬 데모를 시작합니다.`);
     return;
   }
@@ -38,6 +55,7 @@ async function loadDevCredentials(env: NodeJS.ProcessEnv) {
   ];
   let result = spawnSync('infisical', cliArgs, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15_000 });
   const isTimeout = (res: typeof result) => (res.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT';
+  const primarySucceeded = result.status === 0;
   if (isTimeout(result) && process.stdin.isTTY && process.stdout.isTTY) {
     const loginDomain = resolveInfisicalDomain(env);
     if (!loginDomain) {
@@ -55,7 +73,23 @@ async function loadDevCredentials(env: NodeJS.ProcessEnv) {
     try {
       const records = z.array(secretRecordSchema).parse(JSON.parse(result.stdout));
       const applied = applyKisRecords(env, records);
-      if (applied.ok) return;
+      if (applied.ok) {
+        if (primarySucceeded && !env.OPENDART_API_KEY?.trim()) {
+          const target = resolveStockTarget(env);
+          try {
+            const stock = spawnSync('infisical', [
+              'secrets-manager', 'secrets', 'get', ...optionalVariables, '--projectId', target.projectId,
+              '--env', 'dev', '--path', target.secretPath, '-o', 'json', '--silent',
+            ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15_000 });
+            if (stock.status === 0 && stock.stdout) {
+              const records = z.array(secretRecordSchema).parse(JSON.parse(stock.stdout));
+              // CLI JSON uses this literal for a missing named secret, even on success.
+              applyOptionalRecords(env, records.filter(record => record.secretValue !== '*not found*'));
+            }
+          } catch { /* Optional lookup failures must not affect KIS startup or expose CLI output. */ }
+        }
+        return;
+      }
       diagnosis = applied.diagnosis;
     } catch { /* CLI output may contain secrets. Report only the recovery steps below. */ }
   } else if (isTimeout(result)) {
