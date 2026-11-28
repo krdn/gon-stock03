@@ -1669,3 +1669,155 @@ test('4B-2: TradingSettings는 15(krx_sector_rs)·16(clenow_momentum) 1-3단계 
 
   expect(posts).toEqual([]);
 });
+
+test('4B-2 보완 Major 1: 다종목 체결 0건 시 무신호·안전자산 1주 미만·위험자산 1주 미만 3분기 문구를 정확히 구분한다', async ({
+  page,
+}) => {
+  const { Store } = await import('../../server/store.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const store = new Store(':memory:');
+
+  // 43거래일 동일 달력: 고가 상승 위험자산 2종(1주 시가 > 120,000원), 하락 위험자산 2종, 고가 안전자산 1종(1주 시가 > 150,000원)
+  const runHighA = portfolioDailyFixture('069500', '16161616-1111-4111-8111-111111111111', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 120000 + i * 350,
+  });
+  const runHighB = portfolioDailyFixture('005930', '16161616-2222-4222-8222-222222222222', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 130000 + i * 300,
+  });
+  const runFallA = portfolioDailyFixture('114800', '16161616-3333-4333-8333-333333333333', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 40000 - i * 350,
+  });
+  const runFallB = portfolioDailyFixture('122630', '16161616-4444-4444-8444-444444444444', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 35000 - i * 280,
+  });
+  const runHighSafe = portfolioDailyFixture('00088K', '16161616-5555-4555-8555-555555555555', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 150000 + i * 50,
+  });
+  for (const fx of [runHighA, runHighB, runFallA, runFallB, runHighSafe]) store.saveDaily(fx.run, fx.bars);
+
+  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4314, 4352]);
+  await new Promise<void>(resolve => server.listen(4352, '127.0.0.1', resolve));
+
+  await page.route('**/api/**', async route => {
+    const response = await route.fetch({ url: route.request().url().replace(':4314', ':4352') });
+    await route.fulfill({ response });
+  });
+
+  try {
+    await page.goto('/backtest');
+    await waitWorkbenchReady(page);
+    const ruleSelect = page.getByRole('combobox', { name: '전략 규칙', exact: true });
+    const runBtn = page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true });
+    const result = page.getByRole('region', { name: '저장 일봉 실험 결과' });
+
+    await ruleSelect.selectOption('krx_sector_rs');
+    await page.locator('input[name="capital"]').fill('100000');
+
+    // ① 무신호·목표 비중 0 (안전자산 미지정): 적격 위험 자산 없음으로 현금/안전자산 유지
+    await page.getByLabel('위험 자산 1', { exact: true }).fill('114800');
+    await page.getByLabel('위험 자산 2', { exact: true }).fill('122630');
+    await page.getByLabel('안전자산 종목코드 (선택 · 비우면 현금 보유)').fill('');
+    await runBtn.click();
+    await expect(result).toBeVisible();
+    await expect(result).toContainText(
+      '준비 봉 충족 · 리밸런싱 판정 완료 (적격 위험 자산 없음으로 현금/안전자산 유지)',
+    );
+    await expect(result).not.toContainText('1주 시가 미만');
+
+    // ② 무신호·안전자산 100% 배정이나 1주 시가(150,000원+) 미만 예산 체결 0건
+    await page.getByLabel('안전자산 종목코드 (선택 · 비우면 현금 보유)').fill('00088K');
+    await runBtn.click();
+    await expect(result).toBeVisible();
+    await expect(result).toContainText(
+      '준비 봉 충족 · 리밸런싱 판정 완료 (적격 위험 자산 없음 · 안전자산 배정 예산이 수수료·슬리피지 포함 1주 시가 미만이어서 체결 0건)',
+    );
+    await expect(result).not.toContainText('현금/안전자산 유지');
+
+    // ③ 상승 바스켓 + maxWeightPct 20% + 초기 자금 100,000원 → 위험 자산 선정(weight>0)되었으나 1주 시가 미만 체결 0건
+    await page.getByLabel('위험 자산 1', { exact: true }).fill('069500');
+    await page.getByLabel('위험 자산 2', { exact: true }).fill('005930');
+    await page.getByLabel('안전자산 종목코드 (선택 · 비우면 현금 보유)').fill('');
+    await page.getByLabel('종목당 최대 비중 상한 (%)').fill('20');
+    await runBtn.click();
+    await expect(result).toBeVisible();
+    await expect(result).toContainText('상대강도 상위');
+    await expect(result).toContainText(
+      '준비 봉 충족 · 리밸런싱 판정 완료 (적격 위험 자산이 선정되었으나 배정 예산이 수수료·슬리피지 포함 1주 시가 미만이어서 체결 0건)',
+    );
+    await expect(result).not.toContainText('적격 위험 자산 없음');
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
+  }
+});
+
+test('4B-2 보완 Minor 1: 선택 구간 내 중간 거래일 1일이 누락된 바스켓은 사전 경고와 함께 POST 0건으로 클라이언트 차단한다', async ({
+  page,
+}) => {
+  const { Store } = await import('../../server/store.ts');
+  const { makeServer } = await import('../../server/http.ts');
+  const { KisClient } = await import('../../server/kis.ts');
+  const store = new Store(':memory:');
+
+  const runA = portfolioDailyFixture('069500', '17171717-1111-4111-8111-111111111111', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 30000 + i * 200,
+  });
+  const runB = portfolioDailyFixture('005930', '17171717-2222-4222-8222-222222222222', {
+    barCount: 43,
+    startedAt: '2026-06-02T01:00:00.000Z',
+    priceFn: i => 50000 + i * 150,
+  });
+  const missingDate = runB.dates[20];
+  runB.run.calendar = {
+    source: runB.run.calendar!.source,
+    dates: runB.run.calendar!.dates.filter(d => d !== missingDate),
+  };
+  runB.bars = runB.bars.filter(b => b.date !== missingDate);
+
+  store.saveDaily(runA.run, runA.bars);
+  store.saveDaily(runB.run, runB.bars);
+
+  const server = makeServer(store, new KisClient({ key: '', secret: '', account: '', product: '' }), [4314, 4353]);
+  await new Promise<void>(resolve => server.listen(4353, '127.0.0.1', resolve));
+
+  const dailyPayloads: unknown[] = [];
+  await page.route('**/api/**', async route => {
+    const req = route.request();
+    if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/backtest/daily') {
+      dailyPayloads.push(req.postDataJSON());
+    }
+    const response = await route.fetch({ url: req.url().replace(':4314', ':4353') });
+    await route.fulfill({ response });
+  });
+
+  try {
+    await page.goto('/backtest');
+    await waitWorkbenchReady(page);
+    await page.getByRole('combobox', { name: '전략 규칙', exact: true }).selectOption('krx_sector_rs');
+
+    const expectedMsg = `선택 기간 내 바스켓 종목의 거래일 달력이 일치하지 않습니다 (069500 / 005930 · ${missingDate}).`;
+    await expect(page.getByText(expectedMsg)).toBeVisible();
+
+    await page.getByRole('button', { name: '저장 일봉 실험 실행', exact: true }).click();
+    await expect(page.getByRole('main').getByRole('alert')).toContainText(expectedMsg);
+    expect(dailyPayloads).toHaveLength(0);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
+  }
+});
