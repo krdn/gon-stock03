@@ -15,6 +15,9 @@ export const portfolioRuleSchema = z.discriminatedUnion('kind', [
   z.strictObject({kind:z.literal('clenow_momentum'), ...common,
     regressionDays:z.int().min(20).max(252), atrPeriod:z.int().min(10).max(60), regimeSmaPeriod:z.int().min(20).max(250),
     topK:z.int().min(1).max(5), riskPerAssetBps:z.int().min(5).max(100)}),
+  z.strictObject({kind:z.literal('price_regime'), ...common,
+    trendSmaPeriod:z.int().min(20).max(250), volLookback:z.int().min(10).max(60),
+    maxAnnualVolPct:z.int().min(5).max(80), cautionExposurePct:z.int().min(0).max(100)}),
 ]).refine(rule => new Set(portfolioCodes(rule)).size === portfolioCodes(rule).length, '바스켓 종목이 중복됩니다.');
 export type PortfolioRule = z.infer<typeof portfolioRuleSchema>;
 export function portfolioCodes(rule: {assets:string[], safeAsset:string|null}) {
@@ -42,8 +45,14 @@ export const PORTFOLIO_CATALOG = {
     basic:{regressionDays:90,atrPeriod:20,regimeSmaPeriod:100,topK:2,riskPerAssetBps:20,rebalanceDays:20},
     aggressive:{regressionDays:60,atrPeriod:14,regimeSmaPeriod:60,topK:3,riskPerAssetBps:35,rebalanceDays:10},
   }},
+  price_regime: {title:'가격 레짐 (매크로 대용)', environments, presets:{
+    conservative:{trendSmaPeriod:200,volLookback:60,maxAnnualVolPct:20,cautionExposurePct:30,rebalanceDays:20},
+    basic:{trendSmaPeriod:200,volLookback:20,maxAnnualVolPct:25,cautionExposurePct:50,rebalanceDays:20},
+    aggressive:{trendSmaPeriod:100,volLookback:20,maxAnnualVolPct:35,cautionExposurePct:70,rebalanceDays:10},
+  }},
 };
 export function portfolioWarmup(rule:PortfolioRule) {
+  if (rule.kind === 'price_regime') return Math.max(rule.trendSmaPeriod, rule.volLookback + 1);
   if (rule.kind === 'krx_sector_rs') return rule.rsLookbackDays+1;
   if (rule.kind === 'clenow_momentum') return Math.max(rule.regressionDays,rule.regimeSmaPeriod,rule.atrPeriod+1);
   return rule.kind === 'dual_momentum' ? rule.lookbackDays + 1 : rule.smaPeriod;
@@ -110,6 +119,12 @@ function rotationWeights(legs:readonly Leg[], t:number, rule:RotationRule, weigh
   const total = raw.reduce((sum,w)=>sum+w,0);
   for (const [i,{code}] of winners.entries()) weights[code] = raw[i]/Math.max(1,total);
   if (rule.safeAsset) weights[rule.safeAsset] = Math.max(0,1-total);
+  clampWeights(rule, weights);
+  const codes = winners.map(w=>w.code).join(',');
+  return {weights,reason:sector ? '상대강도 상위 '+codes+' (한도 '+rule.maxWeightPct+'%)' : '회귀 모멘텀 상위 '+codes+' (ATR 역가중)'};
+}
+
+function clampWeights(rule:PortfolioRule, weights:Record<string,number>) {
   // Integer-like codes can enumerate differently from the order in the result targets.
   for (const order of [portfolioCodes(rule), Object.keys(weights)]) {
     let allocated = 0;
@@ -118,11 +133,48 @@ function rotationWeights(legs:readonly Leg[], t:number, rule:RotationRule, weigh
       allocated += weights[code];
     }
   }
-  const codes = winners.map(w=>w.code).join(',');
-  return {weights,reason:sector ? '상대강도 상위 '+codes+' (한도 '+rule.maxWeightPct+'%)' : '회귀 모멘텀 상위 '+codes+' (ATR 역가중)'};
+}
+
+type PriceRegimeRule = Extract<PortfolioRule,{kind:'price_regime'}>;
+
+function priceRegimeSignal(bars:readonly PriceBar[], t:number, rule:PriceRegimeRule) {
+  const code = rule.assets[0];
+  const warmup = portfolioWarmup(rule);
+  const unavailable = {exposure:0, reason:'레짐 위험회피 · ' + code + ' 판정 자료 부족 또는 무효'};
+  if (t < warmup - 1 || !bars[t]) return unavailable;
+  const window = bars.slice(t - warmup + 1, t + 1);
+  if (!window.every(validBar)) return unavailable;
+  const closes = window.map(bar => bar.close);
+  if (bars[t].close <= sma(closes, rule.trendSmaPeriod)) {
+    return {exposure:0, reason:'레짐 위험회피 · ' + code + ' 종가≤SMA' + rule.trendSmaPeriod};
+  }
+
+  const prices = closes.slice(-rule.volLookback - 1);
+  const returns = prices.slice(1).map((close, i) => close / prices[i] - 1);
+  const mean = sma(returns, returns.length);
+  const variance = returns.reduce((sum, r) => sum + (r - mean) ** 2, 0) / returns.length;
+  const vol = Math.sqrt(variance) * Math.sqrt(252) * 100;
+  if (!Number.isFinite(vol)) return unavailable;
+
+  const detail = code + ' 종가>SMA' + rule.trendSmaPeriod + ' · 연변동성 ' + vol.toFixed(1) + '%';
+  if (vol <= rule.maxAnnualVolPct) {
+    return {exposure:1, reason:'레짐 위험선호 · ' + detail + '≤' + rule.maxAnnualVolPct + '%'};
+  }
+  return {exposure:rule.cautionExposurePct / 100,
+    reason:'레짐 경계 · ' + detail + '>' + rule.maxAnnualVolPct + '% · 위험 노출 ' + rule.cautionExposurePct + '%'};
+}
+
+function priceRegimeWeights(legs:readonly Leg[], t:number, rule:PriceRegimeRule) {
+  const bars = legs.find(leg => leg.code === rule.assets[0])?.bars ?? [];
+  const {exposure, reason} = priceRegimeSignal(bars, t, rule);
+  const weights = Object.fromEntries(rule.assets.map(asset => [asset, exposure / rule.assets.length]));
+  if (rule.safeAsset) weights[rule.safeAsset] = Math.max(0, 1 - exposure);
+  clampWeights(rule, weights);
+  return {weights, reason};
 }
 
 export function targetWeights(legs:readonly Leg[], t:number, rule:PortfolioRule) {
+  if (rule.kind === 'price_regime') return priceRegimeWeights(legs, t, rule);
   const weights: Record<string,number> = Object.fromEntries(portfolioCodes(rule).map(code => [code,0]));
   if (rule.kind === 'krx_sector_rs' || rule.kind === 'clenow_momentum') return rotationWeights(legs,t,rule,weights);
   let winner = rule.safeAsset, best = 0, selected = 0;

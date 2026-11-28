@@ -25,6 +25,7 @@ const dual:PortfolioRule = {kind:'dual_momentum',assets,safeAsset,lookbackDays:2
 const faber:PortfolioRule = {kind:'faber_gtaa',assets,safeAsset,smaPeriod:200,rebalanceDays:20};
 const sector = {kind:'krx_sector_rs',assets,safeAsset,...PORTFOLIO_CATALOG.krx_sector_rs.presets.conservative} as const;
 const clenow = {kind:'clenow_momentum',assets,safeAsset,...PORTFOLIO_CATALOG.clenow_momentum.presets.conservative} as const;
+const regime = {kind:'price_regime',assets,safeAsset,...PORTFOLIO_CATALOG.price_regime.presets.basic} as const;
 function fixture(rule:PortfolioRule = dual) {
   const base = dailyFixture();
   const dates:string[] = [];
@@ -173,7 +174,7 @@ test('개별 봉 누락 및 서로 다른 달력 길이·동일 길이 날짜 �
   }
 });
 
-for (const rule of [dual,sector,clenow]) test(rule.kind+' 잘못 활성화된 DEMO 바스켓만 정지하고 다음 전략의 tick을 계속 처리한다', () => {
+for (const rule of [dual,sector,clenow,regime]) test(rule.kind+' 잘못 활성화된 DEMO 바스켓만 정지하고 다음 전략의 tick을 계속 처리한다', () => {
   const state = initialState();
   const strategy = {id:'basket',code:assets[0],name:'fixture',lastSignal:'hold' as const,lastTick:-1,qty:1,active:true,fast:5,slow:20};
   state.strategies = [{...strategy,rule},{...strategy,id:'single'}];
@@ -182,7 +183,7 @@ for (const rule of [dual,sector,clenow]) test(rule.kind+' 잘못 활성화된 DE
   assert.equal(state.strategies[1].lastTick,state.tick);
 });
 
-for (const rule of [dual,sector,clenow]) test(rule.kind+' 바스켓 전체 마스터 검사와 DEMO·모의 실행·초안·고정 차단', async () => {
+for (const rule of [dual,sector,clenow,regime]) test(rule.kind+' 바스켓 전체 마스터 검사와 DEMO·모의 실행·초안·고정 차단', async () => {
   const directory = mkdtempSync(join(tmpdir(),'portfolio-test-'));
   const store = new Store(join(directory,'fixture.sqlite'));
   let sent = 0;
@@ -404,4 +405,84 @@ test('4B-2 정식 편집기는 15·16 규칙의 왕복·프리셋·포맷·검�
   const legacy = parseTransferDraft({code:assets[0],rule:dual,overlay:{chandelier:{atrPeriod:14,atrMultiplier:3}}});
   assert.ok(legacy);
   assert.equal(editorDraftFromTransfer(legacy).ruleForm.useChandelier,false);
+});
+
+test('가격 레짐은 대표 자산의 당일 포함 종가와 반올림 전 모집단 변동성으로 판정한다', () => {
+  const rule = {...regime, trendSmaPeriod:20, volLookback:10, maxAnnualVolPct:33};
+  const closes = Array<number>(20).fill(100);
+  // 마지막 수익률 한 개만 양수이면 10개 수익률의 모집단 표준편차는 마지막 수익률의 0.3배다.
+  closes[19] = 106.92934867183584;
+  const leg = {code:assets[0], bars:closes.map(close => ({close, low:close, high:close}))};
+  const riskOn = targetWeights([leg], 19, rule);
+  assert.deepEqual(riskOn, {weights:{[assets[0]]:0.5,[assets[1]]:0.5,[safeAsset]:0},
+    reason:'레짐 위험선호 · 069500 종가>SMA20 · 연변동성 33.0%≤33%'});
+  for (const pct of [0,50,100]) {
+    const caution = targetWeights([leg], 19, {...rule,maxAnnualVolPct:32,cautionExposurePct:pct});
+    assert.deepEqual(caution, {weights:{[assets[0]]:pct/200,[assets[1]]:pct/200,[safeAsset]:1-pct/100},
+      reason:'레짐 경계 · 069500 종가>SMA20 · 연변동성 33.0%>32% · 위험 노출 '+pct+'%'});
+  }
+  assert.deepEqual(targetWeights([leg],19,{...rule,maxAnnualVolPct:32,safeAsset:null}).weights,
+    {[assets[0]]:0.25,[assets[1]]:0.25});
+  const basket = [...assets,'123456','234567','345678','456789'];
+  for (let pct = 0; pct <= 100; pct++) {
+    const mixedCodes = {...rule, assets:basket, maxAnnualVolPct:32, cautionExposurePct:pct};
+    const {weights} = targetWeights([leg],19,mixedCodes);
+    for (const order of [portfolioCodes(mixedCodes),Object.keys(weights)]) {
+      assert.ok(order.reduce((sum,code) => sum + weights[code],0) <= 1);
+    }
+  }
+  const bad = {low:0,close:1,high:1};
+  const future = {...leg,bars:[...leg.bars,bad]};
+  assert.deepEqual(targetWeights([{code:assets[1],bars:[bad]},future],19,rule),riskOn);
+  assert.deepEqual(targetWeights([{...leg,bars:[bad,...leg.bars]}],20,rule),riskOn);
+  const flat = {...leg,bars:Array(20).fill(leg.bars[0])};
+  // W=26이지만 SMA는 마지막 20봉만 본다. 앞선 여섯 고가를 포함하면 추세 판정이 뒤집힌다.
+  const longer = {...leg,bars:[...Array(6).fill({low:500,high:500,close:500}),...leg.bars]};
+  assert.match(targetWeights([longer],25,{...rule,volLookback:25}).reason,/종가>SMA20/);
+  const off = targetWeights([flat],19,rule);
+  assert.equal(off.reason,'레짐 위험회피 · 069500 종가≤SMA20');
+  for (const fallback of [off,targetWeights([],19,rule),targetWeights([leg],20,rule),targetWeights([leg],18,rule),
+    targetWeights([{...leg,bars:[bad,...leg.bars.slice(1)]}],19,rule),
+    targetWeights([{...leg,bars:[...leg.bars.slice(0,18),{low:1e-320,close:1e-320,high:1},leg.bars[19]]}],19,rule)]) {
+    assert.deepEqual(fallback.weights,{[assets[0]]:0,[assets[1]]:0,[safeAsset]:1});
+  }
+});
+
+test('가격 레짐의 정수 경계·strict 스키마 및 기존 편집기 차단', () => {
+  for (const [key,min,max] of [
+    ['trendSmaPeriod',20,250],['volLookback',10,60],['maxAnnualVolPct',5,80],['cautionExposurePct',0,100],
+  ] as const) {
+    for (const value of [min,max]) assert.ok(portfolioRuleSchema.safeParse({...regime,[key]:value}).success);
+    for (const value of [min-1,min+0.5,max+1]) assert.ok(!portfolioRuleSchema.safeParse({...regime,[key]:value}).success);
+  }
+  assert.ok(!portfolioRuleSchema.safeParse({...regime,smaPeriod:20}).success);
+  assert.throws(()=>formFromRule(regime),{message:'현재 편집기에서 지원하지 않는 다종목 규칙입니다.'});
+  assert.equal(parseTransferDraft({code:assets[0],rule:regime}),null);
+});
+
+test('가격 레짐 첫 W봉 신호는 W+1봉 시가에 체결하고 260봉 원장은 pruning 후 재생된다', () => {
+  const rule = {...regime,trendSmaPeriod:20,volLookback:25};
+  const {legs,input,dates} = fixture(rule);
+  const w = portfolioWarmup(rule);
+  assert.equal(w,26);
+  const prefix = (length:number) => legs.map(l=>({...l,bars:l.bars.slice(0,length)}));
+  assert.throws(()=>backtestPortfolio(prefix(w),input),/최소 27봉/);
+  const first = backtestPortfolio(prefix(w+1),input);
+  assert.equal(first.rebalances.length,1);
+  assert.equal(first.rebalances[0].signalDate,dates[w-1]);
+  assert.equal(first.rebalances[0].date,dates[w]);
+  assert.ok(first.trades.length > 0);
+  const store = new Store(':memory:');
+  try {
+    for (const leg of legs) store.saveDaily(leg.collection,leg.bars);
+    const experiment = createExperiment(store,input);
+    for (const leg of legs) {
+      const obsoleteId = randomUUID();
+      store.saveDaily({...leg.collection,id:obsoleteId,startedAt:'2026-01-25T01:00:00Z'},leg.bars);
+      store.saveDaily({...leg.collection,id:randomUUID(),startedAt:'2026-01-26T01:00:00Z'},leg.bars);
+      assert.equal(store.dailyBars(obsoleteId).length,0);
+      assert.equal(store.dailyBars(leg.collection.id).length,260);
+    }
+    assert.equal(replayExperiment(store,experiment.id).matches,true);
+  } finally {store.close();}
 });
