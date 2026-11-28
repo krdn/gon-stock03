@@ -15,3 +15,12 @@ PR 5-1은 main `9c79554`에서 저장 다종목 일봉 v3에 `price_regime`을 �
 격리 테스트에서 v1/v2/v3 해시 4쌍, 기존 로테이션, 레짐 3상태·경계값, 두 순서 비중 합계, 첫 체결일, 260봉 원장 pruning 후 재생, 편집기 차단을 확인했다. DEMO·KIS 실행 및 계약 초안·고정 차단 테스트의 가짜 전송기 호출은 0건이었다. Graphify CLI는 현재 실행 경로에 없어 그래프 갱신은 미실행이다.
 
 타입 검사·빌드 및 단위 394/394 통과. 독립 리뷰 1회(요청 Claude Opus 5.5/high, 실제 반환 `claude-opus-5-5`)에서 확정 결함은 없었다. W가 SMA 기간보다 긴 입력의 최근 20봉 판정을 회귀에 추가했다. 5-2에서는 첫 위험자산이 판정 자산임을 입력 위치에 표시하고 API로 생성된 실험도 목록에서 불러와 편집기로 복원되는지 확인한다. 5-1에서는 기존 편집기 가드 때문에 이 실험을 UI로 복원할 수 없다.
+
+## PR 5-2 구현 및 검증
+
+PR 5-2는 `krdn/strategy-rules-phase5-pr1`(`8935578`) 위에서 `18 가격 레짐 (매크로 대용)`(`price_regime`)을 정식 16종 UI·18카드 도움말 사전·`08`/`17` 아키텍처 제외 FAQ·E2E로 연동한다.
+
+- **UI·도움말**: `research-rule-form.ts`의 임시 가드(`isEditableKind`)를 제거하고 16종(단일 11·다종목 5)과 5개 정수 입력(`regimeTrendSmaPeriod`, `regimeVolLookback`, `regimeMaxAnnualVolPct`, `regimeCautionExposurePct`, `regimeRebalanceDays`)·프리셋·포커스 검증·요약 포맷을 연결했다. `RuleConfigSection`·`StoredBacktest` 입력 위치에 위험 자산 1이 레짐 판정 기준 자산임을 표시하고, `StrategyCard`에 판정 자산·추세 SMA·변동성 한도·경계 노출·리밸런싱·위험/안전자산을 노출한다. `ResearchHelpPanel`은 18카드(`18 가격 레짐 (매크로 대용)` 및 `[원안 대비 변형 범위]`)와 4탭 `08 갭·초반 거래량`·`17 공시 드리프트·희석 차단` 아키텍처 제외 FAQ를 포함한다.
+- **검증**: `npm run typecheck`, `npm run build`, `npm test`(394/394 통과, 5-1 임시 편집기 차단 2줄을 5-2 정식 16종 편집기 왕복·프리셋·포맷·검증 `focusName`으로 교체), 격리 포트 4314 `npm run test:e2e`(360/360 통과: 43거래일 원장 프리셋 준비 봉 부족 경고·커스텀 3상태 리밸런싱·재현 일치·API 저장 실험 불러오기→전략 스튜디오 편집기 복원·KIS 모의 정지 저장 및 시작 비활성화·`TradingSettings` 1-3단계 `portfolioOnly` 차단·18카드/ArrowRight/`08`·`17` FAQ·390px 모바일) 통과.
+- **Orca 내장 브라우저 실측**: 격리 포트 4314 임시 메모리 DB 서버에서 `/strategies`·`/backtest`·`/settings/trading/strategy` 데스크톱·390px 모바일(`scrollWidth <= 390`)·키보드 `ArrowRight` 탭 이동·콘솔 오류 0건 및 스크린샷 확인 후 임시 4314 서버를 종료했다. 실제 KIS 모의 주문 전송과 외부 API 호출은 미실행(0건)이다.
+- **1차 감사 보완(Major 1 · Minor 2)**: `StoredBacktest.tsx`의 `price_regime` 체결 0건 요약 문구를 경계 노출 0%·위험회피·위험 노출 배정 1주 시가 미만으로 정밀 구분하고(기존 4종 `적격 위험 자산 없음` 유지), 바스켓 수집 기록 `useMemo` 의존성 배열에 `ruleForm.kind`를 추가해 양방향 전환 시 `위험 자산 1 (레짐 판정)` 라벨이 즉시 갱신되도록 수정했다. `StrategyCard.tsx`와 `research-rule-form.ts` `formatRuleSummary`에서 변동성 관측 기간(봉)과 연변동성 한도(%) 단위를 분리 표기하고 단위·E2E 회귀 테스트(394/394, 361/361)를 통과했다.

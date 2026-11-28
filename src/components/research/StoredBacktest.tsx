@@ -265,7 +265,10 @@ export function StoredBacktest({
       const code = raw.trim().toUpperCase();
       if (!code || seen.has(code) || !masterCodeSchema.safeParse(code).success) return;
       seen.add(code);
-      entries.push({ code, role: `위험 자산 ${idx + 1}` });
+      entries.push({
+        code,
+        role: idx === 0 && ruleForm.kind === 'price_regime' ? '위험 자산 1 (레짐 판정)' : `위험 자산 ${idx + 1}`,
+      });
     });
     const safeCode = ruleForm.portfolioSafeAsset.trim().toUpperCase();
     if (safeCode && !seen.has(safeCode) && masterCodeSchema.safeParse(safeCode).success) {
@@ -273,7 +276,7 @@ export function StoredBacktest({
       entries.push({ code: safeCode, role: '안전자산' });
     }
     return entries;
-  }, [portfolioMode, ruleForm.portfolioAssets, ruleForm.portfolioSafeAsset]);
+  }, [portfolioMode, ruleForm.kind, ruleForm.portfolioAssets, ruleForm.portfolioSafeAsset]);
 
   const basketMappings = useMemo(() => {
     return basketEntries.map(entry => {
@@ -988,18 +991,37 @@ export function StoredBacktest({
                   ) {
                     return null;
                   }
-                  const safeAssetCode = experiment.snapshot.input.rule.safeAsset;
+                  const rule = experiment.snapshot.input.rule;
+                  const safeAssetCode = rule.safeAsset;
                   const rebalances = experiment.result.rebalances;
                   const hasRiskTarget = rebalances.some(r =>
                     r.targets.some(t => t.code !== safeAssetCode && t.weight > 0),
                   );
                   const hasAnyPositiveTarget = rebalances.some(r => r.targets.some(t => t.weight > 0));
-                  const message =
-                    !hasRiskTarget && !hasAnyPositiveTarget
-                      ? '준비 봉 충족 · 리밸런싱 판정 완료 (적격 위험 자산 없음으로 현금/안전자산 유지)'
-                      : !hasRiskTarget && hasAnyPositiveTarget
-                        ? '준비 봉 충족 · 리밸런싱 판정 완료 (적격 위험 자산 없음 · 안전자산 배정 예산이 수수료·슬리피지 포함 1주 시가 미만이어서 체결 0건)'
-                        : '준비 봉 충족 · 리밸런싱 판정 완료 (적격 위험 자산이 선정되었으나 배정 예산이 수수료·슬리피지 포함 1주 시가 미만이어서 체결 0건)';
+                  let message: string;
+                  if (rule.kind === 'price_regime') {
+                    const hasCautionZero = rebalances.some(r => r.reason.startsWith('레짐 경계'));
+                    const hasRiskOff = rebalances.some(r => r.reason.startsWith('레짐 위험회피'));
+                    const regimeLabel =
+                      hasCautionZero && hasRiskOff
+                        ? '가격 레짐 위험회피·경계 노출 0% 판정'
+                        : hasCautionZero
+                          ? '가격 레짐 경계 노출 0% 판정'
+                          : '가격 레짐 위험회피 판정';
+                    message =
+                      !hasRiskTarget && !hasAnyPositiveTarget
+                        ? `준비 봉 충족 · 리밸런싱 판정 완료 (${regimeLabel}으로 현금 유지)`
+                        : !hasRiskTarget && hasAnyPositiveTarget
+                          ? `준비 봉 충족 · 리밸런싱 판정 완료 (${regimeLabel} · 안전자산 배정 예산이 수수료·슬리피지 포함 1주 시가 미만이어서 체결 0건)`
+                          : '준비 봉 충족 · 리밸런싱 판정 완료 (가격 레짐 위험 노출이 배정되었으나 배정 예산이 수수료·슬리피지 포함 1주 시가 미만이어서 체결 0건)';
+                  } else {
+                    message =
+                      !hasRiskTarget && !hasAnyPositiveTarget
+                        ? '준비 봉 충족 · 리밸런싱 판정 완료 (적격 위험 자산 없음으로 현금/안전자산 유지)'
+                        : !hasRiskTarget && hasAnyPositiveTarget
+                          ? '준비 봉 충족 · 리밸런싱 판정 완료 (적격 위험 자산 없음 · 안전자산 배정 예산이 수수료·슬리피지 포함 1주 시가 미만이어서 체결 0건)'
+                          : '준비 봉 충족 · 리밸런싱 판정 완료 (적격 위험 자산이 선정되었으나 배정 예산이 수수료·슬리피지 포함 1주 시가 미만이어서 체결 0건)';
+                  }
                   return (
                     <p className="bt-note" role="status">
                       {message}

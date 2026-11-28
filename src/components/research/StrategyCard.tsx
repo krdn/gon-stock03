@@ -324,6 +324,33 @@ export function StrategyCard({ strategy: s, kis }: { strategy: Strategy; kis: bo
               안전자산 <b>{rule.safeAsset ?? '현금 보유'}</b>
             </span>
           </>
+        ) : rule.kind === 'price_regime' ? (
+          <>
+            <span>
+              판정 자산(위험 1) <b>{rule.assets[0]}</b>
+            </span>
+            <span>
+              추세 SMA <b>{rule.trendSmaPeriod}봉</b>
+            </span>
+            <span>
+              변동성 관측 <b>{rule.volLookback}봉</b>
+            </span>
+            <span>
+              연변동성 한도 <b>≤ {rule.maxAnnualVolPct}%</b>
+            </span>
+            <span>
+              경계 노출 <b>{rule.cautionExposurePct}%</b>
+            </span>
+            <span>
+              리밸런싱 <b>{rule.rebalanceDays}봉</b>
+            </span>
+            <span>
+              위험 자산 <b>{rule.assets.join(' / ')}</b>
+            </span>
+            <span>
+              안전자산 <b>{rule.safeAsset ?? '현금 보유'}</b>
+            </span>
+          </>
         ) : null}
         {!portfolio && s.overlay?.chandelier && (
           <span>
