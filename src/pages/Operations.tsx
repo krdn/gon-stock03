@@ -1,11 +1,12 @@
 import { RealtimeStatus } from '../components/RealtimeStatus';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { RiskHelpPanel } from '../components/RiskHelpPanel';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import './Settings.css';
 import './Risk.css';
 import './Alerts.css';
 import './Journal.css';
-import { Check, ChevronDown, Landmark, RefreshCw, Server, Settings2, ShieldCheck, Square, Wallet } from 'lucide-react';
+import { BookOpen, Check, ChevronDown, Landmark, RefreshCw, Server, Settings2, ShieldCheck, Square, Wallet } from 'lucide-react';
 import { useWorkbench } from '../context';
 import { Badge, Empty, Panel } from '../components/ui';
 import { equity, won, type ConnectionFailure, type Event as WorkspaceEvent } from '../../shared/model';
@@ -13,12 +14,98 @@ import { DEFAULT_PAPER_MAX_QTY } from '../../shared/contracts';
 import { portfolioValue } from '../../shared/portfolio';
 import { authenticationStatus } from '../../shared/status';
 
+type RiskExposureFilter = 'all' | 'warning' | 'reserved' | 'safe';
+type RiskExposureSort = 'default' | 'used-desc' | 'room-asc' | 'held-desc' | 'pending-desc';
+type RiskEventFilter = 'all' | 'halt' | 'block' | 'limit';
+
+const RISK_EVENT_TITLES = [
+  '위험 한도 변경',
+  '신규 주문 긴급정지',
+  '신규 주문 허용',
+  '위험관리 요청 차단',
+  '주문 요청 차단',
+  '전략 주문 차단',
+] as const;
+
+const RISK_EXPOSURE_FILTERS: { id: RiskExposureFilter; label: string }[] = [
+  { id: 'all', label: '전체' },
+  { id: 'warning', label: '주의·한도 도달' },
+  { id: 'reserved', label: '매수 예약 있음' },
+  { id: 'safe', label: '여유' },
+];
+
+const RISK_EXPOSURE_SORTS: { id: RiskExposureSort; label: string }[] = [
+  { id: 'default', label: '기본 순서' },
+  { id: 'used-desc', label: '사용량 높은 순' },
+  { id: 'room-asc', label: '추가 매수 여유 적은 순' },
+  { id: 'held-desc', label: '보유 평가액 높은 순' },
+  { id: 'pending-desc', label: '매수 예약액 높은 순' },
+];
+
+const RISK_EVENT_FILTERS: { id: RiskEventFilter; label: string }[] = [
+  { id: 'all', label: '전체' },
+  { id: 'halt', label: '정지·재개' },
+  { id: 'block', label: '주문·전략 차단' },
+  { id: 'limit', label: '한도 변경' },
+];
+
+const RISK_EVENT_LEVEL_LABEL: Record<WorkspaceEvent['level'], string> = {
+  info: '안내',
+  warning: '주의',
+  error: '오류',
+};
+
+const RISK_EVENT_ENV_LABEL: Record<'demo' | 'kis-paper' | 'shared', string> = {
+  demo: 'DEMO',
+  'kis-paper': 'KIS 모의',
+  shared: '공통 위험',
+};
+
+/** 정렬 시 null(미확인·산출 불가) 항목을 항상 뒤로 배치하는 비교 함수. */
+function compareRiskNullable(a: number | null, b: number | null, dir: 'desc' | 'asc'): number {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return dir === 'desc' ? b - a : a - b;
+}
+
+/** 위험관리 이벤트 제목을 분류 필터 범주로 매핑한다. */
+function classifyRiskEvent(title: string): Exclude<RiskEventFilter, 'all'> {
+  if (title === '신규 주문 긴급정지' || title === '신규 주문 허용') return 'halt';
+  if (title === '위험 한도 변경') return 'limit';
+  return 'block';
+}
+
 export function Risk() {
   const { state, status, serverNow, act, busy, available, connection, paperRisk } = useWorkbench();
   const [params, setParams] = useSearchParams();
   const demo = params.get('env') !== 'kis';
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpPanelId = useId();
+  const helpToggleRef = useRef<HTMLButtonElement>(null);
+  const [exposureQuery, setExposureQuery] = useState('');
+  const [exposureFilter, setExposureFilter] = useState<RiskExposureFilter>('all');
+  const [exposureSort, setExposureSort] = useState<RiskExposureSort>('default');
+  const exposureSearchRef = useRef<HTMLInputElement>(null);
+  const [eventFilter, setEventFilter] = useState<RiskEventFilter>('all');
+
+  function closeHelp() {
+    setHelpOpen(false);
+    helpToggleRef.current?.focus();
+  }
+
+  function clearExposureFilters() {
+    setExposureQuery('');
+    setExposureFilter('all');
+    setExposureSort('default');
+    exposureSearchRef.current?.focus();
+  }
+
   function selectEnvironment(nextDemo: boolean) {
     if (nextDemo === demo) return;
+    setExposureQuery('');
+    setExposureFilter('all');
+    setExposureSort('default');
     const next = new URLSearchParams(params);
     if (nextDemo) next.delete('env');
     else next.set('env', 'kis');
@@ -45,19 +132,161 @@ export function Risk() {
   const [halting, setHalting] = useState(false);
   const unresolved = paperRisk?.unresolvedCount ?? 0;
   const resumeBlocked = halted && (!paperRisk || unresolved > 0);
-  const changes = state.events.filter(e => ['위험 한도 변경', '신규 주문 긴급정지', '신규 주문 허용', '위험관리 요청 차단', '주문 요청 차단', '전략 주문 차단'].includes(e.title)).slice(0, 5);
+  const changes = state.events
+    .filter(e => (RISK_EVENT_TITLES as readonly string[]).includes(e.title))
+    .slice(0, 10);
+  const visibleChanges = eventFilter === 'all'
+    ? changes
+    : changes.filter(e => classifyRiskEvent(e.title) === eventFilter);
   const balanceReason = {
     disconnected: 'KIS 잔고 미연결', loading: 'KIS 잔고 조회 중', ready: 'KIS 전체 잔고 미확인',
     stale: 'KIS 잔고 확인 기한 경과', partial: 'KIS 잔고 일부만 수신', error: 'KIS 잔고 조회 실패',
   }[connection.status.phase];
+  const kisGateBalanceStatus = currentBalance ? '정상' : {
+    disconnected: '미연결', loading: '조회 중', ready: '전체 미확인',
+    stale: '기한 경과', partial: '부분 수신', error: '조회 실패',
+  }[connection.status.phase];
   const money = (amount: number) => available ? won(amount) + '원' : unavailableValue;
   const time = (at: string | null | undefined) => at ? new Date(at).toLocaleString('ko-KR') : '미확인';
 
+  // 손실 한도 소진율 게이지 계산 (loss === dailyLoss 정확 경계값도 한도 도달 차단 처리)
+  const lossGauge = (() => {
+    if (loss === null) {
+      return {
+        pct: 0,
+        tone: 'neutral' as const,
+        label: '기준 대기',
+        summary: `첫 주문 검증 전 (손실 기준 미설정) · 한도 ${won(state.risk.dailyLoss)}원 대기`,
+      };
+    }
+    if (state.risk.dailyLoss <= 0) {
+      return {
+        pct: 100,
+        tone: 'danger' as const,
+        label: '한도 도달 차단',
+        summary: '손실 한도 산출 불가 · 잔여 허용 0원',
+      };
+    }
+    const ratio = loss / state.risk.dailyLoss;
+    const pct = Math.min(100, Math.round(ratio * 100));
+    const room = Math.max(0, state.risk.dailyLoss - loss);
+    if (loss >= state.risk.dailyLoss) {
+      return {
+        pct: 100,
+        tone: 'danger' as const,
+        label: '한도 도달 차단',
+        summary: `소진율 ${pct}% · 잔여 허용 ${won(room)}원`,
+      };
+    }
+    if (ratio >= 0.8) {
+      return {
+        pct,
+        tone: 'warn' as const,
+        label: '주의 (80% 이상)',
+        summary: `소진율 ${pct}% · 잔여 허용 ${won(room)}원`,
+      };
+    }
+    return {
+      pct,
+      tone: 'safe' as const,
+      label: '안전 범위',
+      summary: `소진율 ${pct}% · 잔여 허용 ${won(room)}원`,
+    };
+  })();
+
+  // 종목별 사용량·노출률·잔여 한도 단일 계산 (표 및 진단 허브 공용)
+  const exposureEntries = codes.map(code => {
+    const p = positions.find(pos => pos.code === code);
+    const qty = p?.qty ?? 0;
+    const held = qty === 0 ? 0 : p?.price == null ? null : qty * p.price;
+    const buys = orders.filter(o => o.code === code && o.side === 'buy' && !o.cancelled && o.remaining > 0);
+    const pendingBuy = buys.some(o => o.price <= 0) ? null : buys.reduce((sum, o) => sum + o.remaining * o.price, 0);
+    const reservedSell = orders.filter(o => o.code === code && o.side === 'sell' && !o.cancelled).reduce((sum, o) => sum + o.remaining, 0);
+    const used = held === null || pendingBuy === null ? null : held + pendingBuy;
+    const name = (!demo && connection.balance?.positions.find(pos => pos.code === code)?.name)
+      || state.instruments.find(i => i.code === code)?.name;
+    const label = name ? `${name} ${code}` : code;
+    const ratio = used === null || state.risk.maxPosition <= 0 ? null : used / state.risk.maxPosition;
+    const room = used === null ? null : Math.max(0, state.risk.maxPosition - used);
+    const exposureStatus: 'unknown' | 'limit-hit' | 'warning' | 'safe' =
+      ratio === null ? 'unknown'
+        : ratio >= 1 ? 'limit-hit'
+          : ratio >= 0.8 ? 'warning'
+            : 'safe';
+    return { code, name, label, qty, held, pendingBuy, reservedSell, used, ratio, room, exposureStatus };
+  });
+
+  const normalizedExposureQuery = exposureQuery.trim().toLowerCase();
+  const exposureControlsActive = normalizedExposureQuery !== '' || exposureFilter !== 'all' || exposureSort !== 'default';
+  const visibleEntries = (() => {
+    const filtered = exposureEntries.filter(entry => {
+      if (
+        normalizedExposureQuery
+        && !(entry.name ?? '').toLowerCase().includes(normalizedExposureQuery)
+        && !entry.code.toLowerCase().includes(normalizedExposureQuery)
+      ) {
+        return false;
+      }
+      if (exposureFilter === 'warning') {
+        return entry.used === null || state.risk.maxPosition <= 0 || entry.used / state.risk.maxPosition >= 0.8;
+      }
+      if (exposureFilter === 'reserved') {
+        return entry.pendingBuy === null || entry.pendingBuy > 0;
+      }
+      if (exposureFilter === 'safe') {
+        return entry.used !== null && state.risk.maxPosition > 0 && entry.used / state.risk.maxPosition < 0.8;
+      }
+      return true;
+    });
+    if (exposureSort === 'default') return filtered;
+    return [...filtered].sort((a, b) => {
+      if (exposureSort === 'used-desc') return compareRiskNullable(a.used, b.used, 'desc');
+      if (exposureSort === 'room-asc') return compareRiskNullable(a.room, b.room, 'asc');
+      if (exposureSort === 'held-desc') return compareRiskNullable(a.held, b.held, 'desc');
+      return compareRiskNullable(a.pendingBuy, b.pendingBuy, 'desc');
+    });
+  })();
+
+  // 상호 배타적 노출 버킷 집계 (합계 === codes.length)
+  const limitHitCount = exposureEntries.filter(e => e.exposureStatus === 'limit-hit').length;
+  const warningCount = exposureEntries.filter(e => e.exposureStatus === 'warning').length;
+  const safeCount = exposureEntries.filter(e => e.exposureStatus === 'safe').length;
+  const unknownExposureCount = exposureEntries.filter(e => e.exposureStatus === 'unknown').length;
+  const maxEntry = known && exposureEntries.length > 0 && unknownExposureCount === 0
+    ? exposureEntries.reduce((best, entry) => (entry.used! > best.used! ? entry : best))
+    : null;
+  const minRoom = known && exposureEntries.length > 0 && unknownExposureCount === 0
+    ? exposureEntries.reduce((min, entry) => Math.min(min, entry.room!), Infinity)
+    : null;
+  const totalPendingBuy = exposureEntries.some(e => e.pendingBuy === null)
+    ? null
+    : exposureEntries.reduce((sum, e) => sum + e.pendingBuy!, 0);
+  const totalReservedSell = exposureEntries.reduce((sum, e) => sum + e.reservedSell, 0);
+  const demoActiveStrategies = state.strategies.filter(s => (s.environment ?? 'demo') === 'demo' && s.active).length;
+  const kisActiveStrategies = state.strategies.filter(s => s.environment === 'kis-paper' && s.active).length;
+
   return <div className="risk-page">
-    <Panel title="환경별 사용량과 차단 이유" className="risk-usage">
+    <Panel
+      title="환경별 사용량과 차단 이유"
+      className="risk-usage"
+      action={
+        <button
+          ref={helpToggleRef}
+          type="button"
+          className={`button small-button ${helpOpen ? 'primary' : 'secondary'} risk-help-toggle`}
+          aria-expanded={helpOpen}
+          aria-controls={helpOpen ? helpPanelId : undefined}
+          onClick={() => setHelpOpen(open => !open)}
+        >
+          <BookOpen size={14} aria-hidden="true" />
+          사용방법 도움말
+        </button>
+      }
+    >
+      {helpOpen && <RiskHelpPanel panelId={helpPanelId} onClose={closeHelp} />}
       <div className="tabs" role="group" aria-label="사용량 환경">
-        <button aria-pressed={demo} className={demo ? 'active' : ''} onClick={() => selectEnvironment(true)}>DEMO 사용량</button>
-        <button aria-pressed={!demo} className={!demo ? 'active' : ''} onClick={() => selectEnvironment(false)}>KIS 모의 사용량</button>
+        <button type="button" aria-pressed={demo} className={demo ? 'active' : ''} onClick={() => selectEnvironment(true)}>DEMO 사용량</button>
+        <button type="button" aria-pressed={!demo} className={!demo ? 'active' : ''} onClick={() => selectEnvironment(false)}>KIS 모의 사용량</button>
       </div>
       <div className="risk-reading">
         {known ? <>
@@ -68,6 +297,15 @@ export function Risk() {
             {loss === null ? <p>첫 주문 검증 때 손실 기준을 설정합니다.</p> : loss >= state.risk.dailyLoss
               ? <p>손실 한도 도달 · 신규 매수·매도 차단</p>
               : !halted && <p>주문별 금액·현금·보유 수량을 추가 검사합니다.</p>}
+          </div>
+          <div className="risk-loss-gauge" role="region" aria-label="손실 한도 소진율 게이지">
+            <div className="risk-gauge-head">
+              <span>{lossGauge.summary}</span>
+              <span className={`risk-gauge-badge ${lossGauge.tone}`}>{lossGauge.label}</span>
+            </div>
+            <div className="risk-gauge-track" aria-hidden="true">
+              <div className={`risk-gauge-fill ${lossGauge.tone}`} style={{ width: `${lossGauge.pct}%` }} />
+            </div>
           </div>
         </> : <>
           <h3>{demo ? 'DEMO' : 'KIS'} 사용량 {unavailableValue}</h3>
@@ -114,27 +352,264 @@ export function Risk() {
     </Panel>
 
     {known && <Panel title={demo ? 'DEMO 종목별 사용량' : 'KIS 모의 종목별 사용량'} className="risk-exposure">
-      {codes.length ? <div className="table-scroll" role="region" aria-label="종목별 한도 사용량" tabIndex={0}>
-        <table><thead><tr>{['종목', '종목 한도 사용량 (원)', '한도 (원)', '보유 평가액 (원)', '매수 예약액 (원)', '매도 가능 보유'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
-          <tbody>{codes.map(code => {
-            const p = positions.find(p => p.code === code), qty = p?.qty ?? 0;
-            const held = qty === 0 ? 0 : p?.price == null ? null : qty * p.price;
-            const buys = orders.filter(o => o.code === code && o.side === 'buy' && !o.cancelled && o.remaining > 0);
-            const pendingBuy = buys.some(o => o.price <= 0) ? null : buys.reduce((sum, o) => sum + o.remaining * o.price, 0);
-            const reservedSell = orders.filter(o => o.code === code && o.side === 'sell' && !o.cancelled).reduce((sum, o) => sum + o.remaining, 0);
-            const used = held === null || pendingBuy === null ? null : held + pendingBuy;
-            const name = (!demo && connection.balance?.positions.find(p => p.code === code)?.name) || state.instruments.find(i => i.code === code)?.name;
-            return <tr key={code}>
-              <td>{name ? <>{name} <small>{code}</small></> : code}</td>
-              <td>{used === null ? '미확인' : won(used)}{used !== null && used >= state.risk.maxPosition && <Badge>추가 매수 한도 도달</Badge>}</td>
-              <td>{won(state.risk.maxPosition)}</td><td>{held === null ? '평가 불가' : won(held)}</td><td>{pendingBuy === null ? '예약액 미확인' : won(pendingBuy)}</td><td>{Math.max(0, qty - reservedSell)}주 / 보유 {qty}주</td>
+      {exposureEntries.length > 0 && (
+        <div className="risk-exposure-controls" role="region" aria-label="종목별 사용량 검색 및 정렬 제어">
+          <div className="risk-exposure-search">
+            <input
+              ref={exposureSearchRef}
+              type="search"
+              aria-label="종목별 사용량 검색"
+              placeholder="종목명 또는 코드"
+              value={exposureQuery}
+              onChange={e => setExposureQuery(e.target.value)}
+            />
+          </div>
+          <div className="risk-filter-group" role="group" aria-label="위험 상태 필터">
+            {RISK_EXPOSURE_FILTERS.map(item => (
+              <button
+                key={item.id}
+                type="button"
+                aria-pressed={exposureFilter === item.id}
+                className={'risk-chip' + (exposureFilter === item.id ? ' active' : '')}
+                onClick={() => setExposureFilter(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div className="risk-exposure-sort">
+            <select
+              aria-label="종목별 사용량 정렬"
+              value={exposureSort}
+              onChange={e => setExposureSort(e.target.value as RiskExposureSort)}
+            >
+              {RISK_EXPOSURE_SORTS.map(item => (
+                <option key={item.id} value={item.id}>{item.label}</option>
+              ))}
+            </select>
+          </div>
+          {exposureControlsActive && (
+            <div className="risk-exposure-summary">
+              <span role="status">표시 {visibleEntries.length}종목 / 전체 {exposureEntries.length}종목</span>
+              <button type="button" className="text-link" onClick={clearExposureFilters}>조건 지우기</button>
+            </div>
+          )}
+        </div>
+      )}
+      {exposureEntries.length === 0 ? (
+        <Empty title="보유·미체결 없음">조회한 환경에 보유와 미체결 주문이 없습니다.</Empty>
+      ) : visibleEntries.length === 0 ? (
+        <Empty title="조건에 맞는 종목이 없습니다">
+          <button type="button" className="text-link" onClick={clearExposureFilters}>조건 지우기</button>
+        </Empty>
+      ) : <div className="table-scroll" role="region" aria-label="종목별 한도 사용량" tabIndex={0}>
+        <table><thead><tr>{['종목', '종목 한도 사용량 (원)', '한도 (원)', '노출률 · 잔여 한도', '보유 평가액 (원)', '매수 예약액 (원)', '매도 가능 보유'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+          <tbody>{visibleEntries.map(entry => {
+            const rateUnknown = entry.used === null || state.risk.maxPosition <= 0;
+            const pct = rateUnknown ? 0 : Math.round((entry.used! / state.risk.maxPosition) * 100);
+            const clampedPct = Math.min(100, Math.max(0, pct));
+            const barTone = entry.exposureStatus === 'limit-hit'
+              ? 'danger'
+              : entry.exposureStatus === 'warning'
+                ? 'warn'
+                : 'safe';
+            return <tr key={entry.code}>
+              <td>
+                <Link
+                  className="text-link risk-stock-link"
+                  to={demo
+                    ? `/trade?mode=demo&code=${encodeURIComponent(entry.code)}`
+                    : `/paper?code=${encodeURIComponent(entry.code)}`}
+                >
+                  {entry.name ? <>{entry.name} <small>{entry.code}</small></> : entry.code}
+                </Link>
+              </td>
+              <td>{entry.used === null ? '미확인' : won(entry.used)}{entry.used !== null && entry.used >= state.risk.maxPosition && <Badge>추가 매수 한도 도달</Badge>}</td>
+              <td>{won(state.risk.maxPosition)}</td>
+              <td>
+                {rateUnknown ? '산출 불가' : (
+                  <div className="risk-exposure-rate">
+                    <span className={`risk-exposure-rate-text ${barTone}`}>
+                      {pct}% · {entry.room === 0 ? '한도 도달 (여유 0원)' : `여유 ${won(entry.room!)}원`}
+                    </span>
+                    <div className="risk-mini-bar" aria-hidden="true">
+                      <div className={`risk-mini-bar-fill ${barTone}`} style={{ width: `${clampedPct}%` }} />
+                    </div>
+                  </div>
+                )}
+              </td>
+              <td>{entry.held === null ? '평가 불가' : won(entry.held)}</td>
+              <td>{entry.pendingBuy === null ? '예약액 미확인' : won(entry.pendingBuy)}</td>
+              <td>{Math.max(0, entry.qty - entry.reservedSell)}주 / 보유 {entry.qty}주</td>
             </tr>;
           })}</tbody>
         </table>
-      </div> : <Empty title="보유·미체결 없음">조회한 환경에 보유와 미체결 주문이 없습니다.</Empty>}
+      </div>}
     </Panel>}
-    <Panel title="최근 위험관리 이벤트" className="risk-events">
-      {!available ? <p>최신 이벤트 {unavailableValue}</p> : changes.length ? changes.map(e => <article className="event" key={e.id}><div><h3>{e.title}</h3><p>{e.detail}</p><time>{time(e.time)}</time></div></article>) : <Empty title="위험관리 이벤트 없음">한도 변경·정지·재개·주문 차단을 이곳에서 확인합니다.</Empty>}
+
+    <section className="risk-hub" role="region" aria-label="위험관리 및 주문 게이트 종합 진단 허브">
+      <div className="risk-hub-grid">
+        <article className="risk-hub-card">
+          <h3>손실 한도 및 서킷브레이커 진단</h3>
+          <dl className="risk-hub-list">
+            <div>
+              <dt>선택 환경 · 손실 기준</dt>
+              <dd>{demo ? '로컬 합성 · 시작 자산 기준' : `KIS REST · 거래일 ${paperRisk?.day ?? '미확인'} 첫 주문 기준`}</dd>
+            </div>
+            <div>
+              <dt>기준 자산 · 현재 평가자산</dt>
+              <dd>{!known ? `사용량 ${unavailableValue}` : `기준 ${baseline == null ? '미설정' : money(baseline)} · 현재 ${currentEquity == null ? '미확인' : money(currentEquity)}`}</dd>
+            </div>
+            <div>
+              <dt>손실 소진율 · 잔여 여유</dt>
+              <dd>{!known
+                ? `산출 대기 (${unavailableValue})`
+                : loss === null
+                  ? `0% (첫 주문 전 기준 미설정) · 한도 여유 ${money(state.risk.dailyLoss)}`
+                  : state.risk.dailyLoss > 0
+                    ? `${Math.round((loss / state.risk.dailyLoss) * 100)}% 소진 · 잔여 여유 ${won(Math.max(0, state.risk.dailyLoss - loss))}원`
+                    : '한도 산출 불가'}</dd>
+            </div>
+            <div>
+              <dt>서킷브레이커 작동 상태</dt>
+              <dd>{!available
+                ? `로컬 상태 ${unavailableValue}`
+                : halted
+                  ? '긴급정지 활성 (신규 주문·전략 중단)'
+                  : !known
+                    ? '사용량 미확인 (차단 여부 대조 필요)'
+                    : loss !== null && loss >= state.risk.dailyLoss
+                      ? '일일 손실 한도 도달 (신규 주문 차단)'
+                      : loss === null
+                        ? '첫 주문 전 기준 미설정 (정상 감시 대기)'
+                        : '정상 감시 중 (한도 내 허용)'}</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article className="risk-hub-card">
+          <h3>종목별 노출 및 주문 가능 여유 진단</h3>
+          <dl className="risk-hub-list">
+            <div>
+              <dt>감시 종목 · 노출 분포</dt>
+              <dd>{!known
+                ? `노출 분포 ${unavailableValue}`
+                : codes.length === 0
+                  ? '보유·미체결 종목 없음 (0종목)'
+                  : `총 ${codes.length}종목 (한도 도달 ${limitHitCount} · 주의 ${warningCount} · 여유 ${safeCount}${unknownExposureCount > 0 ? ` · 미확인 ${unknownExposureCount}` : ''})`}</dd>
+            </div>
+            <div>
+              <dt>최대 노출 종목 · 잔여 한도</dt>
+              <dd>{!known
+                ? `최대 노출 ${unavailableValue}`
+                : codes.length === 0
+                  ? `보유·예약 없음 (종목 한도 ${money(state.risk.maxPosition)})`
+                  : unknownExposureCount > 0 || !maxEntry
+                    ? '일부 종목 노출 미확인 (가격·예약액 확인 필요)'
+                    : `${maxEntry.label} ${won(maxEntry.used!)}원 (${Math.round((maxEntry.used! / state.risk.maxPosition) * 100)}%) · 잔여 ${won(Math.max(0, state.risk.maxPosition - maxEntry.used!))}원`}</dd>
+            </div>
+            <div>
+              <dt>미체결 매수 예약 · 매도 예약</dt>
+              <dd>{!known
+                ? `예약 현황 ${unavailableValue}`
+                : `매수 예약 ${totalPendingBuy === null ? '일부 미확인' : `${won(totalPendingBuy)}원`} · 매도 예약 ${totalReservedSell.toLocaleString('ko-KR')}주`}</dd>
+            </div>
+            <div>
+              <dt>1회 주문 병목 진단</dt>
+              <dd>{!available
+                ? `주문 가능 상한 ${unavailableValue}`
+                : !known
+                  ? `1회 한도 ${money(state.risk.maxOrder)} · 종목별 잔여 미확인`
+                  : codes.length === 0
+                    ? `1회 한도 ${money(state.risk.maxOrder)} · 신규 종목 기준 1회 가능 ${won(Math.max(0, Math.min(state.risk.maxOrder, state.risk.maxPosition)))}원`
+                    : unknownExposureCount > 0 || minRoom === null
+                      ? `1회 한도 ${money(state.risk.maxOrder)} · 일부 종목 잔여 한도 미확인`
+                      : `1회 한도 ${money(state.risk.maxOrder)} · 최소 잔여 종목 기준 1회 가능 ${won(Math.min(state.risk.maxOrder, minRoom))}원`}</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article className="risk-hub-card">
+          <h3>주문 제어 게이트 및 재개 준비도</h3>
+          <dl className="risk-hub-list">
+            <div>
+              <dt>공통 긴급정지 · 재개 게이트</dt>
+              <dd>{!available
+                ? `제어 상태 ${unavailableValue}`
+                : halted
+                  ? resumeBlocked
+                    ? `긴급정지 중 · 재개 차단 (${!paperRisk ? '원장 미확인' : `불명·전송 중 ${unresolved}건`})`
+                    : '긴급정지 중 · 즉시 재개 가능 (불명 0건)'
+                  : '신규 주문 허용 중 (긴급정지 꺼짐)'}</dd>
+            </div>
+            <div>
+              <dt>KIS 3대 무결성 게이트</dt>
+              <dd>{!available
+                ? `무결성 게이트 ${unavailableValue}`
+                : `잔고 ${kisGateBalanceStatus} · 주문 대조 ${currentOrders ? '60초 내 최신' : '만료·미대조'} · 불명·전송 중 ${paperRisk ? `${unresolved}건` : '미확인'}`}</dd>
+            </div>
+            <div>
+              <dt>환경별 활성 자동매매 전략</dt>
+              <dd>{!available
+                ? `전략 상태 ${unavailableValue}`
+                : `DEMO 활성 ${demoActiveStrategies}개 · KIS 모의 활성 ${kisActiveStrategies}개${halted ? ' (긴급정지로 일괄 정지됨 · 재개 후 수동 시작)' : ''}`}</dd>
+            </div>
+          </dl>
+          <div className="risk-hub-links">
+            <Link className="text-link" to={'/settings/trading/general?from=risk' + (demo ? '' : '&env=kis')}>매매 한도 설정 허브</Link>
+            <Link className="text-link" to={demo ? '/portfolio?environment=demo' : '/portfolio'}>포트폴리오 자산 확인</Link>
+            <Link className="text-link" to={demo ? '/strategies?environment=demo' : '/strategies?environment=kis-paper'}>전략 스튜디오 확인</Link>
+            <Link className="text-link" to="/alerts">전체 알림·이벤트</Link>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <Panel
+      title="최근 위험관리 이벤트"
+      className="risk-events"
+      action={available && changes.length > 0 ? <Link className="text-link" to="/alerts">전체 이벤트 보기</Link> : undefined}
+    >
+      {available && changes.length > 0 && (
+        <div className="risk-events-controls">
+          <div className="risk-filter-group" role="group" aria-label="위험관리 이벤트 분류">
+            {RISK_EVENT_FILTERS.map(item => (
+              <button
+                key={item.id}
+                type="button"
+                aria-pressed={eventFilter === item.id}
+                className={'risk-chip' + (eventFilter === item.id ? ' active' : '')}
+                onClick={() => setEventFilter(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <span className="risk-events-count" role="status">표시 {visibleChanges.length}건 / 최근 {changes.length}건</span>
+        </div>
+      )}
+      {!available
+        ? <p>최신 이벤트 {unavailableValue}</p>
+        : changes.length === 0
+          ? <Empty title="위험관리 이벤트 없음">한도 변경·정지·재개·주문 차단을 이곳에서 확인합니다.</Empty>
+          : visibleChanges.length === 0
+            ? <Empty title="선택한 분류의 위험관리 이벤트가 없습니다">
+              <button type="button" className="text-link" onClick={() => setEventFilter('all')}>전체 보기</button>
+            </Empty>
+            : visibleChanges.map(e => {
+              const envKey = e.environment ?? 'shared';
+              return <article className="event" key={e.id}>
+                <div>
+                  <div className="risk-event-badges">
+                    <span className={`risk-event-level ${e.level}`}>{RISK_EVENT_LEVEL_LABEL[e.level]}</span>
+                    <span className="risk-event-env">{RISK_EVENT_ENV_LABEL[envKey]}</span>
+                  </div>
+                  <h3>{e.title}</h3>
+                  <p>{e.detail}</p>
+                  <time>{time(e.time)}</time>
+                </div>
+              </article>;
+            })}
     </Panel>
   </div>;
 }
